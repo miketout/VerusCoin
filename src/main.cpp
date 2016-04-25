@@ -6067,7 +6067,7 @@ bool ActivateBestChain(CValidationState& state, const CChainParams& chainparams,
             GetMainSignals().UpdatedBlockTip(pindexNewTip);
             uiInterface.NotifyBlockTip(hashNewTip);
         } //else fprintf(stderr,"initial download skips propagation\n");
-    } while(pindexMostWork != chainActive.Tip());
+    } while (pindexNewTip != pindexMostWork);
     CheckBlockIndex(chainparams.GetConsensus());
 
     // Write changes periodically to disk, after relay.
