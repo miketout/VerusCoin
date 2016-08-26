@@ -9792,15 +9792,20 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
         // Nodes must NEVER send a data item bigger than the max size for a script data object,
         // and thus, the maximum size any matched object can have) in a filteradd message
-        if (vData.size() > CScript::MAX_SCRIPT_ELEMENT_SIZE)
-        {
-            Misbehaving(pfrom->GetId(), 100);
+        bool bad = false;
+        if (vData.size() > CScript::MAX_SCRIPT_ELEMENT_SIZE) {
+            bad = true;
         } else {
             LOCK(pfrom->cs_filter);
-            if (pfrom->pfilter)
+            if (pfrom->pfilter) {
                 pfrom->pfilter->insert(vData);
-            else
-                Misbehaving(pfrom->GetId(), 100);
+            } else {
+                bad = true;
+            }
+        }
+        if (bad) {
+            LOCK(cs_main);
+            Misbehaving(pfrom->GetId(), 100);
         }
     }
 
