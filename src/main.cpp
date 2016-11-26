@@ -83,7 +83,7 @@ CWaitableCriticalSection csBestBlock;
 CConditionVariable cvBlockChange;
 int nScriptCheckThreads = 0;
 bool fExperimentalMode = false;
-bool fImporting = false;
+std::atomic_bool fImporting(false);
 std::atomic_bool fReindex(false);
 bool fTxIndex = true;
 bool fIdIndex = false;
