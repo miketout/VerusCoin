@@ -21,8 +21,6 @@
 
 #include <db_cxx.h>
 
-extern unsigned int nWalletDBUpdated;
-
 class CDBEnv
 {
 private:
