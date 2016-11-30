@@ -103,6 +103,7 @@ namespace boost {
 
 using namespace std;
 
+CCriticalSection cs_args;
 map<string, string> mapArgs;
 map<string, vector<string> > mapMultiArgs;
 bool fDebug = false;
@@ -367,6 +368,7 @@ static void InterpretNegativeSetting(string name, map<string, string>& mapSettin
 
 void ParseParameters(int argc, const char* const argv[])
 {
+    LOCK(cs_args);
     mapArgs.clear();
     mapMultiArgs.clear();
 
@@ -442,6 +444,7 @@ void Split(const std::string& strVal, uint64_t *outVals, const uint64_t nDefault
 
 std::string GetArg(const std::string& strArg, const std::string& strDefault)
 {
+    LOCK(cs_args);
     if (mapArgs.count(strArg))
         return mapArgs[strArg];
     return strDefault;
@@ -449,6 +452,7 @@ std::string GetArg(const std::string& strArg, const std::string& strDefault)
 
 int64_t GetArg(const std::string& strArg, int64_t nDefault)
 {
+    LOCK(cs_args);
     if (mapArgs.count(strArg))
         return atoi64(mapArgs[strArg]);
     return nDefault;
@@ -456,6 +460,7 @@ int64_t GetArg(const std::string& strArg, int64_t nDefault)
 
 bool GetBoolArg(const std::string& strArg, bool fDefault)
 {
+    LOCK(cs_args);
     if (mapArgs.count(strArg))
     {
         if (mapArgs[strArg].empty())
@@ -467,11 +472,13 @@ bool GetBoolArg(const std::string& strArg, bool fDefault)
 
 void OverrideSetArg(const std::string& strArg, const std::string& strValue)
 {
+    LOCK(cs_args);
     mapArgs[strArg] = strValue;
 }
 
 bool SoftSetArg(const std::string& strArg, const std::string& strValue)
 {
+    LOCK(cs_args);
     if (mapArgs.count(strArg))
         return false;
     mapArgs[strArg] = strValue;
@@ -720,7 +727,7 @@ const boost::filesystem::path &ZC_GetParamsDir()
 {
     namespace fs = boost::filesystem;
 
-    LOCK(csPathCached); // Reuse the same lock as upstream.
+    LOCK2(cs_args, csPathCached);
 
     fs::path &path = zc_paramsPathCached;
 
@@ -741,6 +748,7 @@ const boost::filesystem::path GetExportDir()
 {
     namespace fs = boost::filesystem;
     fs::path path;
+    LOCK(cs_args);
     if (!mapArgs.count("-exportdir"))
     {
         path = GetDataDir();
@@ -763,7 +771,7 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
 {
     namespace fs = boost::filesystem;
 
-    LOCK(csPathCached);
+    LOCK2(cs_args, csPathCached);
 
     fs::path &path = fNetSpecific ? pathCachedNetSpecific : pathCached;
 
@@ -799,6 +807,7 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
 const boost::filesystem::path GetDataDir(std::string chainName)
 {
     namespace fs = boost::filesystem;
+    LOCK(cs_args);
     fs::path path;
     std::string canonicalName = CanonicalChainFileName(chainName);
     bool isExternalChain = canonicalName != CanonicalChainFileName(std::string(ASSETCHAINS_SYMBOL));
@@ -817,6 +826,7 @@ const boost::filesystem::path GetDataDir(std::string chainName)
 
 void ClearDatadirCache()
 {
+    LOCK(csPathCached);
     pathCached = boost::filesystem::path();
     pathCachedNetSpecific = boost::filesystem::path();
 }
@@ -863,17 +873,20 @@ void ReadConfigFile(map<string, string>& mapSettingsRet,
     set<string> setOptions;
     setOptions.insert("*");
 
-    for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
     {
-        // Don't overwrite existing settings so command line settings override komodo.conf
-        string strKey = string("-") + it->string_key;
-        if (mapSettingsRet.count(strKey) == 0)
+        LOCK(cs_args);
+        for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
         {
-            mapSettingsRet[strKey] = it->value[0];
-            // interpret nofoo=1 as foo=0 (and nofoo=0 as foo=1) as long as foo not set)
-            InterpretNegativeSetting(strKey, mapSettingsRet);
+            // Don't overwrite existing settings so command line settings override komodo.conf
+            string strKey = string("-") + it->string_key;
+            if (mapSettingsRet.count(strKey) == 0)
+            {
+                mapSettingsRet[strKey] = it->value[0];
+                // interpret nofoo=1 as foo=0 (and nofoo=0 as foo=1) as long as foo not set)
+                InterpretNegativeSetting(strKey, mapSettingsRet);
+            }
+            mapMultiSettingsRet[strKey].push_back(it->value[0]);
         }
-        mapMultiSettingsRet[strKey].push_back(it->value[0]);
     }
     // If datadir is changed in .conf file:
     ClearDatadirCache();
