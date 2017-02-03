@@ -103,7 +103,7 @@ public:
     /** Thread function */
     void Run()
     {
-        while (running) {
+        while (true) {
             WorkItem* i = 0;
             {
                 boost::unique_lock<boost::mutex> lock(cs);
