@@ -363,7 +363,7 @@ namespace {
     void InitializeNode(NodeId nodeid, const CNode *pnode) {
         LOCK(cs_main);
         CNodeState &state = mapNodeState.insert(std::make_pair(nodeid, CNodeState())).first->second;
-        state.name = pnode->addrName;
+        state.name = pnode->GetAddrName();
         state.address = pnode->addr;
     }
 

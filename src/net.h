@@ -304,7 +304,6 @@ public:
     const int64_t nTimeConnected;
     std::atomic<int64_t> nTimeOffset;
     CAddress addr;
-    std::string addrName;
     CService addrLocal;
     int nVersion;
     int lasthdrsreq,sendhdrsreq;
@@ -363,6 +362,10 @@ protected:
     };
     static eTlsOption tlsFallbackNonTls;
     static eTlsOption tlsValidate;
+
+private:
+    mutable CCriticalSection cs_addrName;
+    std::string addrName;
 
 public:
     // for PBaaS nodes, each node may be associated with the hash of a pubkey as a payment address to receive rewards for supporting a
@@ -775,6 +778,9 @@ public:
     // returns the value of the tlsfallbacknontls and tlsvalidate flags set at zend startup (see init.cpp)
     static bool GetTlsFallbackNonTls();
     static bool GetTlsValidate();
+    std::string GetAddrName() const;
+    //! Sets the addrName only if it was not previously set
+    void MaybeSetAddrName(const std::string& addrNameIn);
 };
 
 
