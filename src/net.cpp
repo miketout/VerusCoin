@@ -536,8 +536,6 @@ CNode* ConnectNode(CAddress addrConnect, const char *pszDest)
             vNodes.push_back(pnode);
         }
 
-        pnode->nTimeConnected = GetTime();
-
         return pnode;
     } else if (!proxyConnectionFailed) {
         // If connecting to the node failed, and failure is not caused by a problem connecting to
@@ -2418,7 +2416,7 @@ unsigned int ReceiveFloodSize() { return 1000*GetArg("-maxreceivebuffer", 5*1000
 unsigned int SendBufferSize() { return 1000*GetArg("-maxsendbuffer", 1*1000); }
 
 CNode::CNode(SOCKET hSocketIn, const CAddress& addrIn, const std::string& addrNameIn, bool fInboundIn, SSL *sslIn) :
-    addrKnown(5000, 0.001), ssSend(SER_NETWORK, INIT_PROTO_VERSION)
+    ssSend(SER_NETWORK, INIT_PROTO_VERSION), nTimeConnected(GetTime()), addrKnown(5000, 0.001)
 {
     ssl = sslIn;
     nServices = 0;
@@ -2428,7 +2426,6 @@ CNode::CNode(SOCKET hSocketIn, const CAddress& addrIn, const std::string& addrNa
     nLastRecv = 0;
     nSendBytes = 0;
     nRecvBytes = 0;
-    nTimeConnected = GetTime();
     nTimeOffset = 0;
     addr = addrIn;
     addrName = addrNameIn == "" ? addr.ToStringIPPort() : addrNameIn;
