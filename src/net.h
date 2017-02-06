@@ -282,7 +282,7 @@ public:
     SSL *ssl;
 
     // socket
-    uint64_t nServices;
+    std::atomic<uint64_t> nServices;
     SOCKET hSocket;
     CCriticalSection cs_hSocket;
     CDataStream ssSend;

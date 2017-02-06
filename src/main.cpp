@@ -8724,7 +8724,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         CAddress addrFrom;
         uint64_t nNonce = 1;
         int nVersion;           // use temporary for version, don't set version number until validated as connected
-        vRecv >> nVersion >> pfrom->nServices >> nTime >> addrMe;
+        uint64_t nServices;
+        vRecv >> nVersion >> nServices >> nTime >> addrMe;
+        pfrom->nServices = nServices;
         if (nVersion == 10300)
             nVersion = 300;
 
