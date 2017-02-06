@@ -693,7 +693,10 @@ int TLSManager::threadSocketHandler(CNode* pnode, fd_set& fdsetRecv, fd_set& fds
                         }
                     }
                     pnode->nLastRecv = GetTime();
-                    pnode->nRecvBytes += nBytes;
+                    {
+                        LOCK(pnode->cs_vRecv);
+                        pnode->nRecvBytes += nBytes;
+                    }
                     pnode->RecordBytesRecv(nBytes);
                 } else if (nBytes == 0) {
 

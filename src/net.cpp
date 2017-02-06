@@ -731,8 +731,14 @@ void CNode::copyStats(CNodeStats &stats)
     stats.cleanSubVer = cleanSubVer;
     stats.fInbound = fInbound;
     stats.nStartingHeight = nStartingHeight;
-    stats.nSendBytes = nSendBytes;
-    stats.nRecvBytes = nRecvBytes;
+    {
+        LOCK(cs_vSend);
+        stats.nSendBytes = nSendBytes;
+    }
+    {
+        LOCK(cs_vRecv);
+        stats.nRecvBytes = nRecvBytes;
+    }
     stats.fWhitelisted = fWhitelisted;
 
     // It is common for nodes with good ping times to suddenly become lagged,
@@ -889,7 +895,10 @@ void SocketSendData(CNode *pnode)
         if (nBytes > 0)
         {
             pnode->nLastSend = GetTime();
-            pnode->nSendBytes += nBytes;
+            {
+                LOCK(pnode->cs_vSend);
+                pnode->nSendBytes += nBytes;
+            }
             pnode->nSendOffset += nBytes;
             pnode->RecordBytesSent(nBytes);
             if (pnode->nSendOffset == data.size())

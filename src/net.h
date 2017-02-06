@@ -291,6 +291,7 @@ public:
     uint64_t nSendBytes;
     std::deque<CSerializeData> vSendMsg;
     CCriticalSection cs_vSend;
+    CCriticalSection cs_vRecv;
 
     std::deque<CInv> vRecvGetData;
     std::deque<CNetMessage> vRecvMsg;
@@ -298,10 +299,10 @@ public:
     uint64_t nRecvBytes;
     int nRecvVersion;
 
-    int64_t nLastSend;
-    int64_t nLastRecv;
+    std::atomic<int64_t> nLastSend;
+    std::atomic<int64_t> nLastRecv;
     int64_t nTimeConnected;
-    int64_t nTimeOffset;
+    std::atomic<int64_t> nTimeOffset;
     CAddress addr;
     std::string addrName;
     CService addrLocal;
