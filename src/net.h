@@ -304,7 +304,6 @@ public:
     const int64_t nTimeConnected;
     std::atomic<int64_t> nTimeOffset;
     CAddress addr;
-    CService addrLocal;
     int nVersion;
     int lasthdrsreq,sendhdrsreq;
     // strSubVer is whatever byte array we read from the wire. However, this field is intended
@@ -366,6 +365,9 @@ protected:
 private:
     mutable CCriticalSection cs_addrName;
     std::string addrName;
+
+    CService addrLocal;
+    mutable CCriticalSection cs_addrLocal;
 
 public:
     // for PBaaS nodes, each node may be associated with the hash of a pubkey as a payment address to receive rewards for supporting a
@@ -781,6 +783,9 @@ public:
     std::string GetAddrName() const;
     //! Sets the addrName only if it was not previously set
     void MaybeSetAddrName(const std::string& addrNameIn);
+    CService GetAddrLocal() const;
+    //! May not be called more than once
+    void SetAddrLocal(const CService& addrLocalIn);
 };
 
 

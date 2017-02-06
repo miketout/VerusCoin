@@ -8790,7 +8790,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
         pfrom->nVersion = nVersion;
 
-        pfrom->addrLocal = addrMe;
+        pfrom->SetAddrLocal(addrMe);
         if (pfrom->fInbound && addrMe.IsRoutable())
         {
             SeenLocal(addrMe);
@@ -8827,7 +8827,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                     LogPrintf("ProcessMessages: advertizing address %s\n", addr.ToString());
                     pfrom->PushAddress(addr);
                 } else if (IsPeerAddrLocalGood(pfrom)) {
-                    addr.SetIP(pfrom->addrLocal);
+                    addr.SetIP(addrMe);
                     LogPrintf("ProcessMessages: advertizing address %s\n", addr.ToString());
                     pfrom->PushAddress(addr);
                 }
