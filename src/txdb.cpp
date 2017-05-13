@@ -2551,7 +2551,7 @@ bool CBlockTreeDB::blockOnchainActive(const uint256 &hash) {
     return true;
 }
 
-bool CBlockTreeDB::LoadBlockIndexGuts(boost::function<CBlockIndex*(const uint256&)> insertBlockIndex)
+bool CBlockTreeDB::LoadBlockIndexGuts(std::function<CBlockIndex*(const uint256&)> insertBlockIndex)
 {
     boost::scoped_ptr<CDBIterator> pcursor(NewIterator());
 

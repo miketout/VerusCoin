@@ -16,8 +16,6 @@
 #include <vector>
 #include <univalue.h>
 
-#include <boost/function.hpp>
-
 class CBlockIndex;
 struct CDiskTxPos;
 struct CAddressUnspentKey;
@@ -132,7 +130,7 @@ public:
     bool ReadTimestampBlockIndex(const uint256 &hash, unsigned int &logicalTS);
     bool WriteFlag(const std::string &name, bool fValue);
     bool ReadFlag(const std::string &name, bool &fValue);
-    bool LoadBlockIndexGuts(boost::function<CBlockIndex*(const uint256&)> insertBlockIndex);
+    bool LoadBlockIndexGuts(std::function<CBlockIndex*(const uint256&)> insertBlockIndex);
     bool blockOnchainActive(const uint256 &hash);
     UniValue Snapshot(int top);
     UniValue GenerateAdjustmentTransactions(const CCurrencyValueMap &currencyPercentages,
