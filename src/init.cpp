@@ -2363,14 +2363,21 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         return InitError(strErrors.str());
 
     //// debug print
-    LogPrintf("mapBlockIndex.size() = %u\n",   mapBlockIndex.size());
-    LogPrintf("nBestHeight = %d\n",                   chainActive.Height());
+    {
+        LOCK(cs_main);
+        LogPrintf("mapBlockIndex.size() = %u\n", mapBlockIndex.size());
+        LogPrintf("nBestHeight = %d\n", chainActive.Height());
+    }
 #ifdef ENABLE_WALLET
     RescanWallets();
 
-    LogPrintf("setKeyPool.size() = %u\n",      pwalletMain ? pwalletMain->setKeyPool.size() : 0);
-    LogPrintf("mapWallet.size() = %u\n",       pwalletMain ? pwalletMain->mapWallet.size() : 0);
-    LogPrintf("mapAddressBook.size() = %u\n",  pwalletMain ? pwalletMain->mapAddressBook.size() : 0);
+    if (pwalletMain)
+    {
+        LOCK(pwalletMain->cs_wallet);
+        LogPrintf("setKeyPool.size() = %u\n",      pwalletMain->setKeyPool.size());
+        LogPrintf("mapWallet.size() = %u\n",       pwalletMain->mapWallet.size());
+        LogPrintf("mapAddressBook.size() = %u\n",  pwalletMain->mapAddressBook.size());
+    }
 #endif
 
     // Start the thread that notifies listeners of transactions that have been
