@@ -109,6 +109,7 @@ static UniValue ValuePoolDesc(
 
 UniValue blockheaderToJSON(const CBlockIndex* blockindex)
 {
+    AssertLockHeld(cs_main);
     UniValue result(UniValue::VOBJ);
     if ( blockindex == 0 )
     {
@@ -171,6 +172,7 @@ UniValue blockheaderToJSON(const CBlockIndex* blockindex)
 
 UniValue blockToDeltasJSON(const CBlock& block, const CBlockIndex* blockindex)
 {
+    AssertLockHeld(cs_main);
     UniValue result(UniValue::VOBJ);
     result.push_back(Pair("hash", block.GetHash().GetHex()));
     int confirmations = -1;
@@ -299,6 +301,7 @@ UniValue blockToDeltasJSON(const CBlock& block, const CBlockIndex* blockindex)
 
 UniValue blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool txDetails = false)
 {
+    AssertLockHeld(cs_main);
     UniValue result(UniValue::VOBJ);
     int32_t height = blockindex->GetHeight();
     result.push_back(Pair("hash", block.GetHash().GetHex()));
@@ -852,6 +855,8 @@ UniValue getblockdeltas(const UniValue& params, bool fHelp)
             "Run './verus help getblockdeltas' for instructions on how to enable this feature.");
     }
 
+    LOCK(cs_main);
+
     std::string strHash = params[0].get_str();
     uint256 hash(uint256S(strHash));
 
@@ -920,11 +925,11 @@ UniValue getblockhashes(const UniValue& params, bool fHelp)
 
     std::vector<std::pair<uint256, unsigned int> > blockHashes;
 
-    if (fActiveOnly)
+    {
         LOCK(cs_main);
-
-    if (!GetTimestampIndex(high, low, fActiveOnly, blockHashes)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for block hashes");
+        if (!GetTimestampIndex(high, low, fActiveOnly, blockHashes)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for block hashes");
+        }
     }
 
     UniValue result(UniValue::VARR);
