@@ -460,6 +460,7 @@ bool InitHTTPServer()
 }
 
 boost::thread threadHTTP;
+static std::vector<boost::thread> g_thread_http_workers;
 
 bool StartHTTPServer()
 {
@@ -469,8 +470,7 @@ bool StartHTTPServer()
     threadHTTP = boost::thread(boost::bind(&ThreadHTTP, eventBase, eventHTTP));
 
     for (int i = 0; i < rpcThreads; i++) {
-        boost::thread rpc_worker(HTTPWorkQueueRun, workQueue);
-        rpc_worker.detach();
+        g_thread_http_workers.emplace_back(HTTPWorkQueueRun, workQueue);
     }
     return true;
 }
@@ -496,6 +496,10 @@ void StopHTTPServer()
     if (workQueue) {
         LogPrint("http", "Waiting for HTTP worker threads to exit\n");
         workQueue->WaitExit();
+        for (auto& thread: g_thread_http_workers) {
+            thread.join();
+        }
+        g_thread_http_workers.clear();
         delete workQueue;
     }
     if (eventBase) {
