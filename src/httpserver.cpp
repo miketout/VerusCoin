@@ -74,30 +74,10 @@ private:
     std::deque<WorkItem*> queue;
     bool running;
     size_t maxDepth;
-    int numThreads;
-
-    /** RAII object to keep track of number of running worker threads */
-    class ThreadCounter
-    {
-    public:
-        WorkQueue &wq;
-        ThreadCounter(WorkQueue &w): wq(w)
-        {
-            boost::lock_guard<boost::mutex> lock(wq.cs);
-            wq.numThreads += 1;
-        }
-        ~ThreadCounter()
-        {
-            boost::lock_guard<boost::mutex> lock(wq.cs);
-            wq.numThreads -= 1;
-            wq.cond.notify_all();
-        }
-    };
 
 public:
     WorkQueue(size_t maxDepth) : running(true),
-                                 maxDepth(maxDepth),
-                                 numThreads(0)
+                                 maxDepth(maxDepth)
     {
     }
     /*( Precondition: worker threads have all stopped (they have been joined).
@@ -123,7 +103,6 @@ public:
     /** Thread function */
     void Run()
     {
-        ThreadCounter count(*this);
         while (running) {
             WorkItem* i = 0;
             {
