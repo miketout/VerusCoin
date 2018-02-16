@@ -48,7 +48,6 @@ CRATE_REGISTRY:=vendored-sources
 host:=$(BUILD)
 ifneq ($(HOST),)
 host:=$(HOST)
-host_toolchain:=$(HOST)-
 endif
 
 ifneq ($(DEBUG),)
