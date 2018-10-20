@@ -350,6 +350,11 @@ static bool HTTPBindAddresses(struct evhttp* http)
         LogPrint("http", "Binding RPC on address %s port %i\n", i->first, i->second);
         evhttp_bound_socket *bind_handle = evhttp_bind_socket_with_handle(http, i->first.empty() ? NULL : i->first.c_str(), i->second);
         if (bind_handle) {
+            std::vector<CNetAddr> vIP;
+            if (i->first.empty() ||
+                (LookupHost(i->first.c_str(), vIP, 1, false) && !vIP.empty() && vIP[0].IsBindAny())) {
+                LogPrintf("WARNING: the RPC server is not safe to expose to untrusted networks such as the public internet\n");
+            }
             boundSockets.push_back(bind_handle);
         } else {
             LogPrintf("Binding RPC on address %s port %i failed.\n", i->first, i->second);
