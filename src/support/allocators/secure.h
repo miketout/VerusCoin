@@ -26,7 +26,11 @@ struct secure_allocator {
 
     T* allocate(std::size_t n)
     {
-        return static_cast<T*>(LockedPoolManager::Instance().alloc(sizeof(T) * n));
+        T* allocation = static_cast<T*>(LockedPoolManager::Instance().alloc(sizeof(T) * n));
+        if (!allocation) {
+            throw std::bad_alloc();
+        }
+        return allocation;
     }
 
     void deallocate(T* p, std::size_t n)
