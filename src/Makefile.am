@@ -773,13 +773,7 @@ libzcash_a_SOURCES = \
 	zcash/address/sapling.cpp \
 	zcash/address/sprout.cpp \
 	zcash/util.cpp \
-    zcash/address/zip32.cpp \
-	zcash/circuit/commitment.tcc \
-	zcash/circuit/gadget.tcc \
-	zcash/circuit/merkle.tcc \
-	zcash/circuit/note.tcc \
-	zcash/circuit/prfs.tcc \
-	zcash/circuit/utils.tcc
+    zcash/address/zip32.cpp
 
 libzcash_a_CPPFLAGS = -DMULTICORE -fopenmp -fPIC -DBINARY_OUTPUT -DCURVE_ALT_BN128 -DBOOST_SPIRIT_THREADSAFE -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS $(HARDENED_CPPFLAGS) $(HARDENED_CXXFLAGS) $(HARDENED_LDFLAGS) -pipe $(SAN_LDFLAGS) -O1 -g -Wstack-protector $(SAN_CXXFLAGS) -fstack-protector-all -fPIE -fvisibility=hidden -DSTATIC $(BITCOIN_INCLUDES)
 
