@@ -107,31 +107,17 @@ AC_ARG_ENABLE(tests,
     [use_tests=$enableval],
     [use_tests=yes])
 
-AC_ARG_ENABLE([asan],
-  [AS_HELP_STRING([--enable-asan],
-  [instrument the executables with asan (default is no)])],
-  [use_asan=$enableval],
-  [use_asan=no])
+AC_ARG_ENABLE([fuzz-main],
+  [AS_HELP_STRING([--enable-fuzz-main],
+  [Replace main() with a stub for fuzzing (default is no)])],
+  [use_fuzz_main=$enableval],
+  [use_fuzz_main=no])
 
-AC_ARG_ENABLE([tsan],
-  [AS_HELP_STRING([--enable-tsan],
-  [instrument the executables with tsan (default is no)])],
-  [use_tsan=$enableval],
-  [use_tsan=no])
-
-if test x$TARGET_OS = xdarwin; then
-AC_ARG_ENABLE([hardening],
-  [AS_HELP_STRING([--enable-hardening],
-  [attempt to harden the resulting executables (default is yes)])],
-  [use_hardening=$enableval],
-  [use_hardening=no])
-else
 AC_ARG_ENABLE([hardening],
   [AS_HELP_STRING([--enable-hardening],
   [attempt to harden the resulting executables (default is yes)])],
   [use_hardening=$enableval],
   [use_hardening=yes])
-fi
 
 AC_ARG_ENABLE([reduce-exports],
   [AS_HELP_STRING([--enable-reduce-exports],
@@ -331,30 +317,25 @@ case $host in
          fi
        fi
 
-dnl       AC_CHECK_PROG([BREW],brew, brew)
-dnl       if test x$BREW = xbrew; then
-        dnl These Homebrew packages may be keg-only, meaning that they won't be found
-        dnl in expected paths because they may conflict with system files. Ask
-        dnl Homebrew where each one is located, then adjust paths accordingly.
-        dnl It's safe to add these paths even if the functionality is disabled by
-        dnl the user (--without-wallet for example).
+       AC_CHECK_PROG([BREW],brew, brew)
+       if test x$BREW = xbrew; then
+         dnl These Homebrew packages may be keg-only, meaning that they won't be found
+         dnl in expected paths because they may conflict with system files. Ask
+         dnl Homebrew where each one is located, then adjust paths accordingly.
+         dnl It's safe to add these paths even if the functionality is disabled by
+         dnl the user (--without-wallet for example).
 
-dnl         openssl_prefix=`$BREW --prefix openssl 2>/dev/null`
-dnl         bdb_prefix=`$BREW --prefix berkeley-db4 2>/dev/null`
-dnl         qt5_prefix=`$BREW --prefix qt5 2>/dev/null`
-dnl         if test x$openssl_prefix != x; then
-dnl           PKG_CONFIG_PATH="$PKG_CONFIG_PATH"
-dnl           export PKG_CONFIG_PATH
-dnl         fi
-dnl         if test x$bdb_prefix != x; then
-dnl           CPPFLAGS="$CPPFLAGS -I$bdb_prefix/include"
-dnl           LIBS="$LIBS -L$bdb_prefix/lib"
-dnl         fi
-dnl         if test x$qt5_prefix != x; then
-dnl           PKG_CONFIG_PATH="$qt5_prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
-dnl           export PKG_CONFIG_PATH
-dnl         fi
-dnl       fi
+         openssl_prefix=`$BREW --prefix openssl 2>/dev/null`
+         bdb_prefix=`$BREW --prefix berkeley-db4 2>/dev/null`
+         if test x$openssl_prefix != x; then
+           PKG_CONFIG_PATH="$openssl_prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
+           export PKG_CONFIG_PATH
+         fi
+         if test x$bdb_prefix != x; then
+           CPPFLAGS="$CPPFLAGS -I$bdb_prefix/include"
+           LIBS="$LIBS -L$bdb_prefix/lib"
+         fi
+       fi
      else
        case $build_os in
          *darwin*)
@@ -470,27 +451,9 @@ if test x$TARGET_OS != xwindows; then
   AX_CHECK_COMPILE_FLAG([-fPIC],[PIC_FLAGS="-fPIC"])
 fi
 
-#asan and tsan cannot be used together
-if test x$use_asan$use_tsan == xyesyes; then
-  AC_MSG_ERROR(asan and tsan cannot be simultaneously enabled)
-fi
-
-# using asan flag to enable address sanitizer and undefined behavior sanitizer
-if test x$use_asan == xyes; then
-  AX_CHECK_LINK_FLAG([-static-libstdc++],[SAN_LDFLAGS="$SAN_LDFLAGS -static-libstdc++"],[AC_MSG_ERROR(Cannot statically link -static-libstdc++)])
-  AX_CHECK_LINK_FLAG([-static-libasan],[SAN_LDFLAGS="$SAN_LDFLAGS -static-libasan"],[AC_MSG_ERROR(Cannot statically link -static-libasan)])
-  AX_CHECK_COMPILE_FLAG([-fsanitize=address],[SAN_CXXFLAGS="$SAN_CXXFLAGS -fsanitize=address"],[AC_MSG_ERROR(Cannot enable -fsanitize=address)])
-  AX_CHECK_COMPILE_FLAG([-fsanitize=undefined],[SAN_CXXFLAGS="$SAN_CXXFLAGS -fsanitize=undefined"],[AC_MSG_ERROR(Cannot enable -fsanitize=undefined)])
-  AX_CHECK_COMPILE_FLAG([-fno-omit-frame-pointer],[SAN_CXXFLAGS="$SAN_CXXFLAGS -fno-omit-frame-pointer"],[AC_MSG_ERROR(Cannot enable -fno-omit-frame-pointer)])
-fi
-
-# using tsan flag to enable address thread sanitizer
-# TSAN is supported on Linux x84_64 and tested on Ubuntu 12.04
-# Non-position-independent executables are not supported.  Use with -fPIE and -pie flags
-# libc/libstdc++ static linking is not supported
-if test x$use_tsan == xyes; then
-  AX_CHECK_COMPILE_FLAG([-fsanitize=thread],[SAN_CXXFLAGS="$SAN_CXXFLAGS -fsanitize=thread"],[AC_MSG_ERROR(Cannot enable -fsanitize=thread)])
-  AX_CHECK_COMPILE_FLAG([-fno-omit-frame-pointer],[SAN_CXXFLAGS="$SAN_CXXFLAGS -fno-omit-frame-pointer"],[AC_MSG_ERROR(Cannot enable -fno-omit-frame-pointer)])
+if test x$use_fuzz_main == xyes; then
+    CFLAGS="$CFLAGS -DZCASH_FUZZ=1"
+    CXXFLAGS="$CXXFLAGS -DZCASH_FUZZ=1"
 fi
 
 if test x$use_hardening != xno; then
@@ -506,15 +469,24 @@ if test x$use_hardening != xno; then
     HARDENED_CPPFLAGS="$HARDENED_CPPFLAGS -D_FORTIFY_SOURCE=2"
   ],[AC_MSG_ERROR(Cannot enable -D_FORTIFY_SOURCE=2)])
 
-  #AX_CHECK_LINK_FLAG([[-Wl,-z,relro]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,relro"],[AC_MSG_ERROR(Cannot enable RELRO)])
-  #AX_CHECK_LINK_FLAG([[-Wl,-z,now]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,now"],[AC_MSG_ERROR(Cannot enable BIND_NOW)])
+  if test x$BUILD_OS = xdarwin || test x$TARGET_OS = xwindows; then
+    # Xcode's ld (at least ld64-302.3) doesn't support -z
+    # mingw-w64's ld (at least mingw-w64 4.0.4-2) also appears to not support -z
+    AX_CHECK_LINK_FLAG([[-Wl,-z,relro]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,relro"],[AC_MSG_WARN(Cannot enable RELRO)])
+    AX_CHECK_LINK_FLAG([[-Wl,-z,now]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,now"],[AC_MSG_WARN(Cannot enable BIND_NOW)])
+  else
+    AX_CHECK_LINK_FLAG([[-Wl,-z,relro]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,relro"],[AC_MSG_ERROR(Cannot enable RELRO)])
+    AX_CHECK_LINK_FLAG([[-Wl,-z,now]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,now"],[AC_MSG_ERROR(Cannot enable BIND_NOW)])
+  fi
 
   if test x$TARGET_OS != xwindows; then
     # All windows code is PIC, forcing it on just adds useless compile warnings
-    AX_CHECK_LINK_FLAG([[-Wl,-z,relro]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,relro"],[AC_MSG_ERROR(Cannot enable RELRO)])
-    AX_CHECK_LINK_FLAG([[-Wl,-z,now]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,now"],[AC_MSG_ERROR(Cannot enable BIND_NOW)])
-    AX_CHECK_COMPILE_FLAG([-fPIE],[HARDENED_CXXFLAGS="$HARDENED_CXXFLAGS -fPIE"],[AC_MSG_ERROR(Cannot enable -fPIE)])
-    AX_CHECK_LINK_FLAG([[-pie]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -pie"],[AC_MSG_ERROR(Cannot enable -pie)])
+    AX_CHECK_COMPILE_FLAG([-fPIE],[PIE_FLAGS="-fPIE"],[AC_MSG_ERROR(Cannot enable -fPIE)])
+    if test x$BUILD_OS = xdarwin; then
+      AX_CHECK_LINK_FLAG([[-Wl,-pie]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-pie"],[AC_MSG_ERROR(Cannot enable -Wl,-pie)])
+    else
+      AX_CHECK_LINK_FLAG([[-pie]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -pie"],[AC_MSG_ERROR(Cannot enable -pie)])
+    fi
   else
     # These are only available on Windows.
     AX_CHECK_LINK_FLAG([[-Wl,--dynamicbase]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,--dynamicbase"],[AC_MSG_ERROR(Cannot enable --dynamicbase)])
@@ -890,8 +862,6 @@ AM_CONDITIONAL([ARCH_ARM], [test x$have_arm = xtrue])
 AM_CONDITIONAL([USE_LCOV],[test x$use_lcov = xyes])
 AM_CONDITIONAL([GLIBC_BACK_COMPAT],[test x$use_glibc_compat = xyes])
 AM_CONDITIONAL([HARDEN],[test x$use_hardening = xyes])
-AM_CONDITIONAL([ASAN],[test x$use_asan = xyes])
-AM_CONDITIONAL([TSAN],[test x$use_tsan = xyes])
 
 AC_DEFINE(CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MAJOR, [Major version])
 AC_DEFINE(CLIENT_VERSION_MINOR, _CLIENT_VERSION_MINOR, [Minor version])
@@ -911,8 +881,6 @@ AC_SUBST(BITCOIN_TX_NAME)
 
 AC_SUBST(RELDFLAGS)
 AC_SUBST(ERROR_CXXFLAGS)
-AC_SUBST(SAN_CXXFLAGS)
-AC_SUBST(SAN_LDFLAGS)
 AC_SUBST(HARDENED_CXXFLAGS)
 AC_SUBST(HARDENED_CPPFLAGS)
 AC_SUBST(HARDENED_LDFLAGS)

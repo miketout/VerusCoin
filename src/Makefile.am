@@ -8,11 +8,8 @@
 
 DIST_SUBDIRS = secp256k1 univalue cryptoconditions
 
-# AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS) $(SAN_LDFLAGS) $(HARDENED_LDFLAGS) -Wl,--no-as-needed,-lprofiler,--as-needed
-# AM_CXXFLAGS = $(SAN_CXXFLAGS) $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS) -Wl,--no-as-needed -lprofiler -Wl,--as-needed
-# AM_CPPFLAGS = $(HARDENED_CPPFLAGS) -Wl,--no-as-needed -lprofiler -Wl,--as-needed
-AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS) $(SAN_LDFLAGS) $(HARDENED_LDFLAGS)
-AM_CXXFLAGS = $(SAN_CXXFLAGS) $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS)
+AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS) $(HARDENED_LDFLAGS)
+AM_CXXFLAGS = $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS)
 AM_CPPFLAGS = $(HARDENED_CPPFLAGS)
 EXTRA_LIBRARIES =
 
@@ -447,7 +444,7 @@ crypto_libbitcoin_crypto_a_SOURCES = \
   crypto/haraka.h \
   crypto/haraka_portable.h \
   crypto/verus_hash.h \
-  crypto/verus_hash.cpp 
+  crypto/verus_hash.cpp
 
 if ENABLE_MINING
 EQUIHASH_TROMP_SOURCES = \
