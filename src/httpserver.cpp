@@ -319,6 +319,12 @@ static void ThreadHTTP(struct event_base* base, struct evhttp* http)
     LogPrint("http", "Exited http event loop\n");
 }
 
+static bool ArgListEmpty(const std::string& name)
+{
+    std::map<std::string, std::vector<std::string> >::const_iterator it = mapMultiArgs.find(name);
+    return it == mapMultiArgs.end() || it->second.empty();
+}
+
 /** Bind HTTP server to specified addresses */
 static bool HTTPBindAddresses(struct evhttp* http)
 {
@@ -326,16 +332,20 @@ static bool HTTPBindAddresses(struct evhttp* http)
     std::vector<std::pair<std::string, uint16_t> > endpoints;
 
     // Determine what addresses to bind to
-    if (!(mapArgs.count("-rpcallowip") && mapArgs.count("-rpcbind"))) { // Default to loopback if not allowing external IPs
+    // To prevent misconfiguration and accidental exposure of the RPC
+    // interface, require -rpcallowip and -rpcbind to both be specified
+    // together. If either is missing, ignore both values, bind to localhost
+    // instead, and log warnings.
+    if (ArgListEmpty("-rpcallowip") || ArgListEmpty("-rpcbind")) { // Default to loopback if not allowing external IPs
         endpoints.push_back(std::make_pair("::1", defaultPort));
         endpoints.push_back(std::make_pair("127.0.0.1", defaultPort));
-        if (mapArgs.count("-rpcallowip")) {
+        if (!ArgListEmpty("-rpcallowip")) {
             LogPrintf("WARNING: option -rpcallowip was specified without -rpcbind; this doesn't usually make sense\n");
         }
-        if (mapArgs.count("-rpcbind")) {
+        if (!ArgListEmpty("-rpcbind")) {
             LogPrintf("WARNING: option -rpcbind was ignored because -rpcallowip was not specified, refusing to allow everyone to connect\n");
         }
-    } else if (mapArgs.count("-rpcbind")) { // Specific bind address
+    } else { // Specific bind addresses
         const std::vector<std::string>& vbind = mapMultiArgs["-rpcbind"];
         for (std::vector<std::string>::const_iterator i = vbind.begin(); i != vbind.end(); ++i) {
             int port = defaultPort;
