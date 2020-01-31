@@ -72,9 +72,9 @@ HOST="$HOST" BUILD="$BUILD" "$MAKE" "$@" -C ./depends/ V=1
 # 0x03 2020-01-03, do not use '-Wno-builtin-declaration-mismatch or -Werror on GCC <v8
 if [ "$(gcc --version|head -1 | awk '{print $4}' | cut -d"." -f1)" -lt 8 ]; then
 	# version <8
-	CONFIG_SITE="$PWD/depends/$HOST/share/config.site" ./configure $CONFIGURE_FLAGS CPPFLAGS='-g' CXXFLAGS='-g'
+	CONFIG_SITE="$PWD/depends/$HOST/share/config.site" ./configure $CONFIGURE_FLAGS CPPFLAGS='-g'
 else
 	# version 8 and up
-	CONFIG_SITE="$PWD/depends/$HOST/share/config.site" ./configure $CONFIGURE_FLAGS CPPFLAGS='-g -Wno-builtin-declaration-mismatch -Werror' CXXFLAGS='-g'
+	CONFIG_SITE="$PWD/depends/$HOST/share/config.site" ./configure $CONFIGURE_FLAGS CPPFLAGS='-g -Wno-builtin-declaration-mismatch -Werror'
 fi
 "$MAKE" "$@" V=1
