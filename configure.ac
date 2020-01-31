@@ -175,10 +175,10 @@ AC_ARG_ENABLE([gprof],
 
 # Turn warnings into errors
 AC_ARG_ENABLE([werror],
-    [AS_HELP_STRING([--enable-werror],
-                    [Treat all compiler warnings as errors (default is no)])],
+    [AS_HELP_STRING([--disable-werror],
+                    [Do not treat compiler warnings as errors (default is to treat them as errors)])],
     [enable_werror=$enableval],
-    [enable_werror=no])
+    [enable_werror=yes])
 
 AC_LANG_PUSH([C++])
 AX_CHECK_COMPILE_FLAG([-Werror],[CXXFLAG_WERROR="-Werror"],[CXXFLAG_WERROR=""])
