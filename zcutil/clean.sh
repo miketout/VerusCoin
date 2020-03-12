@@ -24,7 +24,7 @@ rm -f qa/pull-tester/tests-config.sh
 
 rm -f src/fuzz.cpp
 
-rm -rf test_bitcoin.coverage/ zcash-gtest.coverage/ total.coverage/
+rm -rf test_bitcoin.coverage/ verus-gtest.coverage/ total.coverage/
 
 rm -rf cache
 rm -rf target
@@ -76,10 +76,10 @@ clean_dirs .libs
 clean_dirs __pycache__
 
 clean_exe src/bench/bench_bitcoin
-clean_exe src/zcash-cli
-clean_exe src/zcashd
-clean_exe src/zcash-gtest
-clean_exe src/zcash-tx
+clean_exe src/verus
+clean_exe src/verusd
+clean_exe src/verus-gtest
+clean_exe src/verus-tx
 clean_exe src/test/test_bitcoin
 
 clean_exe src/leveldb/db_bench
@@ -105,3 +105,15 @@ clean_exe src/univalue/test_json
 clean_exe src/univalue/unitester
 clean_exe src/univalue/no_nul
 rm -f src/univalue/test/*.log
+
+clean_dep src/cryptoconditions src/cryptoconditions-config.h.in
+rm -f src/cryptoconditions/m4/*
+rm -f src/cryptoconditions/config.*
+rm -f src/cryptoconditions/compile
+rm -f src/cryptoconditions/depcomp
+rm -f src/cryptoconditions/install-sh
+rm -f src/cryptoconditions/ltmain.sh
+rm -f src/cryptoconditions/missing
+
+
+
