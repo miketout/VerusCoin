@@ -1275,6 +1275,14 @@ bool ContextualCheckTransaction(
                             REJECT_INVALID, "bad-txns-oversize");
     }
 
+    // Rules that apply to PBaaS or later:
+    if (isPBaaS) {
+        for (const JSDescription& joinsplit : tx.vJoinSplit) {
+            if (joinsplit.vpub_old > 0) {
+                return state.DoS(100, error("ContextualCheckTransaction(): joinsplit.vpub_old nonzero"), REJECT_INVALID, "bad-txns-vpub_old-nonzero");
+            }
+        }
+    }
     uint256 dataToBeSigned;
 
     if (!tx.IsMint() &&
