@@ -2610,11 +2610,11 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
 UniValue CReserveInOuts::ToUniValue() const
 {
     UniValue retVal(UniValue::VOBJ);
-    retVal.push_back(Pair("reservein", reserveIn));
-    retVal.push_back(Pair("reserveout", reserveOut));
-    retVal.push_back(Pair("reserveoutconverted", reserveOutConverted));
-    retVal.push_back(Pair("nativeoutconverted", nativeOutConverted));
-    retVal.push_back(Pair("reserveconversionfees", reserveConversionFees));
+    retVal.pushKV("reservein", reserveIn);
+    retVal.pushKV("reserveout", reserveOut);
+    retVal.pushKV("reserveoutconverted", reserveOutConverted);
+    retVal.pushKV("nativeoutconverted", nativeOutConverted);
+    retVal.pushKV("reserveconversionfees", reserveConversionFees);
     return retVal;
 }
 
@@ -2625,14 +2625,14 @@ UniValue CReserveTransactionDescriptor::ToUniValue() const
     for (auto &oneInOut : currencies)
     {
         UniValue oneIOUni(UniValue::VOBJ);
-        oneIOUni.push_back(Pair("currency", EncodeDestination(CIdentityID(oneInOut.first))));
-        oneIOUni.push_back(Pair("inouts", oneInOut.second.ToUniValue()));
+        oneIOUni.pushKV("currency", EncodeDestination(CIdentityID(oneInOut.first)));
+        oneIOUni.pushKV("inouts", oneInOut.second.ToUniValue());
         inOuts.push_back(oneIOUni);
     }
-    retVal.push_back(Pair("inouts", inOuts));
-    retVal.push_back(Pair("nativein", nativeIn));
-    retVal.push_back(Pair("nativeout", nativeOut));
-    retVal.push_back(Pair("nativeconversionfees", nativeConversionFees));
+    retVal.pushKV("inouts", inOuts);
+    retVal.pushKV("nativein", nativeIn);
+    retVal.pushKV("nativeout", nativeOut);
+    retVal.pushKV("nativeconversionfees", nativeConversionFees);
     return retVal;
 }
 

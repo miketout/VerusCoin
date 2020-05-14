@@ -374,8 +374,8 @@ int32_t GatewaysCointxidExists(struct CCcontract_info *cp,uint256 cointxid) // d
 UniValue GatewaysInfo(uint256 bindtxid)
 {
     UniValue result(UniValue::VOBJ),a(UniValue::VARR); std::string coin; char str[67],numstr[65],depositaddr[64],gatewaysassets[64]; uint8_t M,N; std::vector<CPubKey> pubkeys; uint8_t taddr,prefix,prefix2; uint256 tokenid,oracletxid,hashBlock; CTransaction tx; CMutableTransaction mtx; CPubKey Gatewayspk; struct CCcontract_info *cp,C; int32_t i; int64_t totalsupply,remaining;
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("name","Gateways"));
+    result.pushKV("result","success");
+    result.pushKV("name","Gateways");
     cp = CCinit(&C,EVAL_GATEWAYS);
     Gatewayspk = GetUnspendable(cp,0);
     _GetCCaddress(gatewaysassets,EVAL_ASSETS,Gatewayspk);
@@ -386,26 +386,26 @@ UniValue GatewaysInfo(uint256 bindtxid)
         {
             if ( N > 1 )
             {
-                result.push_back(Pair("M",M));
-                result.push_back(Pair("N",N));
+                result.pushKV("M",M);
+                result.pushKV("N",N);
                 for (i=0; i<N; i++)
                     a.push_back(pubkey33_str(str,(uint8_t *)&pubkeys[i]));
-                result.push_back(Pair("pubkeys",a));
+                result.pushKV("pubkeys",a);
             } else result.push_back(Pair("pubkey",pubkey33_str(str,(uint8_t *)&pubkeys[0])));
-            result.push_back(Pair("coin",coin));
-            result.push_back(Pair("oracletxid",uint256_str(str,oracletxid)));
-            result.push_back(Pair("taddr",taddr));
-            result.push_back(Pair("prefix",prefix));
-            result.push_back(Pair("prefix2",prefix2));
-            result.push_back(Pair("deposit",depositaddr));
-            result.push_back(Pair("tokenid",uint256_str(str,tokenid)));
+            result.pushKV("coin",coin);
+            result.pushKV("oracletxid",uint256_str(str,oracletxid));
+            result.pushKV("taddr",taddr);
+            result.pushKV("prefix",prefix);
+            result.pushKV("prefix2",prefix2);
+            result.pushKV("deposit",depositaddr);
+            result.pushKV("tokenid",uint256_str(str,tokenid));
             sprintf(numstr,"%.8f",(double)totalsupply/COIN);
-            result.push_back(Pair("totalsupply",numstr));
+            result.pushKV("totalsupply",numstr);
             remaining = CCaddress_balance(gatewaysassets);
             sprintf(numstr,"%.8f",(double)remaining/COIN);
-            result.push_back(Pair("remaining",numstr));
+            result.pushKV("remaining",numstr);
             sprintf(numstr,"%.8f",(double)(totalsupply - remaining)/COIN);
-            result.push_back(Pair("issued",numstr));
+            result.pushKV("issued",numstr);
         }
     }
     return(result);
@@ -815,26 +815,26 @@ UniValue GatewaysPendingWithdraws(uint256 bindtxid,std::string refcoin)
             Getscriptaddress(withaddr,tx.vout[1].scriptPubKey);
             if ( strcmp(destaddr,coinaddr) == 0 )
             {
-                obj.push_back(Pair("txid",uint256_str(str,txid)));
+                obj.pushKV("txid",uint256_str(str,txid));
                 CCtxidaddr(txidaddr,txid);
-                obj.push_back(Pair("txidaddr",txidaddr));
-                obj.push_back(Pair("withdrawaddr",withaddr));
+                obj.pushKV("txidaddr",txidaddr);
+                obj.pushKV("withdrawaddr",withaddr);
                 sprintf(numstr,"%.8f",(double)tx.vout[0].nValue/COIN);
-                obj.push_back(Pair("amount",numstr));
+                obj.pushKV("amount",numstr);
                 if ( queueflag != 0 )
                 {
-                    obj.push_back(Pair("depositaddr",depositaddr));
+                    obj.pushKV("depositaddr",depositaddr);
                     Getscriptaddress(signeraddr,CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG);
-                    obj.push_back(Pair("signeraddr",signeraddr));
+                    obj.pushKV("signeraddr",signeraddr);
                     //    numqueued += GatewaysAddQueue(refcoin,txid,tx.vout[1].scriptPubKey,tx.vout[0].nValue);
                 }
                 pending.push_back(obj);
             }
         }
     }
-    result.push_back(Pair("coin",refcoin));
-    result.push_back(Pair("pending",pending));
-    result.push_back(Pair("queueflag",queueflag));
+    result.pushKV("coin",refcoin);
+    result.pushKV("pending",pending);
+    result.pushKV("queueflag",queueflag);
     return(result);
 }
 

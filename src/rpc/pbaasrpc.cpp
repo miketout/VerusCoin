@@ -2823,7 +2823,7 @@ UniValue getcurrency(const UniValue& params, bool fHelp)
 
         if (defUTXO.IsValid())
         {
-            ret.push_back(Pair("definitiontxid", defUTXO.hash.GetHex()));
+            ret.pushKV("definitiontxid", defUTXO.hash.GetHex());
             ret.push_back(Pair("definitiontxout", (int)defUTXO.n));
         }
 
@@ -2831,10 +2831,10 @@ UniValue getcurrency(const UniValue& params, bool fHelp)
 
         if (chainDef.IsToken() && chainDef.systemID == ASSETCHAINS_CHAINID)
         {
-            ret.push_back(Pair("bestheight", chainActive.Height()));
-            ret.push_back(Pair("lastconfirmedheight", chainActive.Height()));
-            ret.push_back(Pair("bestcurrencystate", lastStateUni));
-            ret.push_back(Pair("lastconfirmedcurrencystate", lastStateUni));
+            ret.pushKV("bestheight", chainActive.Height());
+            ret.pushKV("lastconfirmedheight", chainActive.Height());
+            ret.pushKV("bestcurrencystate", lastStateUni);
+            ret.pushKV("lastconfirmedcurrencystate", lastStateUni);
         }
         else
         {
@@ -2845,14 +2845,14 @@ UniValue getcurrency(const UniValue& params, bool fHelp)
                 ret.push_back(Pair("bestheight", (int64_t)cnd.vtx[cnd.lastConfirmed].second.notarizationHeight));
                 if (cnd.vtx[cnd.lastConfirmed].second.IsPreLaunch() && cnd.vtx[cnd.lastConfirmed].second.IsLaunchConfirmed())
                 {
-                    ret.push_back(Pair("lastconfirmedheight", 0));
+                    ret.pushKV("lastconfirmedheight", 0);
                 }
                 else
                 {
                     ret.push_back(Pair("lastconfirmedheight", (int64_t)cnd.vtx[cnd.lastConfirmed].second.notarizationHeight));
                 }
-                ret.push_back(Pair("bestcurrencystate", lastStateUni));
-                ret.push_back(Pair("lastconfirmedcurrencystate", lastStateUni));
+                ret.pushKV("bestcurrencystate", lastStateUni);
+                ret.pushKV("lastconfirmedcurrencystate", lastStateUni);
             }
             else
             {
@@ -2872,7 +2872,7 @@ UniValue getcurrency(const UniValue& params, bool fHelp)
                             nodeArr.push_back(oneNode.ToUniValue());
                         }
                     }
-                    ret.push_back(Pair("nodes", nodeArr));
+                    ret.pushKV("nodes", nodeArr);
                 }
 
                 if (cnd.forks.size())
@@ -2884,22 +2884,22 @@ UniValue getcurrency(const UniValue& params, bool fHelp)
                 if (chainID == ASSETCHAINS_CHAINID)
                 {
                     int64_t curHeight = chainActive.Height();
-                    ret.push_back(Pair("lastconfirmedheight", curHeight));
-                    ret.push_back(Pair("lastconfirmedcurrencystate", lastStateUni));
-                    ret.push_back(Pair("bestheight", curHeight));
+                    ret.pushKV("lastconfirmedheight", curHeight);
+                    ret.pushKV("lastconfirmedcurrencystate", lastStateUni);
+                    ret.pushKV("bestheight", curHeight);
                 }
                 else
                 {
                     if (!chainDef.IsToken())
                     {
-                        ret.push_back(Pair("lastconfirmedheight", confirmedHeight == -1 ? 0 : confirmedHeight));
+                        ret.pushKV("lastconfirmedheight", confirmedHeight == -1 ? 0 : confirmedHeight);
                         if (confirmedHeight != -1)
                         {
                             ret.push_back(Pair("lastconfirmedtxid", cnd.vtx[cnd.lastConfirmed].first.hash.GetHex().c_str()));
-                            ret.push_back(Pair("lastconfirmedcurrencystate", cnd.vtx[cnd.lastConfirmed].second.currencyState.ToUniValue()));
+                            ret.pushKV("lastconfirmedcurrencystate", cnd.vtx[cnd.lastConfirmed].second.currencyState.ToUniValue());
                         }
                     }
-                    ret.push_back(Pair("bestheight", bestHeight == -1 ? 0 : bestHeight));
+                    ret.pushKV("bestheight", bestHeight == -1 ? 0 : bestHeight);
                     if (bestHeight != -1)
                     {
                         ret.push_back(Pair("besttxid", cnd.vtx[cnd.forks[cnd.bestChain].back()].first.hash.GetHex().c_str()));
@@ -3071,7 +3071,7 @@ UniValue getpendingtransfers(const UniValue& params, bool fHelp)
                 UniValue oneExport(UniValue::VOBJ);
                 if (std::get<2>(desc).IsValid())
                 {
-                    oneExport.push_back(Pair("currencyid", EncodeDestination(CIdentityID(chainID))));
+                    oneExport.pushKV("currencyid", EncodeDestination(CIdentityID(chainID)));
                     oneExport.push_back(Pair("height", (int64_t)std::get<0>(desc)));
                     oneExport.push_back(Pair("txid", std::get<1>(desc).txIn.prevout.hash.GetHex()));
                     oneExport.push_back(Pair("n", (int32_t)std::get<1>(desc).txIn.prevout.n));
@@ -3176,14 +3176,14 @@ UniValue getexports(const UniValue& params, bool fHelp)
         {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "transaction for export not found in main block index");
         }
-        oneObj.push_back(Pair("height", indexIt->second->GetHeight()));
-        oneObj.push_back(Pair("txid", oneExport.first.first.txIn.prevout.hash.GetHex()));
+        oneObj.pushKV("height", indexIt->second->GetHeight());
+        oneObj.pushKV("txid", oneExport.first.first.txIn.prevout.hash.GetHex());
         oneObj.push_back(Pair("txoutnum", (int64_t)oneExport.first.first.txIn.prevout.n));
         CCrossChainExport ccx(oneExport.first.first.scriptPubKey);
-        oneObj.push_back(Pair("exportinfo", ccx.ToUniValue()));
+        oneObj.pushKV("exportinfo", ccx.ToUniValue());
         if (oneExport.first.second.IsValid())
         {
-            oneObj.push_back(Pair("partialtransactionproof", oneExport.first.second.ToUniValue()));
+            oneObj.pushKV("partialtransactionproof", oneExport.first.second.ToUniValue());
         }
 
         UniValue transferArr(UniValue::VARR);
@@ -3211,7 +3211,7 @@ UniValue getexports(const UniValue& params, bool fHelp)
             } //*/
             transferArr.push_back(oneTransfer.ToUniValue());
         }
-        oneObj.push_back(Pair("transfers", transferArr));
+        oneObj.pushKV("transfers", transferArr);
 
         retVal.push_back(oneObj);
     }
@@ -3364,9 +3364,9 @@ UniValue submitimports(const UniValue& params, bool fHelp)
     {
         for (auto &oneExport : oneExportCurrency.second)
         {
-            retVal.push_back(Pair("currencyid", EncodeDestination(CIdentityID(oneExportCurrency.first))));
+            retVal.pushKV("currencyid", EncodeDestination(CIdentityID(oneExportCurrency.first)));
             retVal.push_back(Pair("txid", oneExport.second.GetHash().GetHex()));
-            retVal.push_back(Pair("txoutnum", oneExport.first));
+            retVal.pushKV("txoutnum", oneExport.first);
         }
     }
     return retVal;
@@ -3571,21 +3571,21 @@ UniValue getimports(const UniValue& params, bool fHelp)
                         UniValue oneImportUni(UniValue::VOBJ);
 
                         oneImportUni.push_back(Pair("importheight", (int64_t)importHeight));
-                        oneImportUni.push_back(Pair("importtxid", idx.first.txhash.GetHex()));
+                        oneImportUni.pushKV("importtxid", idx.first.txhash.GetHex());
                         oneImportUni.push_back(Pair("importvout", (int64_t)idx.first.index));
-                        oneImportUni.push_back(Pair("import", cci.ToUniValue()));
+                        oneImportUni.pushKV("import", cci.ToUniValue());
                         if (sysCCIOut != -1)
                         {
-                            oneImportUni.push_back(Pair("sysimport", sysCCI.ToUniValue()));
+                            oneImportUni.pushKV("sysimport", sysCCI.ToUniValue());
                         }
-                        oneImportUni.push_back(Pair("importnotarization", importNotarization.ToUniValue()));
+                        oneImportUni.pushKV("importnotarization", importNotarization.ToUniValue());
 
                         UniValue transferArr(UniValue::VARR);
                         for (auto &oneTransfer : reserveTransfers)
                         {
                             transferArr.push_back(oneTransfer.ToUniValue());
                         }
-                        oneImportUni.push_back(Pair("transfers", transferArr));
+                        oneImportUni.pushKV("transfers", transferArr);
                         ret.push_back(oneImportUni);
                     }
                 }
@@ -3781,7 +3781,7 @@ UniValue listcurrencies(const UniValue& params, bool fHelp)
 
         if (oneDef.first.first.IsValid())
         {
-            oneDefUni.push_back(Pair("definitiontxid", oneDef.first.first.hash.GetHex()));
+            oneDefUni.pushKV("definitiontxid", oneDef.first.first.hash.GetHex());
             oneDefUni.push_back(Pair("definitiontxout", (int)oneDef.first.first.n));
         }
 
@@ -3792,10 +3792,10 @@ UniValue listcurrencies(const UniValue& params, bool fHelp)
             {
                 nodesUni.push_back(node.ToUniValue());
             }
-            oneDefUni.push_back(Pair("nodes", nodesUni));
+            oneDefUni.pushKV("nodes", nodesUni);
         }
 
-        oneChain.push_back(Pair("currencydefinition", oneDefUni));
+        oneChain.pushKV("currencydefinition", oneDefUni);
 
         CChainNotarizationData cnd;
         GetNotarizationData(def.GetID(), cnd);
@@ -3806,15 +3806,15 @@ UniValue listcurrencies(const UniValue& params, bool fHelp)
 
         if (!def.IsToken())
         {
-            oneChain.push_back(Pair("lastconfirmedheight", confirmedHeight == -1 ? 0 : confirmedHeight));
+            oneChain.pushKV("lastconfirmedheight", confirmedHeight == -1 ? 0 : confirmedHeight);
             if (confirmedHeight != -1)
             {
                 oneChain.push_back(Pair("lastconfirmedtxid", cnd.vtx[cnd.lastConfirmed].first.hash.GetHex().c_str()));
                 oneChain.push_back(Pair("lastconfirmedtxout", (uint64_t)cnd.vtx[cnd.lastConfirmed].first.n));
-                oneChain.push_back(Pair("lastconfirmednotarization", cnd.vtx[cnd.lastConfirmed].second.ToUniValue()));
+                oneChain.pushKV("lastconfirmednotarization", cnd.vtx[cnd.lastConfirmed].second.ToUniValue());
             }
         }
-        oneChain.push_back(Pair("bestheight", bestHeight == -1 ? 0 : bestHeight));
+        oneChain.pushKV("bestheight", bestHeight == -1 ? 0 : bestHeight);
         if (bestHeight != -1)
         {
             oneChain.push_back(Pair("besttxid", cnd.vtx[cnd.forks[cnd.bestChain].back()].first.hash.GetHex().c_str()));
@@ -6937,12 +6937,12 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
         oneCurrency.push_back(Pair(EncodeDestination(CIdentityID(std::get<0>(oneConverter.second).GetID())), std::get<0>(oneConverter.second).ToUniValue()));
         oneCurrency.pushKV("fullyqualifiedname", ConnectedChains.GetFriendlyCurrencyName(std::get<0>(oneConverter.second).GetID()));
         std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastNotarization = GetLastConfirmedNotarization(oneConverter.first, chainActive.Height());
-        oneCurrency.push_back(Pair("height", int64_t(std::get<0>(lastNotarization))));
+        oneCurrency.pushKV("height", int64_t(std::get<0>(lastNotarization)));
         oneCurrency.push_back(Pair("output", std::get<1>(lastNotarization).ToUniValue()));
         oneCurrency.push_back(Pair("lastnotarization", std::get<2>(lastNotarization).ToUniValue()));
         if (amountTarget)
         {
-            oneCurrency.push_back(Pair("targetamount", ValueFromAmount(amountTarget)));
+            oneCurrency.pushKV("targetamount", ValueFromAmount(amountTarget));
             UniValue sourceAmounts(UniValue::VOBJ);
             // if we have conversion sources and amounts, add them
             for (auto &oneConversion : std::get<2>(oneConverter.second))
@@ -7552,11 +7552,11 @@ bool GetMyOffers(std::map<std::pair<bool, uint256>, OfferInfo> &myOffers, uint32
 void SigningErrorToJSON(const CTxIn& txin, UniValue& vErrorsRet, const std::string& strMessage)
 {
     UniValue entry(UniValue::VOBJ);
-    entry.push_back(Pair("txid", txin.prevout.hash.ToString()));
+    entry.pushKV("txid", txin.prevout.hash.ToString());
     entry.push_back(Pair("vout", (uint64_t)txin.prevout.n));
     entry.push_back(Pair("scriptSig", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
     entry.push_back(Pair("sequence", (uint64_t)txin.nSequence));
-    entry.push_back(Pair("error", strMessage));
+    entry.pushKV("error", strMessage);
     vErrorsRet.push_back(entry);
 }
 
@@ -12754,9 +12754,9 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
             currencyState = ConnectedChains.GetCurrencyState(currencyID, i, (i + step) > end);
         }
         UniValue entry(UniValue::VOBJ);
-        entry.push_back(Pair("height", i));
+        entry.pushKV("height", i);
         entry.push_back(Pair("blocktime", (uint64_t)chainActive.LastTip()->nTime));
-        entry.push_back(Pair("currencystate", currencyState.ToUniValue()));
+        entry.pushKV("currencystate", currencyState.ToUniValue());
 
         if (pairVolumePrice.size())
         {
@@ -12876,8 +12876,8 @@ UniValue getsaplingtree(const UniValue& params, bool fHelp)
         if (view.GetSaplingAnchorAt(blkIndex.hashFinalSaplingRoot, tree))
         {
             UniValue entry(UniValue::VOBJ);
-            entry.push_back(Pair("network", networkIDName));
-            entry.push_back(Pair("height", blkIndex.GetHeight()));
+            entry.pushKV("network", networkIDName);
+            entry.pushKV("height", blkIndex.GetHeight());
             entry.push_back(Pair("hash", blkIndex.GetBlockHash().GetHex()));
             entry.push_back(Pair("time", (uint64_t)chainActive.LastTip()->nTime));
             std::vector<unsigned char> treeBytes = ::AsVector(tree);
@@ -14173,10 +14173,10 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
     UniValue uvret(UniValue::VOBJ);
     UniValue txJSon(UniValue::VOBJ);
     TxToJSON(retTx, uint256(), txJSon);
-    uvret.push_back(Pair("tx",  txJSon));
+    uvret.pushKV("tx",  txJSon);
 
     string strHex = EncodeHexTx(retTx);
-    uvret.push_back(Pair("hex", strHex));
+    uvret.pushKV("hex", strHex);
 
     return uvret;
 }
@@ -16604,12 +16604,12 @@ UniValue getidentity(const UniValue& params, bool fHelp)
     {
         ret.pushKV("friendlyname", ConnectedChains.GetFriendlyIdentityName(identity));
         ret.pushKV("fullyqualifiedname", ConnectedChains.GetFriendlyIdentityName(identity, true));
-        ret.push_back(Pair("identity", identity.ToUniValue()));
+        ret.pushKV("identity", identity.ToUniValue());
         ret.push_back(Pair("status", identity.IsRevoked() ? "revoked" : "active"));
-        ret.push_back(Pair("canspendfor", canSpend));
-        ret.push_back(Pair("cansignfor", canSign));
+        ret.pushKV("canspendfor", canSpend);
+        ret.pushKV("cansignfor", canSign);
         ret.push_back(Pair("blockheight", (int64_t)height));
-        ret.push_back(Pair("txid", idTxIn.prevout.hash.GetHex()));
+        ret.pushKV("txid", idTxIn.prevout.hash.GetHex());
         ret.push_back(Pair("vout", (int32_t)idTxIn.prevout.n));
 
         if (txProof &&
@@ -16639,7 +16639,7 @@ UniValue getidentity(const UniValue& params, bool fHelp)
                                                                         txProofHeight);
             if (idProof.IsValid())
             {
-                ret.push_back(Pair("proof", idProof.ToUniValue()));
+                ret.pushKV("proof", idProof.ToUniValue());
             }
         }
 
@@ -16936,10 +16936,10 @@ UniValue getidentityhistory(const UniValue& params, bool fHelp)
     {
         ret.pushKV("fullyqualifiedname", ConnectedChains.GetFriendlyIdentityName(identity));
         ret.push_back(Pair("status", identity.IsRevoked() ? "revoked" : "active"));
-        ret.push_back(Pair("canspendfor", canSpend));
-        ret.push_back(Pair("cansignfor", canSign));
+        ret.pushKV("canspendfor", canSpend);
+        ret.pushKV("cansignfor", canSign);
         ret.push_back(Pair("blockheight", (int64_t)height));
-        ret.push_back(Pair("txid", idTxIn.prevout.hash.GetHex()));
+        ret.pushKV("txid", idTxIn.prevout.hash.GetHex());
         ret.push_back(Pair("vout", (int32_t)idTxIn.prevout.n));
 
         auto identities = CIdentity::LookupIdentities(GetDestinationID(idID), gteHeight, lteHeight, useMempool, txProof, txProofHeight, std::vector<uint160>(), true);
@@ -17086,12 +17086,12 @@ UniValue getidentitycontent(const UniValue& params, bool fHelp)
     {
         ret.pushKV("fullyqualifiedname", ConnectedChains.GetFriendlyIdentityName(identity));
         ret.push_back(Pair("status", identity.IsRevoked() ? "revoked" : "active"));
-        ret.push_back(Pair("canspendfor", canSpend));
-        ret.push_back(Pair("cansignfor", canSign));
+        ret.pushKV("canspendfor", canSpend);
+        ret.pushKV("cansignfor", canSign);
         ret.push_back(Pair("blockheight", (int64_t)height));
         ret.push_back(Pair("fromheight", (int64_t)gteHeight));
         ret.push_back(Pair("toheight", (int64_t)lteHeight));
-        ret.push_back(Pair("txid", idTxIn.prevout.hash.GetHex()));
+        ret.pushKV("txid", idTxIn.prevout.hash.GetHex());
         ret.push_back(Pair("vout", (int32_t)idTxIn.prevout.n));
 
         auto contentMap = CIdentity::GetAggregatedIdentityMultimap(identityID,
@@ -17109,7 +17109,7 @@ UniValue getidentitycontent(const UniValue& params, bool fHelp)
         {
             identity.contentMultiMap.insert(std::make_pair(oneMapEntry.first, std::get<0>(oneMapEntry.second)));
         }
-        ret.push_back(Pair("identity", identity.ToUniValue()));
+        ret.pushKV("identity", identity.ToUniValue());
     }
     else
     {
@@ -17124,20 +17124,20 @@ UniValue IdentityPairToUni(const std::pair<CIdentityMapKey, CIdentityMapValue> &
 
     if (identity.first.IsValid() && identity.second.IsValid())
     {
-        oneID.push_back(Pair("identity", identity.second.ToUniValue()));
+        oneID.pushKV("identity", identity.second.ToUniValue());
         oneID.push_back(Pair("blockheight", (int64_t)identity.first.blockHeight));
-        oneID.push_back(Pair("txid", identity.second.txid.GetHex()));
+        oneID.pushKV("txid", identity.second.txid.GetHex());
         if (identity.second.IsRevoked())
         {
-            oneID.push_back(Pair("status", "revoked"));
-            oneID.push_back(Pair("canspendfor", bool(0)));
-            oneID.push_back(Pair("cansignfor", bool(0)));
+            oneID.pushKV("status", "revoked");
+            oneID.pushKV("canspendfor", bool(0));
+            oneID.pushKV("cansignfor", bool(0));
         }
         else
         {
-            oneID.push_back(Pair("status", "active"));
-            oneID.push_back(Pair("canspendfor", bool(identity.first.flags & identity.first.CAN_SPEND)));
-            oneID.push_back(Pair("cansignfor", bool(identity.first.flags & identity.first.CAN_SIGN)));
+            oneID.pushKV("status", "active");
+            oneID.pushKV("canspendfor", bool(identity.first.flags & identity.first.CAN_SPEND));
+            oneID.pushKV("cansignfor", bool(identity.first.flags & identity.first.CAN_SIGN));
         }
     }
     return oneID;
@@ -17932,16 +17932,16 @@ UniValue submitmergedblock(const UniValue& params, bool fHelp)
     if (fBlockPresent)
     {
         if (fAccepted && !sc.found) {
-            result.push_back(Pair("rejected", "duplicate-inconclusive"));
+            result.pushKV("rejected", "duplicate-inconclusive");
             return result;
         }
-        result.push_back(Pair("rejected", "duplicate"));
+        result.pushKV("rejected", "duplicate");
         return result;
     }
     if (fAccepted)
     {
         if (!sc.found) {
-            result.push_back(Pair("rejected", "inconclusive"));
+            result.pushKV("rejected", "inconclusive");
             return result;
         }
         state = sc.state;
@@ -17960,10 +17960,10 @@ UniValue submitmergedblock(const UniValue& params, bool fHelp)
         arith_uint256 block_hash = UintToArith256(block.GetBlockHeader().GetHash());
         if (block_hash > target) {
             // only submitted to pbaas merge mined chains
-            result.push_back(Pair("accepted", "pbaas"));
+            result.pushKV("accepted", "pbaas");
         } else {
             // accepted on primary chain and pbaas chains
-            result.push_back(Pair("accepted", true));
+            result.pushKV("accepted", true);
         }
 
         // generate submissions list of pbaas chains being merge mined
@@ -17973,10 +17973,10 @@ UniValue submitmergedblock(const UniValue& params, bool fHelp)
         {
             chains.push_back(Pair(chain.name, chain.GetID().GetHex()));
         }
-        result.push_back(Pair("pbaas_submissions", chains));
+        result.pushKV("pbaas_submissions", chains);
 
     } else {
-        result.push_back(Pair("rejected", rejected));
+        result.pushKV("rejected", rejected);
     }
 
     return result;

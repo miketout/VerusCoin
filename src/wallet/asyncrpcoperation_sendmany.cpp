@@ -688,7 +688,7 @@ bool AsyncRPCOperation_sendmany::main_impl() {
         }
 
         UniValue obj(UniValue::VOBJ);
-        obj.push_back(Pair("rawtxn", EncodeHexTx(tx_)));
+        obj.pushKV("rawtxn", EncodeHexTx(tx_));
         auto txAndResult = SignSendRawTransaction(obj, keyChange, testmode);
         tx_ = txAndResult.first;
         set_result(txAndResult.second);
@@ -1499,11 +1499,11 @@ UniValue AsyncRPCOperation_sendmany::perform_joinsplit(
     // !!! Payment disclosure END
 
     UniValue obj(UniValue::VOBJ);
-    obj.push_back(Pair("encryptednote1", encryptedNote1));
-    obj.push_back(Pair("encryptednote2", encryptedNote2));
+    obj.pushKV("encryptednote1", encryptedNote1);
+    obj.pushKV("encryptednote2", encryptedNote2);
     obj.push_back(Pair("rawtxn", HexStr(ss.begin(), ss.end())));
-    obj.push_back(Pair("inputmap", arrInputMap));
-    obj.push_back(Pair("outputmap", arrOutputMap));
+    obj.pushKV("inputmap", arrInputMap);
+    obj.pushKV("outputmap", arrOutputMap);
     return obj;
 }
 
@@ -1587,7 +1587,7 @@ UniValue AsyncRPCOperation_sendmany::getStatus() const {
     }
 
     UniValue obj = v.get_obj();
-    obj.push_back(Pair("method", sendCurrency ? "sendcurrency" : "z_sendmany"));
-    obj.push_back(Pair("params", contextinfo_ ));
+    obj.pushKV("method", sendCurrency ? "sendcurrency" : "z_sendmany");
+    obj.pushKV("params", contextinfo_ );
     return obj;
 }

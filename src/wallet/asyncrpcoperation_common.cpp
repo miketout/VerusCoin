@@ -15,9 +15,9 @@ UniValue SendTransaction(CTransaction& tx, boost::optional<CReserveKey&> reserve
         o.push_back(Pair("txid", tx.GetHash().ToString()));
     } else {
         // Test mode does not send the transaction to the network.
-        o.push_back(Pair("test", 1));
+        o.pushKV("test", 1);
         o.push_back(Pair("txid", tx.GetHash().ToString()));
-        o.push_back(Pair("hex", EncodeHexTx(tx)));
+        o.pushKV("hex", EncodeHexTx(tx));
     }
     return o;
 }

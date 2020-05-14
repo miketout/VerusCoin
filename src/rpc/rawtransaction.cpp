@@ -51,19 +51,19 @@ UniValue TxJoinSplitToJSON(const CTransaction& tx) {
         const JSDescription& jsdescription = tx.vJoinSplit[i];
         UniValue joinsplit(UniValue::VOBJ);
 
-        joinsplit.push_back(Pair("vpub_old", ValueFromAmount(jsdescription.vpub_old)));
-        joinsplit.push_back(Pair("vpub_oldZat", jsdescription.vpub_old));
-        joinsplit.push_back(Pair("vpub_new", ValueFromAmount(jsdescription.vpub_new)));
-        joinsplit.push_back(Pair("vpub_newZat", jsdescription.vpub_new));
+        joinsplit.pushKV("vpub_old", ValueFromAmount(jsdescription.vpub_old));
+        joinsplit.pushKV("vpub_oldZat", jsdescription.vpub_old);
+        joinsplit.pushKV("vpub_new", ValueFromAmount(jsdescription.vpub_new));
+        joinsplit.pushKV("vpub_newZat", jsdescription.vpub_new);
 
-        joinsplit.push_back(Pair("anchor", jsdescription.anchor.GetHex()));
+        joinsplit.pushKV("anchor", jsdescription.anchor.GetHex());
 
         {
             UniValue nullifiers(UniValue::VARR);
             BOOST_FOREACH(const uint256 nf, jsdescription.nullifiers) {
                 nullifiers.push_back(nf.GetHex());
             }
-            joinsplit.push_back(Pair("nullifiers", nullifiers));
+            joinsplit.pushKV("nullifiers", nullifiers);
         }
 
         {
@@ -71,18 +71,18 @@ UniValue TxJoinSplitToJSON(const CTransaction& tx) {
             BOOST_FOREACH(const uint256 commitment, jsdescription.commitments) {
                 commitments.push_back(commitment.GetHex());
             }
-            joinsplit.push_back(Pair("commitments", commitments));
+            joinsplit.pushKV("commitments", commitments);
         }
 
-        joinsplit.push_back(Pair("onetimePubKey", jsdescription.ephemeralKey.GetHex()));
-        joinsplit.push_back(Pair("randomSeed", jsdescription.randomSeed.GetHex()));
+        joinsplit.pushKV("onetimePubKey", jsdescription.ephemeralKey.GetHex());
+        joinsplit.pushKV("randomSeed", jsdescription.randomSeed.GetHex());
 
         {
             UniValue macs(UniValue::VARR);
             BOOST_FOREACH(const uint256 mac, jsdescription.macs) {
                 macs.push_back(mac.GetHex());
             }
-            joinsplit.push_back(Pair("macs", macs));
+            joinsplit.pushKV("macs", macs);
         }
 
         CDataStream ssProof(SER_NETWORK, PROTOCOL_VERSION);
@@ -95,7 +95,7 @@ UniValue TxJoinSplitToJSON(const CTransaction& tx) {
             for (const ZCNoteEncryption::Ciphertext ct : jsdescription.ciphertexts) {
                 ciphertexts.push_back(HexStr(ct.begin(), ct.end()));
             }
-            joinsplit.push_back(Pair("ciphertexts", ciphertexts));
+            joinsplit.pushKV("ciphertexts", ciphertexts);
         }
 
         vJoinSplit.push_back(joinsplit);
@@ -109,10 +109,10 @@ UniValue TxShieldedSpendsToJSON(const CTransaction& tx) {
     UniValue vdesc(UniValue::VARR);
     for (const SpendDescription& spendDesc : tx.vShieldedSpend) {
         UniValue obj(UniValue::VOBJ);
-        obj.push_back(Pair("cv", spendDesc.cv.GetHex()));
-        obj.push_back(Pair("anchor", spendDesc.anchor.GetHex()));
-        obj.push_back(Pair("nullifier", spendDesc.nullifier.GetHex()));
-        obj.push_back(Pair("rk", spendDesc.rk.GetHex()));
+        obj.pushKV("cv", spendDesc.cv.GetHex());
+        obj.pushKV("anchor", spendDesc.anchor.GetHex());
+        obj.pushKV("nullifier", spendDesc.nullifier.GetHex());
+        obj.pushKV("rk", spendDesc.rk.GetHex());
         obj.push_back(Pair("proof", HexStr(spendDesc.zkproof.begin(), spendDesc.zkproof.end())));
         obj.push_back(Pair("spendAuthSig", HexStr(spendDesc.spendAuthSig.begin(), spendDesc.spendAuthSig.end())));
         vdesc.push_back(obj);
@@ -124,9 +124,9 @@ UniValue TxShieldedOutputsToJSON(const CTransaction& tx) {
     UniValue vdesc(UniValue::VARR);
     for (const OutputDescription& outputDesc : tx.vShieldedOutput) {
         UniValue obj(UniValue::VOBJ);
-        obj.push_back(Pair("cv", outputDesc.cv.GetHex()));
-        obj.push_back(Pair("cmu", outputDesc.cm.GetHex()));
-        obj.push_back(Pair("ephemeralKey", outputDesc.ephemeralKey.GetHex()));
+        obj.pushKV("cv", outputDesc.cv.GetHex());
+        obj.pushKV("cmu", outputDesc.cm.GetHex());
+        obj.pushKV("ephemeralKey", outputDesc.ephemeralKey.GetHex());
         obj.push_back(Pair("encCiphertext", HexStr(outputDesc.encCiphertext.begin(), outputDesc.encCiphertext.end())));
         obj.push_back(Pair("outCiphertext", HexStr(outputDesc.outCiphertext.begin(), outputDesc.outCiphertext.end())));
         obj.push_back(Pair("proof", HexStr(outputDesc.zkproof.begin(), outputDesc.zkproof.end())));
@@ -142,7 +142,7 @@ int32_t myIsutxo_spent(uint256 &spenttxid,uint256 txid,int32_t vout)
     {
         spenttxid = spentInfo.txid;
         return((int32_t)spentInfo.inputIndex);
-        // out.push_back(Pair("spentHeight", spentInfo.blockHeight));
+        // out.pushKV("spentHeight", spentInfo.blockHeight);
     }
     memset(&spenttxid,0,sizeof(spenttxid));
     return(-1);
@@ -151,11 +151,11 @@ int32_t myIsutxo_spent(uint256 &spenttxid,uint256 txid,int32_t vout)
 void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue& entry, int nHeight = 0, int nConfirmations = 0, int nBlockTime = 0)
 {
     uint256 txid = tx.GetHash();
-    entry.push_back(Pair("txid", txid.GetHex()));
-    entry.push_back(Pair("overwintered", tx.fOverwintered));
-    entry.push_back(Pair("version", tx.nVersion));
+    entry.pushKV("txid", txid.GetHex());
+    entry.pushKV("overwintered", tx.fOverwintered);
+    entry.pushKV("version", tx.nVersion);
     if (tx.fOverwintered) {
-        entry.push_back(Pair("versiongroupid", HexInt(tx.nVersionGroupId)));
+        entry.pushKV("versiongroupid", HexInt(tx.nVersionGroupId));
     }
     entry.push_back(Pair("locktime", (int64_t)tx.nLockTime));
     if (tx.fOverwintered) {
@@ -169,10 +169,10 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
         if (tx.IsCoinBase())
             in.push_back(Pair("coinbase", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
         else if (tx.IsCoinImport()) {
-            in.push_back(Pair("is_import", "1"));
+            in.pushKV("is_import", "1");
         }
         else {
-            in.push_back(Pair("txid", txin.prevout.hash.GetHex()));
+            in.pushKV("txid", txin.prevout.hash.GetHex());
             in.push_back(Pair("vout", (int64_t)txin.prevout.n));
             {
                 uint256 hash; CTransaction txFrom;
@@ -223,27 +223,27 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
                         {
                             addrs.push_back(EncodeDestination(oneAddr));
                         }
-                        in.push_back(Pair("addresses", addrs));
-                        in.push_back(Pair("minrequired", !nRequiredRet ? 1 : nRequiredRet));
+                        in.pushKV("addresses", addrs);
+                        in.pushKV("minrequired", !nRequiredRet ? 1 : nRequiredRet);
                     }
                 }
             }
             UniValue o(UniValue::VOBJ);
-            o.push_back(Pair("asm", ScriptToAsmStr(txin.scriptSig, true)));
+            o.pushKV("asm", ScriptToAsmStr(txin.scriptSig, true));
             o.push_back(Pair("hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
-            in.push_back(Pair("scriptSig", o));
+            in.pushKV("scriptSig", o);
 
             // Add address and value info if spentindex enabled
             CSpentIndexValue spentInfo;
             CSpentIndexKey spentKey(txin.prevout.hash, txin.prevout.n);
             if (GetSpentIndex(spentKey, spentInfo)) {
-                in.push_back(Pair("value", ValueFromAmount(spentInfo.satoshis)));
-                in.push_back(Pair("valueSat", spentInfo.satoshis));
+                in.pushKV("value", ValueFromAmount(spentInfo.satoshis));
+                in.pushKV("valueSat", spentInfo.satoshis);
                 if (spentInfo.addressType == 1) {
-                    in.push_back(Pair("address", CBitcoinAddress(CKeyID(spentInfo.addressHash)).ToString()));
+                    in.pushKV("address", CBitcoinAddress(CKeyID(spentInfo.addressHash)).ToString());
                 }
                 else if (spentInfo.addressType == 2)  {
-                    in.push_back(Pair("address", CBitcoinAddress(CScriptID(spentInfo.addressHash)).ToString()));
+                    in.pushKV("address", CBitcoinAddress(CScriptID(spentInfo.addressHash)).ToString());
                 }
             }
         }
@@ -251,7 +251,7 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
         vin.push_back(in);
     }
 
-    entry.push_back(Pair("vin", vin));
+    entry.pushKV("vin", vin);
     BlockMap::iterator it = mapBlockIndex.find(pcoinsTip->GetBestBlock());
     CBlockIndex *tipindex,*pindex = it->second;
     uint64_t interest;
@@ -260,56 +260,56 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
     {
         const CTxOut& txout = tx.vout[i];
         UniValue out(UniValue::VOBJ);
-        out.push_back(Pair("value", ValueFromAmount(txout.nValue)));
+        out.pushKV("value", ValueFromAmount(txout.nValue));
         if ( ASSETCHAINS_SYMBOL[0] == 0 && pindex != 0 && tx.nLockTime >= 500000000 && (tipindex= chainActive.LastTip()) != 0 )
         {
             int64_t interest; int32_t txheight; uint32_t locktime;
             interest = komodo_accrued_interest(&txheight,&locktime,tx.GetHash(),i,0,txout.nValue,(int32_t)tipindex->GetHeight());
-            out.push_back(Pair("interest", ValueFromAmount(interest)));
+            out.pushKV("interest", ValueFromAmount(interest));
         }
-        out.push_back(Pair("valueSat", txout.nValue)); // [+] Decker
+        out.pushKV("valueSat", txout.nValue); // [+] Decker
         out.push_back(Pair("n", (int64_t)i));
         UniValue o(UniValue::VOBJ);
         ScriptPubKeyToJSON(txout.scriptPubKey, o, true);
-        out.push_back(Pair("scriptPubKey", o));
+        out.pushKV("scriptPubKey", o);
 
         // Add spent information if spentindex is enabled
         CSpentIndexValue spentInfo;
         CSpentIndexKey spentKey(txid, i);
         if (GetSpentIndex(spentKey, spentInfo)) {
-            out.push_back(Pair("spentTxId", spentInfo.txid.GetHex()));
+            out.pushKV("spentTxId", spentInfo.txid.GetHex());
             out.push_back(Pair("spentIndex", (int)spentInfo.inputIndex));
-            out.push_back(Pair("spentHeight", spentInfo.blockHeight));
+            out.pushKV("spentHeight", spentInfo.blockHeight);
         }
         vout.push_back(out);
     }
-    entry.push_back(Pair("vout", vout));
+    entry.pushKV("vout", vout);
 
     UniValue vjoinsplit = TxJoinSplitToJSON(tx);
-    entry.push_back(Pair("vjoinsplit", vjoinsplit));
+    entry.pushKV("vjoinsplit", vjoinsplit);
 
     if (tx.fOverwintered && tx.nVersion >= SAPLING_TX_VERSION) {
-        entry.push_back(Pair("valueBalance", ValueFromAmount(tx.valueBalance)));
+        entry.pushKV("valueBalance", ValueFromAmount(tx.valueBalance));
         UniValue vspenddesc = TxShieldedSpendsToJSON(tx);
-        entry.push_back(Pair("vShieldedSpend", vspenddesc));
+        entry.pushKV("vShieldedSpend", vspenddesc);
         UniValue voutputdesc = TxShieldedOutputsToJSON(tx);
-        entry.push_back(Pair("vShieldedOutput", voutputdesc));
+        entry.pushKV("vShieldedOutput", voutputdesc);
         if (!(vspenddesc.empty() && voutputdesc.empty())) {
             entry.push_back(Pair("bindingSig", HexStr(tx.bindingSig.begin(), tx.bindingSig.end())));
         }
     }
 
     if (!hashBlock.IsNull()) {
-        entry.push_back(Pair("blockhash", hashBlock.GetHex()));
+        entry.pushKV("blockhash", hashBlock.GetHex());
 
         if (nConfirmations > 0) {
-            entry.push_back(Pair("height", nHeight));
-            entry.push_back(Pair("confirmations", nConfirmations));
-            entry.push_back(Pair("time", nBlockTime));
-            entry.push_back(Pair("blocktime", nBlockTime));
+            entry.pushKV("height", nHeight);
+            entry.pushKV("confirmations", nConfirmations);
+            entry.pushKV("time", nBlockTime);
+            entry.pushKV("blocktime", nBlockTime);
         } else {
-            entry.push_back(Pair("height", -1));
-            entry.push_back(Pair("confirmations", 0));
+            entry.pushKV("height", -1);
+            entry.pushKV("confirmations", 0);
         }
     }
 }
@@ -317,11 +317,11 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
 void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
 {
     const uint256 txid = tx.GetHash();
-    entry.push_back(Pair("txid", txid.GetHex()));
-    entry.push_back(Pair("overwintered", tx.fOverwintered));
-    entry.push_back(Pair("version", tx.nVersion));
+    entry.pushKV("txid", txid.GetHex());
+    entry.pushKV("overwintered", tx.fOverwintered);
+    entry.pushKV("version", tx.nVersion);
     if (tx.fOverwintered) {
-        entry.push_back(Pair("versiongroupid", HexInt(tx.nVersionGroupId)));
+        entry.pushKV("versiongroupid", HexInt(tx.nVersionGroupId));
     }
     entry.push_back(Pair("locktime", (int64_t)tx.nLockTime));
     if (tx.fOverwintered) {
@@ -333,31 +333,31 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
         if (tx.IsCoinBase())
             in.push_back(Pair("coinbase", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
         else {
-            in.push_back(Pair("txid", txin.prevout.hash.GetHex()));
+            in.pushKV("txid", txin.prevout.hash.GetHex());
             in.push_back(Pair("vout", (int64_t)txin.prevout.n));
             UniValue o(UniValue::VOBJ);
-            o.push_back(Pair("asm", ScriptToAsmStr(txin.scriptSig, true)));
+            o.pushKV("asm", ScriptToAsmStr(txin.scriptSig, true));
             o.push_back(Pair("hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
-            in.push_back(Pair("scriptSig", o));
+            in.pushKV("scriptSig", o);
 
             // Add address and value info if spentindex enabled
             CSpentIndexValue spentInfo;
             CSpentIndexKey spentKey(txin.prevout.hash, txin.prevout.n);
             if (fSpentIndex && GetSpentIndex(spentKey, spentInfo)) {
-                in.push_back(Pair("value", ValueFromAmount(spentInfo.satoshis)));
-                in.push_back(Pair("valueSat", spentInfo.satoshis));
+                in.pushKV("value", ValueFromAmount(spentInfo.satoshis));
+                in.pushKV("valueSat", spentInfo.satoshis);
 
                 CTxDestination dest =
                     DestFromAddressHash(spentInfo.addressType, spentInfo.addressHash);
                 if (IsValidDestination(dest)) {
-                    in.push_back(Pair("address", EncodeDestination(dest)));
+                    in.pushKV("address", EncodeDestination(dest));
                 }
             }
         }
         in.push_back(Pair("sequence", (int64_t)txin.nSequence));
         vin.push_back(in);
     }
-    entry.push_back(Pair("vin", vin));
+    entry.pushKV("vin", vin);
     UniValue vout(UniValue::VARR);
     BlockMap::iterator it = mapBlockIndex.find(pcoinsTip->GetBestBlock());
     CBlockIndex *tipindex,*pindex = it->second;
@@ -365,60 +365,60 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
     for (unsigned int i = 0; i < tx.vout.size(); i++) {
         const CTxOut& txout = tx.vout[i];
         UniValue out(UniValue::VOBJ);
-        out.push_back(Pair("value", ValueFromAmount(txout.nValue)));
+        out.pushKV("value", ValueFromAmount(txout.nValue));
         if ( ASSETCHAINS_SYMBOL[0] == 0 && pindex != 0 && tx.nLockTime >= 500000000 && (tipindex= chainActive.LastTip()) != 0 )
         {
             int64_t interest; int32_t txheight; uint32_t locktime;
             interest = komodo_accrued_interest(&txheight,&locktime,tx.GetHash(),i,0,txout.nValue,(int32_t)tipindex->GetHeight());
-            out.push_back(Pair("interest", ValueFromAmount(interest)));
+            out.pushKV("interest", ValueFromAmount(interest));
         }
-        out.push_back(Pair("valueZat", txout.nValue));
-        out.push_back(Pair("valueSat", txout.nValue));
+        out.pushKV("valueZat", txout.nValue);
+        out.pushKV("valueSat", txout.nValue);
         out.push_back(Pair("n", (int64_t)i));
         UniValue o(UniValue::VOBJ);
         ScriptPubKeyToJSON(txout.scriptPubKey, o, true);
-        out.push_back(Pair("scriptPubKey", o));
+        out.pushKV("scriptPubKey", o);
 
         // Add spent information if spentindex is enabled
         CSpentIndexValue spentInfo;
         CSpentIndexKey spentKey(txid, i);
         if (fSpentIndex && GetSpentIndex(spentKey, spentInfo)) {
-            out.push_back(Pair("spentTxId", spentInfo.txid.GetHex()));
+            out.pushKV("spentTxId", spentInfo.txid.GetHex());
             out.push_back(Pair("spentIndex", (int)spentInfo.inputIndex));
-            out.push_back(Pair("spentHeight", spentInfo.blockHeight));
+            out.pushKV("spentHeight", spentInfo.blockHeight);
         }
         vout.push_back(out);
     }
-    entry.push_back(Pair("vout", vout));
+    entry.pushKV("vout", vout);
 
     UniValue vjoinsplit = TxJoinSplitToJSON(tx);
-    entry.push_back(Pair("vjoinsplit", vjoinsplit));
+    entry.pushKV("vjoinsplit", vjoinsplit);
 
     if (tx.fOverwintered && tx.nVersion >= SAPLING_TX_VERSION) {
-        entry.push_back(Pair("valueBalance", ValueFromAmount(tx.valueBalance)));
-        entry.push_back(Pair("valueBalanceZat", tx.valueBalance));
+        entry.pushKV("valueBalance", ValueFromAmount(tx.valueBalance));
+        entry.pushKV("valueBalanceZat", tx.valueBalance);
         UniValue vspenddesc = TxShieldedSpendsToJSON(tx);
-        entry.push_back(Pair("vShieldedSpend", vspenddesc));
+        entry.pushKV("vShieldedSpend", vspenddesc);
         UniValue voutputdesc = TxShieldedOutputsToJSON(tx);
-        entry.push_back(Pair("vShieldedOutput", voutputdesc));
+        entry.pushKV("vShieldedOutput", voutputdesc);
         if (!(vspenddesc.empty() && voutputdesc.empty())) {
             entry.push_back(Pair("bindingSig", HexStr(tx.bindingSig.begin(), tx.bindingSig.end())));
         }
     }
 
     if (!hashBlock.IsNull()) {
-        entry.push_back(Pair("blockhash", hashBlock.GetHex()));
+        entry.pushKV("blockhash", hashBlock.GetHex());
         BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
         if (mi != mapBlockIndex.end() && (*mi).second) {
             CBlockIndex* pindex = (*mi).second;
             if (chainActive.Contains(pindex)) {
-                entry.push_back(Pair("height", pindex->GetHeight()));
+                entry.pushKV("height", pindex->GetHeight());
                 entry.push_back(Pair("confirmations", 1 + chainActive.Height() - pindex->GetHeight()));
-                entry.push_back(Pair("time", pindex->GetBlockTime()));
-                entry.push_back(Pair("blocktime", pindex->GetBlockTime()));
+                entry.pushKV("time", pindex->GetBlockTime());
+                entry.pushKV("blocktime", pindex->GetBlockTime());
             } else {
-                entry.push_back(Pair("height", -1));
-                entry.push_back(Pair("confirmations", 0));
+                entry.pushKV("height", -1);
+                entry.pushKV("confirmations", 0);
             }
         }
     }
@@ -558,7 +558,7 @@ UniValue getrawtransaction(const UniValue& params, bool fHelp)
         return strHex;
 
     UniValue result(UniValue::VOBJ);
-    result.push_back(Pair("hex", strHex));
+    result.pushKV("hex", strHex);
     TxToJSONExpanded(tx, hashBlock, result, nHeight, nConfirmations, nBlockTime);
     return result;
 }
@@ -1031,7 +1031,7 @@ UniValue decodescript(const UniValue& params, bool fHelp)
     }
     ScriptPubKeyToUniv(script, r, false);
 
-    r.push_back(Pair("p2sh", EncodeDestination(CScriptID(script))));
+    r.pushKV("p2sh", EncodeDestination(CScriptID(script)));
     return r;
 }
 
@@ -1039,11 +1039,11 @@ UniValue decodescript(const UniValue& params, bool fHelp)
 static void TxInErrorToJSON(const CTxIn& txin, UniValue& vErrorsRet, const std::string& strMessage)
 {
     UniValue entry(UniValue::VOBJ);
-    entry.push_back(Pair("txid", txin.prevout.hash.ToString()));
+    entry.pushKV("txid", txin.prevout.hash.ToString());
     entry.push_back(Pair("vout", (uint64_t)txin.prevout.n));
     entry.push_back(Pair("scriptSig", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
     entry.push_back(Pair("sequence", (uint64_t)txin.nSequence));
-    entry.push_back(Pair("error", strMessage));
+    entry.pushKV("error", strMessage);
     vErrorsRet.push_back(entry);
 }
 
@@ -1305,10 +1305,10 @@ UniValue signrawtransaction(const UniValue& params, bool fHelp)
     bool fComplete = vErrors.empty();
 
     UniValue result(UniValue::VOBJ);
-    result.push_back(Pair("hex", EncodeHexTx(mergedTx)));
-    result.push_back(Pair("complete", fComplete));
+    result.pushKV("hex", EncodeHexTx(mergedTx));
+    result.pushKV("complete", fComplete);
     if (!vErrors.empty()) {
-        result.push_back(Pair("errors", vErrors));
+        result.pushKV("errors", vErrors);
     }
 
     return result;

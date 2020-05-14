@@ -2109,15 +2109,15 @@ UniValue CChainNotarizationData::ToUniValue(const std::vector<std::pair<CTransac
     for (int64_t i = 0; i < vtx.size(); i++)
     {
         UniValue notarization(UniValue::VOBJ);
-        notarization.push_back(Pair("index", i));
-        notarization.push_back(Pair("txid", vtx[i].first.hash.GetHex()));
+        notarization.pushKV("index", i);
+        notarization.pushKV("txid", vtx[i].first.hash.GetHex());
 
         if (i < transactionsAndBlockHash.size())
         {
-            notarization.push_back(Pair("blockhash", transactionsAndBlockHash[i].second.GetHex()));
+            notarization.pushKV("blockhash", transactionsAndBlockHash[i].second.GetHex());
         }
         notarization.push_back(Pair("vout", (int32_t)vtx[i].first.n));
-        notarization.push_back(Pair("notarization", vtx[i].second.ToUniValue()));
+        notarization.pushKV("notarization", vtx[i].second.ToUniValue());
         if (i < evidence.size())
         {
             UniValue evidenceUni(UniValue::VARR);
@@ -2152,7 +2152,7 @@ UniValue CChainNotarizationData::ToUniValue(const std::vector<std::pair<CTransac
         }
         notarizations.push_back(notarization);
     }
-    obj.push_back(Pair("notarizations", notarizations));
+    obj.pushKV("notarizations", notarizations);
     UniValue Forks(UniValue::VARR);
     for (int32_t i = 0; i < forks.size(); i++)
     {
@@ -2163,7 +2163,7 @@ UniValue CChainNotarizationData::ToUniValue(const std::vector<std::pair<CTransac
         }
         Forks.push_back(Fork);
     }
-    obj.push_back(Pair("forks", Forks));
+    obj.pushKV("forks", Forks);
     if (IsConfirmed())
     {
         obj.push_back(Pair("lastconfirmedheight", (int32_t)vtx[lastConfirmed].second.notarizationHeight));
@@ -2179,8 +2179,8 @@ UniValue CChainNotarizationData::ToUniValue(const std::vector<std::pair<CTransac
         }
     }
 
-    obj.push_back(Pair("lastconfirmed", lastConfirmed));
-    obj.push_back(Pair("bestchain", bestChain));
+    obj.pushKV("lastconfirmed", lastConfirmed);
+    obj.pushKV("bestchain", bestChain);
     return obj;
 }
 
@@ -6022,10 +6022,10 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
     // call notary to determine the prior notarization that we agree with
     UniValue params(UniValue::VARR);
     UniValue oneParam(UniValue::VOBJ);
-    oneParam.push_back(Pair("proofroots", proofRootsUni));
+    oneParam.pushKV("proofroots", proofRootsUni);
     if (!isGatewayFirstContact && proofRootsUni.size())
     {
-        oneParam.push_back(Pair("lastconfirmed", cnd.lastConfirmed));
+        oneParam.pushKV("lastconfirmed", cnd.lastConfirmed);
     }
     params.push_back(oneParam);
 
@@ -7699,8 +7699,8 @@ int CChainNotarizationData::BestConfirmedNotarization(const CCurrencyDefinition 
         }
 
         UniValue firstParam(UniValue::VOBJ);
-        firstParam.push_back(Pair("proofroots", proofRootsUni));
-        firstParam.push_back(Pair("lastconfirmed", 0));
+        firstParam.pushKV("proofroots", proofRootsUni);
+        firstParam.pushKV("lastconfirmed", 0);
 
         // call notary to determine the notarization that we should notarize
         UniValue params(UniValue::VARR);
@@ -7933,8 +7933,8 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
     }
 
     UniValue firstParam(UniValue::VOBJ);
-    firstParam.push_back(Pair("proofroots", proofRootsUni));
-    firstParam.push_back(Pair("lastconfirmed", 0));
+    firstParam.pushKV("proofroots", proofRootsUni);
+    firstParam.pushKV("lastconfirmed", 0);
 
     // call notary to determine the notarization that we should notarize
     UniValue params(UniValue::VARR);

@@ -765,7 +765,7 @@ UniValue BlockHeaderToUni(const CBlockHeader &block)
 
     if (block.IsVerusPOSBlock())
     {
-        result.push_back(Pair("validationtype", "stake"));
+        result.pushKV("validationtype", "stake");
         arith_uint256 posTarget;
         posTarget.SetCompact(block.GetVerusPOSTarget());
         result.push_back(Pair("postarget", ArithToUint256(posTarget).GetHex()));
@@ -773,25 +773,25 @@ UniValue BlockHeaderToUni(const CBlockHeader &block)
     }
     else
     {
-        result.push_back(Pair("validationtype", "work"));
+        result.pushKV("validationtype", "work");
     }
 
     // Only report confirmations if the block is on the main chain
-    result.push_back(Pair("version", block.nVersion));
-    result.push_back(Pair("merkleroot", block.hashMerkleRoot.GetHex()));
-    result.push_back(Pair("finalsaplingroot", block.hashFinalSaplingRoot.GetHex()));
+    result.pushKV("version", block.nVersion);
+    result.pushKV("merkleroot", block.hashMerkleRoot.GetHex());
+    result.pushKV("finalsaplingroot", block.hashFinalSaplingRoot.GetHex());
     result.push_back(Pair("time", (int64_t)block.nTime));
-    result.push_back(Pair("nonce", block.nNonce.GetHex()));
-    result.push_back(Pair("solution", HexStr(block.nSolution)));
-    result.push_back(Pair("bits", strprintf("%08x", block.nBits)));
+    result.pushKV("nonce", block.nNonce.GetHex());
+    result.pushKV("solution", HexStr(block.nSolution));
+    result.pushKV("bits", strprintf("%08x", block.nBits));
     if (block.nVersion >= block.VERUS_V2)
     {
         auto vch = block.nSolution;
         CPBaaSSolutionDescriptor solDescr = CVerusSolutionVector(vch).Descriptor();
-        result.push_back(Pair("previousstateroot", solDescr.hashPrevMMRRoot.GetHex()));
-        result.push_back(Pair("blockmmrroot", solDescr.hashBlockMMRRoot.GetHex()));
+        result.pushKV("previousstateroot", solDescr.hashPrevMMRRoot.GetHex());
+        result.pushKV("blockmmrroot", solDescr.hashBlockMMRRoot.GetHex());
     }
-    result.push_back(Pair("previousblockhash", block.hashPrevBlock.GetHex()));
+    result.pushKV("previousblockhash", block.hashPrevBlock.GetHex());
     std::vector<unsigned char> hexBytes = ::AsVector(block);
     result.push_back(Pair("hex", HexBytes(&(hexBytes[0]), hexBytes.size())));
     return result;

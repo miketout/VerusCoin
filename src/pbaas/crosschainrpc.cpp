@@ -259,9 +259,9 @@ UniValue RPCCallRoot(const string& strMethod, const UniValue& params, int timeou
 UniValue CCrossChainRPCData::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
-    obj.push_back(Pair("host", host));
-    obj.push_back(Pair("port", port));
-    obj.push_back(Pair("credentials", credentials));
+    obj.pushKV("host", host);
+    obj.pushKV("port", port);
+    obj.pushKV("credentials", credentials);
     return obj;
 }
 

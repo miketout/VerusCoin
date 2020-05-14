@@ -745,14 +745,14 @@ UniValue CProofRoot::ToUniValue() const
     UniValue obj(UniValue::VOBJ);
     obj.push_back(Pair("version", (int64_t)version));
     obj.push_back(Pair("type", (int64_t)type));
-    obj.push_back(Pair("systemid", EncodeDestination(CIdentityID(systemID))));
+    obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
     obj.push_back(Pair("height", (int64_t)rootHeight));
-    obj.push_back(Pair("stateroot", stateRoot.GetHex()));
-    obj.push_back(Pair("blockhash", blockHash.GetHex()));
-    obj.push_back(Pair("power", compactPower.GetHex()));
+    obj.pushKV("stateroot", stateRoot.GetHex());
+    obj.pushKV("blockhash", blockHash.GetHex());
+    obj.pushKV("power", compactPower.GetHex());
     if (type == TYPE_ETHEREUM)
     {
-        obj.push_back(Pair("gasprice", ValueFromAmount(gasPrice)));
+        obj.pushKV("gasprice", ValueFromAmount(gasPrice));
     }
     return obj;
 }
@@ -1605,12 +1605,12 @@ uint160 CCrossChainRPCData::GetConditionID(std::string name, uint32_t condition)
 UniValue CNotaryEvidence::ToUniValue() const
 {
     UniValue retObj(UniValue::VOBJ);
-    retObj.push_back(Pair("version", version));
-    retObj.push_back(Pair("type", type));
-    retObj.push_back(Pair("systemid", EncodeDestination(CIdentityID(systemID))));
-    retObj.push_back(Pair("output", output.ToUniValue()));
+    retObj.pushKV("version", version);
+    retObj.pushKV("type", type);
+    retObj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
+    retObj.pushKV("output", output.ToUniValue());
     retObj.push_back(Pair("state", (int)state));
-    retObj.push_back(Pair("evidence", evidence.ToUniValue()));
+    retObj.pushKV("evidence", evidence.ToUniValue());
     return retObj;
 }
 
@@ -1644,16 +1644,16 @@ CNotarySignature::CNotarySignature(const UniValue &uniObj) : confirmed(false)
 UniValue CNotarySignature::ToUniValue() const
 {
     UniValue retObj(UniValue::VOBJ);
-    retObj.push_back(Pair("version", version));
-    retObj.push_back(Pair("systemid", EncodeDestination(CIdentityID(systemID))));
-    retObj.push_back(Pair("output", output.ToUniValue()));
-    retObj.push_back(Pair("confirmed", confirmed));
+    retObj.pushKV("version", version);
+    retObj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
+    retObj.pushKV("output", output.ToUniValue());
+    retObj.pushKV("confirmed", confirmed);
     UniValue sigObj(UniValue::VOBJ);
     for (auto &oneSig : signatures)
     {
-        sigObj.push_back(Pair(EncodeDestination(CIdentityID(oneSig.first)), oneSig.second.ToUniValue()));
+        sigObj.pushKV(EncodeDestination(CIdentityID(oneSig.first)), oneSig.second.ToUniValue());
     }
-    retObj.push_back(Pair("signatures", sigObj));
+    retObj.pushKV("signatures", sigObj);
     return retObj;
 }
 

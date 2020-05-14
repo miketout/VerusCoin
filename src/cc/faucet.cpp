@@ -229,13 +229,13 @@ UniValue FaucetInfo()
 {
     UniValue result(UniValue::VOBJ); char numstr[64];
     CMutableTransaction mtx; CPubKey faucetpk; struct CCcontract_info *cp,C; int64_t funding;
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("name","Faucet"));
+    result.pushKV("result","success");
+    result.pushKV("name","Faucet");
     cp = CCinit(&C,EVAL_FAUCET);
     faucetpk = GetUnspendable(cp,0);
     funding = AddFaucetInputs(cp,mtx,faucetpk,0,0);
     sprintf(numstr,"%.8f",(double)funding/COIN);
-    result.push_back(Pair("funding",numstr));
+    result.pushKV("funding",numstr);
     return(result);
 }
 

@@ -235,29 +235,29 @@ UniValue LottoInfo(uint256 lottoid)
     if ( GetTransaction(lottoid,vintx,hashBlock,false) == 0 )
     {
         fprintf(stderr,"cant find lottoid\n");
-        result.push_back(Pair("result","error"));
-        result.push_back(Pair("error","cant find lottoid"));
+        result.pushKV("result","error");
+        result.pushKV("error","cant find lottoid");
         return(result);
     }
     if ( vintx.vout.size() > 0 && DecodeLottoFundingOpRet(vintx.vout[vintx.vout.size()-1].scriptPubKey,sbits,ticketsize,odds,firstheight,period,hentropy) == 0 )
     {
         fprintf(stderr,"lottoid isnt lotto creation txid\n");
-        result.push_back(Pair("result","error"));
-        result.push_back(Pair("error","lottoid isnt lotto creation txid"));
+        result.pushKV("result","error");
+        result.pushKV("error","lottoid isnt lotto creation txid");
         return(result);
     }
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("lottoid",uint256_str(str,lottoid)));
+    result.pushKV("result","success");
+    result.pushKV("lottoid",uint256_str(str,lottoid));
     unstringbits(str,sbits);
-    result.push_back(Pair("name",str));
-    result.push_back(Pair("sbits",sbits));
-    result.push_back(Pair("ticketsize",ticketsize));
-    result.push_back(Pair("odds",odds));
+    result.pushKV("name",str);
+    result.pushKV("sbits",sbits);
+    result.pushKV("ticketsize",ticketsize);
+    result.pushKV("odds",odds);
     cp = CCinit(&C,EVAL_LOTTO);
     lottopk = GetUnspendable(cp,0);
     lockedfunds = LottoPlanFunds(sbits,cp,lottopk,lottoid);
     sprintf(numstr,"%.8f",(double)lockedfunds/COIN);
-    result.push_back(Pair("jackpot",numstr));
+    result.pushKV("jackpot",numstr);
     return(result);
 }
 

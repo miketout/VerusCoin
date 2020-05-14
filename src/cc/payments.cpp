@@ -201,13 +201,13 @@ UniValue PaymentsInfo()
 {
     UniValue result(UniValue::VOBJ); char numstr[64];
     CMutableTransaction mtx; CPubKey Paymentspk; struct CCcontract_info *cp,C; int64_t funding;
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("name","Payments"));
+    result.pushKV("result","success");
+    result.pushKV("name","Payments");
     cp = CCinit(&C,EVAL_PAYMENTS);
     Paymentspk = GetUnspendable(cp,0);
     funding = AddPaymentsInputs(cp,mtx,Paymentspk,0,0);
     sprintf(numstr,"%.8f",(double)funding/COIN);
-    result.push_back(Pair("funding",numstr));
+    result.pushKV("funding",numstr);
     return(result);
 }
 

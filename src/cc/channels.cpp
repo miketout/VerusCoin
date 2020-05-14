@@ -311,8 +311,8 @@ UniValue ChannelsInfo()
 {
     UniValue result(UniValue::VOBJ); CTransaction tx; uint256 txid,hashBlock,hashchain; struct CCcontract_info *cp,C; uint8_t funcid; char myCCaddr[64]; int32_t vout,numvouts,numpayments; int64_t nValue,payment; CPubKey srcpub,destpub,mypk;
     std::vector<std::pair<CAddressIndexKey, CAmount> > txids;
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("name","Channels"));
+    result.pushKV("result","success");
+    result.pushKV("name","Channels");
     cp = CCinit(&C,EVAL_CHANNELS);
     mypk = pubkey2pk(Mypubkey());
     GetCCaddress(cp,myCCaddr,mypk);

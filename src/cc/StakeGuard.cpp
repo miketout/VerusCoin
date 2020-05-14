@@ -572,8 +572,8 @@ UniValue StakeGuardInfo()
 
     cp = CCinit(&C,EVAL_STAKEGUARD);
 
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("name","StakeGuard"));
+    result.pushKV("result","success");
+    result.pushKV("name","StakeGuard");
 
     // all UTXOs to the contract address that are to any of the wallet addresses are to us
     // each is spendable as a normal transaction, but the spend may fail if it gets spent out

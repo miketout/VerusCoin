@@ -73,21 +73,21 @@ UniValue height_MoM(const UniValue& params, bool fHelp)
     //fprintf(stderr,"height_MoM height.%d\n",height);
     depth = komodo_MoM(&notarized_height,&MoM,&kmdtxid,height,&MoMoM,&MoMoMoffset,&MoMoMdepth,&kmdstarti,&kmdendi);
     ret.push_back(Pair("coin",(char *)(ASSETCHAINS_SYMBOL[0] == 0 ? "KMD" : ASSETCHAINS_SYMBOL)));
-    ret.push_back(Pair("height",height));
+    ret.pushKV("height",height);
     ret.push_back(Pair("timestamp",(uint64_t)timestamp));
     if ( depth > 0 )
     {
-        ret.push_back(Pair("depth",depth));
-        ret.push_back(Pair("notarized_height",notarized_height));
-        ret.push_back(Pair("MoM",MoM.GetHex()));
-        ret.push_back(Pair("kmdtxid",kmdtxid.GetHex()));
+        ret.pushKV("depth",depth);
+        ret.pushKV("notarized_height",notarized_height);
+        ret.pushKV("MoM",MoM.GetHex());
+        ret.pushKV("kmdtxid",kmdtxid.GetHex());
         if ( ASSETCHAINS_SYMBOL[0] != 0 )
         {
-            ret.push_back(Pair("MoMoM",MoMoM.GetHex()));
-            ret.push_back(Pair("MoMoMoffset",MoMoMoffset));
-            ret.push_back(Pair("MoMoMdepth",MoMoMdepth));
-            ret.push_back(Pair("kmdstarti",kmdstarti));
-            ret.push_back(Pair("kmdendi",kmdendi));
+            ret.pushKV("MoMoM",MoMoM.GetHex());
+            ret.pushKV("MoMoMoffset",MoMoMoffset);
+            ret.pushKV("MoMoMdepth",MoMoMdepth);
+            ret.pushKV("kmdstarti",kmdstarti);
+            ret.pushKV("kmdendi",kmdendi);
         }
     } else ret.push_back(Pair("error",(char *)"no MoM for height"));
     
@@ -102,8 +102,8 @@ UniValue MoMoMdata(const UniValue& params, bool fHelp)
     char* symbol = (char *)params[0].get_str().c_str();
     int kmdheight = atoi(params[1].get_str().c_str());
     uint32_t ccid = atoi(params[2].get_str().c_str());
-    ret.push_back(Pair("coin",symbol));
-    ret.push_back(Pair("kmdheight",kmdheight));
+    ret.pushKV("coin",symbol);
+    ret.pushKV("kmdheight",kmdheight);
     ret.push_back(Pair("ccid", (int) ccid));
 
     uint256 destNotarisationTxid;
@@ -112,11 +112,11 @@ UniValue MoMoMdata(const UniValue& params, bool fHelp)
 
     UniValue valMoms(UniValue::VARR);
     for (int i=0; i<moms.size(); i++) valMoms.push_back(moms[i].GetHex());
-    ret.push_back(Pair("MoMs", valMoms));
-    ret.push_back(Pair("notarization_hash", destNotarisationTxid.GetHex()));
-    ret.push_back(Pair("MoMoM", MoMoM.GetHex()));
+    ret.pushKV("MoMs", valMoms);
+    ret.pushKV("notarization_hash", destNotarisationTxid.GetHex());
+    ret.pushKV("MoMoM", MoMoM.GetHex());
     auto vmomomdata = E_MARSHAL(ss << MoMoM; ss << ((uint32_t)0));
-    ret.push_back(Pair("data", HexStr(vmomomdata)));
+    ret.pushKV("data", HexStr(vmomomdata));
     return ret;
 }
 
@@ -134,9 +134,9 @@ UniValue calc_MoM(const UniValue& params, bool fHelp)
     //fprintf(stderr,"height_MoM height.%d\n",height);
     MoM = komodo_calcMoM(height,MoMdepth);
     ret.push_back(Pair("coin",(char *)(ASSETCHAINS_SYMBOL[0] == 0 ? "KMD" : ASSETCHAINS_SYMBOL)));
-    ret.push_back(Pair("height",height));
-    ret.push_back(Pair("MoMdepth",MoMdepth));
-    ret.push_back(Pair("MoM",MoM.GetHex()));
+    ret.pushKV("height",height);
+    ret.pushKV("MoMdepth",MoMdepth);
+    ret.pushKV("MoM",MoM.GetHex());
     return ret;
 }
 
@@ -181,10 +181,10 @@ UniValue migrate_converttoexport(const UniValue& params, bool fHelp)
 
     CTxOut burnOut = MakeBurnOutput(burnAmount, ASSETCHAINS_CC, targetSymbol, tx.vout);
     UniValue ret(UniValue::VOBJ);
-    ret.push_back(Pair("payouts", HexStr(E_MARSHAL(ss << tx.vout))));
+    ret.pushKV("payouts", HexStr(E_MARSHAL(ss << tx.vout)));
     tx.vout.clear();
     tx.vout.push_back(burnOut);
-    ret.push_back(Pair("exportTx", HexStr(E_MARSHAL(ss << tx))));
+    ret.pushKV("exportTx", HexStr(E_MARSHAL(ss << tx)));
     return ret;
 }
 

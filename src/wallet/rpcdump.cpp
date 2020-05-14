@@ -97,7 +97,7 @@ UniValue convertpassphrase(const UniValue& params, bool fHelp)
     string strAgamaPassphrase = params[0].get_str();
 
     UniValue ret(UniValue::VOBJ);
-    ret.push_back(Pair("walletpassphrase", strAgamaPassphrase));
+    ret.pushKV("walletpassphrase", strAgamaPassphrase);
 
     CKey tempkey = DecodeSecret(strAgamaPassphrase);
 
@@ -105,14 +105,14 @@ UniValue convertpassphrase(const UniValue& params, bool fHelp)
     // this also seems to compensate for a hard to reproduce compiler/CPU issue only affecting Windows 11 on non-English versions
     if (LogAcceptCategory("windowspassphrasecheck"))
     {
-        ret.push_back(Pair("iscodedsecret", tempkey.IsValid()));
+        ret.pushKV("iscodedsecret", tempkey.IsValid());
         std::string rawChars;
         for (int i = 0; i < strAgamaPassphrase.length(); i++)
         {
             char ch = strAgamaPassphrase.c_str()[i];
             rawChars = rawChars + std::to_string((unsigned char)ch);
         }
-        ret.push_back(Pair("rawcharvalues", rawChars));
+        ret.pushKV("rawcharvalues", rawChars);
     }
 
     /* first we should check if user pass wif to method, instead of passphrase */
@@ -131,19 +131,19 @@ UniValue convertpassphrase(const UniValue& params, bool fHelp)
         assert(key.VerifyPubKey(pubkey));
         CKeyID vchAddress = pubkey.GetID();
 
-        ret.push_back(Pair("address", EncodeDestination(vchAddress)));
-        ret.push_back(Pair("pubkey", HexStr(pubkey)));
-        ret.push_back(Pair("privkey", HexStr(privkey)));
-        ret.push_back(Pair("wif", EncodeSecret(key)));
+        ret.pushKV("address", EncodeDestination(vchAddress));
+        ret.pushKV("pubkey", HexStr(pubkey));
+        ret.pushKV("privkey", HexStr(privkey));
+        ret.pushKV("wif", EncodeSecret(key));
     } else {
         /* seems it's a wif */
         CPubKey pubkey = tempkey.GetPubKey();
         assert(tempkey.VerifyPubKey(pubkey));
         CKeyID vchAddress = pubkey.GetID();
-        ret.push_back(Pair("address", EncodeDestination(vchAddress)));
-        ret.push_back(Pair("pubkey", HexStr(pubkey)));
-        ret.push_back(Pair("privkey", HexStr(tempkey)));
-        ret.push_back(Pair("wif", strAgamaPassphrase));
+        ret.pushKV("address", EncodeDestination(vchAddress));
+        ret.pushKV("pubkey", HexStr(pubkey));
+        ret.pushKV("privkey", HexStr(tempkey));
+        ret.pushKV("wif", strAgamaPassphrase);
     }
 
     return ret;

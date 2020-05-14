@@ -176,19 +176,19 @@ UniValue PricesInfo(uint256 pricesid)
         ERR_RESULT("fundingtxid isnt price creation txid");
         return(result);
     }
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("pricesid",uint256_str(str,pricesid)));
-    result.push_back(Pair("oracletxid",uint256_str(str,oracletxid)));
+    result.pushKV("result","success");
+    result.pushKV("pricesid",uint256_str(str,pricesid));
+    result.pushKV("oracletxid",uint256_str(str,oracletxid));
     sprintf(numstr,"%.8f",(double)minbet/COIN);
-    result.push_back(Pair("minbet",numstr));
+    result.pushKV("minbet",numstr);
     sprintf(numstr,"%.8f",(double)maxbet/COIN);
-    result.push_back(Pair("maxbet",numstr));
-    result.push_back(Pair("maxodds",maxodds));
+    result.pushKV("maxbet",numstr);
+    result.pushKV("maxodds",maxodds);
     cp = CCinit(&C,EVAL_PRICES);
     pricepk = GetUnspendable(cp,0);
     funding = PricePlanFunds(cp,pricepk,pricesid);
     sprintf(numstr,"%.8f",(double)funding/COIN);
-    result.push_back(Pair("funding",numstr));
+    result.pushKV("funding",numstr);
     return(result);
 }
 

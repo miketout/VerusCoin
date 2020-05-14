@@ -442,35 +442,35 @@ UniValue RewardsInfo(uint256 rewardsid)
     if ( GetTransaction(rewardsid,vintx,hashBlock,false) == 0 )
     {
         fprintf(stderr,"cant find fundingtxid\n");
-        result.push_back(Pair("result","error"));
-        result.push_back(Pair("error","cant find fundingtxid"));
+        result.pushKV("result","error");
+        result.pushKV("error","cant find fundingtxid");
         return(result);
     }
     if ( vintx.vout.size() > 0 && DecodeRewardsFundingOpRet(vintx.vout[vintx.vout.size()-1].scriptPubKey,sbits,APR,minseconds,maxseconds,mindeposit) == 0 )
     {
         fprintf(stderr,"fundingtxid isnt rewards creation txid\n");
-        result.push_back(Pair("result","error"));
-        result.push_back(Pair("error","fundingtxid isnt rewards creation txid"));
+        result.pushKV("result","error");
+        result.pushKV("error","fundingtxid isnt rewards creation txid");
         return(result);
     }
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("fundingtxid",uint256_str(str,rewardsid)));
+    result.pushKV("result","success");
+    result.pushKV("fundingtxid",uint256_str(str,rewardsid));
     unstringbits(str,sbits);
-    result.push_back(Pair("name",str));
-    result.push_back(Pair("sbits",sbits));
+    result.pushKV("name",str);
+    result.pushKV("sbits",sbits);
     sprintf(numstr,"%.8f",(double)APR/COIN);
-    result.push_back(Pair("APR",numstr));
-    result.push_back(Pair("minseconds",minseconds));
-    result.push_back(Pair("maxseconds",maxseconds));
+    result.pushKV("APR",numstr);
+    result.pushKV("minseconds",minseconds);
+    result.pushKV("maxseconds",maxseconds);
     sprintf(numstr,"%.8f",(double)mindeposit/COIN);
-    result.push_back(Pair("mindeposit",numstr));
+    result.pushKV("mindeposit",numstr);
     cp = CCinit(&C,EVAL_REWARDS);
     rewardspk = GetUnspendable(cp,0);
     funding = RewardsPlanFunds(lockedfunds,sbits,cp,rewardspk,rewardsid);
     sprintf(numstr,"%.8f",(double)funding/COIN);
-    result.push_back(Pair("funding",numstr));
+    result.pushKV("funding",numstr);
     sprintf(numstr,"%.8f",(double)lockedfunds/COIN);
-    result.push_back(Pair("locked",numstr));
+    result.pushKV("locked",numstr);
     return(result);
 }
 

@@ -973,25 +973,25 @@ UniValue CCurrencyDefinition::ToUniValue() const
 
     obj.push_back(Pair("version", (int64_t)nVersion));
     obj.push_back(Pair("options", (int64_t)options));
-    obj.push_back(Pair("name", name));
-    obj.push_back(Pair("currencyid", EncodeDestination(CIdentityID(GetID()))));
+    obj.pushKV("name", name);
+    obj.pushKV("currencyid", EncodeDestination(CIdentityID(GetID())));
     if (!parent.IsNull())
     {
-        obj.push_back(Pair("parent", EncodeDestination(CIdentityID(parent))));
+        obj.pushKV("parent", EncodeDestination(CIdentityID(parent)));
     }
 
-    obj.push_back(Pair("systemid", EncodeDestination(CIdentityID(systemID))));
+    obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
     obj.push_back(Pair("notarizationprotocol", (int)notarizationProtocol));
     obj.push_back(Pair("proofprotocol", (int)proofProtocol));
 
     if (nativeCurrencyID.IsValid())
     {
-        //obj.push_back(Pair("nativecurrencyid", nativeCurrencyID.ToUniValue()));
+        //obj.pushKV("nativecurrencyid", nativeCurrencyID.ToUniValue());
     }
 
     if (!launchSystemID.IsNull())
     {
-        obj.push_back(Pair("launchsystemid", EncodeDestination(CIdentityID(launchSystemID))));
+        obj.pushKV("launchsystemid", EncodeDestination(CIdentityID(launchSystemID)));
     }
     obj.push_back(Pair("startblock", (int64_t)startBlock));
     obj.push_back(Pair("endblock", (int64_t)endBlock));
@@ -1004,7 +1004,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
         {
             currencyArr.push_back(EncodeDestination(CIdentityID(currency)));
         }
-        obj.push_back(Pair("currencies", currencyArr));
+        obj.pushKV("currencies", currencyArr);
     }
 
     if (weights.size())
@@ -1014,7 +1014,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
         {
             weightArr.push_back(ValueFromAmount(weight));
         }
-        obj.push_back(Pair("weights", weightArr));
+        obj.pushKV("weights", weightArr);
     }
 
     if (conversions.size())
@@ -1024,7 +1024,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
         {
             conversionArr.push_back(ValueFromAmount(conversion));
         }
-        obj.push_back(Pair("conversions", conversionArr));
+        obj.pushKV("conversions", conversionArr);
     }
 
     if (minPreconvert.size())
@@ -1034,7 +1034,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
         {
             minPreconvertArr.push_back(ValueFromAmount(oneMin));
         }
-        obj.push_back(Pair("minpreconversion", minPreconvertArr));
+        obj.pushKV("minpreconversion", minPreconvertArr);
     }
 
     if (maxPreconvert.size())
@@ -1044,18 +1044,18 @@ UniValue CCurrencyDefinition::ToUniValue() const
         {
             maxPreconvertArr.push_back(ValueFromAmount(oneMax));
         }
-        obj.push_back(Pair("maxpreconversion", maxPreconvertArr));
+        obj.pushKV("maxpreconversion", maxPreconvertArr);
     }
 
     if (preLaunchDiscount)
     {
-        obj.push_back(Pair("prelaunchdiscount", ValueFromAmount(preLaunchDiscount)));
+        obj.pushKV("prelaunchdiscount", ValueFromAmount(preLaunchDiscount));
     }
 
     if (IsFractional())
     {
-        obj.push_back(Pair("initialsupply", ValueFromAmount(initialFractionalSupply)));
-        obj.push_back(Pair("prelaunchcarveout", ValueFromAmount(preLaunchCarveOut)));
+        obj.pushKV("initialsupply", ValueFromAmount(initialFractionalSupply));
+        obj.pushKV("prelaunchcarveout", ValueFromAmount(preLaunchCarveOut));
     }
 
     if (preAllocation.size())
@@ -1068,12 +1068,12 @@ UniValue CCurrencyDefinition::ToUniValue() const
                                        ValueFromAmount(onePreAllocation.second)));
             preAllocationArr.push_back(onePreAlloc);
         }
-        obj.push_back(Pair("preallocations", preAllocationArr));
+        obj.pushKV("preallocations", preAllocationArr);
     }
 
     if (!gatewayID.IsNull())
     {
-        obj.push_back(Pair("gateway", EncodeDestination(CIdentityID(gatewayID))));
+        obj.pushKV("gateway", EncodeDestination(CIdentityID(gatewayID)));
     }
 
     if (contributions.size())
@@ -1083,17 +1083,17 @@ UniValue CCurrencyDefinition::ToUniValue() const
         {
             initialContributionArr.push_back(ValueFromAmount(oneCurContributions));
         }
-        obj.push_back(Pair("initialcontributions", initialContributionArr));
+        obj.pushKV("initialcontributions", initialContributionArr);
     }
 
     if (IsGateway() || IsGatewayConverter() || IsPBaaSChain())
     {
-        obj.push_back(Pair("gatewayconverterissuance", ValueFromAmount(gatewayConverterIssuance)));
+        obj.pushKV("gatewayconverterissuance", ValueFromAmount(gatewayConverterIssuance));
     }
 
-    obj.push_back(Pair("idregistrationfees", ValueFromAmount(idRegistrationFees)));
-    obj.push_back(Pair("idreferrallevels", idReferralLevels));
-    obj.push_back(Pair("idimportfees", ValueFromAmount(idImportFees)));
+    obj.pushKV("idregistrationfees", ValueFromAmount(idRegistrationFees));
+    obj.pushKV("idreferrallevels", idReferralLevels);
+    obj.pushKV("idimportfees", ValueFromAmount(idImportFees));
 
     if (IsGateway() || IsPBaaSChain())
     {
@@ -1106,20 +1106,20 @@ UniValue CCurrencyDefinition::ToUniValue() const
             {
                 notaryArr.push_back(EncodeDestination(CIdentityID(notary)));
             }
-            obj.push_back(Pair("notaries", notaryArr));
+            obj.pushKV("notaries", notaryArr);
         }
-        obj.push_back(Pair("minnotariesconfirm", minNotariesConfirm));
+        obj.pushKV("minnotariesconfirm", minNotariesConfirm);
 
-        obj.push_back(Pair("currencyregistrationfee", ValueFromAmount(currencyRegistrationFee)));
-        obj.push_back(Pair("pbaassystemregistrationfee", ValueFromAmount(pbaasSystemLaunchFee)));
-        obj.push_back(Pair("currencyimportfee", ValueFromAmount(currencyImportFee)));
-        obj.push_back(Pair("transactionimportfee", ValueFromAmount(transactionImportFee)));
-        obj.push_back(Pair("transactionexportfee", ValueFromAmount(transactionExportFee)));
+        obj.pushKV("currencyregistrationfee", ValueFromAmount(currencyRegistrationFee));
+        obj.pushKV("pbaassystemregistrationfee", ValueFromAmount(pbaasSystemLaunchFee));
+        obj.pushKV("currencyimportfee", ValueFromAmount(currencyImportFee));
+        obj.pushKV("transactionimportfee", ValueFromAmount(transactionImportFee));
+        obj.pushKV("transactionexportfee", ValueFromAmount(transactionExportFee));
 
         if (!gatewayConverterName.empty())
         {
-            obj.push_back(Pair("gatewayconverterid", EncodeDestination(CIdentityID(GatewayConverterID()))));
-            obj.push_back(Pair("gatewayconvertername", gatewayConverterName));
+            obj.pushKV("gatewayconverterid", EncodeDestination(CIdentityID(GatewayConverterID())));
+            obj.pushKV("gatewayconvertername", gatewayConverterName);
         }
 
         if (IsPBaaSChain())
@@ -1142,7 +1142,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
                 era.push_back(Pair("eraend", eraEnd.size() > i ? (int32_t)eraEnd[i] : (int32_t)0));
                 eraArr.push_back(era);
             }
-            obj.push_back(Pair("eras", eraArr));
+            obj.pushKV("eras", eraArr);
         }
     }
 
@@ -1529,8 +1529,8 @@ std::string CleanName(const std::string &Name, uint160 &Parent, bool displayfilt
 UniValue CNodeData::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
-    obj.push_back(Pair("networkaddress", networkAddress));
-    obj.push_back(Pair("nodeidentity", ""));
+    obj.pushKV("networkaddress", networkAddress);
+    obj.pushKV("nodeidentity", "");
     return obj;
 }
 

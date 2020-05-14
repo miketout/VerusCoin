@@ -214,13 +214,13 @@ UniValue MofNInfo()
 {
     UniValue result(UniValue::VOBJ); char numstr[64];
     CMutableTransaction mtx; CPubKey mofnpk; struct CCcontract_info *cp,C; int64_t funding;
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("name","MofN"));
+    result.pushKV("result","success");
+    result.pushKV("name","MofN");
     cp = CCinit(&C,EVAL_MOFN);
     mofnpk = GetUnspendable(cp,0);
     funding = AddMofNInputs(cp,mtx,mofnpk,0,0);
     sprintf(numstr,"%.8f",(double)funding/COIN);
-    result.push_back(Pair("funding",numstr));
+    result.pushKV("funding",numstr);
     return(result);
 }
 

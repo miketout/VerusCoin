@@ -828,7 +828,7 @@ UniValue OracleFormat(uint8_t *data,int32_t datalen,char *format,int32_t formatl
 UniValue OracleDataSamples(uint256 reforacletxid,uint256 batontxid,int32_t num)
 {
     UniValue result(UniValue::VOBJ),a(UniValue::VARR); CTransaction tx,oracletx; uint256 hashBlock,btxid,oracletxid; CPubKey pk; std::string name,description,format; int32_t numvouts,n=0; std::vector<uint8_t> data; char *formatstr = 0;
-    result.push_back(Pair("result","success"));
+    result.pushKV("result","success");
     if ( GetTransaction(reforacletxid,oracletx,hashBlock,false) != 0 && (numvouts=oracletx.vout.size()) > 0 )
     {
         if ( DecodeOraclesCreateOpRet(oracletx.vout[numvouts-1].scriptPubKey,name,description,format) == 'C' )
@@ -847,7 +847,7 @@ UniValue OracleDataSamples(uint256 reforacletxid,uint256 batontxid,int32_t num)
             }
         }
     }
-    result.push_back(Pair("samples",a));
+    result.pushKV("samples",a);
     return(result);
 }
 
@@ -862,12 +862,12 @@ UniValue OracleInfo(uint256 origtxid)
     {
         if ( tx.vout.size() > 0 && DecodeOraclesCreateOpRet(tx.vout[tx.vout.size()-1].scriptPubKey,name,description,format) == 'C' )
         {
-            result.push_back(Pair("result","success"));
-            result.push_back(Pair("txid",uint256_str(str,origtxid)));
-            result.push_back(Pair("name",name));
-            result.push_back(Pair("description",description));
-            result.push_back(Pair("format",format));
-            result.push_back(Pair("marker",markeraddr));
+            result.pushKV("result","success");
+            result.pushKV("txid",uint256_str(str,origtxid));
+            result.pushKV("name",name);
+            result.pushKV("description",description);
+            result.pushKV("format",format);
+            result.pushKV("marker",markeraddr);
             SetCCunspents(unspentOutputs,markeraddr);
             for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=unspentOutputs.begin(); it!=unspentOutputs.end(); it++)
             {
@@ -879,21 +879,21 @@ UniValue OracleInfo(uint256 origtxid)
                         obj.push_back(Pair("publisher",pubkey33_str(str,(uint8_t *)pk.begin())));
                         Getscriptaddress(batonaddr,regtx.vout[1].scriptPubKey);
                         batontxid = OracleBatonUtxo(10000,cp,oracletxid,batonaddr,pk,data);
-                        obj.push_back(Pair("baton",batonaddr));
-                        obj.push_back(Pair("batontxid",uint256_str(str,batontxid)));
+                        obj.pushKV("baton",batonaddr);
+                        obj.pushKV("batontxid",uint256_str(str,batontxid));
                         funding = LifetimeOraclesFunds(cp,oracletxid,pk);
                         sprintf(numstr,"%.8f",(double)funding/COIN);
-                        obj.push_back(Pair("lifetime",numstr));
+                        obj.pushKV("lifetime",numstr);
                         funding = AddOracleInputs(cp,mtx,pk,0,0);
                         sprintf(numstr,"%.8f",(double)funding/COIN);
-                        obj.push_back(Pair("funds",numstr));
+                        obj.pushKV("funds",numstr);
                         sprintf(numstr,"%.8f",(double)datafee/COIN);
-                        obj.push_back(Pair("datafee",numstr));
+                        obj.pushKV("datafee",numstr);
                         a.push_back(obj);
                     }
                 }
             }
-            result.push_back(Pair("registered",a));
+            result.pushKV("registered",a);
         }
     }
     return(result);

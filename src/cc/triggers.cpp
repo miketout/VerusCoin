@@ -200,13 +200,13 @@ UniValue TriggersInfo()
 {
     UniValue result(UniValue::VOBJ); char numstr[64];
     CMutableTransaction mtx; CPubKey Triggerspk; struct CCcontract_info *cp,C; int64_t funding;
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("name","Triggers"));
+    result.pushKV("result","success");
+    result.pushKV("name","Triggers");
     cp = CCinit(&C,EVAL_TRIGGERS);
     Triggerspk = GetUnspendable(cp,0);
     funding = AddTriggersInputs(cp,mtx,Triggerspk,0,0);
     sprintf(numstr,"%.8f",(double)funding/COIN);
-    result.push_back(Pair("funding",numstr));
+    result.pushKV("funding",numstr);
     return(result);
 }
 

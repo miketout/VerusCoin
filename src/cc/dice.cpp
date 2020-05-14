@@ -809,22 +809,22 @@ UniValue DiceInfo(uint256 diceid)
         ERR_RESULT("fundingtxid isnt dice creation txid");
         return(result);
     }
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("fundingtxid",uint256_str(str,diceid)));
+    result.pushKV("result","success");
+    result.pushKV("fundingtxid",uint256_str(str,diceid));
     unstringbits(str,sbits);
-    result.push_back(Pair("name",str));
-    result.push_back(Pair("sbits",sbits));
+    result.pushKV("name",str);
+    result.pushKV("sbits",sbits);
     sprintf(numstr,"%.8f",(double)minbet/COIN);
-    result.push_back(Pair("minbet",numstr));
+    result.pushKV("minbet",numstr);
     sprintf(numstr,"%.8f",(double)maxbet/COIN);
-    result.push_back(Pair("maxbet",numstr));
-    result.push_back(Pair("maxodds",maxodds));
-    result.push_back(Pair("timeoutblocks",timeoutblocks));
+    result.pushKV("maxbet",numstr);
+    result.pushKV("maxodds",maxodds);
+    result.pushKV("timeoutblocks",timeoutblocks);
     cp = CCinit(&C,EVAL_DICE);
     dicepk = GetUnspendable(cp,0);
     funding = DicePlanFunds(entropyval,entropytxid,sbits,cp,dicepk,diceid);
     sprintf(numstr,"%.8f",(double)funding/COIN);
-    result.push_back(Pair("funding",numstr));
+    result.pushKV("funding",numstr);
     return(result);
 }
 

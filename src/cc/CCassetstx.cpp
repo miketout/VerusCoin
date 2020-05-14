@@ -65,22 +65,22 @@ UniValue AssetInfo(uint256 assetid)
     if ( GetTransaction(assetid,vintx,hashBlock,false) == 0 )
     {
         fprintf(stderr,"cant find assetid\n");
-        result.push_back(Pair("result","error"));
-        result.push_back(Pair("error","cant find assetid"));
+        result.pushKV("result","error");
+        result.pushKV("error","cant find assetid");
         return(result);
     }
     if ( vintx.vout.size() > 0 && DecodeAssetCreateOpRet(vintx.vout[vintx.vout.size()-1].scriptPubKey,origpubkey,name,description) == 0 )
     {
         fprintf(stderr,"assetid isnt assetcreation txid\n");
-        result.push_back(Pair("result","error"));
-        result.push_back(Pair("error","assetid isnt assetcreation txid"));
+        result.pushKV("result","error");
+        result.pushKV("error","assetid isnt assetcreation txid");
     }
-    result.push_back(Pair("result","success"));
-    result.push_back(Pair("tokenid",uint256_str(str,assetid)));
-    result.push_back(Pair("owner",pubkey33_str(str,origpubkey.data())));
-    result.push_back(Pair("name",name));
-    result.push_back(Pair("supply",vintx.vout[0].nValue));
-    result.push_back(Pair("description",description));
+    result.pushKV("result","success");
+    result.pushKV("tokenid",uint256_str(str,assetid));
+    result.pushKV("owner",pubkey33_str(str,origpubkey.data()));
+    result.pushKV("name",name);
+    result.pushKV("supply",vintx.vout[0].nValue);
+    result.pushKV("description",description);
     return(result);
 }
 
@@ -132,46 +132,46 @@ UniValue AssetOrders(uint256 refassetid)
                 UniValue item(UniValue::VOBJ);
                 funcidstr[0] = funcid;
                 funcidstr[1] = 0;
-                item.push_back(Pair("funcid", funcidstr));
-                item.push_back(Pair("txid", uint256_str(assetidstr,txid)));
+                item.pushKV("funcid", funcidstr);
+                item.pushKV("txid", uint256_str(assetidstr,txid));
                 item.push_back(Pair("vout", (int64_t)it->first.index));
                 if ( funcid == 'b' || funcid == 'B' )
                 {
                     sprintf(numstr,"%.8f",(double)vintx.vout[it->first.index].nValue/COIN);
-                    item.push_back(Pair("amount",numstr));
+                    item.pushKV("amount",numstr);
                     sprintf(numstr,"%.8f",(double)vintx.vout[0].nValue/COIN);
-                    item.push_back(Pair("bidamount",numstr));
+                    item.pushKV("bidamount",numstr);
                 }
                 else
                 {
                     sprintf(numstr,"%llu",(long long)vintx.vout[it->first.index].nValue);
-                    item.push_back(Pair("amount",numstr));
+                    item.pushKV("amount",numstr);
                     sprintf(numstr,"%llu",(long long)vintx.vout[0].nValue);
-                    item.push_back(Pair("askamount",numstr));
+                    item.pushKV("askamount",numstr);
                 }
                 if ( origpubkey.size() == 33 )
                 {
                     GetCCaddress(cp,origaddr,pubkey2pk(origpubkey));
-                    item.push_back(Pair("origaddress",origaddr));
+                    item.pushKV("origaddress",origaddr);
                 }
                 if ( assetid != zeroid )
-                    item.push_back(Pair("tokenid",uint256_str(assetidstr,assetid)));
+                    item.pushKV("tokenid",uint256_str(assetidstr,assetid));
                 if ( assetid2 != zeroid )
-                    item.push_back(Pair("otherid",uint256_str(assetidstr,assetid2)));
+                    item.pushKV("otherid",uint256_str(assetidstr,assetid2));
                 if ( price > 0 )
                 {
                     if ( funcid == 's' || funcid == 'S' || funcid == 'e' || funcid == 'e' )
                     {
                         sprintf(numstr,"%.8f",(double)price / COIN);
-                        item.push_back(Pair("totalrequired", numstr));
+                        item.pushKV("totalrequired", numstr);
                         sprintf(numstr,"%.8f",(double)price / (COIN * vintx.vout[0].nValue));
-                        item.push_back(Pair("price", numstr));
+                        item.pushKV("price", numstr);
                     }
                     else
                     {
                         item.push_back(Pair("totalrequired", (int64_t)price));
                         sprintf(numstr,"%.8f",(double)vintx.vout[0].nValue / (price * COIN));
-                        item.push_back(Pair("price",numstr));
+                        item.pushKV("price",numstr);
                     }
                 }
                 result.push_back(item);
