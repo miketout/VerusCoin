@@ -46,7 +46,7 @@ Usage:
 $0 --help
   Show this help message and exit.
 
-$0 [ --enable-lcov || --disable-tests ] [ --disable-mining ] [ --enable-proton ] [ MAKEARGS... ]
+$0 [ --enable-lcov || --disable-tests ] [ --disable-mining ] [ MAKEARGS... ]
   Build Zcash and most of its transitive dependencies from
   source. MAKEARGS are applied to both dependencies and Zcash itself.
 
@@ -57,9 +57,6 @@ $0 [ --enable-lcov || --disable-tests ] [ --disable-mining ] [ --enable-proton ]
   If --disable-mining is passed, Zcash is configured to not build any mining
   code. It must be passed after the test arguments, if present.
 
-  If --enable-proton is passed, Zcash is configured to build the Apache Qpid Proton
-  library required for AMQP support. This library is not built by default.
-  It must be passed after the test/mining arguments, if present.
 EOF
     exit 0
 fi
@@ -89,27 +86,20 @@ then
     shift
 fi
 
-# If --enable-proton is the next argument, enable building Proton code:
-PROTON_ARG='--enable-proton=no'
-if [ "x${1:-}" = 'x--enable-proton' ]
-then
-    PROTON_ARG=''
-    shift
-fi
 
 eval "$MAKE" --version
 as --version
 ld -v
 
-HOST="$HOST" BUILD="$BUILD" NO_PROTON="$PROTON_ARG" "$MAKE" "$@" -C ./depends/ V=1
+HOST="$HOST" BUILD="$BUILD" "$MAKE" "$@" -C ./depends/ V=1
 ./autogen.sh
 
 # 0x03 2020-01-03, do not use '-Wno-builtin-declaration-mismatch or -Werror on GCC <v8
 if [ "$(gcc --version|head -1 | awk '{print $4}' | cut -d"." -f1)" -lt 8 ]; then
 	# version <8
-	CONFIG_SITE="$PWD/depends/$HOST/share/config.site" ./configure "$HARDENING_ARG" "$LCOV_ARG" "$TEST_ARG" "$MINING_ARG" "$PROTON_ARG" $CONFIGURE_FLAGS CPPFLAGS='-g' CXXFLAGS='-g'
+	CONFIG_SITE="$PWD/depends/$HOST/share/config.site" ./configure "$HARDENING_ARG" "$LCOV_ARG" "$TEST_ARG" "$MINING_ARG" $CONFIGURE_FLAGS CPPFLAGS='-g' CXXFLAGS='-g'
 else
 	# version 8 and up
-	CONFIG_SITE="$PWD/depends/$HOST/share/config.site" ./configure "$HARDENING_ARG" "$LCOV_ARG" "$TEST_ARG" "$MINING_ARG" "$PROTON_ARG" $CONFIGURE_FLAGS CPPFLAGS='-g -Wno-builtin-declaration-mismatch -Werror' CXXFLAGS='-g'
+	CONFIG_SITE="$PWD/depends/$HOST/share/config.site" ./configure "$HARDENING_ARG" "$LCOV_ARG" "$TEST_ARG" "$MINING_ARG" $CONFIGURE_FLAGS CPPFLAGS='-g -Wno-builtin-declaration-mismatch -Werror' CXXFLAGS='-g'
 fi
 "$MAKE" "$@" V=1

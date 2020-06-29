@@ -66,9 +66,6 @@ LIBTLS=libtls.a
 if ENABLE_ZMQ
 LIBBITCOIN_ZMQ=libbitcoin_zmq.a
 endif
-if ENABLE_PROTON
-LIBBITCOIN_PROTON=libbitcoin_proton.a
-endif
 if BUILD_BITCOIN_LIBS
 LIBZCASH_CONSENSUS=libzcashconsensus.la
 endif
@@ -101,9 +98,6 @@ EXTRA_LIBRARIES += $(LIBBITCOIN_WALLET)
 endif
 if ENABLE_ZMQ
 EXTRA_LIBRARIES += $(LIBBITCOIN_ZMQ)
-endif
-if ENABLE_PROTON
-EXTRA_LIBRARIES += $(LIBBITCOIN_PROTON)
 endif
 
 lib_LTLIBRARIES = $(LIBZCASH_CONSENSUS)
@@ -146,11 +140,6 @@ BITCOIN_CORE_H = \
   addrman.h \
   alert.h \
   amount.h \
-  amqp/amqpabstractnotifier.h \
-  amqp/amqpconfig.h \
-  amqp/amqpnotificationinterface.h \
-  amqp/amqppublishnotifier.h \
-  amqp/amqpsender.h \
   arith_uint256.h \
   asyncrpcoperation.h \
   asyncrpcqueue.h \
@@ -360,15 +349,6 @@ libbitcoin_zmq_a_SOURCES = \
 	zmq/zmqpublishnotifier.cpp
 endif
 
-if ENABLE_PROTON
-libbitcoin_proton_a_CPPFLAGS = $(BITCOIN_INCLUDES)
-libbitcoin_proton_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-libbitcoin_proton_a_SOURCES = \
-  amqp/amqpabstractnotifier.cpp \
-  amqp/amqpnotificationinterface.cpp \
-  amqp/amqppublishnotifier.cpp
-endif
-
 # wallet: zcashd, but only linked when wallet enabled
 libbitcoin_wallet_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 libbitcoin_wallet_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
@@ -573,7 +553,6 @@ verusd_LDADD = \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_ZMQ) \
-  $(LIBBITCOIN_PROTON) \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBVERUS_CRYPTO) \
   $(LIBVERUS_PORTABLE_CRYPTO) \
@@ -596,15 +575,10 @@ verusd_LDADD += \
   $(EVENT_PTHREADS_LIBS) \
   $(EVENT_LIBS) \
   $(ZMQ_LIBS) \
-  $(PROTON_LIBS) \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBVERUS_CRYPTO) \
   $(LIBVERUS_PORTABLE_CRYPTO) \
   $(LIBZCASH_LIBS)
-
-if ENABLE_PROTON
-verusd_LDADD += $(LIBBITCOIN_PROTON) $(PROTON_LIBS)
-endif
 
 # bitcoin-cli binary #
 verus_SOURCES = bitcoin-cli.cpp
