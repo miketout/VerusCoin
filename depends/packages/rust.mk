@@ -7,7 +7,9 @@ $(package)_file_name_darwin=rust-$($(package)_version)-x86_64-apple-darwin.tar.g
 $(package)_sha256_hash_darwin=9818dab2c3726d63dfbfde12c9273e62e484ef6d6f6e05a6431a3e089c335454
 
 # Mapping from GCC canonical hosts to Rust targets
-# If a mapping is not present, we assume they are identical
+# If a mapping is not present, we assume they are identical, unless $host_os is
+# "darwin", in which case we assume x86_64-apple-darwin.
+$(package)_rust_target_x86_64-pc-linux-gnu=x86_64-unknown-linux-gnu
 $(package)_rust_target_x86_64-w64-mingw32=x86_64-pc-windows-gnu
 
 # Mapping from Rust targets to SHA-256 hashes
