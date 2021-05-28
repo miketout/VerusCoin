@@ -1,5 +1,8 @@
 mingw32_CC=x86_64-w64-mingw32-gcc-posix
-mingw32_CXX=x86_64-w64-mingw32-g++-posix
+ifneq ($(shell which $(host)-g++-posix),)
+mingw32_CXX := $(host)-g++-posix
+endif
+
 mingw32_CFLAGS=-pipe
 mingw32_CXXFLAGS=$(mingw32_CFLAGS)
 
