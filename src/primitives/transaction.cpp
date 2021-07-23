@@ -766,19 +766,18 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                     s >> reserveTransfers;
                 }
                 catch (const std::runtime_error &e)
-                    {
+                {
                     LogPrintf("Cross Chain : %s\n", e.what());
                     checkOK = false;
-                    }
+                }
                 auto hw = CDefaultETHNode::GetHashWriter();
                
 
                 // TODO: HARDENING - ensure this is completely valid
 
-                for (unsigned int n = 0; n < ccx.reserveTransfers.size(); n++) {
-                    
+                for (unsigned int n = 0; n < ccx.reserveTransfers.size(); n++)
+                {
                     hw << ccx.reserveTransfers[n];
-                    
                 }
 
                 if (!ccx.IsValid() || !checkOK || (ccx.hashReserveTransfers != hw.GetHash()) )
@@ -808,10 +807,8 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                 {
                     txRoot = uint256();
                 }
-                
             }
         }
-
     }
     if (pIsPartial)
     {

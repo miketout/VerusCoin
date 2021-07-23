@@ -2873,8 +2873,7 @@ UniValue getbestproofroot(const UniValue& params, bool fHelp)
     {
         // proof roots must be valid and in height order, though heights can overlap
         const CProofRoot &checkRoot = proofRootArr[i];
-        if (checkRoot.rootHeight <= curHeight ||
-            checkRoot.systemID != ASSETCHAINS_CHAINID)
+        if (checkRoot.rootHeight < curHeight || checkRoot.systemID != ASSETCHAINS_CHAINID)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("invalid proof root array parameter for %s", EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID))));
         }
@@ -2886,6 +2885,7 @@ UniValue getbestproofroot(const UniValue& params, bool fHelp)
         if (checkRoot == checkRoot.GetProofRoot(checkRoot.rootHeight))
         {
             validRoots.insert(std::make_pair(checkRoot.rootHeight, i));
+            curHeight = checkRoot.rootHeight;
         }
     }
 

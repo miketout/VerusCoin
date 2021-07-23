@@ -685,8 +685,8 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
             "\nAdds a zkey (as returned by z_exportkey) to your wallet.\n"
             "\nArguments:\n"
             "1. \"zkey\"             (string, required) The zkey (see z_exportkey)\n"
-            "2. rescan             (string, optional, default=\"whenkeyisnew\") Rescan the wallet for transactions - can be \"yes\", \"no\" or \"whenkeyisnew\"\n"
-            "3. startHeight        (numeric, optional, default=0) Block height to start rescan from\n"
+            "2. rescan               (string, optional, default=\"whenkeyisnew\") Rescan the wallet for transactions - can be \"yes\", \"no\" or \"whenkeyisnew\"\n"
+            "3. startHeight          (numeric, optional, default=0) Block height to start rescan from\n"
             "\nNote: This call can take minutes to complete if rescan is true.\n"
             "\nExamples:\n"
             "\nExport a zkey\n"
@@ -768,7 +768,7 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
     if (addResult == KeyNotAdded) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Error adding spending key to wallet");
     }
-    
+
     // whenever a key is imported, we need to scan the whole chain
     pwalletMain->nTimeFirstKey = 1; // 0 would be considered 'no value'
     

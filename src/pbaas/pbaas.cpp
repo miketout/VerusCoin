@@ -1028,7 +1028,10 @@ uint32_t CConnectedChains::CombineBlocks(CBlockHeader &bh)
 
 bool CConnectedChains::IsVerusPBaaSAvailable()
 {
-    return IsNotaryAvailable() && FirstNotaryChain().chainDefinition.GetID() == VERUS_CHAINID;
+    uint160 parent = VERUS_CHAINID;
+    return IsNotaryAvailable() && 
+           ((_IsVerusActive() && FirstNotaryChain().chainDefinition.GetID() == CIdentity::GetID("veth", parent)) ||
+            FirstNotaryChain().chainDefinition.GetID() == VERUS_CHAINID);
 }
 
 extern string PBAAS_HOST, PBAAS_USERPASS;
