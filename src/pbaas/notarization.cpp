@@ -1170,11 +1170,13 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
             return state.Error("no-notary");
         }
 
-        if (!GetNotarizationData(SystemID, cnd, &txes))
+        if (!GetNotarizationData(SystemID, cnd, &txes) || !cnd.IsConfirmed())
         {
-            return state.Error(errorPrefix + "no prior notarization found");
+            return state.Error(errorPrefix + "no prior confirmed notarization found");
         }
     }
+
+    bool isGatewayFirstContact = systemDef.IsGateway() && cnd.vtx[cnd.lastConfirmed].second.IsDefinitionNotarization();
 
     // all we really want is the system proof roots for each notarization to make the JSON for the API smaller
     UniValue proofRootsUni(UniValue::VARR);
@@ -1187,7 +1189,7 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
         }
     }
 
-    if (!proofRootsUni.size())
+    if (!proofRootsUni.size() && !isGatewayFirstContact)
     {
         return state.Error(errorPrefix + "no valid prior state root found");
     }
@@ -1196,8 +1198,11 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
     UniValue params(UniValue::VARR);
 
     UniValue oneParam(UniValue::VOBJ);
-    oneParam.push_back(Pair("proofroots", proofRootsUni));
-    oneParam.push_back(Pair("lastconfirmed", cnd.lastConfirmed));
+    if (!isGatewayFirstContact)
+    {
+        oneParam.push_back(Pair("proofroots", proofRootsUni));
+        oneParam.push_back(Pair("lastconfirmed", cnd.lastConfirmed));
+    }
     params.push_back(oneParam);
  
     //printf("%s: about to get cross notarization with %lu notarizations found\n", __func__, cnd.vtx.size());
@@ -1211,7 +1216,7 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
         result = NullUniValue;
     }
 
-    int32_t notaryIdx = uni_get_int(find_value(result, "bestindex"), -1);
+    int32_t notaryIdx = isGatewayFirstContact ? 0 : uni_get_int(find_value(result, "bestindex"), -1);
 
     if (result.isNull() || notaryIdx == -1)
     {
@@ -1244,6 +1249,11 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
     notarization = priorNotarization;
     notarization.SetBlockOneNotarization(false);
     notarization.SetDefinitionNotarization(false);
+    notarization.SetSameChain(false);
+    notarization.SetPreLaunch(false);
+    notarization.SetLaunchCleared(true);
+    notarization.SetLaunchComplete(true);
+    notarization.SetLaunchConfirmed(true);
     notarization.proposer = Proposer;
     notarization.prevHeight = priorNotarization.notarizationHeight;
 
@@ -1258,7 +1268,9 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
     notarization.notarizationHeight = latestProofRoot.rootHeight;
 
     UniValue currencyStatesUni = find_value(result, "currencystates");
-    if (!(currencyStatesUni.isArray() && currencyStatesUni.size()))
+
+    // TODO: HARDENING - should gateways always be able to return a proper currency state beyond their native?
+    if (!systemDef.IsGateway() && !(currencyStatesUni.isArray() && currencyStatesUni.size()))
     {
         return state.Error(errorPrefix + "invalid or missing currency state data from notary");
     }
@@ -1310,7 +1322,6 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
     }
 
     // add this blockchain's info, based on the requested height
-    CBlockIndex &curBlkIndex = *chainActive[height];
     uint160 thisChainID = ConnectedChains.ThisChain().GetID();
     notarization.proofRoots[thisChainID] = CProofRoot::GetProofRoot(height);
 
@@ -1320,7 +1331,7 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
     uint160 gatewayConverterID;
     if (systemDef.IsGateway() && !systemDef.gatewayConverterName.empty())
     {
-        gatewayConverterID = CCurrencyDefinition::GetID(systemDef.gatewayConverterName, thisChainID);
+        gatewayConverterID = systemDef.GatewayConverterID();
     }
     else if (SystemID == ConnectedChains.FirstNotaryChain().chainDefinition.GetID() && !ConnectedChains.ThisChain().gatewayConverterName.empty())
     {

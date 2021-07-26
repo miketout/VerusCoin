@@ -398,7 +398,7 @@ void ProcessNewImports(const uint160 &sourceChainID, CPBaaSNotarization &lastCon
                     }
                 } catch (exception e)
                 {
-                    printf("Could not get latest export from external chain %s\n", uni_get_str(params[0]).c_str());
+                    printf("Could not get latest export from external chain %s for %s\n", EncodeDestination(CIdentityID(sourceChainID)).c_str(), uni_get_str(params[0]).c_str());
                     return;
                 }
 
@@ -505,7 +505,7 @@ void ProcessNewImports(const uint160 &sourceChainID, CPBaaSNotarization &lastCon
         }
         else
         {
-            printf("Could not get prior import for currency %s\n", sourceChain.name.c_str());
+            LogPrint("crosschain", "Could not get prior import for currency %s\n", sourceChain.name.c_str());
             return;
         }
     }
