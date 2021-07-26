@@ -1381,7 +1381,7 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
         dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
 
         // we need to store the input that we confirmed if we spent finalization outputs
-        CObjectFinalization of = CObjectFinalization(CObjectFinalization::FINALIZE_NOTARIZATION, VERUS_CHAINID, uint256(), txOutputs.size() - 1, height + 15);
+        CObjectFinalization of = CObjectFinalization(CObjectFinalization::FINALIZE_NOTARIZATION, notarization.currencyID, uint256(), txOutputs.size() - 1, height + 15);
         txOutputs.push_back(CTxOut(0, MakeMofNCCScript(CConditionObj<CObjectFinalization>(EVAL_FINALIZE_NOTARIZATION, dests, 1, &of))));
     }
     return true;
