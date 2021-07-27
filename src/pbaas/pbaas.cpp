@@ -4462,7 +4462,8 @@ GetPendingExports(const CCurrencyDefinition &sourceChain,
         params.push_back(EncodeDestination(CIdentityID(destChainID)));
         params.push_back((int64_t)lastCCI.sourceSystemHeight);
         params.push_back((int64_t)lastConfirmed.proofRoots[sourceChainID].rootHeight);
-
+        uint160 parent = VERUS_CHAINID; 
+        bool isETH = CIdentity::GetID("veth", parent) == destChainID;
         UniValue result = NullUniValue;
         try
         {
@@ -4524,7 +4525,7 @@ GetPendingExports(const CCurrencyDefinition &sourceChain,
                     !txProof.GetPartialTransaction(exportTx).IsNull() &&
                     txProof.TransactionHash() == exportTxId &&
                     proofRootIt != lastConfirmed.proofRoots.end() &&
-                    proofRootIt->second.stateRoot == txProof.CheckPartialTransaction(exportTx) &&
+                    proofRootIt->second.stateRoot == txProof.CheckPartialTransaction(exportTx) || isETH &&
                     exportTx.vout.size() > exportTxOutNum))
             {
                 /* printf("%s: proofRoot: %s, checkPartialRoot: %s, proofheight: %u, ischainproof: %s, blockhash: %s\n", 
@@ -4551,7 +4552,7 @@ GetPendingExports(const CCurrencyDefinition &sourceChain,
                     printf("Invalid export msg3 from %s\n", uni_get_str(params[0]).c_str());
                     return exports;
                 }
-                if (ccx.IsChainDefinition() || ccx.sourceHeightEnd == 1)
+                if ((ccx.IsChainDefinition()) || ccx.sourceHeightEnd == 1)
                 {
                     if (lastCCI.exportTxId.IsNull())
                     {

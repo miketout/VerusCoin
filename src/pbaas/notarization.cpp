@@ -2240,7 +2240,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
 
         // The first, block one notarization requires no evidence or signatures to be valid on this hain, so it will be skipped
         // here as well. This is not an error.
-        if (!allEvidence.evidence.size() && !allEvidence.signatures.size())
+if ((!allEvidence.evidence.size() && !allEvidence.signatures.size()) && !(systemID == CIdentity::GetID("veth", ASSETCHAINS_CHAINID)))
         {
             return retVal;
         }
