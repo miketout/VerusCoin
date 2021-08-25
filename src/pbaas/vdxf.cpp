@@ -12,7 +12,9 @@
 #include "crosschainrpc.h"
 
 std::string CVDXF::DATA_KEY_SEPARATOR = "::";
-std::map<uint160,std::pair<std::pair<uint32_t, uint32_t>,std::pair<uint32_t, uint32_t>>> CVDXF::VDXF_TYPES;
+
+// TODO: HARDENING - ensure discussion on question of data limits
+
 uint160 CVDXF::STRUCTURED_DATA_KEY = CVDXF_StructuredData::StructuredDataKey();
 uint160 CVDXF::ZMEMO_MESSAGE_KEY = CVDXF_Data::ZMemoMessageKey();
 uint160 CVDXF::ZMEMO_SIGNATURE_KEY = CVDXF_Data::ZMemoSignatureKey();
@@ -188,6 +190,10 @@ uint160 CVDXF::GetID(const std::string &Name)
 {
     uint160 parent;
     std::string cleanName = CleanName(Name, parent);
+    if (cleanName.empty())
+    {
+        return uint160();
+    }
 
     std::string subName = boost::algorithm::to_lower_copy(cleanName);
     const char *idName = subName.c_str();
@@ -210,6 +216,10 @@ uint160 CVDXF::GetID(const std::string &Name)
 uint160 CVDXF::GetID(const std::string &Name, uint160 &parent)
 {
     std::string cleanName = CleanName(Name, parent);
+    if (cleanName.empty())
+    {
+        return uint160();
+    }
 
     std::string subName = boost::algorithm::to_lower_copy(cleanName);
     const char *idName = subName.c_str();
@@ -366,7 +376,7 @@ VDXFData DeserializeVDXFData(const std::vector<unsigned char> &sourceVector)
     else
     {
         CVDXF_Data Data;
-        ::FromVector(sourceVector, sData);
+        ::FromVector(sourceVector, Data);
         if (Data.IsValid())
         {
             return Data;

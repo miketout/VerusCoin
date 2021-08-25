@@ -64,6 +64,7 @@ public:
     TransactionBuilderResult(const std::string& error);
     bool IsTx();
     bool IsError();
+    bool IsHexTx();
     CTransaction GetTxOrThrow();
     std::string GetError();
 };
@@ -148,7 +149,7 @@ public:
     // Assumes that the value correctly corresponds to the provided UTXO.
     void AddTransparentInput(COutPoint utxo, CScript scriptPubKey, CAmount value, uint32_t nSequence = 0xffffffff);
 
-    void AddTransparentOutput(CTxDestination& to, CAmount value);
+    void AddTransparentOutput(const CTxDestination& to, CAmount value);
 
     bool AddTransparentOutput(const CScript &scriptPubKey, CAmount value);
 
@@ -164,7 +165,7 @@ public:
 
     void SendChangeTo(const CTxDestination &changeAddr);
 
-    TransactionBuilderResult Build();
+    TransactionBuilderResult Build(bool throwTxWithPartialSig=false);
 
 private:
     void CreateJSDescriptions();

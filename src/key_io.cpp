@@ -771,10 +771,10 @@ CTransferDestination::CTransferDestination(const UniValue &obj) : fees(0)
 
         case CTransferDestination::DEST_REGISTERCURRENCY:
         {
-            CCurrencyRegistrationDestination curRegistration({CIdentity(find_value(obj, "identity")), CCurrencyDefinition(find_value(obj, "currency"))});
-            if (curRegistration.IsValid())
+            CCurrencyDefinition currencyToRegister(find_value(obj, "currency"));
+            if (currencyToRegister.IsValid())
             {
-                destination = ::AsVector(curRegistration);
+                destination = ::AsVector(currencyToRegister);
             }
             else
             {
@@ -941,7 +941,11 @@ CIdentity::CIdentity(const CScript &scriptPubKey)
 
 CIdentityID CIdentity::GetID(const std::string &Name, uint160 &parent)
 {
-    std::string cleanName = CleanName(Name, parent);
+    std::string cleanName = CleanName(Name, parent, false, parent.IsNull());
+    if (cleanName.empty())
+    {
+        return uint160();
+    }
 
     std::string subName = boost::algorithm::to_lower_copy(cleanName);
     const char *idName = subName.c_str();

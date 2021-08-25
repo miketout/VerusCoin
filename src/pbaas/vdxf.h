@@ -191,9 +191,6 @@ void FromVector(const std::vector<unsigned char> &vch, SERIALIZABLE &obj, bool *
 
 class CVDXF
 {
-protected:
-    static std::map<uint160,std::pair<std::pair<uint32_t, uint32_t>,std::pair<uint32_t, uint32_t>>> VDXF_TYPES;
-
 public:
     static uint160 STRUCTURED_DATA_KEY;
     static uint160 ZMEMO_MESSAGE_KEY;
@@ -229,15 +226,9 @@ public:
     static uint160 GetID(const std::string &Name);
     static uint160 GetID(const std::string &Name, uint160 &parent);
     static uint160 GetDataKey(const std::string &keyName, uint160 &nameSpaceID);
-    static void RegisterVDXFType(const uint160 &typeID, uint32_t minVer, uint32_t maxVer, uint32_t minVecSize, uint32_t maxVecSize)
+    bool IsValid()
     {
-        assert(typeID != STRUCTURED_DATA_KEY);
-        VDXF_TYPES.insert(std::make_pair(typeID, std::make_pair(std::make_pair(minVer, maxVer), std::make_pair(minVecSize, maxVecSize))));
-    }
-    bool IsValid(bool registered=false)
-    {
-        return (((key == STRUCTURED_DATA_KEY || !registered ) && version >= FIRST_VERSION && version <= LAST_VERSION) ||
-                (VDXF_TYPES.count(key) && version >= VDXF_TYPES[key].first.first && version <= VDXF_TYPES[key].first.second));
+        return !key.IsNull() && version >= FIRST_VERSION && version <= LAST_VERSION;
     }
 };
 
@@ -254,16 +245,9 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(*(CVDXF *)this);
-        if (version != VERSION_INVALID)
+        if (IsValid())
         {
-            if (VDXF_TYPES.count(key))
-            {
-                READWRITE(data);
-                if (!(VDXF_TYPES[key].second.first <= data.size() && VDXF_TYPES[key].second.second >= data.size()))
-                {
-                    version = VERSION_INVALID;
-                }
-            }
+            READWRITE(data);
         }
     }
     static std::string ZMemoMessageKeyName()
@@ -296,12 +280,9 @@ public:
         static uint160 currencyStartNotarization = GetDataKey(CurrencyStartNotarizationKeyName(), nameSpace);
         return currencyStartNotarization;
     }
-    bool IsValid(bool registered=false)
+    bool IsValid()
     {
-        return CVDXF::IsValid(registered) &&
-                (!registered ||
-                (data.size() <= VDXF_TYPES[key].second.first &&
-                 data.size() >= VDXF_TYPES[key].second.second));
+        return CVDXF::IsValid();
     }
 };
 
@@ -331,7 +312,7 @@ public:
     }
     static std::string StructuredDataKeyName()
     {
-        return "vrsc::system.structured-data";
+        return "vrsc::system.structureddata";
     }
     static uint160 StructuredDataKey()
     {

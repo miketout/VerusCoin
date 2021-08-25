@@ -222,6 +222,19 @@ UniValue RPCCallRoot(const string& strMethod, const UniValue& params, int timeou
     {
         return RPCCall(strMethod, params, PBAAS_USERPASS, PBAAS_PORT, PBAAS_HOST);
     }
+    else if (_IsVerusActive() &&
+             ReadConfigFile("veth", settings, settingsmulti))
+    {
+        // the Ethereum bridge, "VETH", serves as the root currency to VRSC and for Rinkeby to VRSCTEST
+        PBAAS_USERPASS = settingsmulti.find("-rpcuser")->second[0] + ":" + settingsmulti.find("-rpcpassword")->second[0];
+        PBAAS_PORT = atoi(settingsmulti.find("-rpcport")->second[0]);
+        PBAAS_HOST = settingsmulti.find("-rpchost")->second[0];
+        if (!PBAAS_HOST.size())
+        {
+            PBAAS_HOST = "127.0.0.1";
+        }
+        return RPCCall(strMethod, params, credentials, port, host, timeout);
+    }
     else if (ReadConfigFile(PBAAS_TESTMODE ? "vrsctest" : "VRSC", settings, settingsmulti))
     {
         PBAAS_USERPASS = settingsmulti.find("-rpcuser")->second[0] + ":" + settingsmulti.find("-rpcpassword")->second[0];
@@ -309,7 +322,44 @@ uint256 CIdentitySignature::IdentitySignatureHash(const std::vector<uint160> &vd
     }
     else
     {
-        auto ss = CMMRNode<>::GetHashWriter();
+        auto ss = CNativeHashWriter((CCurrencyDefinition::EProofProtocol)hashType);
+
+        bool crossChainLogging = LogAcceptCategory("notarysignatures");
+        if (crossChainLogging)
+        {
+            printf("%s: vdxfCodes:\n", __func__);
+            LogPrintf("%s: vdxfCodes:\n", __func__);
+            for (auto &oneCode : vdxfCodes)
+            {
+                printf("%s\n", oneCode.GetHex().c_str());
+                LogPrintf("%s\n", oneCode.GetHex().c_str());
+            }
+            printf("\n");
+            LogPrintf("\n");
+            printf("%s: statements:\n", __func__);
+            LogPrintf("%s: statements:\n", __func__);
+            for (auto &oneStatement : statements)
+            {
+                printf("%s\n", oneStatement.GetHex().c_str());
+                LogPrintf("%s\n", oneStatement.GetHex().c_str());
+            }
+            printf("\n");
+            LogPrintf("\n");
+            printf("systemid: %s, blockheight: %u, identity: %s, prefix: %s\nmsghash: %s\n",
+                EncodeDestination(CIdentityID(systemID)).c_str(),
+                blockHeight,
+                EncodeDestination(CIdentityID(idID)).c_str(),
+                prefixString.c_str(),
+                msgHash.GetHex().c_str());
+            LogPrintf("systemid: %s, blockheight: %u, identity: %s, prefix: %s\nmsghash: %s\n",
+                EncodeDestination(CIdentityID(systemID)).c_str(),
+                blockHeight,
+                EncodeDestination(CIdentityID(idID)).c_str(),
+                prefixString.c_str(),
+                msgHash.GetHex().c_str());
+            printf("\n");
+            LogPrintf("\n");
+        }
 
         if (vdxfCodes.size())
         {
@@ -328,6 +378,11 @@ uint256 CIdentitySignature::IdentitySignatureHash(const std::vector<uint160> &vd
         }
         ss << msgHash;
         retVal = ss.GetHash();
+        if (crossChainLogging)
+        {
+            printf("%s\n", retVal.GetHex().c_str());
+            LogPrintf("%s\n", retVal.GetHex().c_str());
+        }
     }
     return retVal;
 }
@@ -493,10 +548,10 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             gatewayConverterIssuance = AmountFromValueNoErr(find_value(obj, "gatewayconverterissuance"));
         }
 
-        notarizationProtocol = (ENotarizationProtocol)uni_get_int(find_value(obj, "notarizationprotocol"), (int32_t)NOTARIZATION_NOTARY_CONFIRM);
-        if (notarizationProtocol != NOTARIZATION_NOTARY_CONFIRM && !(IsToken() && notarizationProtocol == NOTARIZATION_AUTO))
+        notarizationProtocol = (ENotarizationProtocol)uni_get_int(find_value(obj, "notarizationprotocol"), (int32_t)NOTARIZATION_AUTO);
+        if (notarizationProtocol != NOTARIZATION_AUTO && notarizationProtocol != NOTARIZATION_NOTARY_CONFIRM)
         {
-            LogPrintf("%s: notarization protocol for PBaaS chains must be %d (NOTARIZATION_NOTARY_CONFIRM) at this time\n", __func__, (int)NOTARIZATION_NOTARY_CONFIRM);
+            LogPrintf("%s: notarization protocol for PBaaS chains must be %d (NOTARIZATION_AUTO) or %d (NOTARIZATION_NOTARY_CONFIRM)\n", __func__, (int)NOTARIZATION_NOTARY_CONFIRM);
             nVersion = PBAAS_VERSION_INVALID;
             return;
         }
@@ -507,6 +562,8 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             nVersion = PBAAS_VERSION_INVALID;
             return;
         }
+
+        // TODO: HARDENING - ensure that it makes sense for a chain to have PROOF_CHAINID still or disallow
 
         nativeCurrencyID = CTransferDestination(find_value(obj, "nativecurrencyid"));
 
@@ -540,6 +597,15 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
         if (currencyArr.isArray() && currencyArr.size())
         {
             contributions = preconverted = std::vector<int64_t>(currencyArr.size());
+
+            if (initialContributionArr.isNull())
+            {
+                initialContributionArr = UniValue(UniValue::VARR);
+                for (int i = 0; i < currencyArr.size(); i++)
+                {
+                    initialContributionArr.push_back((CAmount)0);
+                }
+            }
 
             if (IsFractional())
             {
@@ -633,7 +699,7 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                     weights.size() != currencyArr.size() ||
                     !IsFractional())
                 {
-                    LogPrintf("%s: reserve currencies must have weights, initial contributions in at least one currency\n", __func__);
+                    LogPrintf("%s: fractional currencies must have weights, initial contributions in at least one currency\n", __func__);
                     nVersion = PBAAS_VERSION_INVALID;
                 }
             }

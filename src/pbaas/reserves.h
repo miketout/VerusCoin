@@ -72,24 +72,12 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        std::vector<uint160> currencies;
-        std::vector<int64_t> values;
         if (ser_action.ForRead())
         {
             READWRITE(VARINT(nVersion));
             if (nVersion & VERSION_MULTIVALUE)
             {
-                READWRITE(currencies);
-                READWRITE(values);
-                if (currencies.size() == values.size())
-                {
-                    reserveValues = CCurrencyValueMap(currencies, values);
-                }
-                else
-                {
-                    nVersion = VERSION_INVALID;
-                    reserveValues = CCurrencyValueMap();
-                }
+                READWRITE(reserveValues);
                 nVersion &= ~VERSION_MULTIVALUE;
             }
             else
@@ -118,14 +106,7 @@ public:
             {
                 nVersion |= VERSION_MULTIVALUE;
                 READWRITE(VARINT(nVersion));
-
-                for (auto &oneCur : reserveValues.valueMap)
-                {
-                    currencies.push_back(oneCur.first);
-                    values.push_back(oneCur.second);
-                }
-                READWRITE(currencies);
-                READWRITE(values);
+                READWRITE(reserveValues);
             }
         }
     }
@@ -178,6 +159,7 @@ public:
         IMPORT_TO_SOURCE = 0x200,           // set when the source currency, not destination is the import currency
         RESERVE_TO_RESERVE = 0x400,         // for arbitrage or transient conversion, 2 stage solving (2nd from new fractional to reserves)
         REFUND = 0x800,                     // this transfer should be refunded, individual property when conversions exceed limits
+        IDENTITY_EXPORT = 0x1000,           // this exports a full identity when the next cross-chain leg is processed
     };
 
     enum EConstants
@@ -375,6 +357,23 @@ public:
         return flags & RESERVE_TO_RESERVE;
     }
 
+    void SetIdentityExport(bool isExport=true)
+    {
+        if (isExport)
+        {
+            flags |= IDENTITY_EXPORT;
+        }
+        else
+        {
+            flags &= ~IDENTITY_EXPORT;
+        }
+    }
+
+    bool IsIdentityExport() const
+    {
+        return flags & IDENTITY_EXPORT;
+    }
+
     CReserveTransfer GetRefundTransfer() const;
 
     static std::string ReserveTransferKeyName()
@@ -406,7 +405,9 @@ public:
 
     // this returns either an output for the next leg or a normal output if there is no next leg
     // the next leg output can enable chaining of conversions and system transfers
-    bool GetTxOut(const CCurrencyValueMap &reserves, int64_t nativeAmount, CTxOut &txOut) const;
+    // typically, the txOutputs vector will not get any additional entry unless there is a support
+    // definition required, such as full ID or currency definition.
+    bool GetTxOut(const CCurrencyValueMap &reserves, int64_t nativeAmount, CTxOut &txOut, std::vector<CTxOut> &txOutputs, uint32_t height) const;
 };
 
 class CReserveDeposit : public CTokenOutput
@@ -560,8 +561,9 @@ public:
         FLAG_SAMECHAIN = 8,                             // means proof/reerve transfers are from export on chain
         FLAG_HASSUPPLEMENT = 0x10,                      // indicates that we have additional outputs containing the reservetransfers for this export
         FLAG_SUPPLEMENTAL = 0x20,                       // this flag indicates that this is a supplemental output to a prior output
-        FLAG_SOURCESYSTEM = 0x40,
+        FLAG_SOURCESYSTEM = 0x40,                       // import flag used to indicate source system
     };
+
     uint16_t nVersion;
     uint16_t flags;
     uint160 sourceSystemID;                             // the native source currency system from where these transactions are imported
@@ -811,7 +813,7 @@ public:
         FLAG_HASSUPPLEMENT = 4,                 // indicates that we have additional outputs containing the reservetransfers for this export
         FLAG_SUPPLEMENTAL = 8,                  // this flag indicates that this is a supplemental output to a prior output
         FLAG_EVIDENCEONLY = 0x10,               // when set, this is not indexed as an active export
-        FLAG_GATEWAYEXPORT = 0x20,              // when set, will be exported to a gateway currency, which may get routed from this chain as systemID
+        FLAG_UNUSED = 0x20,                     // currently unused
         FLAG_DEFINITIONEXPORT = 0x40,           // set on only the first export
         FLAG_POSTLAUNCH = 0x80,                 // set post launch
         FLAG_SYSTEMTHREAD = 0x100               // export that is there to ensure continuous export thread only
@@ -1033,14 +1035,16 @@ public:
                        int32_t &nextOutput,
                        CPBaaSNotarization &exportNotarization, 
                        std::vector<CReserveTransfer> &reserveTransfers,
-                       CValidationState &state) const;
+                       CValidationState &state,
+                       CCurrencyDefinition::EProofProtocol hashType=CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR) const;
 
     bool GetExportInfo(const CTransaction &exportTx, 
                        int numExportOut, 
                        int &primaryExportOutNumOut,
                        int32_t &nextOutput,
                        CPBaaSNotarization &exportNotarization, 
-                       std::vector<CReserveTransfer> &reserveTransfers) const;
+                       std::vector<CReserveTransfer> &reserveTransfers,
+                       CCurrencyDefinition::EProofProtocol hashType=CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR) const;
 
     static std::string CurrencyExportKeyName()
     {
@@ -1169,7 +1173,9 @@ public:
 
     // this should be done no more than once to prepare a currency state to be moved to the next state
     // emission occurs for a block before any conversion or exchange and that impact on the currency state is calculated
-    CCurrencyState &UpdateWithEmission(CAmount emitted);
+    // excess ratio is used in the case of issuance into a liquidity pool. in that case, the total reserve ratio
+    // to be subtracted is first offset by the excessRatio before deduction.
+    CCurrencyState &UpdateWithEmission(CAmount emitted, int32_t excessRatio=0);
 
     cpp_dec_float_50 GetReserveRatio(int32_t reserveIndex=0) const
     {
@@ -1430,7 +1436,7 @@ public:
 
     UniValue ToUniValue() const;
 
-    CCoinbaseCurrencyState &UpdateWithEmission(CAmount toEmit);
+    CCoinbaseCurrencyState &UpdateWithEmission(CAmount toEmit, int32_t excessRatio=0);
     CCoinbaseCurrencyState &ApplyCarveouts(int32_t carveOut);
 
     void ClearForNextBlock()
@@ -1665,10 +1671,11 @@ public:
     void AddReserveTransfer(const CReserveTransfer &rt);
 
     bool AddReserveTransferImportOutputs(const CCurrencyDefinition &systemSource, 
-                                         const CCurrencyDefinition &systemDest, 
+                                         const CCurrencyDefinition &systemDest,
                                          const CCurrencyDefinition &importCurrencyDef, 
                                          const CCoinbaseCurrencyState &importCurrencyState,
-                                         const std::vector<CReserveTransfer> &exportObjects, 
+                                         const std::vector<CReserveTransfer> &exportObjects,
+                                         uint32_t height,
                                          std::vector<CTxOut> &vOutputs,
                                          CCurrencyValueMap &importedCurrency,
                                          CCurrencyValueMap &gatewayDepositsIn,
@@ -1686,5 +1693,6 @@ bool ValidateFeePool(struct CCcontract_info *cp, Eval* eval, const CTransaction 
 bool IsFeePoolInput(const CScript &scriptSig);
 bool PrecheckFeePool(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
+bool PrecheckReserveDeposit(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 
 #endif // PBAAS_RESERVES_H

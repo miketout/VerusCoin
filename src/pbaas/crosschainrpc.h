@@ -237,23 +237,6 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(valueMap);
-        std::vector<std::pair<uint160, int64_t>> vPairs;
-        if (ser_action.ForRead())
-        {
-            READWRITE(vPairs);
-            for (auto &oneVal : vPairs)
-            {
-                valueMap.insert(oneVal);
-            }
-        }
-        else
-        {
-            for (auto &oneVal : valueMap)
-            {
-                vPairs.push_back(oneVal);
-            }
-            READWRITE(vPairs);
-        }
     }
 
     friend bool operator<(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
@@ -291,151 +274,6 @@ public:
     std::vector<int64_t> AsCurrencyVector(const std::vector<uint160> &currencies) const;
 
     UniValue ToUniValue() const;
-};
-
-// an identity signature is a compound signature consisting of the block height of its creation, and one or more cryptographic 
-// signatures of the controlling addresses. validation can be performed based on the validity when signed, using the block height
-// stored in the signature instance, or based on the continued signature validity of the current identity, which may automatically
-// invalidate when the identity is updated.
-class CIdentitySignature
-{
-public:
-    enum EVersions {
-        VERSION_INVALID = 0,
-        VERSION_VERUSID = 1,
-        VERSION_FIRST = 1,
-        VERSION_DEFAULT = 1,
-        VERSION_ETHBRIDGE = 2,
-        VERSION_LAST = 2
-    };
-
-    enum ESignatureSizes {
-        ECDSA_RECOVERABLE_SIZE = 65U
-    };
-
-    enum ESignatureVerification {
-        SIGNATURE_INVALID = 0,
-        SIGNATURE_PARTIAL = 1,
-        SIGNATURE_COMPLETE = 2
-    };
-
-    uint8_t version;
-    uint32_t blockHeight;
-    std::set<std::vector<unsigned char>> signatures;
-
-    CIdentitySignature() : version(VERSION_DEFAULT), blockHeight(0) {}
-    CIdentitySignature(const UniValue &uni);
-    CIdentitySignature(uint8_t Version) : version(Version), blockHeight(0) {}
-    CIdentitySignature(uint32_t height, const std::vector<unsigned char> &oneSig, uint8_t ver=VERSION_DEFAULT) : version(ver), blockHeight(height), signatures({oneSig}) {}
-    CIdentitySignature(uint32_t height, const std::set<std::vector<unsigned char>> &sigs, uint8_t ver=VERSION_DEFAULT) : version(ver), blockHeight(height), signatures(sigs) {}
-    CIdentitySignature(const std::vector<unsigned char> &asVector)
-    {
-        ::FromVector(asVector, *this);
-    }
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(version);
-        if (version <= VERSION_LAST && version >= VERSION_FIRST)
-        {
-            READWRITE(blockHeight);
-            std::vector<std::vector<unsigned char>> sigs;
-            if (ser_action.ForRead())
-            {
-                READWRITE(sigs);
-
-                for (auto &oneSig : sigs)
-                {
-                    signatures.insert(oneSig);
-                }
-            }
-            else
-            {
-                for (auto &oneSig : signatures)
-                {
-                    sigs.push_back(oneSig);
-                }
-
-                READWRITE(sigs);
-            }
-        }
-    }
-
-    ADD_SERIALIZE_METHODS;
-
-    void AddSignature(const std::vector<unsigned char> &signature)
-    {
-        signatures.insert(signature);
-    }
-
-    static std::string IdentitySignatureKeyName()
-    {
-        return "vrsc::system.identity.signature";
-    }
-
-    static uint160 IdentitySignatureKey()
-    {
-        static uint160 nameSpace;
-        static uint160 signatureKey = CVDXF::GetDataKey(IdentitySignatureKeyName(), nameSpace);
-        return signatureKey;
-    }
-
-    uint256 IdentitySignatureHash(const std::vector<uint160> &vdxfCodes, 
-                                  const std::vector<uint256> &statements, 
-                                  const uint160 &systemID, 
-                                  uint32_t blockHeight, 
-                                  uint160 signingID,
-                                  const std::string &prefixString, 
-                                  const uint256 &msgHash) const;
-
-    ESignatureVerification NewSignature(const CIdentity &signingID,
-                                        const std::vector<uint160> &vdxfCodes, 
-                                        const std::vector<uint256> &statements, 
-                                        const uint160 &systemID, 
-                                        uint32_t height,
-                                        const std::string &prefixString, 
-                                        const uint256 &msgHash,
-                                        const CKeyStore *pWallet=nullptr);
-
-    ESignatureVerification AddSignature(const CIdentity &signingID,
-                                        const std::vector<uint160> &vdxfCodes, 
-                                        const std::vector<uint256> &statements, 
-                                        const uint160 &systemID, 
-                                        uint32_t blockHeight,
-                                        const std::string &prefixString, 
-                                        const uint256 &msgHash,
-                                        const CKeyStore *pWallet=nullptr);
-
-    ESignatureVerification CheckSignature(const CIdentity &signingID,
-                                          const std::vector<uint160> &vdxfCodes, 
-                                          const std::vector<uint256> &statements, 
-                                          const uint160 systemID, 
-                                          const std::string &prefixString, 
-                                          const uint256 &msgHash) const;
-
-    uint32_t Version()
-    {
-        return version;
-    }
-
-    UniValue ToUniValue() const
-    {
-        UniValue retObj(UniValue::VOBJ);
-        retObj.push_back(Pair("version", version));
-        retObj.push_back(Pair("blockheight", (int64_t)blockHeight));
-        UniValue sigs(UniValue::VARR);
-        for (auto &oneSig : signatures)
-        {
-            sigs.push_back(HexBytes(&(oneSig[0]), oneSig.size()));
-        }
-        retObj.push_back(Pair("signatures", sigs));
-        return retObj;
-    }
-
-    uint32_t IsValid()
-    {
-        return version <= VERSION_LAST && version >= VERSION_FIRST;
-    }
 };
 
 // This defines the currency characteristics of a PBaaS currency that will be the native coins of a PBaaS chain
@@ -489,7 +327,8 @@ public:
         NOTARIZATION_INVALID = 0,           // notarization protocol must have valid type
         NOTARIZATION_AUTO = 1,              // PBaaS autonotarization
         NOTARIZATION_NOTARY_CONFIRM = 2,    // autonotarization with confirmation by specified notaries
-        NOTARIZATION_NOTARY_CHAINID = 3     // chain identity controls notarization and currency supply
+        NOTARIZATION_NOTARY_CHAINID = 3,    // chain identity controls notarization and currency supply
+        NOTARIZATION_NOTARY_LAST = 3        // chain identity controls notarization and currency supply
     };
 
     enum EProofProtocol
@@ -497,8 +336,9 @@ public:
         PROOF_INVALID = 0,                  // proof protocol must have valid type
         PROOF_PBAASMMR = 1,                 // Verus MMR proof, no notaries required
         PROOF_CHAINID = 2,                  // if signed by the chain ID, that is considered proof
-        PROOF_KOMODONOTARIZATION = 3,       // proven by Komodo notarization
-        PROOF_ETHNOTARIZATION = 4           // proven by Ethereum notarization
+        PROOF_ETHNOTARIZATION = 3,          // proven by Ethereum notarization
+        PROOF_LASTPROTOCOL = 3,
+        PROOF_KOMODONOTARIZATION = 4        // Komodo protocol is not valid until someone from Komodo finishes it
     };
 
     enum EQueryOptions
@@ -1028,6 +868,194 @@ public:
     int32_t GetTotalCarveOut() const;
 };
 
+// an identity signature is a compound signature consisting of the block height of its creation, and one or more cryptographic 
+// signatures of the controlling addresses. validation can be performed based on the validity when signed, using the block height
+// stored in the signature instance, or based on the continued signature validity of the current identity, which may automatically
+// invalidate when the identity is updated.
+class CIdentitySignature
+{
+public:
+    enum EVersions {
+        VERSION_INVALID = 0,
+        VERSION_VERUSID = 1,
+        VERSION_FIRST = 1,
+        VERSION_DEFAULT = 1,
+        VERSION_ETHBRIDGE = 2,
+        VERSION_LAST = 2
+    };
+
+    enum ESignatureSizes {
+        ECDSA_RECOVERABLE_SIZE = 65U
+    };
+
+    enum ESignatureVerification {
+        SIGNATURE_INVALID = 0,
+        SIGNATURE_PARTIAL = 1,
+        SIGNATURE_COMPLETE = 2
+    };
+
+    uint8_t version;
+    uint8_t hashType;
+    uint32_t blockHeight;
+    std::set<std::vector<unsigned char>> signatures;
+
+    CIdentitySignature(const UniValue &uni);
+    CIdentitySignature(CCurrencyDefinition::EProofProtocol hType=CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR, uint8_t ver=VERSION_DEFAULT) : 
+        version(ver), hashType(hType), blockHeight(0)
+    {
+        if (IsValidHashType(hType) &&
+            hType != CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR)
+        {
+            version = VERSION_ETHBRIDGE;
+        }
+    }
+
+    CIdentitySignature(uint32_t height, const std::vector<unsigned char> &oneSig,
+        CCurrencyDefinition::EProofProtocol hType=CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR, uint8_t ver=VERSION_DEFAULT) : 
+        version(ver), hashType(hType), blockHeight(height), signatures({oneSig})
+    {
+        if (IsValidHashType(hType) &&
+            hType != CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR)
+        {
+            version = VERSION_ETHBRIDGE;
+        }
+    }
+    CIdentitySignature(uint32_t height, const std::set<std::vector<unsigned char>> &sigs,
+        CCurrencyDefinition::EProofProtocol hType=CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR, uint8_t ver=VERSION_DEFAULT) : 
+        version(ver), hashType(hType), blockHeight(height), signatures(sigs)
+    {
+        if (IsValidHashType(hType) &&
+            hType != CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR)
+        {
+            version = VERSION_ETHBRIDGE;
+        }
+    }
+
+    CIdentitySignature(const std::vector<unsigned char> &asVector)
+    {
+        ::FromVector(asVector, *this);
+    }
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(version);
+        if (version <= VERSION_LAST && version >= VERSION_FIRST)
+        {
+            if (version >= VERSION_ETHBRIDGE)
+            {
+                READWRITE(hashType);
+            }
+            else
+            {
+                hashType = CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR;
+            }
+            READWRITE(blockHeight);
+            std::vector<std::vector<unsigned char>> sigs;
+            if (ser_action.ForRead())
+            {
+                READWRITE(sigs);
+
+                for (auto &oneSig : sigs)
+                {
+                    signatures.insert(oneSig);
+                }
+            }
+            else
+            {
+                for (auto &oneSig : signatures)
+                {
+                    sigs.push_back(oneSig);
+                }
+
+                READWRITE(sigs);
+            }
+        }
+    }
+
+    ADD_SERIALIZE_METHODS;
+
+    static bool IsValidHashType(CCurrencyDefinition::EProofProtocol hashType)
+    {
+        return (hashType == CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR || hashType == CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
+    }
+
+    void AddSignature(const std::vector<unsigned char> &signature)
+    {
+        signatures.insert(signature);
+    }
+
+    static std::string IdentitySignatureKeyName()
+    {
+        return "vrsc::system.identity.signature";
+    }
+
+    static uint160 IdentitySignatureKey()
+    {
+        static uint160 nameSpace;
+        static uint160 signatureKey = CVDXF::GetDataKey(IdentitySignatureKeyName(), nameSpace);
+        return signatureKey;
+    }
+
+    uint256 IdentitySignatureHash(const std::vector<uint160> &vdxfCodes, 
+                                  const std::vector<uint256> &statements, 
+                                  const uint160 &systemID, 
+                                  uint32_t blockHeight, 
+                                  uint160 signingID,
+                                  const std::string &prefixString, 
+                                  const uint256 &msgHash) const;
+
+    ESignatureVerification NewSignature(const CIdentity &signingID,
+                                        const std::vector<uint160> &vdxfCodes, 
+                                        const std::vector<uint256> &statements, 
+                                        const uint160 &systemID, 
+                                        uint32_t height,
+                                        const std::string &prefixString, 
+                                        const uint256 &msgHash,
+                                        const CKeyStore *pWallet=nullptr);
+
+    ESignatureVerification AddSignature(const CIdentity &signingID,
+                                        const std::vector<uint160> &vdxfCodes, 
+                                        const std::vector<uint256> &statements, 
+                                        const uint160 &systemID, 
+                                        uint32_t blockHeight,
+                                        const std::string &prefixString, 
+                                        const uint256 &msgHash,
+                                        const CKeyStore *pWallet=nullptr);
+
+    ESignatureVerification CheckSignature(const CIdentity &signingID,
+                                          const std::vector<uint160> &vdxfCodes, 
+                                          const std::vector<uint256> &statements, 
+                                          const uint160 systemID, 
+                                          const std::string &prefixString, 
+                                          const uint256 &msgHash) const;
+
+    uint32_t Version()
+    {
+        return version;
+    }
+
+    UniValue ToUniValue() const
+    {
+        UniValue retObj(UniValue::VOBJ);
+        retObj.push_back(Pair("version", version));
+        retObj.push_back(Pair("blockheight", (int64_t)blockHeight));
+        UniValue sigs(UniValue::VARR);
+        for (auto &oneSig : signatures)
+        {
+            sigs.push_back(HexBytes(&(oneSig[0]), oneSig.size()));
+        }
+        retObj.push_back(Pair("signatures", sigs));
+        return retObj;
+    }
+
+    uint32_t IsValid()
+    {
+        return version <= VERSION_LAST && version >= VERSION_FIRST && 
+            ((version >= VERSION_ETHBRIDGE && IsValidHashType((CCurrencyDefinition::EProofProtocol)hashType)) || hashType == CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR);
+    }
+};
+
+
 class CProofRoot
 {
 public:
@@ -1089,8 +1117,121 @@ public:
     }
 
     friend bool operator==(const CProofRoot &op1, const CProofRoot &op2);
+    friend bool operator!=(const CProofRoot &op1, const CProofRoot &op2);
 
     UniValue ToUniValue() const;
+};
+
+class CNativeHashWriter
+{
+private:
+    CCurrencyDefinition::EProofProtocol nativeHashType;
+    union nativeHashWriter
+    {
+        CBLAKE2bWriter *hw_blake2b;
+        CKeccack256Writer *hw_keccack;
+    };
+    nativeHashWriter state;
+    
+public:
+    CNativeHashWriter(CCurrencyDefinition::EProofProtocol proofProtocol=CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR,
+                      const unsigned char *personal=nullptr)
+    {
+        nativeHashType = proofProtocol;
+        switch (nativeHashType)
+        {
+            case CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR:
+            {
+                state.hw_blake2b = new CBLAKE2bWriter(SER_GETHASH, PROTOCOL_VERSION, personal);
+                break;
+            }
+            case CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION:
+            {
+                state.hw_keccack = new CKeccack256Writer();
+                break;
+            }
+            default:
+                assert(false);
+        }
+    }
+
+    ~CNativeHashWriter()
+    {
+        if (IsValid())
+        {
+            switch (nativeHashType)
+            {
+                case CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR:
+                {
+                    delete state.hw_blake2b;
+                    break;
+                }
+                case CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION:
+                {
+                    delete state.hw_keccack;
+                    break;
+                }
+            }
+        }
+        state.hw_blake2b = nullptr;
+    }
+
+    static bool IsValidHashType(CCurrencyDefinition::EProofProtocol hashType)
+    {
+        return (hashType == CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR || hashType == CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
+    }
+
+    bool IsValid()
+    {
+        return IsValidHashType(nativeHashType) && state.hw_blake2b;
+    }
+
+    int GetType() const { return SER_GETHASH; }
+    int GetVersion() const { return PROTOCOL_VERSION; }
+
+    template<typename T>
+    CNativeHashWriter& operator<<(const T& obj) {
+        // Serialize to this stream
+        ::Serialize(*this, obj);
+        return (*this);
+    }
+
+    CNativeHashWriter& write(const char *pch, size_t size)
+    {
+        switch (nativeHashType)
+        {
+            case CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR:
+            {
+                state.hw_blake2b->write(pch, size);
+                break;
+            }
+            case CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION:
+            {
+                state.hw_keccack->write(pch, size);
+                break;
+            }
+        }
+        return (*this);
+    }
+
+    // invalidates the object
+    uint256 GetHash() {
+        uint256 result;
+        switch (nativeHashType)
+        {
+            case CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR:
+            {
+                result = state.hw_blake2b->GetHash();
+                break;
+            }
+            case CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION:
+            {
+                result = state.hw_keccack->GetHash();
+                break;
+            }
+        }
+        return result;
+    }
 };
 
 extern int64_t AmountFromValue(const UniValue& value);

@@ -909,7 +909,8 @@ public:
         TX_SIGNATURE = 3,
         TX_OUTPUT = 4,
         TX_SHIELDEDSPEND = 5,
-        TX_SHIELDEDOUTPUT = 6
+        TX_SHIELDEDOUTPUT = 6,
+        TX_ETH_OBJECT = 7
     };
 
     uint256 txHash;
@@ -1233,10 +1234,11 @@ public:
         TYPE_FULLTX = 1,
         TYPE_PBAAS = 2,
         TYPE_ETH = 3,
+        TYPE_LAST = 3
     };
     int8_t version;                                     // to enable versioning of this type of proof
     int8_t type;                                        // this may represent transactions from different systems
-    CMMRProof txProof;                                  // proof of the transaction in its block, either normal Merkle pre-PBaaS, or MMR partial post
+    CMMRProof txProof;                                  // proof of the transaction in its block, either normal Merkle pre-PBaaS,MMR partial post, or PATRICIA Trie
     std::vector<CTransactionComponentProof> components; // each component (or TX for older blocks) to prove
 
     CPartialTransactionProof() : version(VERSION_CURRENT), type(TYPE_PBAAS) {}
@@ -1289,6 +1291,7 @@ public:
         {
             CTransaction outTx;
             CTransactionHeader txh;
+            CVDXF_Data vdxfObj;
             if (components[0].elType == CTransactionHeader::TX_HEADER && components[0].Rehydrate(txh))
             {
                 return txh.txHash;
@@ -1296,6 +1299,34 @@ public:
             else if (components[0].elType == CTransactionHeader::TX_FULL && components[0].Rehydrate(outTx))
             {
                 return outTx.GetHash();
+            }
+            else if (components[0].elType == CTransactionHeader::TX_ETH_OBJECT && components[0].Rehydrate(vdxfObj))
+            {
+                CDataStream s = CDataStream(vdxfObj.data, SER_NETWORK, PROTOCOL_VERSION);
+                std::vector<CReserveTransfer> reserveTransfers;
+                CCrossChainExport ccx;
+
+                try
+                {
+                    s >> ccx;
+                    s >> reserveTransfers;
+                }
+                catch (const std::runtime_error &e)
+                {
+                    LogPrintf("Deserialization of ETH type object failed : %s\n", e.what());
+                    return uint256();
+                }
+                 
+                auto hw2 = CNativeHashWriter(CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
+                hw2 << ccx;
+                
+                for (auto &oneTransfer : reserveTransfers)
+                {
+                    hw2 << oneTransfer;
+                }
+                
+                return hw2.GetHash();
+                
             }
         }
         return uint256();
@@ -1315,20 +1346,22 @@ public:
     // chain proofs have a tx proof in block, a merkle proof bridge, and a chain proof
     bool IsChainProof() const
     {
-        return TYPE_PBAAS == type && 
-               txProof.proofSequence.size() >= 3 && 
-               txProof.proofSequence[1]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_NODE &&
-               txProof.proofSequence[2]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE;
+        return IsValid() &&
+               ((type == TYPE_ETH) ||
+                (TYPE_PBAAS == type && 
+                 txProof.proofSequence.size() >= 3 && 
+                 txProof.proofSequence[1]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_NODE &&
+                 txProof.proofSequence[2]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE));
     }
 
     bool IsValid() const
     {
-        return version >= VERSION_FIRST && version <= VERSION_LAST;
+        return version >= VERSION_FIRST && version <= VERSION_LAST && type != TYPE_INVALID && type <= TYPE_LAST;
     }
 
     uint256 GetBlockHash() const
     {
-        if (IsChainProof())
+        if ((type == TYPE_PBAAS || type == TYPE_FULLTX) && IsChainProof())
         {
             std::vector<uint256> &branch = ((CMMRNodeBranch *)(txProof.proofSequence[1]))->branch;
             if (branch.size() == 1)
@@ -1341,7 +1374,7 @@ public:
 
     uint256 GetBlockPower() const
     {
-        if (IsChainProof())
+        if (type == TYPE_PBAAS && IsChainProof())
         {
             std::vector<uint256> &branch = ((CMMRPowerNodeBranch *)(txProof.proofSequence[2]))->branch;
             if (branch.size() >= 1)
@@ -1354,7 +1387,7 @@ public:
 
     uint32_t GetBlockHeight() const
     {
-        if (IsChainProof())
+        if ((type == TYPE_PBAAS || type == TYPE_FULLTX) && IsChainProof())
         {
             return ((CMMRPowerNodeBranch *)(txProof.proofSequence[2]))->nIndex;
         }
@@ -1363,7 +1396,7 @@ public:
 
     uint32_t GetProofHeight() const
     {
-        if (IsChainProof())
+        if ((type == TYPE_PBAAS || type == TYPE_FULLTX) && IsChainProof())
         {
             return ((CMMRPowerNodeBranch *)(txProof.proofSequence[2]))->nSize - 1;
         }
@@ -1753,8 +1786,8 @@ public:
         return signatureKey;
     }
 
-    CIdentitySignature::ESignatureVerification SignConfirmed(const CKeyStore &keyStore, const CTransaction &txToConfirm, const CIdentityID &signWithID, uint32_t height);
-    CIdentitySignature::ESignatureVerification SignRejected(const CKeyStore &keyStore, const CTransaction &txToConfirm, const CIdentityID &signWithID, uint32_t height);
+    CIdentitySignature::ESignatureVerification SignConfirmed(const CKeyStore &keyStore, const CTransaction &txToConfirm, const CIdentityID &signWithID, uint32_t height, CCurrencyDefinition::EProofProtocol hashType);
+    CIdentitySignature::ESignatureVerification SignRejected(const CKeyStore &keyStore, const CTransaction &txToConfirm, const CIdentityID &signWithID, uint32_t height, CCurrencyDefinition::EProofProtocol hashType);
 
     bool IsPartialTxProof() const
     {

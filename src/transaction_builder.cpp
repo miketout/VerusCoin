@@ -32,11 +32,29 @@ bool TransactionBuilderResult::IsTx() { return maybeTx != boost::none; }
 
 bool TransactionBuilderResult::IsError() { return maybeError != boost::none; }
 
+bool TransactionBuilderResult::IsHexTx()
+{
+    CTransaction tx;
+    if (maybeError != boost::none &&
+        IsHex(maybeError.get()))
+    {
+        return DecodeHexTx(tx, maybeError.get());
+    }
+    return false;
+}
+
 CTransaction TransactionBuilderResult::GetTxOrThrow() {
     if (maybeTx) {
         return maybeTx.get();
     } else {
-        throw JSONRPCError(RPC_WALLET_ERROR, "Failed to build transaction: " + GetError());
+        if (IsHex(GetError()))
+        {
+            throw JSONRPCError(RPC_WALLET_ERROR, GetError());
+        }
+        else
+        {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Failed to build transaction: " + GetError());
+        }
     }
 }
 
@@ -180,7 +198,7 @@ void TransactionBuilder::AddTransparentInput(COutPoint utxo, CScript scriptPubKe
     tIns.emplace_back(scriptPubKey, value);
 }
 
-void TransactionBuilder::AddTransparentOutput(CTxDestination& to, CAmount value)
+void TransactionBuilder::AddTransparentOutput(const CTxDestination &to, CAmount value)
 {
     if (!IsValidDestination(to)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid output address, not a valid taddr.");
@@ -251,7 +269,7 @@ void TransactionBuilder::SendChangeTo(const CTxDestination &changeAddr)
     sproutChangeAddr = boost::none;
 }
 
-TransactionBuilderResult TransactionBuilder::Build()
+TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
 {
     //
     // Consistency checks
@@ -271,6 +289,12 @@ TransactionBuilderResult TransactionBuilder::Build()
         view.SetBackend(viewMemPool);
 
         CReserveTransactionDescriptor rtxd(mtx, view, chainActive.Height() + 1);
+        if (!rtxd.IsValid())
+        {
+            CReserveTransactionDescriptor checkRtxd(mtx, view, chainActive.Height() + 1);
+            LogPrint("txbuilder", "Invalid reserve transaction descriptor\n", __func__);
+            return TransactionBuilderResult("Invalid reserve transaction descriptor");
+        }
         reserveChange = (rtxd.ReserveInputMap() - rtxd.ReserveOutputMap()) - reserveFee;
 
         //printf("\n%s: reserve input:\n%s\noutput:\n%s\nchange:\n%s\n\n", __func__, rtxd.ReserveInputMap().ToUniValue().write(1,2).c_str(), rtxd.ReserveOutputMap().ToUniValue().write(1,2).c_str(), reserveChange.ToUniValue().write(1,2).c_str());
@@ -301,7 +325,7 @@ TransactionBuilderResult TransactionBuilder::Build()
             //TxToUniv(mtx, uint256(), jsonTx);
             //printf("%s: mtx: %s\n", __func__, jsonTx.write(1,2).c_str());
             printf("%s: Change cannot be negative, %s\n", __func__, ("native: " + std::to_string(change) + "\nreserves: " + reserveChange.ToUniValue().write()).c_str());
-            return TransactionBuilderResult("Change cannot be negative, native: " + std::to_string(change) + "\nreserves: " + reserveChange.ToUniValue().write() + "\n");
+            return TransactionBuilderResult("Change cannot be negative, native: " + std::to_string(change) + "\nreserves: " + reserveChange.ToUniValue().write());
         }
 
         if ((rtxd.NativeFees() - this->fee) != change)
@@ -532,6 +556,7 @@ TransactionBuilderResult TransactionBuilder::Build()
     }
 
     // Transparent signatures
+    bool throwPartialSig = false;
     CTransaction txNewConst(mtx);
     for (int nIn = 0; nIn < mtx.vin.size(); nIn++) {
         auto tIn = tIns[nIn];
@@ -544,10 +569,23 @@ TransactionBuilderResult TransactionBuilder::Build()
             //extern void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry);
             //TxToUniv(txNewConst, uint256(), jsonTx);
             //printf("Failed to sign for script:\n%s\n", jsonTx.write(1,2).c_str());
-            return TransactionBuilderResult("Failed to sign transaction");
+            if (sigdata.scriptSig.size() && throwTxWithPartialSig)
+            {
+                UpdateTransaction(mtx, nIn, sigdata);
+                throwPartialSig = true;
+            }
+            else
+            {
+                return TransactionBuilderResult("Failed to sign transaction");
+            }
         } else {
             UpdateTransaction(mtx, nIn, sigdata);
         }
+    }
+
+    if (throwPartialSig)
+    {
+        return TransactionBuilderResult(EncodeHexTx(mtx));
     }
 
     return TransactionBuilderResult(CTransaction(mtx));

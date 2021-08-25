@@ -1582,6 +1582,11 @@ void ThreadMessageHandler()
 
         BOOST_FOREACH(CNode* pnode, vNodesCopy)
         {
+            if (!pnode)
+            {
+                LogPrintf("%s: unexpected NULL node\n", __func__);
+            }
+
             if (pnode->fDisconnect)
                 continue;
 
@@ -1616,7 +1621,13 @@ void ThreadMessageHandler()
         {
             LOCK(cs_vNodes);
             BOOST_FOREACH(CNode* pnode, vNodesCopy)
+            {
+                if (!pnode)
+                {
+                    LogPrintf("%s: unexpected NULL node 2\n", __func__);
+                }
                 pnode->Release();
+            }
         }
 
         if (fSleep)

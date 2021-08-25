@@ -1394,7 +1394,7 @@ std::map<uint160, pair<int, std::vector<std::vector<unsigned char>>>> BaseSignat
     return idAddresses;
 }
 
-TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const CScript *pScriptPubKeyIn, const CKeyStore *pKeyStore, uint32_t spendHeight) : txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(NULL)
+TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const CScript *pScriptPubKeyIn, const CKeyStore *pKeyStore, uint32_t spendHeight) : txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(NULL), idMapSet(false)
 {
     if (pScriptPubKeyIn && pKeyStore)
     {
@@ -1402,7 +1402,7 @@ TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txT
     }
 }
 
-TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const PrecomputedTransactionData& txdataIn, const CScript *pScriptPubKeyIn, const CKeyStore *pKeyStore, uint32_t spendHeight) : txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(NULL)
+TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const PrecomputedTransactionData& txdataIn, const CScript *pScriptPubKeyIn, const CKeyStore *pKeyStore, uint32_t spendHeight) : txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(NULL), idMapSet(false)
 {
     if (pScriptPubKeyIn && pKeyStore)
     {
@@ -1466,9 +1466,8 @@ int TransactionSignatureChecker::CheckCryptoCondition(
     if (ffillBin.empty())
         return false;
 
-    int expectedEvals = 1;
     CC *outputCC = nullptr;
-    int nHashType;
+    int nHashType = SIGHASH_ALL;
 
     if (p.IsValid() && p.version >= p.VERSION_V3 && p.vData.size())
     {
@@ -1645,6 +1644,10 @@ int TransactionSignatureChecker::CheckCryptoCondition(
                 {
                     return true;
                 }
+            }
+            else // early out
+            {
+                return false;
             }
         }
         else

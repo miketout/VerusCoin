@@ -720,8 +720,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
     obj.push_back(Pair("startblock", (int64_t)startBlock));
     obj.push_back(Pair("endblock", (int64_t)endBlock));
 
-    // notaries are identities that perform specific functions for the currency's operation
-    // related to notarizing an external currency source, as well as proving imports
+    // currencies that can be converted for pre-launch or fractional usage
     if (currencies.size())
     {
         UniValue currencyArr(UniValue::VARR);
@@ -926,10 +925,7 @@ UniValue CTransferDestination::ToUniValue() const
 
         case CTransferDestination::DEST_REGISTERCURRENCY:
         {
-            CCurrencyRegistrationDestination curRegistration;
-            ::FromVector(destination, curRegistration);
-            destVal.push_back(Pair("identity", curRegistration.identity.ToUniValue()));
-            destVal.push_back(Pair("currency", curRegistration.currency.ToUniValue()));
+            destVal.push_back(Pair("currency", CCurrencyDefinition(destination).ToUniValue()));
             break;
         }
 
@@ -969,9 +965,9 @@ UniValue CReserveTransfer::ToUniValue() const
         ret.push_back(Pair("exportto", EncodeDestination(CIdentityID(destSystemID))));
     }
     if (IsRefund())
-        ret.push_back(Pair("importtosource", true));
-    if (IsImportToSource())
         ret.push_back(Pair("refund", true));
+    if (IsImportToSource())
+        ret.push_back(Pair("importtosource", true));
     if (IsConversion())
         ret.push_back(Pair("convert", true));
     if (IsPreConversion())
@@ -1197,6 +1193,19 @@ UniValue CMMRProof::ToUniValue() const
                 retObj.push_back(Pair("hashes", branchArray));
                 break;
             }
+            case CMerkleBranchBase::BRANCH_ETH:
+            {
+                CETHPATRICIABranch &branch = *(CETHPATRICIABranch *)(proof);
+                retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_ETH));
+               // retObj.push_back(Pair("index", (int64_t)(branch.nIndex)));
+               // retObj.push_back(Pair("mmvsize", (int64_t)(branch.nSize)));
+              //  for (auto &oneHash : branch.branch)
+              //  {
+              //      branchArray.push_back(oneHash.GetHex());
+               // }
+              //  retObj.push_back(Pair("hashes", branchArray));
+               // break;
+            }
         };
     }
     return retObj;
@@ -1228,7 +1237,9 @@ void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fInclud
             {
                 CCurrencyDefinition definition;
 
-                if (p.vData.size() && (definition = CCurrencyDefinition(p.vData[0])).IsValid())
+                if (p.vData.size() &&
+                    p.version >= COptCCParams::VERSION_V3 &&
+                    (definition = CCurrencyDefinition(p.vData[0])).IsValid())
                 {
                     out.push_back(Pair("currencydefinition", definition.ToUniValue()));
                 }

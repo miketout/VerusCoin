@@ -1085,7 +1085,7 @@ bool ContextualCheckCoinbaseTransaction(const CTransaction &tx, uint32_t nHeight
     if (!IsVerusActive() && valid && nHeight == 1)
     {
         // get all currency state information and confirm that all necessary pre-allocations, currencies,
-        // identity and imports are as they sohuld be, given the starting state represented.
+        // identity and imports are as they should be, given the starting state represented.
 
         if (ConnectedChains.ThisChain().preAllocation.size())
         {
@@ -2541,9 +2541,7 @@ int IsNotInSync()
          (pindexBestHeader == 0) || 
          ((pindexBestHeader->GetHeight() - 1) > pbi->GetHeight()))
     {
-        return (pbi && pindexBestHeader && (pindexBestHeader->GetHeight() - 1) > pbi->GetHeight()) ?
-                pindexBestHeader->GetHeight() - pbi->GetHeight() :
-                true;
+        return (pbi && pindexBestHeader) ? pindexBestHeader->GetHeight() - pbi->GetHeight() : true;
     }
     return false;
 }
@@ -2832,6 +2830,9 @@ namespace Consensus {
                      (nSpendHeight - coins->nHeight) < COINBASE_MATURITY &&
                      !coins->vout[prevout.n].scriptPubKey.IsInstantSpend())
                 {
+                    // DEBUG ONLY
+                    coins->vout[prevout.n].scriptPubKey.IsInstantSpend();
+                    //
                     return state.DoS(0,
                         error("CheckInputs(): tried to spend coinbase at depth %d", nSpendHeight - coins->nHeight),
                         REJECT_INVALID, "bad-txns-premature-spend-of-coinbase");
@@ -3586,8 +3587,20 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     // Check it again to verify JoinSplit proofs, and in case a previous version let a bad block in
     if (!CheckBlock(&futureblock,pindex->GetHeight(), pindex, block, state, chainparams, fExpensiveChecks ? verifier : disabledVerifier, fCheckPOW, !fJustCheck) || futureblock != 0 )
     {
-        //fprintf(stderr,"checkblock failure in connectblock futureblock.%d\n",futureblock);
-        return false;
+        if (futureblock)
+        {
+            // if this is a future block, don't invalidate it
+            LogPrint("net", "%s: checkblock failure in connectblock futureblock.%d\n", __func__,futureblock);
+            return false;
+        }
+        return state.DoS(100, error("%s: checkblock failure in connectblock futureblock.%d\n", __func__,futureblock),
+                         REJECT_INVALID, "invalid-block");
+    }
+
+    if (block.IsVerusPOSBlock() && !verusCheckPOSBlock(true, &block, pindex->GetHeight()))
+    {
+        return state.DoS(100, error("%s: invalid PoS block in connectblock futureblock.%d\n", __func__, futureblock),
+                         REJECT_INVALID, "invalid-pos-block");
     }
 
     // verify that the view's current state corresponds to the previous block
@@ -3600,7 +3613,27 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                          REJECT_INVALID, "hashPrevBlock-not-bestblock");
     }
     assert(hashPrevBlock == view.GetBestBlock());
-    
+
+    // do not connect a tip that is in conflict with an existing notarization
+    if (pindex->pprev != NULL)
+    {
+        int32_t prevMoMheight; uint256 notarizedhash, txid;
+        komodo_notarized_height(&prevMoMheight, &notarizedhash, &txid);
+        CBlockIndex *pNotarizedIndex = nullptr;
+        if (mapBlockIndex.count(notarizedhash))
+        {
+            pNotarizedIndex = mapBlockIndex[notarizedhash];
+            if (pNotarizedIndex &&
+                pindex->pprev->GetHeight() >= pNotarizedIndex->GetHeight() &&
+                !chainActive.Contains(pNotarizedIndex) &&
+                chainActive.Contains(pindex->pprev))
+            {
+                LogPrint("komodonotaries", "%s: attempt to add block in conflict with notarized chain\n", __func__);
+                return false;
+            }
+        }
+    }
+
     // Special case for the genesis block, skipping connection of its transactions
     // (its coinbase is unspendable)
     if (block.GetHash() == chainparams.GetConsensus().hashGenesisBlock) {
@@ -3740,6 +3773,11 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         if (nSigOps > MAX_BLOCK_SIGOPS)
             return state.DoS(100, error("ConnectBlock(): too many sigops"),
                              REJECT_INVALID, "bad-blk-sigops");
+
+        // Check transaction contextually against consensus rules at block height
+        if (!ContextualCheckTransaction(tx, state, chainparams, nHeight, 10)) {
+            return false; // Failure reason has been set in validation state object
+        }
 
         CReserveTransactionDescriptor rtxd(tx, view, nHeight);
         if (rtxd.IsReject())
@@ -3907,7 +3945,8 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             CNotaryEvidence notarizationEvidence;
             CPartialTransactionProof partialNotarizationEvidenceTx;
             CUTXORef partialNotarizationEvidenceUTXO;
-            CPBaaSNotarization lastNotarization;
+            CPBaaSNotarization lastNotarization, launchNotarization;
+            uint256 txProofRoot;
             CAmount converterIssuance = 0;
 
             // move through block one imports and add associated fee to the coinbase fees
@@ -3929,6 +3968,16 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                     if (p.evalCode == EVAL_CROSSCHAIN_IMPORT)
                     {
                         uint160 cbCurID = cbCurDef.GetID();
+
+                        // TODO: HARDENING - make this fail in the next testnet reset, not just print a message
+                        // earlier launch notarizations did not always have proofroots
+                        if (!(cci.sourceSystemID == cbCurDef.launchSystemID &&
+                              launchNotarization.proofRoots.count(cci.sourceSystemID) &&
+                              txProofRoot == launchNotarization.proofRoots[cci.sourceSystemID].stateRoot))
+                        {
+                            printf("%s: notarization check %s proofroot\n", __func__, launchNotarization.proofRoots.count(cci.sourceSystemID) ? "invalid" :"missing" );
+                        }
+
                         if ((cci = CCrossChainImport(p.vData[0])).IsValid() &&
                             cbCurDef.IsValid() &&
                             cci.importCurrencyID == cbCurID &&
@@ -4078,11 +4127,10 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                         CNotaryEvidence evidence;
                         CPBaaSNotarization nextNotarization;
 
-                        // TODO: HARDENING - should check proof of this notarization
                         evidence = CNotaryEvidence(p.vData[0]);
                         if (evidence.IsValid() &&
                             evidence.evidence.size() &&
-                            !(txProof = evidence.evidence[0]).GetPartialTransaction(nTx).IsNull())
+                            !(txProofRoot = (txProof = evidence.evidence[0]).CheckPartialTransaction(nTx)).IsNull())
                         {
                             COptCCParams notaryP;
                             if (nTx.vout.size() > evidence.output.n &&
@@ -4096,6 +4144,10 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                 partialNotarizationEvidenceTx = txProof;
                                 partialNotarizationEvidenceUTXO = evidence.output;
                                 lastNotarization = nextNotarization;
+                                if (nextNotarization.currencyID == ASSETCHAINS_CHAINID)
+                                {
+                                    launchNotarization = lastNotarization;
+                                }
                             }
                         }
                     }
@@ -5647,7 +5699,7 @@ bool CheckBlock(int32_t *futureblockp,int32_t height,CBlockIndex *pindex,const C
             return state.DoS(100, error("CheckBlock: duplicate transaction"),
                              REJECT_INVALID, "bad-txns-duplicate", true);
     }
-    
+
     // All potential-corruption validation must be done before we do any
     // transaction validation, as otherwise we may mark the header as invalid
     // because we receive the wrong transactions for it.
@@ -5895,6 +5947,19 @@ bool ContextualCheckBlock(
         {
             return state.DoS(10, error("%s: block header has incorrect version %d, should be %d", __func__, ver, solutionVersion), REJECT_INVALID, "incorrect-block-version");
         }
+        if (block.IsVerusPOSBlock() && !verusCheckPOSBlock(false, &block, nHeight))
+        {
+            if (IsVerusMainnetActive() && nHeight < 1564700)
+            {
+                printf("%s: Invalid POS block at height %u - %s\n", __func__, nHeight, block.GetHash().GetHex().c_str());
+                LogPrintf("%s: Invalid POS block at height %u - %s\n", __func__, nHeight, block.GetHash().GetHex().c_str());
+            }
+            else
+            {
+                LogPrintf("%s: Invalid POS block at height %u - %s\n", __func__, nHeight, block.GetHash().GetHex().c_str());
+                return state.DoS(10, error("%s: invalid proof of stake block", __func__), REJECT_INVALID, "invalid-pos");
+            }
+        }
     }
 
     // Check that all transactions are finalized, reject stake transactions, and
@@ -5903,11 +5968,6 @@ bool ContextualCheckBlock(
     for (uint32_t i = 0; i < block.vtx.size(); i++) {
         const CTransaction& tx = block.vtx[i];
         
-        // Check transaction contextually against consensus rules at block height
-        if (!ContextualCheckTransaction(tx, state, chainparams, nHeight, 10)) {
-            return false; // Failure reason has been set in validation state object
-        }
-
         // this is the only place where a duplicate name definition of the same name is checked in a block
         // all other cases are covered via mempool and pre-registered check, doing this would require a malicious
         // client, so immediate ban score
@@ -5969,8 +6029,8 @@ static bool AcceptBlockHeader(int32_t *futureblockp,const CBlockHeader& block, C
             *ppindex = pindex;
         if ( pindex != 0 && pindex->nStatus & BLOCK_FAILED_MASK )
         {
-            LogPrintf("block height: %u\n", pindex->GetHeight());
-            return state.Invalid(error("%s: block is marked invalid", __func__), 0, "duplicate");
+            LogPrint("net", "block height: %u\n", pindex->GetHeight());
+            return state.DoS(100, error("%s: block is marked invalid", __func__), REJECT_INVALID, "banned-for-invalid-block");
         }
         /*if ( pindex != 0 && hash == komodo_requestedhash )
         {
@@ -6045,7 +6105,9 @@ static bool AcceptBlock(int32_t *futureblockp, const CBlock& block, CValidationS
     CBlockIndex *&pindex = *ppindex;
     if (!AcceptBlockHeader(futureblockp, block, state, chainparams, &pindex))
     {
-        if ( *futureblockp == 0 )
+        int nDoS = 0;
+
+        if ( *futureblockp == 0 || (state.IsInvalid(nDoS) && nDoS >= 100) )
         {
             LogPrintf("AcceptBlock AcceptBlockHeader error\n");
             return false;
@@ -6094,7 +6156,7 @@ static bool AcceptBlock(int32_t *futureblockp, const CBlock& block, CValidationS
             return false;
         }
     }
-    
+
     int nHeight = pindex->GetHeight();
     // Write block to history file
     try {
@@ -6331,7 +6393,7 @@ bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams,
     {
         success = true;
     }
-    assert(state.IsValid());
+    //assert(state.IsValid());
 
     RemoveCoinbaseFromMemPool(block);
     return success;
@@ -7520,19 +7582,29 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
     vector<CInv> vNotFound;
     
     LOCK(cs_main);
-    
+
+    LogPrint("getdata", "%s\n", __func__);
+
     while (it != pfrom->vRecvGetData.end()) {
         // Don't bother if send buffer is too full to respond anyway
         if (pfrom->nSendSize >= SendBufferSize())
+        {
+            LogPrint("net", "%s: send buffer too full\n", __func__);
             break;
-        
+        }
+
+
         const CInv &inv = *it;
         {
+            LogPrint("getdata", "%s: one inventory item %s\n", __func__, inv.ToString().c_str());
+
             boost::this_thread::interruption_point();
             it++;
-            
+
             if (inv.type == MSG_BLOCK || inv.type == MSG_FILTERED_BLOCK)
             {
+                LogPrint("getdata", "%s: inv %s\n", __func__, inv.type == MSG_BLOCK ? "MSG_BLOCK" : "MSG_FILTERED_BLOCK");
+
                 bool send = false;
                 BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
                 if (mi != mapBlockIndex.end())
@@ -7556,6 +7628,8 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                 // it's available before trying to send.
                 if (send && (mi->second->nStatus & BLOCK_HAVE_DATA))
                 {
+                    LogPrint("getdata", "%s: is send\n", __func__);
+
                     // Send block from disk
                     CBlock block;
                     if (!ReadBlockFromDisk(block, (*mi).second, consensusParams, 1))
@@ -7610,6 +7684,8 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
             }
             else if (inv.IsKnownType())
             {
+                LogPrint("getdata", "%s: inv 3 %d\n", __func__, inv.type);
+
                 // Check the mempool to see if a transaction is expiring soon.  If so, do not send to peer.
                 // Note that a transaction enters the mempool first, before the serialized form is cached
                 // in mapRelay after a successful relay.
@@ -7783,7 +7859,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         pfrom->ssSend.SetVersion(min(pfrom->nVersion, CConstVerusSolutionVector::activationHeight.ActiveVersion(nHeight) >= CConstVerusSolutionVector::activationHeight.ACTIVATE_PBAAS ? 
                                                                                  MIN_PBAAS_VERSION : 
                                                                                  MIN_PEER_PROTO_VERSION));
-        
+
         if (!pfrom->fInbound)
         {
             // Advertise our address
@@ -8041,6 +8117,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
     
     else if (strCommand == "getdata")
     {
+        LogPrint("getdata", "received getdata peer=%d\n", pfrom->id);
         vector<CInv> vInv;
         vRecv >> vInv;
         if (vInv.size() > MAX_INV_SZ)
@@ -8056,6 +8133,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             LogPrint("net", "received getdata for: %s peer=%d\n", vInv[0].ToString(), pfrom->id);
         
         pfrom->vRecvGetData.insert(pfrom->vRecvGetData.end(), vInv.begin(), vInv.end());
+        LogPrint("getdata", "calling ProcessGetData\n");
         ProcessGetData(pfrom, chainparams.GetConsensus());
     }
     
@@ -8376,15 +8454,14 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             int32_t futureblock;
             if (!AcceptBlockHeader(&futureblock, header, state, chainparams, &pindexLast)) {
                 int nDoS;
-                if (state.IsInvalid(nDoS) && futureblock == 0)
+                if (state.IsInvalid(nDoS) && (futureblock == 0 || nDoS >= 100))
                 {
-                    if (nDoS > 0 && futureblock == 0)
-                        Misbehaving(pfrom->GetId(), nDoS/nDoS);
+                    Misbehaving(pfrom->GetId(), nDoS);
                     return error("invalid header received");
                 }
             }
         }
-        
+
         if (pindexLast)
             UpdateBlockAvailability(pfrom->GetId(), pindexLast->GetBlockHash());
         
@@ -8430,7 +8507,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             }
         }
     }
-    
+
     
     // This asymmetric behavior for inbound and outbound connections was introduced
     // to prevent a fingerprinting attack: an attacker can send specific fake addresses
@@ -8722,6 +8799,7 @@ bool ProcessMessages(CNode* pfrom)
         // Scan for message start
         if (memcmp(msg.hdr.pchMessageStart, chainparams.MessageStart(), MESSAGE_START_SIZE) != 0) {
             LogPrintf("PROCESSMESSAGE: MESSAGESTART DOES NOT MATCH NETWORK %s peer=%d\n", SanitizeString(msg.hdr.GetCommand()), pfrom->id);
+            Misbehaving(pfrom->GetId(), 100);
             fOk = false;
             break;
         }
@@ -8731,6 +8809,7 @@ bool ProcessMessages(CNode* pfrom)
         if (!hdr.IsValid(chainparams.MessageStart()))
         {
             LogPrintf("PROCESSMESSAGE: ERRORS IN HEADER %s peer=%d\n", SanitizeString(hdr.GetCommand()), pfrom->id);
+            Misbehaving(pfrom->GetId(), 20);
             continue;
         }
         string strCommand = hdr.GetCommand();

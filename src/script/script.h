@@ -433,6 +433,7 @@ CTxDestination TransferDestinationToDestination(const CTransferDestination &tran
 CTransferDestination DestinationToTransferDestination(const CTxDestination &dest);
 CTransferDestination IdentityToTransferDestination(const CIdentity &identity);
 CIdentity TransferDestinationToIdentity(const CTransferDestination &dest);
+CCurrencyDefinition TransferDestinationToCurrency(const CTransferDestination &dest);
 std::vector<CTxDestination> TransferDestinationsToDestinations(const std::vector<CTransferDestination> &transferDests);
 std::vector<CTransferDestination> DestinationsToTransferDestinations(const std::vector<CTxDestination> &dests);
 
@@ -785,6 +786,7 @@ public:
     bool MayAcceptCryptoCondition() const;
     bool MayAcceptCryptoCondition(int evalCode) const;
     bool IsInstantSpend() const;
+    bool IsInstantSpendOrUnspendable() const;
 
     // insightexplorer, there may be more script types in the future
     enum ScriptType : int {

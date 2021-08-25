@@ -363,9 +363,9 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             strcpy(cp->normaladdr,PBaaSDefinitionAddr.c_str());
             strcpy(cp->CChexstr,PBaaSDefinitionPubKey.c_str());
             memcpy(cp->CCpriv,DecodeSecret(PBaaSDefinitionWIF).begin(),32);
-            cp->validate = ValidateChainDefinition;
-            cp->ismyvin = IsChainDefinitionInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->validate = ValidateCurrencyDefinition;
+            cp->ismyvin = IsCurrencyDefinitionInput;
+            cp->contextualprecheck = PrecheckCurrencyDefinition;
             break;
 
         case EVAL_EARNEDNOTARIZATION:
@@ -375,7 +375,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv,DecodeSecret(EarnedNotarizationWIF).begin(),32);
             cp->validate = ValidateEarnedNotarization;
             cp->ismyvin = IsEarnedNotarizationInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->contextualprecheck = PreCheckAcceptedOrEarnedNotarization;
             break;
 
         case EVAL_ACCEPTEDNOTARIZATION:
@@ -385,7 +385,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv,DecodeSecret(AcceptedNotarizationWIF).begin(),32);
             cp->validate = ValidateAcceptedNotarization;
             cp->ismyvin = IsAcceptedNotarizationInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->contextualprecheck = PreCheckAcceptedOrEarnedNotarization;
             break;
 
         case EVAL_FINALIZE_NOTARIZATION:
@@ -445,7 +445,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv,DecodeSecret(ReserveDepositWIF).begin(),32);
             cp->validate = ValidateReserveDeposit;
             cp->ismyvin = IsReserveDepositInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->contextualprecheck = PrecheckReserveDeposit;
             break;
 
         case EVAL_CROSSCHAIN_IMPORT:

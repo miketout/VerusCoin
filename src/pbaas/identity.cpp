@@ -87,6 +87,86 @@ CIdentity::CIdentity(const CTransaction &tx, int *voutNum)
     }
 }
 
+bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height, uint32_t expiryHeight) const
+{
+    auto nSolVersion = CConstVerusSolutionVector::GetVersionByHeight(height);
+    if (parent != newIdentity.parent ||
+        (nSolVersion < CActivationHeight::ACTIVATE_IDCONSENSUS2 && name != newIdentity.name) ||
+        (nSolVersion >= CActivationHeight::ACTIVATE_IDCONSENSUS2 &&
+            nSolVersion < CActivationHeight::ACTIVATE_PBAAS && 
+            (newIdentity.HasActiveCurrency() || 
+            newIdentity.IsLocked() ||
+            newIdentity.nVersion >= VERSION_PBAAS)) ||
+        (nSolVersion >= CActivationHeight::ACTIVATE_PBAAS && (newIdentity.nVersion < VERSION_PBAAS ||
+                                                                (newIdentity.systemID != (nVersion < VERSION_PBAAS ? parent : systemID)))) ||
+        GetID() != newIdentity.GetID() ||
+        ((newIdentity.flags & ~FLAG_REVOKED) && (newIdentity.nVersion == VERSION_FIRSTVALID)) ||
+        ((newIdentity.flags & ~(FLAG_REVOKED + FLAG_ACTIVECURRENCY + FLAG_LOCKED)) && (newIdentity.nVersion >= VERSION_PBAAS)) ||
+        (IsLocked(height) && (!newIdentity.IsRevoked() && !newIdentity.IsLocked(height))) ||
+        ((flags & FLAG_ACTIVECURRENCY) && !(newIdentity.flags & FLAG_ACTIVECURRENCY)) ||
+        newIdentity.nVersion < VERSION_FIRSTVALID ||
+        newIdentity.nVersion > VERSION_LASTVALID)
+    {
+        return true;
+    }
+
+    // we cannot unlock instantly unless we are revoked, we also cannot relock
+    // to enable an earlier unlock time
+    if (newIdentity.nVersion >= VERSION_PBAAS)
+    {
+        if (IsLocked(height))
+        {
+            if (!newIdentity.IsRevoked())
+            {
+                // if we are locked due to the lock flag and not counting down
+                if (IsLocked())
+                {
+                    if (newIdentity.IsLocked() && newIdentity.unlockAfter < unlockAfter)
+                    {
+                        return true;
+                    }
+                    else if (!newIdentity.IsLocked() &&
+                                (newIdentity.unlockAfter < (unlockAfter + expiryHeight)) &&
+                                !(unlockAfter > MAX_UNLOCK_DELAY && newIdentity.unlockAfter == (MAX_UNLOCK_DELAY + expiryHeight)))
+                    {
+                        return true;
+                    }
+                }
+                else if (!IsLocked())
+                {
+                    // only revocation can change unlock after time, and we don't allow re-lock to an earlier time until unlock either, 
+                    // which can change the new unlock time
+                    if (newIdentity.IsLocked())
+                    {
+                        if ((expiryHeight + newIdentity.unlockAfter < unlockAfter))
+                        {
+                            return true;
+                        }
+                    }
+                    else if (newIdentity.unlockAfter != unlockAfter)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        else if (newIdentity.IsLocked(height))
+        {
+            if (newIdentity.IsLocked() && newIdentity.unlockAfter > MAX_UNLOCK_DELAY)
+            {
+                return true;
+            }
+            else if (!newIdentity.IsLocked() && newIdentity.unlockAfter <= expiryHeight)
+            {
+                // we never set the locked bit, but we are counting down to the block set to unlock
+                // cannot lock with unlock before the expiry height
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 CIdentity CIdentity::LookupIdentity(const CIdentityID &nameID, uint32_t height, uint32_t *pHeightOut, CTxIn *pIdTxIn)
 {
     LOCK(mempool.cs);
@@ -733,40 +813,94 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
 
     bool validReservation = false;
     bool validIdentity = false;
+    bool validImport = false;
+    bool validSourceSysImport = false;
+    bool validCrossChainImport = false;
 
     CNameReservation nameRes;
     CIdentity identity;
+    CCrossChainImport cci;
+
     COptCCParams p, identityP;
 
     uint32_t networkVersion = CConstVerusSolutionVector::GetVersionByHeight(height);
     bool isPBaaS = networkVersion >= CActivationHeight::ACTIVATE_PBAAS;
+    bool isCoinbase = tx.IsCoinBase();
 
     for (int i = 0; i < tx.vout.size(); i++)
     {
         CIdentity checkIdentity;
         auto &output = tx.vout[i];
-        if (output.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.version >= COptCCParams::VERSION_V3 && p.evalCode == EVAL_IDENTITY_RESERVATION && p.vData.size() > 1 && (nameRes = CNameReservation(p.vData[0])).IsValid())
+        if (output.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.version >= COptCCParams::VERSION_V3 && p.vData.size() > 1)
         {
-            // twice through makes it invalid
-            if (validReservation)
+            switch (p.evalCode)
             {
-                return state.Error("Invalid multiple identity reservations on one transaction");
+                case EVAL_IDENTITY_RESERVATION:
+                {
+                    nameRes = CNameReservation(p.vData[0]);
+                    if (!nameRes.IsValid())
+                    {
+                        return state.Error("Invalid identity reservation");
+                    }
+                    // twice through makes it invalid
+                    if (!(isPBaaS && isCoinbase && height == 1) &&
+                        validReservation)
+                    {
+                        return state.Error("Invalid multiple identity reservations on one transaction");
+                    }
+                    validReservation = true;
+                }
+                break;
+
+                case EVAL_IDENTITY_PRIMARY:
+                {
+                    checkIdentity = CIdentity(p.vData[0]);
+                    if (!checkIdentity.IsValid())
+                    {
+                        return state.Error("Invalid identity on transaction output " + std::to_string(i));
+                    }
+
+                    // twice through makes it invalid
+                    if (!(isPBaaS && height == 1) && !validCrossChainImport && validIdentity)
+                    {
+                        return state.Error("Invalid multiple identity definitions on one transaction");
+                    }
+
+                    if (i == outNum)
+                    {
+                        identityP = p;
+                        identity = checkIdentity;
+                    }
+                    validIdentity = true;
+                }
+                break;
+
+                case EVAL_CROSSCHAIN_IMPORT:
+                {
+                    cci = CCrossChainImport(p.vData[0]);
+                    if (!cci.IsValid())
+                    {
+                        return state.Error("Invalid import on transaction output " + std::to_string(i));
+                    }
+
+                    // twice through makes it invalid
+                    if (!(isPBaaS && (height == 1 || cci.IsDefinitionImport())) && (validSourceSysImport || (validImport && !cci.IsSourceSystemImport())))
+                    {
+                        return state.Error("Invalid multiple cross-chain imports on one transaction");
+                    }
+                    else if (cci.IsSourceSystemImport())
+                    {
+                        validSourceSysImport = true;
+                    }
+
+                    validImport = true;
+                    if (cci.sourceSystemID != ASSETCHAINS_CHAINID)
+                    {
+                        validCrossChainImport = true;
+                    }
+                }
+                break;
             }
-            validReservation = true;
-        }
-        else if (p.IsValid() && p.version >= COptCCParams::VERSION_V3 && p.evalCode == EVAL_IDENTITY_PRIMARY && p.vData.size() > 1 && (checkIdentity = CIdentity(p.vData[0])).IsValid())
-        {
-            // twice through makes it invalid
-            if (!(isPBaaS && height == 1) && validIdentity)
-            {
-                return state.Error("Invalid multiple identity definitions on one transaction");
-            }
-            if (i == outNum)
-            {
-                identityP = p;
-                identity = checkIdentity;
-            }
-            validIdentity = true;
         }
     }
 
@@ -964,17 +1098,25 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
         }
     }
 
-    // TODO: HARDENING at block one, a new PBaaS chain can mint IDs
-    // ensure they are valid as per the launch parameters
-    if (isPBaaS && height == 1)
+    // TODO: HARDENING at block one, a new PBaaS chain can mint IDs, but only those on its own chain or imported from its launch chain
+    // imported IDs must come from a system that can import the ID in question
+    if (isPBaaS)
     {
-        return true;
+        if (height == 1)
+        {
+            // for block one IDs, ensure they are valid as per the launch parameters
+            return true;
+        }
+        else if (validCrossChainImport)
+        {
+            // ensure that we are importing IDs from a source system that can send us these IDs
+            return true;
+        }
     }
 
     return state.Error("Invalid primary identity - does not include identity reservation or spend matching identity");
 }
 
-CIdentity GetOldIdentity(const CTransaction &spendingTx, uint32_t nIn, CTransaction *pSourceTx=nullptr, uint32_t *pHeight=nullptr);
 CIdentity GetOldIdentity(const CTransaction &spendingTx, uint32_t nIn, CTransaction *pSourceTx, uint32_t *pHeight)
 {
     CTransaction _sourceTx;

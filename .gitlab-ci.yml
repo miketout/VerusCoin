@@ -6,7 +6,9 @@ stages:
 ####START####                                     PROJECT LEVEL VARIABLES                                  ####START####
 ########################################################################################################################
 variables:
-  VERSION: 0.7.3
+
+  VERSION: 0.7.4
+
   VERUS_CLI_ARM64_LINUX: Verus-CLI-Linux-v${VERSION}-arm64.tar.gz
   VERUS_CLI_LINUX_X86_64: Verus-CLI-Linux-v${VERSION}-x86_64.tar.gz
   VERUS_CLI_WINDOWS: Verus-CLI-Windows-v${VERSION}.zip
@@ -28,7 +30,7 @@ variables:
 ####START####                                            LINUX                                             ####START####
 ########################################################################################################################
 build:linux:
-  image: asherd/verus-builders:verus-xenial
+  image: asherd/verus-builders:verus-debian-9
   variables:
     DOCKER_DRIVER: overlay2
     CONFIGURE_FLAGS: --with-gcc-arch=x86-64

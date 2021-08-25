@@ -215,12 +215,12 @@ CTxDestination TransferDestinationToDestination(const CTransferDestination &tran
 
         case CTransferDestination::DEST_REGISTERCURRENCY:
         {
-            CCurrencyRegistrationDestination regDest;
-            ::FromVector(transferDest.destination, regDest);
-            if (regDest.IsValid())
-            {
-                retDest = CIdentityID(regDest.identity.GetID());
-            }
+            CCcontract_info CC;
+            CCcontract_info *cp;
+
+            // make a currency definition
+            cp = CCinit(&CC, EVAL_CURRENCY_DEFINITION);
+            retDest = CTxDestination(CPubKey(ParseHex(CC.CChexstr)));
             break;
         }
 
@@ -274,6 +274,25 @@ CIdentity TransferDestinationToIdentity(const CTransferDestination &dest)
         }        
     }
     return retIdentity;
+}
+
+CTransferDestination CurrencyToTransferDestination(const CCurrencyDefinition &currency)
+{
+    return CTransferDestination(CTransferDestination::DEST_REGISTERCURRENCY, ::AsVector(currency));
+}
+
+CCurrencyDefinition TransferDestinationToCurrency(const CTransferDestination &dest)
+{
+    CCurrencyDefinition retCurrency;
+    switch (dest.type)
+    {
+        case CTransferDestination::DEST_REGISTERCURRENCY:
+        {
+            ::FromVector(dest.destination, retCurrency);
+            break;
+        }        
+    }
+    return retCurrency;
 }
 
 std::vector<CTxDestination> TransferDestinationsToDestinations(const std::vector<CTransferDestination> &transferDests)
@@ -525,14 +544,37 @@ bool CScript::IsInstantSpend() const
 {
     COptCCParams p;
     bool isInstantSpend = false;
-    if (!_IsVerusActive() && IsPayToCryptoCondition(p) && p.IsValid())
+
+    // TODO: HARDENING - this must run on the Verus chain, but should have a version check and parameter
+    if (!_IsVerusMainnetActive() && IsPayToCryptoCondition(p) && p.IsValid())
+    {
+        // instant spends must be to expected instant spend crypto conditions and to the right address as well
+        // TODO: fix this check
+        if (p.evalCode == EVAL_EARNEDNOTARIZATION || 
+            p.evalCode == EVAL_FINALIZE_NOTARIZATION || 
+            p.evalCode == EVAL_FINALIZE_EXPORT || 
+            p.evalCode == EVAL_CROSSCHAIN_IMPORT ||
+            p.evalCode == EVAL_CROSSCHAIN_EXPORT)
+        {
+            isInstantSpend = true;
+        }
+    }
+    return isInstantSpend;
+}
+
+bool CScript::IsInstantSpendOrUnspendable() const
+{
+    COptCCParams p;
+    bool isInstantSpend = false;
+    if (IsPayToCryptoCondition(p) && p.IsValid() && p.version >= p.VERSION_V3)
     {
         // instant spends must be to expected instant spend crypto conditions and to the right address as well
         // TODO: fix this check
         if (p.evalCode == EVAL_EARNEDNOTARIZATION || 
             p.evalCode == EVAL_FINALIZE_NOTARIZATION || 
             p.evalCode == EVAL_CROSSCHAIN_IMPORT ||
-            p.evalCode == EVAL_CROSSCHAIN_EXPORT)
+            p.evalCode == EVAL_CROSSCHAIN_EXPORT ||
+            p.evalCode == EVAL_FEE_POOL)
         {
             isInstantSpend = true;
         }

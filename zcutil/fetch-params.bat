@@ -12,7 +12,7 @@ SET sapling-spend.params=8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b7
 SET sapling-output.params=2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4
 SET sprout-groth16.params=b685d700c60328498fbde589c8c7c484c722b788b265b72af448a5bf0ee55b50
 SET "ZPARAMS_DIR=%APPDATA%\ZcashParams"
-SET ZPARAMS_URL=https://z.cash/downloads
+SET ZPARAMS_URL=https://verus.io/zcparams
 
 
 CALL :MAIN

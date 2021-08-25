@@ -39,6 +39,11 @@ void CMMRProof::DeleteProofSequence()
                 delete (CMMRPowerNodeBranch *)pProof;
                 break;
             }
+            case CMerkleBranchBase::BRANCH_ETH:
+            {
+                delete (CETHPATRICIABranch *)pProof;
+                break;
+            }
             default:
             {
                 ErrorAndBP("ERROR: likely double-free or memory corruption, unrecognized object in proof sequence");
@@ -74,6 +79,14 @@ const CMMRProof &CMMRProof::operator<<(const CMMRPowerNodeBranch &append)
     return *this;
 }
 
+const CMMRProof &CMMRProof::operator<<(const CETHPATRICIABranch &append)
+{
+    CETHPATRICIABranch *pNewProof = new CETHPATRICIABranch(append);
+    pNewProof->branchType = CMerkleBranchBase::BRANCH_ETH;
+    proofSequence.push_back(pNewProof);
+    return *this;
+}
+
 uint256 CMMRProof::CheckProof(uint256 hash) const
 {
     for (auto &pProof : proofSequence)
@@ -95,6 +108,12 @@ uint256 CMMRProof::CheckProof(uint256 hash) const
             {
                 hash = ((CMMRPowerNodeBranch *)pProof)->SafeCheck(hash);
                 //printf("Result from CMMRPowerNodeBranch check: %s\n", hash.GetHex().c_str());
+                break;
+            }
+            case CMerkleBranchBase::BRANCH_ETH:
+            {
+                hash = ((CETHPATRICIABranch *)pProof)->SafeCheck(hash);
+                printf("Result from ETHBranch check: %s\n", hash.GetHex().c_str());
                 break;
             }
         }

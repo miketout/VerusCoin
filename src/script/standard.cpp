@@ -86,7 +86,8 @@ COptCCParams::COptCCParams(const std::vector<unsigned char> &vch)
                     vKeys.clear();
                     vData.clear();
                     int i;
-                    for (i = 1; version != 0 && i <= n; i++)
+                    int limit = n == data.size() ? n : n + 1;
+                    for (i = 1; version != 0 && i < limit; i++)
                     {
                         std::vector<unsigned char> &keyVec = data[i];
                         if (keyVec.size() == 20)

@@ -12,6 +12,7 @@
 #include "mmr.h"
 
 #include "librustzcash.h"
+#include "cc/CCinclude.h"
 
 JSDescription::JSDescription(
     bool makeGrothProof,
@@ -657,6 +658,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
 {
     CTransactionHeader txh;
     CMutableTransaction mtx;
+    CVDXF_Data vdxfObj;
 
     uint256 txRoot;
     bool checkOK = false;
@@ -746,6 +748,69 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
         {
             isPartial = false;
             txRoot = outTx.GetHash();
+        }
+        else if (components[0].elType == CTransactionHeader::TX_ETH_OBJECT && components[0].Rehydrate(vdxfObj))
+        {
+            if (vdxfObj.key == CCrossChainExport::CurrencyExportKey())
+            {
+                // unpack data specific to export and reserve transfers
+                CDataStream s = CDataStream(vdxfObj.data, SER_NETWORK, PROTOCOL_VERSION);
+                std::vector<CReserveTransfer> reserveTransfers;
+                CCrossChainExport ccx;
+                CCcontract_info CC;
+                CCcontract_info *cp;
+                checkOK = true;
+                try
+                {
+                    s >> ccx;
+                    s >> reserveTransfers;
+                }
+                catch (const std::runtime_error &e)
+                {
+                    LogPrintf("Cross Chain : %s\n", e.what());
+                    checkOK = false;
+                }
+                auto hw  = CNativeHashWriter(CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
+
+                // TODO: HARDENING - ensure this is completely valid
+                for (auto &oneTransfer : reserveTransfers)
+                {
+                    hw << oneTransfer;
+                }
+
+                if (!ccx.IsValid() || !checkOK || (ccx.hashReserveTransfers != hw.GetHash()) )
+                {
+
+                    printf("%s: Cross chain ReserveTransfer check invalid.\n", __func__);
+                    LogPrintf("%s: Cross chain ReserveTransfer check invalid.\n", __func__);
+                    
+                    checkOK = false;
+                }
+
+                if (checkOK)
+                {
+                    auto hw2 = CNativeHashWriter(CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
+                    hw2 << ccx;
+                    for (auto &oneTransfer : reserveTransfers)
+                    {
+                        hw2 << oneTransfer;
+                    }
+                   
+                    txRoot = hw2.GetHash();
+                    cp = CCinit(&CC, EVAL_CROSSCHAIN_EXPORT);
+                    std::vector<CTxDestination> dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
+
+                    mtx.vout.push_back(CTxOut(0, MakeMofNCCScript(CConditionObj<CCrossChainExport>(EVAL_CROSSCHAIN_EXPORT, dests, 1, &ccx))));
+                
+                    isPartial = true;
+                    
+                    outTx = mtx;
+                }
+                else
+                {
+                    txRoot = uint256();
+                }
+            }
         }
     }
     if (pIsPartial)

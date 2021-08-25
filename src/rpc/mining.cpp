@@ -429,6 +429,7 @@ UniValue getmininginfo(const UniValue& params, bool fHelp)
     auto consensus = Params().GetConsensus();
     uint32_t height = chainActive.Height();
     CAmount estimatedStakingSupply = 0;
+    arith_uint256 totalChainStake(0);
     CAmount avgBlockFees = 0;
     bool avgBlockFeesValid = true;
 
@@ -437,7 +438,6 @@ UniValue getmininginfo(const UniValue& params, bool fHelp)
         int first = height - 100;
 
         arith_uint256 bigTotalFees(0);
-        arith_uint256 totalChainStake(0);
         arith_uint256 bnStakeTarget;
         int posCount = 0, blockCount = 0;
 
@@ -502,7 +502,14 @@ UniValue getmininginfo(const UniValue& params, bool fHelp)
     obj.push_back(Pair("currentblocktx",   (uint64_t)nLastBlockTx));
     obj.push_back(Pair("averageblockfees", ValueFromAmount(avgBlockFees)));
     obj.push_back(Pair("difficulty",       (double)GetNetworkDifficulty()));
-    obj.push_back(Pair("stakingsupply",    ValueFromAmount(estimatedStakingSupply)));
+    if (!estimatedStakingSupply && totalChainStake != 0)
+    {
+        obj.push_back(Pair("stakingsupply", totalChainStake.ToString()));
+    }
+    else
+    {
+        obj.push_back(Pair("stakingsupply", ValueFromAmount(estimatedStakingSupply)));
+    }
     obj.push_back(Pair("errors",           GetWarnings("statusbar")));
     obj.push_back(Pair("genproclimit",     (int)GetArg("-genproclimit", -1)));
     if (ASSETCHAINS_ALGO == ASSETCHAINS_EQUIHASH)

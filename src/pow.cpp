@@ -123,6 +123,12 @@ unsigned int lwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const CBlock
 unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const Consensus::Params& params)
 {
     arith_uint256 nextTarget {0}, sumTarget {0}, bnTmp, bnLimit;
+    if (_IsVerusMainnetActive() && pindexLast && pindexLast->GetHeight() <= 1568100 && pindexLast->GetHeight() >= 1567999)
+    {
+        arith_uint256 maxDiffAdjust = UintToArith256(uint256S("00000000000f0f0f000000000000000000000000000000000000000000000000"));
+        return maxDiffAdjust.GetCompact();
+    }
+
     if (ASSETCHAINS_ALGO == ASSETCHAINS_EQUIHASH)
     {
         bnLimit = UintToArith256(params.powLimit);
@@ -139,10 +145,11 @@ unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const 
 
     // if changing from VerusHash V1 to V2, shift the last blocks by the same shift as the limit
     int targetShift = 0;
-    if (CConstVerusSolutionVector::activationHeight.ActiveVersion(pindexLast->GetHeight() + 1) > CConstVerusSolutionVector::activationHeight.SOLUTION_VERUSV1)
+    uint32_t height = pindexLast->GetHeight() + 1;
+    if (CConstVerusSolutionVector::activationHeight.ActiveVersion(height) >= CConstVerusSolutionVector::activationHeight.SOLUTION_VERUSV2)
     {
-        bnLimit <<= VERUSHASH2_SHIFT;
         targetShift = VERUSHASH2_SHIFT;
+        bnLimit <<= targetShift;
     }
 
     for (int i = 0, j = N - 1; pindexFirst && i < N; i++, j--) {
@@ -174,12 +181,8 @@ unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const 
         {
             // startup 16 times harder on PBaaS chains
             bnLimit = bnLimit >> 4;
-            return bnLimit.GetCompact();
         }
-        else
-        {
-            return bnLimit.GetCompact();
-        }
+        return bnLimit.GetCompact();
     }
 
     // Keep t reasonable in case strange solvetimes occurred.
@@ -225,6 +228,12 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
         maxConsecutivePos = VERUS_V2_CONSECUTIVE_POS_THRESHOLD;
     }
 
+    if (_IsVerusMainnetActive() && pindexLast && pindexLast->GetHeight() >= 1567999)
+    {
+        bnLimit = UintToArith256(uint256S("00000000000f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"));
+        nProofOfStakeLimit = bnLimit.GetCompact();
+    }
+
     struct solveSequence {
         int64_t solveTime;
         bool consecutive;
@@ -248,7 +257,9 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
     for (int64_t i = 0; i < VERUS_NOPOS_THRESHHOLD; i++)
     {
         if (!pindexFirst)
+        {
             return nProofOfStakeLimit;
+        }
 
         CBlockHeader hdr = pindexFirst->GetBlockHeader();
 
@@ -274,7 +285,9 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
             pindexFirst = pindexFirst->pprev;
 
             if (!pindexFirst)
+            {
                 return nProofOfStakeLimit;
+            }
 
             CBlockHeader hdr = pindexFirst->GetBlockHeader();
             if (hdr.IsVerusPOSBlock())
@@ -469,7 +482,7 @@ bool CheckProofOfWork(const CBlockHeader &blkHeader, uint8_t *pubkey33, int32_t 
         int32_t verusVersion = CConstVerusSolutionVector::activationHeight.ActiveVersion(height);
         if (verusVersion >= CConstVerusSolutionVector::activationHeight.SOLUTION_VERUSV2)
         {
-            int32_t pbaasAdjust = !_IsVerusActive() && height < params.nPOSAveragingWindow ? 4 : 0;
+            int32_t pbaasAdjust = !_IsVerusActive() && height < params.nPowAveragingWindow ? 4 : 0;
             bnLimit = UintToArith256(params.powAlternate) << (VERUSHASH2_SHIFT - pbaasAdjust);
         }
         else

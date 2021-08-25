@@ -685,8 +685,8 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
             "\nAdds a zkey (as returned by z_exportkey) to your wallet.\n"
             "\nArguments:\n"
             "1. \"zkey\"             (string, required) The zkey (see z_exportkey)\n"
-            "2. rescan             (string, optional, default=\"whenkeyisnew\") Rescan the wallet for transactions - can be \"yes\", \"no\" or \"whenkeyisnew\"\n"
-            "3. startHeight        (numeric, optional, default=0) Block height to start rescan from\n"
+            "2. rescan               (string, optional, default=\"whenkeyisnew\") Rescan the wallet for transactions - can be \"yes\", \"no\" or \"whenkeyisnew\"\n"
+            "3. startHeight          (numeric, optional, default=0) Block height to start rescan from\n"
             "\nNote: This call can take minutes to complete if rescan is true.\n"
             "\nExamples:\n"
             "\nExport a zkey\n"
@@ -741,7 +741,22 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
     string strSecret = params[0].get_str();
     auto spendingkey = DecodeSpendingKey(strSecret);
     if (!IsValidSpendingKey(spendingkey)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid spending key");
+        libzcash::SaplingExtendedSpendingKey extSk;
+        bool success = false;
+        if (IsHex(strSecret))
+        {
+            ::FromVector(ParseHex(strSecret), extSk, &success);
+        }
+        if (success)
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Hex key detected. Spending key cannot be verified. If it is valid, the correct spending key would be:\n" + 
+                                                           EncodeSpendingKey(extSk) + 
+                                                           "\n* DO NOT USE UNLESS YOU ARE CERTAIN THIS IS A VALID KEY!");
+        }
+        else
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid spending key");
+        }
     }
 
     // Sapling support
@@ -753,7 +768,7 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
     if (addResult == KeyNotAdded) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Error adding spending key to wallet");
     }
-    
+
     // whenever a key is imported, we need to scan the whole chain
     pwalletMain->nTimeFirstKey = 1; // 0 would be considered 'no value'
     
@@ -888,13 +903,14 @@ UniValue z_exportkey(const UniValue& params, bool fHelp)
     if (!EnsureWalletIsAvailable(fHelp))
         return NullUniValue;
 
-    if (fHelp || params.size() != 1)
+    if (fHelp || (params.size() < 1 && params.size() > 2))
         throw runtime_error(
-            "z_exportkey \"zaddr\"\n"
+            "z_exportkey \"zaddr\" (outputashex)\n"
             "\nReveals the zkey corresponding to 'zaddr'.\n"
             "Then the z_importkey can be used with this output\n"
             "\nArguments:\n"
             "1. \"zaddr\"   (string, required) The zaddr for the private key\n"
+            "2. \"outputashex\" (boolean, optional, default=false) If true, output key data as hex bytes\n"
             "\nResult:\n"
             "\"key\"                  (string) The private key\n"
             "\nExamples:\n"
@@ -919,7 +935,23 @@ UniValue z_exportkey(const UniValue& params, bool fHelp)
     if (!sk) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Wallet does not hold private zkey for this zaddr");
     }
-    return EncodeSpendingKey(sk.get());
+    if (params.size() > 1 && uni_get_bool(params[1]) && sk.get().which() == 2)
+    {
+        boost::optional<libzcash::SaplingExtendedSpendingKey> sxSK = boost::get<libzcash::SaplingExtendedSpendingKey>(sk.get());
+        if (sxSK)
+        {
+            std::vector<unsigned char> vch = ::AsVector(sxSK.get());
+            return HexBytes(&(vch[0]), vch.size());
+        }
+        else
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot only return hex encoding for sapling addresses or later");
+        }
+    }
+    else
+    {
+        return EncodeSpendingKey(sk.get());
+    }
 }
 
 UniValue z_exportviewingkey(const UniValue& params, bool fHelp)

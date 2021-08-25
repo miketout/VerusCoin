@@ -22,9 +22,11 @@
 #include <vector>
 #include <univalue.h>
 
+
 #include "streams.h"
 #include "hash.h"
 #include "arith_uint256.h"
+
 
 #ifndef BEGIN
 #define BEGIN(a)            ((char*)&(a))
@@ -89,6 +91,7 @@ public:
     }
 };
 typedef CMMRNode<CBLAKE2bWriter> CDefaultMMRNode;
+typedef CMMRNode<CKeccack256Writer> CDefaultETHNode;
 
 template <typename HASHALGOWRITER=CBLAKE2bWriter>
 class CMMRPowerNode
@@ -308,7 +311,8 @@ public:
         BRANCH_INVALID = 0,
         BRANCH_BTC = 1,
         BRANCH_MMRBLAKE_NODE = 2,
-        BRANCH_MMRBLAKE_POWERNODE = 3
+        BRANCH_MMRBLAKE_POWERNODE = 3,
+        BRANCH_ETH = 4
     };
 
     uint8_t branchType;
@@ -412,6 +416,7 @@ public:
 typedef CMMRBranch<CBLAKE2bWriter> CMMRNodeBranch;
 typedef CMMRBranch<CBLAKE2bWriter, CMMRPowerNode<CBLAKE2bWriter>> CMMRPowerNodeBranch;
 
+
 // by default, this is compatible with normal merkle proofs with the existing
 // block merkle roots. different hash algorithms may be selected for performance,
 // security, or other purposes
@@ -487,6 +492,173 @@ public:
 };
 typedef CMerkleBranch<CHashWriter> CBTCMerkleBranch;
 
+class CRLPProof
+{
+public:
+    std::vector<std::vector <unsigned char>> proof_branch;
+   CRLPProof() {}
+
+    ADD_SERIALIZE_METHODS;
+
+    std::string string_to_hex(const std::string& input)
+        {
+        static const char hex_digits[] = "0123456789ABCDEF";
+
+        std::string output;
+        output.reserve(input.length() * 2);
+        for (unsigned char c : input)
+        {
+            output.push_back(hex_digits[c >> 4]);
+            output.push_back(hex_digits[c & 15]);
+        }
+    return output;
+    }
+
+    
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        if (ser_action.ForRead())
+        {
+            int32_t proofSize;
+            READWRITE(VARINT(proofSize));
+
+            for (int i = 0; i < proofSize; i++)
+            {
+                std::vector<unsigned char> temp;
+                READWRITE(temp);
+                proof_branch.push_back(temp);            
+                          
+            }
+        } else{
+
+            int32_t proofSize = proof_branch.size();
+            READWRITE(VARINT(proofSize));
+            for (int i = 0; i < proofSize; i++)
+            {
+                std::vector<unsigned char> temp(proof_branch[i].begin(), proof_branch[i].end());
+                READWRITE(temp);
+                          
+                          
+            }
+
+        }
+    }
+
+};
+
+
+
+
+
+
+
+template <typename HASHALGOWRITER=CKeccack256Writer, typename NODETYPE=CMMRNode<HASHALGOWRITER>>
+class CPATRICIABranch : public CMerkleBranchBase
+{
+public:
+    std::vector<std::vector<unsigned char>> accountProof;
+    uint64_t balance;
+    uint64_t nonce;
+    uint256 storageHash;
+    uint256 storageProofKey;
+    uint256 stateRoot, storageProofValue,codeHash, rootProof; 
+    std::vector<uint256> branch;
+    CRLPProof proofdata;
+    CRLPProof storageProof; 
+    uint160 address; 
+    CPATRICIABranch() {}
+    CPATRICIABranch(std::vector<std::vector<unsigned char>> a, std::vector<std::vector<unsigned char>> b) : accountProof(a), storageProof(b) {}
+    
+    CPATRICIABranch& operator<<(CPATRICIABranch append)
+    {
+        //TODO
+        branch.insert(branch.end(), append.branch.begin(), append.branch.end());
+        return *this;
+    }
+
+    std::vector<unsigned char> verifyAccountProof();
+    std::vector<unsigned char> verifyProof(uint256& rootHash,std::vector<unsigned char> key,std::vector<std::vector<unsigned char>>& proof);
+    uint256 verifyStorageProof(uint256 hash);
+    bool verifyStorageValue(std::vector<unsigned char> testStorageValue);
+    bool testProof();
+    bool Init();
+
+    ADD_SERIALIZE_METHODS;
+    
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(CMerkleBranchBase *)this);
+        READWRITE(proofdata);
+        READWRITE(address);
+        READWRITE(FLATDATA(balance));
+        READWRITE(codeHash);
+        READWRITE(VARINT(nonce));
+        READWRITE(storageHash);
+        READWRITE(storageProofKey);
+        READWRITE(storageProof);
+        READWRITE(storageProofValue);
+
+
+    }
+
+    uint256 SafeCheck(uint256 hash) 
+    {
+        
+        return verifyStorageProof(hash);
+      
+    }
+};
+typedef CPATRICIABranch<CHashWriter> CETHPATRICIABranch;
+
+class RLP {
+
+
+
+    public:
+
+    struct rlpDecoded {
+        std::vector<std::vector<unsigned char>> data;
+        std::vector<unsigned char> remainder; 
+    };
+
+    std::vector<unsigned char> encodeLength(int length,int offset);
+    std::vector<unsigned char> encode(std::vector<unsigned char> input);
+    std::vector<unsigned char> encode(std::vector<std::vector<unsigned char>> input);
+    rlpDecoded decode(std::vector<unsigned char> inputBytes);
+    rlpDecoded decode(std::string inputString);
+};
+
+class TrieNode {
+
+    public: 
+    enum nodeType{
+        BRANCH,
+        LEAF,
+        EXTENSION
+    };
+    nodeType type;
+    std::vector<std::vector<unsigned char>> raw;
+    std::vector<unsigned char> key;
+    std::vector<unsigned char> value;
+
+    TrieNode(std::vector<std::vector<unsigned char>> rawNode) {
+        raw = rawNode;
+        type = setType();
+        setKey();
+        setValue();
+    }
+
+
+
+    private: 
+    nodeType setType();
+    void setKey();
+    void setValue();
+
+};
+
+
+
 class CMMRProof
 {
 public:
@@ -540,6 +712,7 @@ public:
                         CMMRNodeBranch *pNodeBranch;
                         CMMRPowerNodeBranch *pPowerNodeBranch;
                         CMerkleBranchBase *pobj;
+                        CETHPATRICIABranch *pETHBranch;
                     };
 
                     // non-error exception comes from the first try on each object. after this, it is an error
@@ -572,6 +745,16 @@ public:
                             if (pPowerNodeBranch)
                             {
                                 READWRITE(*pPowerNodeBranch);
+                            }
+                            error = false;
+                            break;
+                        }
+                        case CMerkleBranchBase::BRANCH_ETH:
+                        {
+                            pETHBranch = new CETHPATRICIABranch();
+                            if (pETHBranch)
+                            {
+                                READWRITE(*pETHBranch);
                             }
                             error = false;
                             break;
@@ -629,6 +812,11 @@ public:
                         READWRITE(*(CMMRPowerNodeBranch *)pProof);
                         break;
                     }
+                    case CMerkleBranchBase::BRANCH_ETH:
+                    {
+                        READWRITE(*(CETHPATRICIABranch *)pProof);
+                        break;
+                    }
                     default:
                     {
                         error = true;
@@ -644,6 +832,7 @@ public:
     const CMMRProof &operator<<(const CBTCMerkleBranch &append);
     const CMMRProof &operator<<(const CMMRNodeBranch &append);
     const CMMRProof &operator<<(const CMMRPowerNodeBranch &append);
+    const CMMRProof &operator<<(const CETHPATRICIABranch &append);
     uint256 CheckProof(uint256 checkHash) const;
     UniValue ToUniValue() const;
 };
@@ -1254,5 +1443,6 @@ public:
         return Bits;
     }
 };
+
 
 #endif // MMR_H

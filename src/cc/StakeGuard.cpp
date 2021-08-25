@@ -145,7 +145,7 @@ bool GetStakeParams(const CTransaction &stakeTx, CStakeParams &stakeParams)
 // the only time it matters is to validate a properly formed stake transaction for either pre-check before PoS validity check, 
 // or to validate the stake transaction on a fork that will be used to spend a winning stake that cheated by being posted
 // on two fork chains
-bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakeParams, bool validateSig)
+bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakeParams, bool slowValidation)
 {
     std::vector<std::vector<unsigned char>> vData = std::vector<std::vector<unsigned char>>();
 
@@ -159,7 +159,11 @@ bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakePa
         uint256 blkHash = uint256();
         txnouttype txType;
         CBlockIndex *pindex;
-        if (myGetTransaction(stakeTx.vin[0].prevout.hash, srcTx, blkHash))
+        if (!slowValidation)
+        {
+            return true;
+        }
+        else if (myGetTransaction(stakeTx.vin[0].prevout.hash, srcTx, blkHash))
         {
             BlockMap::const_iterator it = mapBlockIndex.find(blkHash);
             if (it != mapBlockIndex.end() && (pindex = it->second) != NULL && chainActive.Contains(pindex))
@@ -188,16 +192,13 @@ bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakePa
                         auto consensusBranchId = CurrentEpochBranchId(stakeParams.blkHeight, Params().GetConsensus());
 
                         std::map<uint160, pair<int, std::vector<std::vector<unsigned char>>>> idAddressMap;
-                        if (validateSig)
-                        {
-                            idAddressMap = ServerTransactionSignatureChecker::ExtractIDMap(srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey, stakeParams.blkHeight, true);
-                        }
+                        idAddressMap = ServerTransactionSignatureChecker::ExtractIDMap(srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey, stakeParams.blkHeight, true);
 
-                        if (!validateSig || VerifyScript(stakeTx.vin[0].scriptSig, 
-                                            srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey, 
-                                            MANDATORY_SCRIPT_VERIFY_FLAGS,
-                                            TransactionSignatureChecker(&stakeTx, (uint32_t)0, srcTx.vout[stakeTx.vin[0].prevout.n].nValue, &idAddressMap),
-                                            consensusBranchId))
+                        if (VerifyScript(stakeTx.vin[0].scriptSig, 
+                                         srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey, 
+                                         MANDATORY_SCRIPT_VERIFY_FLAGS,
+                                         TransactionSignatureChecker(&stakeTx, (uint32_t)0, srcTx.vout[stakeTx.vin[0].prevout.n].nValue, &idAddressMap),
+                                         consensusBranchId))
                         {
                             return true;
                         }
@@ -275,7 +276,7 @@ bool MakeGuardedOutput(CAmount value, CTxDestination &dest, CTransaction &stakeT
 // validates if a stake transaction is both valid and cheating, defined by:
 // the same exact utxo source, a target block height of later than that of the provided coinbase tx that is also targeting a fork
 // of the chain. the source transaction must be a coinbase
-bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTransaction &stakeTx, bool &cheating)
+bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTransaction &stakeTx, bool &cheating, bool slowValidation)
 {
     // an invalid or non-matching stake transaction cannot cheat
     cheating = false;
@@ -285,7 +286,7 @@ bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTr
     if (ccTx.IsCoinBase())
     {
         CStakeParams p;
-        if (ValidateStakeTransaction(stakeTx, p))
+        if (ValidateStakeTransaction(stakeTx, p, slowValidation))
         {
             std::vector<std::vector<unsigned char>> vParams = std::vector<std::vector<unsigned char>>();
             CScript dummy;
@@ -362,7 +363,7 @@ bool MakeCheatEvidence(CMutableTransaction &mtx, const CTransaction &ccTx, uint3
     CDataStream s = CDataStream(SER_DISK, PROTOCOL_VERSION);
     bool isCheater = false;
 
-    if (ValidateMatchingStake(ccTx, voutNum, cheatTx, isCheater) && isCheater)
+    if (ValidateMatchingStake(ccTx, voutNum, cheatTx, isCheater, true) && isCheater)
     {
         CTxOut vOut = CTxOut();
         int64_t opretype_stakecheat = OPRETTYPE_STAKECHEAT;
@@ -545,7 +546,7 @@ bool StakeGuardValidate(struct CCcontract_info *cp, Eval* eval, const CTransacti
                 catch (...)
                 {
                 }
-                if (checkOK && !ValidateMatchingStake(txOut, tx.vin[0].prevout.n, cheatTx, validCheat))
+                if (checkOK && !ValidateMatchingStake(txOut, tx.vin[0].prevout.n, cheatTx, validCheat, true))
                 {
                     validCheat = false;
                 }
@@ -589,7 +590,7 @@ bool StakeGuardValidate(struct CCcontract_info *cp, Eval* eval, const CTransacti
                     catch (...)
                     {
                     }
-                    if (checkOK && !ValidateMatchingStake(txOut, tx.vin[0].prevout.n, cheatTx, validCheat))
+                    if (checkOK && !ValidateMatchingStake(txOut, tx.vin[0].prevout.n, cheatTx, validCheat, true))
                     {
                         validCheat = false;
                     }

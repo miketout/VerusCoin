@@ -14,10 +14,14 @@
 #include "util.h"
 
 #include "pbaas/identity.h"
+#include "chain.h"
 
 #undef __cpuid
 #include <boost/thread.hpp>
 #include <boost/tuple/tuple_comparison.hpp>
+
+extern uint32_t KOMODO_STOPAT;
+extern CChain chainActive;
 
 namespace {
 
@@ -137,6 +141,16 @@ std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> Serve
                                 idAddrBytes.push_back(GetDestinationBytes(oneAddr));
                             }
                             idAddresses[destId] = make_pair(id.minSigs, idAddrBytes);
+                        } 
+                        else if (!id.IsValid())
+                        {
+                            uint32_t idHeightDef;
+                            if ((id = CIdentity::LookupFirstIdentity(destId, &idHeightDef)).IsValid())
+                            {
+                                LogPrintf("%s: ERROR - ACTION REQUIRED: Corrupt Index, should not move forward as a node. Please bootstrap, sync from scratch, or reindex to continue\n", __func__);
+                                printf("%s: ERROR - ACTION REQUIRED: Corrupt Index, should not move forward as a node. Please bootstrap, sync from scratch, or reindex to continue\n", __func__);
+                                KOMODO_STOPAT = chainActive.Height();
+                            }
                         }
                     }
                 }

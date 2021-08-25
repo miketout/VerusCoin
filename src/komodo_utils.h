@@ -1705,7 +1705,6 @@ extern int64_t MAX_MONEY;
 extern int64_t MAX_SUPPLY;
 extern std::string VERUS_DEFAULT_ZADDR;
 bool SetThisChain(const UniValue &chainDefinition);
-const uint256 &CurrencyDefHash();
 
 void komodo_args(char *argv0)
 {
@@ -1859,7 +1858,7 @@ void komodo_args(char *argv0)
             LogPrintf("Config file for %s not found.\n", name.c_str());
         }
 
-        std::string halving = GetArg("-ac_halving", mapArgs.count("-ac_halving") ? mapArgs["-ac_halving"] : "2111115"); // this assignment is required for an ARM compiler workaround
+        std::string halving = GetArg("-ac_halving", mapArgs.count("-ac_halving") ? mapArgs["-ac_halving"] : "1300004"); // this assignment is required for an ARM compiler workaround
         mapArgs["-ac_halving"] = halving;    // allow testing easily with different values here
     }
     else
@@ -2143,6 +2142,8 @@ void komodo_args(char *argv0)
         for (int i=0; i<4; i++)
             sprintf(&magicstr[i<<1],"%02x",magic[i]);
         magicstr[8] = 0;
+
+/* TODO: HARDENING - see if this is needed for any reason before removing commented section
 #ifndef FROM_CLI
         sprintf(fname,"%s_7776",ASSETCHAINS_SYMBOL);
         if ( (fp= fopen(fname,"wb")) != 0 )
@@ -2152,6 +2153,8 @@ void komodo_args(char *argv0)
             //printf("created (%s)\n",fname);
         } else printf("error creating (%s)\n",fname);
 #endif
+*/
+
         if ( KOMODO_CCACTIVATE != 0 && ASSETCHAINS_CC < 2 )
         {
             ASSETCHAINS_CC = 2;

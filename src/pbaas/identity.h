@@ -212,14 +212,30 @@ public:
 
     UniValue ToUniValue() const;
 
-    bool IsValid() const
+    bool IsValid(bool strict=false) const
     {
+        bool primaryOK = true;
+        if (strict || nVersion >= VERSION_PBAAS)
+        {
+            for (auto &oneAddr : primaryAddresses)
+            {
+                if (!(oneAddr.which() == COptCCParams::ADDRTYPE_PK || oneAddr.which() == COptCCParams::ADDRTYPE_PKH))
+                {
+                    primaryOK = false;
+                    break;
+                }
+            }
+        }
         return nVersion >= VERSION_FIRSTVALID && 
-               nVersion <= VERSION_LASTVALID && 
+               nVersion <= VERSION_LASTVALID &&
+               primaryOK &&
                primaryAddresses.size() && 
-               primaryAddresses.size() <= 10 && 
                minSigs >= 1 &&
-               minSigs <= primaryAddresses.size();
+               minSigs <= primaryAddresses.size() && 
+               ((nVersion < VERSION_PBAAS &&
+                 primaryAddresses.size() <= 10) ||
+                (primaryAddresses.size() <= 25 &&
+                 minSigs <= 13));
     }
 
     bool IsPrimaryMutation(const CPrincipal &newPrincipal) const
@@ -495,14 +511,16 @@ public:
         return flags & FLAG_ACTIVECURRENCY;
     }
 
-    bool IsValid() const
+    bool IsValid(bool strict=false) const
     {
-        return CPrincipal::IsValid() && name.size() > 0 && 
+        return CPrincipal::IsValid(strict) && name.size() > 0 && 
                (name.size() <= MAX_NAME_LEN) &&
                primaryAddresses.size() &&
                (nVersion < VERSION_PBAAS ||
                (!revocationAuthority.IsNull() &&
-                !recoveryAuthority.IsNull()));
+                !recoveryAuthority.IsNull() &&
+                minSigs > 0 &&
+                minSigs <= primaryAddresses.size()));
     }
 
     bool IsValidUnrevoked() const
@@ -560,79 +578,7 @@ public:
     // creates an output script to control updates to this identity
     CScript IdentityUpdateOutputScript(uint32_t height) const;
 
-    bool IsInvalidMutation(const CIdentity &newIdentity, uint32_t height, uint32_t expiryHeight) const
-    {
-        auto nSolVersion = CConstVerusSolutionVector::GetVersionByHeight(height);
-        if (parent != newIdentity.parent ||
-            (nSolVersion < CActivationHeight::ACTIVATE_IDCONSENSUS2 && name != newIdentity.name) ||
-            (nSolVersion >= CActivationHeight::ACTIVATE_IDCONSENSUS2 &&
-             nSolVersion < CActivationHeight::ACTIVATE_PBAAS && 
-             (newIdentity.HasActiveCurrency() || 
-              newIdentity.IsLocked() ||
-              newIdentity.nVersion >= VERSION_PBAAS)) ||
-            (nSolVersion >= CActivationHeight::ACTIVATE_PBAAS && (newIdentity.nVersion < VERSION_PBAAS ||
-                                                                  (newIdentity.systemID != (nVersion < VERSION_PBAAS ? parent : systemID)))) ||
-            GetID() != newIdentity.GetID() ||
-            ((newIdentity.flags & ~FLAG_REVOKED) && (newIdentity.nVersion == VERSION_FIRSTVALID)) ||
-            ((newIdentity.flags & ~(FLAG_REVOKED + FLAG_ACTIVECURRENCY + FLAG_LOCKED)) && (newIdentity.nVersion >= VERSION_PBAAS)) ||
-            (IsLocked(height) && (!newIdentity.IsRevoked() && !newIdentity.IsLocked(height))) ||
-            ((flags & FLAG_ACTIVECURRENCY) && !(newIdentity.flags & FLAG_ACTIVECURRENCY)) ||
-            newIdentity.nVersion < VERSION_FIRSTVALID ||
-            newIdentity.nVersion > VERSION_LASTVALID)
-        {
-            return true;
-        }
-
-        // we cannot unlock instantly unless we are revoked, we also cannot relock
-        // to enable an earlier unlock time
-        if (newIdentity.nVersion >= VERSION_PBAAS)
-        {
-            if (IsLocked(height))
-            {
-                if (!newIdentity.IsRevoked())
-                {
-                    if (IsLocked() && !newIdentity.IsLocked())
-                    {
-                        if ((newIdentity.unlockAfter != (unlockAfter + expiryHeight)) &&
-                            !(unlockAfter > MAX_UNLOCK_DELAY && newIdentity.unlockAfter == (MAX_UNLOCK_DELAY + expiryHeight)))
-                        {
-                            return true;
-                        }
-                    }
-                    else if (!IsLocked())
-                    {
-                        // only revocation can change unlock after time, and we don't allow re-lock to an earlier time until unlock either, 
-                        // which can change the new unlock time
-                        if (newIdentity.IsLocked())
-                        {
-                            if ((expiryHeight + newIdentity.unlockAfter < unlockAfter))
-                            {
-                                return true;
-                            }
-                        }
-                        else if (newIdentity.unlockAfter != unlockAfter)
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-            else if (newIdentity.IsLocked(height))
-            {
-                if (newIdentity.IsLocked() && newIdentity.unlockAfter > MAX_UNLOCK_DELAY)
-                {
-                    return true;
-                }
-                else if (!newIdentity.IsLocked() && newIdentity.unlockAfter <= expiryHeight)
-                {
-                    // we never set the locked bit, but we are counting down to the block set to unlock
-                    // cannot lock with unlock before the expiry height
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
+    bool IsInvalidMutation(const CIdentity &newIdentity, uint32_t height, uint32_t expiryHeight) const;
 
     bool IsPrimaryMutation(const CIdentity &newIdentity, uint32_t height) const
     {
@@ -784,32 +730,11 @@ public:
     }
 };
 
-class CCurrencyRegistrationDestination
-{
-public:
-    CIdentity identity;
-    CCurrencyDefinition currency;
-
-    CCurrencyRegistrationDestination() {}
-    CCurrencyRegistrationDestination(const CIdentity &Identity, const CCurrencyDefinition &Currency) : identity(Identity), currency(Currency) {}
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(identity);
-        READWRITE(currency);
-    }
-    bool IsValid() const
-    {
-        return identity.IsValid() && currency.IsValid() && identity.GetID() == currency.GetID();
-    }
-};
-
 struct CCcontract_info;
 struct Eval;
 class CValidationState;
 
+CIdentity GetOldIdentity(const CTransaction &spendingTx, uint32_t nIn, CTransaction *pSourceTx=nullptr, uint32_t *pHeight=nullptr);
 bool ValidateIdentityPrimary(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
 bool ValidateIdentityRevoke(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
 bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);

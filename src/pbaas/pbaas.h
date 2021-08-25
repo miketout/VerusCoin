@@ -810,15 +810,16 @@ public:
     virtual bool ValidateDestination(const std::string &destination) const = 0;
     virtual CTransferDestination ToTransferDestination(const std::string &destination) const = 0;
     virtual std::set<uint160> FeeCurrencies() const = 0;
-    virtual const CCurrencyDefinition &GetConverter() const = 0;
+    virtual uint160 GatewayID() const = 0;
 };
 
 class CEthGateway : public CGateway
 {
+public:
     virtual bool ValidateDestination(const std::string &destination) const;
     virtual CTransferDestination ToTransferDestination(const std::string &destination) const;
     virtual std::set<uint160> FeeCurrencies() const;
-    virtual const CCurrencyDefinition &GetConverter() const;
+    virtual uint160 GatewayID() const;
 };
 
 // This is the data for a PBaaS notarization transaction, either of a PBaaS chain into the Verus chain, or the Verus
@@ -1072,7 +1073,7 @@ public:
     bool NextNotarizationInfo(const CCurrencyDefinition &sourceSystem, 
                               const CCurrencyDefinition &destCurrency, 
                               uint32_t lastExportHeight, 
-                              uint32_t currentHeight, 
+                              uint32_t notaHeight, 
                               std::vector<CReserveTransfer> &exportTransfers,
                               uint256 &transferHash,
                               CPBaaSNotarization &newNotarization,
@@ -1290,7 +1291,7 @@ public:
     {
         TYPE_INVALID = 0,
         TYPE_PBAAS = 1,
-        TYPE_ETHERC20 = 2,
+        TYPE_ETH = 2,
         TYPE_KOMODO = 3,
     };
 
@@ -1298,14 +1299,12 @@ public:
     uint32_t notarySystemType;
     uint32_t height;                            // height of last notarization
     CRPCChainData notaryChain;                  // notary chain information and connectivity for PBaaS protocol
-    CCurrencyDefinition notaryConverter;        // fractional currency to convert between this native currency and the notary currency
     CPBaaSNotarization lastConfirmedNotarization;
 
     CNotarySystemInfo() : notarySystemVersion(VERSION_INVALID), height(0) {}
 
     CNotarySystemInfo(uint32_t Height, 
                       const CRPCChainData &NotaryChain, 
-                      const CCurrencyDefinition &NotaryConverter,
                       const CPBaaSNotarization &lastNotarization,
                       uint32_t NotarySystemType=TYPE_PBAAS,
                       uint32_t notaryVersion=VERSION_CURRENT) :
@@ -1313,7 +1312,6 @@ public:
                       notarySystemType(NotarySystemType),
                       height(Height),
                       notaryChain(NotaryChain),
-                      notaryConverter(NotaryConverter),
                       lastConfirmedNotarization(lastNotarization)
     {}
 };
@@ -1537,6 +1535,8 @@ public:
     bool CheckVerusPBaaSAvailable();      // may use RPC to call Verus
     bool IsVerusPBaaSAvailable();
     bool IsNotaryAvailable(bool callToCheck=false);
+    bool ConfigureEthBridge();
+
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {
         std::vector<CCurrencyDefinition> ret;
@@ -1688,17 +1688,15 @@ bool IsReserveExchangeInput(const CScript &scriptSig);
 bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
 bool IsReserveDepositInput(const CScript &scriptSig);
 
-bool ValidateChainDefinition(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
-bool IsChainDefinitionInput(const CScript &scriptSig);
+bool ValidateCurrencyDefinition(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
+bool PrecheckCurrencyDefinition(const CTransaction &spendingTx, int32_t outNum, CValidationState &state, uint32_t height);
+bool IsCurrencyDefinitionInput(const CScript &scriptSig);
 
 bool ValidateCurrencyState(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
 bool IsCurrencyStateInput(const CScript &scriptSig);
 
-bool GetCCParams(const CScript &scr, COptCCParams &ccParams);
-
 bool SetPeerNodes(const UniValue &nodes);
 bool SetThisChain(const UniValue &chainDefinition);
-const uint256 &CurrencyDefHash(UniValue &chainDefinition);
 
 extern CConnectedChains ConnectedChains;
 extern uint160 ASSETCHAINS_CHAINID;

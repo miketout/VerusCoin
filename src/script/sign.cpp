@@ -1001,19 +1001,54 @@ static Stacks CombineSignatures(const CScript& scriptPubKey, const BaseSignature
     }
 }
 
+std::vector<unsigned char> _GetFulfillmentVector(CScript const& scriptSig)
+{
+    auto pc = scriptSig.begin();
+    opcodetype opcode;
+    std::vector<unsigned char> ffbin;
+    if (scriptSig.GetOp(pc, opcode, ffbin))
+        return ffbin;
+    return std::vector<unsigned char>();
+}
+
 SignatureData CombineSignatures(const CScript& scriptPubKey, const BaseSignatureChecker& checker,
                           const SignatureData& scriptSig1, const SignatureData& scriptSig2,
                           uint32_t consensusBranchId)
 {
     txnouttype txType;
     vector<vector<unsigned char> > vSolutions;
-    Solver(scriptPubKey, txType, vSolutions);
 
-    return CombineSignatures(
-        scriptPubKey, checker, txType, vSolutions,
-        Stacks(scriptSig1, consensusBranchId),
-        Stacks(scriptSig2, consensusBranchId),
-        consensusBranchId).Output();
+    COptCCParams p;
+    if (scriptPubKey.IsPayToCryptoCondition(p) &&
+        p.IsValid() &&
+        p.version >= COptCCParams::VERSION_V3)
+    {
+        CSmartTransactionSignatures smartSigs1, smartSigs2;
+        std::vector<unsigned char> ffVec1 = _GetFulfillmentVector(scriptSig1.scriptSig);
+        smartSigs1 = CSmartTransactionSignatures(std::vector<unsigned char>(ffVec1.begin(), ffVec1.end()));
+        std::vector<unsigned char> ffVec2 = _GetFulfillmentVector(scriptSig2.scriptSig);
+        smartSigs2 = CSmartTransactionSignatures(std::vector<unsigned char>(ffVec2.begin(), ffVec2.end()));
+        if (smartSigs1.sigHashType == smartSigs2.sigHashType && smartSigs1.version == smartSigs2.version)
+        {
+            for (auto oneSig : smartSigs2.signatures)
+            {
+                smartSigs1.AddSignature(oneSig.second);
+            }
+        }
+        SignatureData sigRet;
+        sigRet.scriptSig = PushAll(std::vector<valtype>({smartSigs1.AsVector()}));
+        return sigRet;
+    }
+    else
+    {
+        Solver(scriptPubKey, txType, vSolutions);
+
+        return CombineSignatures(
+            scriptPubKey, checker, txType, vSolutions,
+            Stacks(scriptSig1, consensusBranchId),
+            Stacks(scriptSig2, consensusBranchId),
+            consensusBranchId).Output();
+    }
 }
 
 namespace {
