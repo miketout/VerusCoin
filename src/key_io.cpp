@@ -677,9 +677,9 @@ CIdentity::CIdentity(const UniValue &uni) : CPrincipal(uni)
         {
             try
             {
-                std::vector<unsigned char> vch(ParseHex(keys[i]));
                 uint160 key;
-                if (vch.size() == 20 && !((key = uint160(vch)).IsNull() || i >= values.size()))
+                key.SetHex(keys[i]);
+                if (!key.IsNull() && i < values.size())
                 {
                     contentMap[key] = uint256S(uni_get_str(values[i]));
                 }
