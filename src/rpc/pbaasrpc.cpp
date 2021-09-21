@@ -5468,7 +5468,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
                                               CCurrencyValueMap());
     cci.SetSameChain(newChain.systemID == ASSETCHAINS_CHAINID);
     cci.SetDefinitionImport(true);
-    if (newChainID == ASSETCHAINS_CHAINID)
+    if (newChainID == ASSETCHAINS_CHAINID || newChain.IsGateway())
     {
         cci.SetPostLaunch();
         cci.SetInitialLaunchImport();
@@ -5492,7 +5492,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
     pbn.SetDefinitionNotarization();
     pbn.nodes = startupNodes;
 
-    if (newCurrencyState.GetID() == ASSETCHAINS_CHAINID)
+    if (newCurrencyState.GetID() == ASSETCHAINS_CHAINID || newChain.IsGateway())
     {
         newChain.startBlock = 1;
         newCurrencyState.SetPrelaunch(false);
@@ -5546,7 +5546,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
                                               mainImportFees,
                                               uint256());
     ccx.SetChainDefinition();
-    if (newCurrencyState.GetID() == ASSETCHAINS_CHAINID)
+    if (newCurrencyState.GetID() == ASSETCHAINS_CHAINID || newChain.IsGateway())
     {
         ccx.SetPreLaunch(false);
         ccx.SetPostLaunch();

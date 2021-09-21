@@ -1234,7 +1234,7 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                 }
                 // we will find one of these either in its own exports to another system or after any export to a currency
                 // on that system. we record this for all system exports, whether system thread or not
-                if (ccx.destCurrencyID == ccx.destSystemID)
+                if (ccx.destCurrencyID == ccx.destSystemID || ccx.IsSystemThreadExport())
                 {
                     destinations.insert(CIndexID(CCrossChainRPCData::GetConditionID(ccx.destSystemID, ccx.SystemExportKey())));
                 }
