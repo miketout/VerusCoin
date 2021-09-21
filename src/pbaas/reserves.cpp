@@ -2296,14 +2296,16 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     std::map<uint160,int32_t> currencyIndexMap = importCurrencyDef.GetCurrenciesMap();
 
     uint160 systemSourceID = systemSource.GetID();
-    uint160 systemDestID = importCurrencyDef.IsGateway() ? importCurrencyDef.GetID() : systemDest.GetID();  // native on destination system
+    uint160 systemDestID = importCurrencyDef.IsGateway() && systemSourceID != importCurrencyDef.GetID() ? 
+                                importCurrencyDef.GetID() : 
+                                systemDest.GetID();  // native on destination system
+
     uint160 importCurrencyID = importCurrencyDef.GetID();
 
     // this matrix tracks n-way currency conversion
     // each entry contains the original amount of the row's (dim 0) currency to be converted to the currency position of its column
     int32_t numCurrencies = importCurrencyDef.currencies.size();
     std::vector<std::vector<CAmount>> crossConversions(numCurrencies, std::vector<CAmount>(numCurrencies, 0));
-    int32_t systemDestIdx = currencyIndexMap.count(systemDestID) ? currencyIndexMap[systemDestID] : -1;
 
     // used to keep track of burned fractional currency. this currency is subtracted from the
     // currency supply, but not converted. In doing so, it can either raise the price of the fractional
@@ -2321,13 +2323,16 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     // if so, we can use it to mint gateway currencies via the gateway, and deal with fees and conversions on
     // our converter currency
     uint160 nativeSourceCurrencyID = systemSource.IsGateway() ? systemSource.gatewayID : systemSource.systemID;
+    uint160 nativeDestCurrencyID = systemDest.systemID;
+    int32_t systemDestIdx = currencyIndexMap.count(systemDestID) ? currencyIndexMap[systemDestID] : -1;
+
     if (nativeSourceCurrencyID != systemSourceID)
     {
         printf("%s: systemSource import %s is not from either gateway, PBaaS chain, or other system level currency\n", __func__, systemSource.name.c_str());
         LogPrintf("%s: systemSource import %s is not from either gateway, PBaaS chain, or other system level currency\n", __func__, systemSource.name.c_str());
         return false;
     }
-    bool isCrossSystemImport = nativeSourceCurrencyID != systemDestID;
+    bool isCrossSystemImport = nativeSourceCurrencyID != nativeDestCurrencyID;
 
     nativeIn = 0;
     numTransfers = 0;
@@ -2363,9 +2368,9 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
         {
             // this will be the primary fee output
             curTransfer = CReserveTransfer(CReserveTransfer::VALID + CReserveTransfer::FEE_OUTPUT,
-                                           systemDestID,
+                                           nativeDestCurrencyID,
                                            0,
-                                           systemDestID,
+                                           nativeDestCurrencyID,
                                            0,
                                            importCurrencyID,
                                            CTransferDestination());
@@ -4428,19 +4433,6 @@ bool IsFeePoolInput(const CScript &scriptSig)
 bool PrecheckFeePool(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
 {
     return true;
-}
-
-bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
-{
-    // do a basic sanity check that this reserve transfer's values are consistent
-    COptCCParams p;
-    CReserveTransfer rt;
-    return (tx.vout[outNum].scriptPubKey.IsPayToCryptoCondition(p) &&
-            p.IsValid() &&
-            p.evalCode == EVAL_RESERVE_TRANSFER &&
-            p.vData.size() &&
-            (rt = CReserveTransfer(p.vData[0])).IsValid() &&
-            rt.TotalCurrencyOut().valueMap[ASSETCHAINS_CHAINID] == tx.vout[outNum].nValue);
 }
 
 bool PrecheckReserveDeposit(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)

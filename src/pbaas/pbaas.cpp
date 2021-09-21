@@ -885,6 +885,61 @@ bool PrecheckCurrencyDefinition(const CTransaction &spendingTx, int32_t outNum, 
     return true;
 }
 
+bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
+{
+    // do a basic sanity check that this reserve transfer's values are consistent
+    COptCCParams p;
+    CReserveTransfer rt;
+
+    if (tx.vout[outNum].scriptPubKey.IsPayToCryptoCondition(p) &&
+        p.IsValid() &&
+        p.evalCode == EVAL_RESERVE_TRANSFER &&
+        p.vData.size() &&
+        (rt = CReserveTransfer(p.vData[0])).IsValid() &&
+        rt.TotalCurrencyOut().valueMap[ASSETCHAINS_CHAINID] == tx.vout[outNum].nValue)
+    {
+        CCurrencyDefinition systemDest, importCurrencyDef;
+        if (rt.IsImportToSource())
+        {
+            importCurrencyDef = ConnectedChains.GetCachedCurrency(rt.FirstCurrency());
+        }
+        else
+        {
+            importCurrencyDef = ConnectedChains.GetCachedCurrency(rt.destCurrencyID);
+        }
+        systemDest = ConnectedChains.GetCachedCurrency(importCurrencyDef.IsGateway() ? importCurrencyDef.gatewayID : importCurrencyDef.systemID);
+
+        CChainNotarizationData cnd;
+        if (!(GetNotarizationData(importCurrencyDef.GetID(), cnd) && cnd.IsConfirmed()))
+        {
+            LogPrintf("%s: Valid notarization required and not found for import currency of reserve transfer %s\n", __func__, rt.ToUniValue().write(1,2).c_str());
+            return false;
+        }
+
+        CReserveTransactionDescriptor rtxd;
+        CCoinbaseCurrencyState dummyState;
+        std::vector<CTxOut> vOutputs;
+        CCurrencyValueMap importedCurrency, gatewayDepositsIn, spentCurrencyOut;
+
+        if (rtxd.AddReserveTransferImportOutputs(ConnectedChains.ThisChain(), 
+                                                 systemDest, 
+                                                 importCurrencyDef, 
+                                                 cnd.vtx[cnd.lastConfirmed].second.currencyState,
+                                                 std::vector<CReserveTransfer>({rt}), 
+                                                 height,
+                                                 vOutputs,
+                                                 importedCurrency, 
+                                                 gatewayDepositsIn, 
+                                                 spentCurrencyOut,
+                                                 &dummyState))
+        {
+            return true;
+        }
+    }
+    LogPrintf("%s: Invalid reserve transfer %s\n", __func__, rt.ToUniValue().write(1,2).c_str());
+    return false;
+}
+
 CCurrencyValueMap CCrossChainExport::CalculateExportFee(const CCurrencyValueMap &fees, int numIn)
 {
     CCurrencyValueMap retVal;
