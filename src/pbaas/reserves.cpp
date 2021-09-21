@@ -466,7 +466,7 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
             }
 
             uint160 externalSystemID = ccx.sourceSystemID == ASSETCHAINS_CHAINID ? 
-                                       ((ccx.destSystemID  == ASSETCHAINS_CHAINID) ? uint160() : ccx.destSystemID) : 
+                                       ((ccx.destSystemID == ASSETCHAINS_CHAINID) ? uint160() : ccx.destSystemID) : 
                                        ccx.sourceSystemID;
 
             std::map<uint160, CProofRoot>::iterator proofIt;
@@ -482,6 +482,10 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
                         break;
                     }
                 }
+            }
+            else if (!externalSystemID.IsNull())
+            {
+                return state.Error(strprintf("%s: no proof root to validate export for external system %s", __func__, EncodeDestination(CIdentityID(externalSystemID)).c_str()));
             }
 
             int32_t nextOutput;
@@ -2787,7 +2791,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                             LogPrintf("%s: currency transfer fees invalid for receiving system\n", __func__);
                             return false;
                         }
-                        if (importCurrencyState.IsRefunding())
+                        if (importCurrencyState.IsRefunding() || curTransfer.IsRefund())
                         {
                             gatewayDepositsIn.valueMap[systemSourceID] += explicitFees;
                         }
@@ -2825,9 +2829,13 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     if (totalCurrencyInput)
                     {
                         // all currency input must either come from being minted on the import or existing gateway deposits
-                        if (!(importCurrencyState.IsRefunding() && importCurrencyDef.launchSystemID == systemDestID) &&
-                             (inputDef.systemID == systemSourceID ||
-                             (inputDef.IsGateway() && inputDef.gatewayID == systemSourceID)))
+                        // TODO: HARDENING - to both make this easier to understand and more flexible for multiple gateway types,
+                        //   we should have the "nativeCurrencyID" have both an arbitrary destination type as well as a destination
+                        //   gateway to determine the gateway independent of type.
+                        if (!((importCurrencyState.IsRefunding() || curTransfer.IsRefund()) && importCurrencyDef.launchSystemID == systemDestID) &&
+                            (inputDef.systemID == systemSourceID || 
+                             ((inputDef.IsGateway() || inputDef.nativeCurrencyID.TypeNoFlags() == inputDef.nativeCurrencyID.DEST_ETH) && 
+                              inputDef.gatewayID == systemSourceID)))
                         {
                             importedCurrency.valueMap[inputID] += totalCurrencyInput;
                         }
@@ -3706,6 +3714,18 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
             if (oneInOut.first == systemDestID)
             {
                 systemOutConverted += oneInOut.second.nativeOutConverted;
+            }
+            else if (isCrossSystemImport && (importCurrencyDef.IsGateway() || 
+                                             (importCurrencyDef.IsPBaaSChain() && importCurrencyDef.systemID != systemDestID)))
+            {
+                if (oneInOut.second.reserveIn)
+                {
+                    ReserveInputs.valueMap[oneInOut.first] += oneInOut.second.reserveIn;
+                }
+                if (oneInOut.second.reserveOut)
+                {
+                    spentCurrencyOut.valueMap[oneInOut.first] += oneInOut.second.reserveOut;
+                }
             }
         }
         else
