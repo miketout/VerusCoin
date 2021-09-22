@@ -781,7 +781,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                     txRoot = hw2.GetHash();
                     cp = CCinit(&CC, EVAL_CROSSCHAIN_EXPORT);
                     std::vector<CTxDestination> dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
-
+                    mtx.vin.push_back(CTxIn(prevtxid, 0));
                     mtx.vout.push_back(CTxOut(0, MakeMofNCCScript(CConditionObj<CCrossChainExport>(EVAL_CROSSCHAIN_EXPORT, dests, 1, &ccx))));
                 
                     isPartial = true;
