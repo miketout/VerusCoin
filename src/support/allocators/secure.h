@@ -8,6 +8,7 @@
 
 #include "support/pagelocker.h"
 
+#include <memory>
 #include <string>
 
 //
@@ -16,17 +17,15 @@
 //
 template <typename T>
 struct secure_allocator : public std::allocator<T> {
-    // MSVC8 default copy constructor is broken
-    typedef std::allocator<T> base;
-    typedef typename base::size_type size_type;
-    typedef typename base::difference_type difference_type;
-    typedef typename base::pointer pointer;
-    typedef typename base::const_pointer const_pointer;
-    typedef typename base::reference reference;
-    typedef typename base::const_reference const_reference;
-    typedef typename base::value_type value_type;
-    secure_allocator() throw() {}
-    secure_allocator(const secure_allocator& a) throw() : base(a) {}
+    using base = std::allocator<T>;
+    using traits = std::allocator_traits<base>;
+    using size_type = typename traits::size_type;
+    using difference_type = typename traits::difference_type;
+    using pointer = typename traits::pointer;
+    using const_pointer = typename traits::const_pointer;
+    using value_type = typename traits::value_type;
+    secure_allocator() noexcept {}
+    secure_allocator(const secure_allocator& a) noexcept : base(a) {}
     template <typename U>
     secure_allocator(const secure_allocator<U>& a) throw() : base(a)
     {
