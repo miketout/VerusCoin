@@ -8029,7 +8029,7 @@ CCurrencyDefinition ValidateNewUnivalueCurrencyDefinition(const UniValue &uniObj
             }
             if (newCurrency.proofProtocol != newCurrency.PROOF_ETHNOTARIZATION)
             {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Ethereum mapped currency must have \"proofprotocol\":%d", (int)newCurrency.proofProtocol));
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Ethereum mapped currency must have \"proofprotocol\":%d", (int)newCurrency.PROOF_ETHNOTARIZATION));
             }
             bool nonZeroSupply = newCurrency.conversions.size() && !newCurrency.maxPreconvert.size();
             for (auto oneVal : newCurrency.maxPreconvert)
