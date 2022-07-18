@@ -992,5 +992,6 @@ echo "  CPPFLAGS      = $CPPFLAGS"
 echo "  CXX           = $CXX"
 echo "  CXXFLAGS      = $CXXFLAGS"
 echo "  LDFLAGS       = $LDFLAGS"
+echo "  AR            = $AR"
 echo "  ARFLAGS       = $ARFLAGS"
 echo 

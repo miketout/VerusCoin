@@ -43,7 +43,7 @@ CCACHE=$depends_prefix/native/bin/ccache
 
 if test -n "@AR@"; then
   AR=@AR@
-  ac_cv_path_ac_pt_AR=${AR}
+  ac_cv_path_AR=${AR}
 fi
 
 if test -n "@RANLIB@"; then
