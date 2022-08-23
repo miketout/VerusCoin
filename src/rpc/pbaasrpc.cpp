@@ -11557,7 +11557,7 @@ UniValue getidentitieswithaddress(const UniValue& params, bool fHelp)
  
 UniValue getidentitieswithrevocation(const UniValue& params, bool fHelp)
 {
-    if (fHelp || params.size() > 1)
+    if (fHelp || params.size() != 1)
     {
         throw runtime_error(
             "getidentitieswithrevocation '{\"identityid\":\"idori-address\", \"fromheight\":height, \"toheight\":height, \"unspent\":false}'\n"
@@ -11637,7 +11637,7 @@ UniValue getidentitieswithrevocation(const UniValue& params, bool fHelp)
 
 UniValue getidentitieswithrecovery(const UniValue& params, bool fHelp)
 {
-    if (fHelp || params.size() > 1)
+    if (fHelp || params.size() != 1)
     {
         throw runtime_error(
             "getidentitieswithrecovery '{\"identityid\":\"idori-address\", \"fromheight\":height, \"toheight\":height, \"unspent\":false}'\n"
