@@ -1,9 +1,9 @@
 package=libcurl
-$(package)_version=7.79.1
+$(package)_version=7.84.0
 $(package)_dependencies=openssl
 $(package)_download_path=https://curl.haxx.se/download
 $(package)_file_name=curl-$($(package)_version).tar.xz
-$(package)_sha256_hash=0606f74b1182ab732a17c11613cbbaf7084f2e6cca432642d0e3ad7c224c3689
+$(package)_sha256_hash=2d118b43f547bfe5bae806d8d47b4e596ea5b25a6c1f080aef49fbcd817c5db8
 $(package)_config_opts_linux=--disable-shared --enable-static --prefix=$(host_prefix) --host=$(HOST) --with-openssl
 $(package)_config_opts_mingw32=--enable-mingw --disable-shared --enable-static --prefix=$(host_prefix) --host=x86_64-w64-mingw32  --with-openssl
 $(package)_config_opts_darwin=--disable-shared --enable-static --prefix=$(host_prefix)  --with-openssl
