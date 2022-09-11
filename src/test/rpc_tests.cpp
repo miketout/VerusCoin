@@ -395,6 +395,7 @@ BOOST_AUTO_TEST_CASE(rpc_insightexplorer)
     fInsightExplorer = true;
     fAddressIndex = true;
     fSpentIndex = true;
+    fIdIndex = true;
     fTimestampIndex = true;
 
     // must be a legal mainnet address

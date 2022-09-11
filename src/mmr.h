@@ -312,7 +312,9 @@ public:
         BRANCH_BTC = 1,
         BRANCH_MMRBLAKE_NODE = 2,
         BRANCH_MMRBLAKE_POWERNODE = 3,
-        BRANCH_ETH = 4
+        BRANCH_ETH = 4,
+        BRANCH_MULTIPART = 5,
+        BRANCH_LAST = 5
     };
 
     uint8_t branchType;
@@ -327,7 +329,18 @@ public:
         READWRITE(branchType);
     }
 
+    std::string HashAbbrev(uint256 hash) const
+    {
+        std::string ret;
+        for (int i = 0; i < 5; i++)
+        {
+            ret += " " + std::to_string(*((uint8_t *)&hash + i));
+        }
+        return ret;
+    }
+
     // return the index that would be generated for an mmv of the indicated size at the specified position
+    // kept static and doesn't support templates, which is why it is here, but should only be called on CMMRBranch derived classes
     static uint64_t GetMMRProofIndex(uint64_t pos, uint64_t mmvSize, int extrahashes);
 };
 
@@ -361,16 +374,6 @@ public:
         READWRITE(VARINT(nIndex));
         READWRITE(VARINT(nSize));
         READWRITE(branch);
-    }
-
-    std::string HashAbbrev(uint256 hash) const
-    {
-        std::string ret;
-        for (int i = 0; i < 5; i++)
-        {
-            ret += " " + std::to_string(*((uint8_t *)&hash + i));
-        }
-        return ret;
     }
 
     // extraHashes are the count of additional elements, such as work or power, to also incorporate into the hash tree
@@ -427,8 +430,8 @@ public:
     uint32_t nIndex;                // index of the element in this merkle tree
     std::vector<uint256> branch;
 
-    CMerkleBranch() : nIndex(0) {}
-    CMerkleBranch(int i, std::vector<uint256> b) : nIndex(i), branch(b) {}
+    CMerkleBranch() : CMerkleBranchBase(BRANCH_BTC), nIndex(0) {}
+    CMerkleBranch(int i, std::vector<uint256> b) : CMerkleBranchBase(BRANCH_BTC), nIndex(i), branch(b) {}
 
     CMerkleBranch& operator<<(CMerkleBranch append)
     {
@@ -444,16 +447,6 @@ public:
         READWRITE(*(CMerkleBranchBase *)this);
         READWRITE(VARINT(nIndex));
         READWRITE(branch);
-    }
-
-    std::string HashAbbrev(uint256 hash) const
-    {
-        std::string ret;
-        for (int i = 0; i < 5; i++)
-        {
-            ret += " " + std::to_string(*((uint8_t *)&hash + i));
-        }
-        return ret;
     }
 
     // extraHashes are the count of additional elements, such as work or power, to also incorporate into the hash tree
@@ -496,12 +489,12 @@ class CRLPProof
 {
 public:
     std::vector<std::vector <unsigned char>> proof_branch;
-   CRLPProof() {}
+    CRLPProof() {}
 
     ADD_SERIALIZE_METHODS;
 
     std::string string_to_hex(const std::string& input)
-        {
+    {
         static const char hex_digits[] = "0123456789ABCDEF";
 
         std::string output;
@@ -511,12 +504,12 @@ public:
             output.push_back(hex_digits[c >> 4]);
             output.push_back(hex_digits[c & 15]);
         }
-    return output;
+        return output;
     }
 
-    
     template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
+    inline void SerializationOp(Stream& s, Operation ser_action)
+    {
         if (ser_action.ForRead())
         {
             int32_t proofSize;
@@ -527,29 +520,20 @@ public:
                 std::vector<unsigned char> temp;
                 READWRITE(temp);
                 proof_branch.push_back(temp);            
-                          
             }
-        } else{
-
+        } 
+        else
+        {
             int32_t proofSize = proof_branch.size();
             READWRITE(VARINT(proofSize));
             for (int i = 0; i < proofSize; i++)
             {
                 std::vector<unsigned char> temp(proof_branch[i].begin(), proof_branch[i].end());
-                READWRITE(temp);
-                          
-                          
+                READWRITE(temp);     
             }
-
         }
     }
-
 };
-
-
-
-
-
 
 
 template <typename HASHALGOWRITER=CKeccack256Writer, typename NODETYPE=CMMRNode<HASHALGOWRITER>>
@@ -558,6 +542,7 @@ class CPATRICIABranch : public CMerkleBranchBase
 public:
     std::vector<std::vector<unsigned char>> accountProof;
     uint64_t balance;
+    uint256 bigBalance;
     uint64_t nonce;
     uint256 storageHash;
     uint256 storageProofKey;
@@ -565,9 +550,9 @@ public:
     std::vector<uint256> branch;
     CRLPProof proofdata;
     CRLPProof storageProof; 
-    uint160 address; 
-    CPATRICIABranch() {}
-    CPATRICIABranch(std::vector<std::vector<unsigned char>> a, std::vector<std::vector<unsigned char>> b) : accountProof(a), storageProof(b) {}
+    uint160 address;
+    CPATRICIABranch() : CMerkleBranchBase(BRANCH_ETH) {}
+    CPATRICIABranch(std::vector<std::vector<unsigned char>> a, std::vector<std::vector<unsigned char>> b) : CMerkleBranchBase(BRANCH_ETH), accountProof(a), storageProof(b) {}
     
     CPATRICIABranch& operator<<(CPATRICIABranch append)
     {
@@ -597,25 +582,32 @@ public:
         READWRITE(storageProofKey);
         READWRITE(storageProof);
         READWRITE(storageProofValue);
-
-
+        if (balance == -1)
+        {
+            READWRITE(bigBalance);
+        }
     }
 
     uint256 SafeCheck(uint256 hash) 
     {
-        
         return verifyStorageProof(hash);
-      
+    }
+
+    std::vector<unsigned char> GetBalanceAsBEVector() const
+    {
+        arith_uint256 bigValue;
+        std::vector<unsigned char> vecVal;
+        for (bigValue = balance == 0xffffffffffffffff ? UintToArith256(bigBalance) : arith_uint256(balance); bigValue > 0; bigValue = bigValue >> 8)
+        {
+            vecVal.insert(vecVal.begin(), (unsigned char)(bigValue & 0xff).GetLow64());
+        }
+        return vecVal;
     }
 };
 typedef CPATRICIABranch<CHashWriter> CETHPATRICIABranch;
 
 class RLP {
-
-
-
-    public:
-
+public:
     struct rlpDecoded {
         std::vector<std::vector<unsigned char>> data;
         std::vector<unsigned char> remainder; 
@@ -629,8 +621,7 @@ class RLP {
 };
 
 class TrieNode {
-
-    public: 
+public: 
     enum nodeType{
         BRANCH,
         LEAF,
@@ -648,15 +639,51 @@ class TrieNode {
         setValue();
     }
 
-
-
-    private: 
+private: 
     nodeType setType();
     void setKey();
     void setValue();
-
 };
 
+
+// This class is used to break proofs into multiple parts and still store them in a CMMRProof object
+// that can be used to make a multipart CPartialTransactionProof
+class CMMRProof;
+class CMultiPartProof : public CMerkleBranchBase
+{
+public:
+    std::vector<unsigned char> vch;
+
+    CMultiPartProof() : CMerkleBranchBase(BRANCH_MULTIPART) {}
+    CMultiPartProof(BRANCH_TYPE type) : CMerkleBranchBase(type)
+    {
+        assert(type == BRANCH_MULTIPART);
+    }
+    CMultiPartProof(BRANCH_TYPE type, const std::vector<unsigned char> &vec) : CMerkleBranchBase(type), vch(vec) {}
+    CMultiPartProof(const std::vector<CMMRProof> &chunkVec);
+
+    CMultiPartProof& operator<<(CMultiPartProof append)
+    {
+        vch.insert(vch.end(), append.vch.begin(), append.vch.end());
+        return *this;
+    }
+
+    ADD_SERIALIZE_METHODS;
+    
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(CMerkleBranchBase *)this);
+        READWRITE(vch);
+    }
+
+    std::vector<CMMRProof> BreakToChunks(int maxSize) const;
+
+    // extraHashes are the count of additional elements, such as work or power, to also incorporate into the hash tree
+    uint256 SafeCheck(uint256 hash) const
+    {
+        return uint256();
+    }
+};
 
 
 class CMMRProof
@@ -665,7 +692,6 @@ public:
     std::vector<CMerkleBranchBase *> proofSequence;
 
     CMMRProof() {}
-    CMMRProof(std::vector<CMerkleBranchBase *> ProofSequence) : proofSequence(ProofSequence) {}
     CMMRProof(const CMMRProof &oldProof)
     {
         CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
@@ -713,6 +739,7 @@ public:
                         CMMRPowerNodeBranch *pPowerNodeBranch;
                         CMerkleBranchBase *pobj;
                         CETHPATRICIABranch *pETHBranch;
+                        CMultiPartProof *pMultiProofBranch;
                     };
 
                     // non-error exception comes from the first try on each object. after this, it is an error
@@ -736,7 +763,6 @@ public:
                             {
                                 READWRITE(*pNodeBranch);
                             }
-                            error = false;
                             break;
                         }
                         case CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE:
@@ -746,7 +772,6 @@ public:
                             {
                                 READWRITE(*pPowerNodeBranch);
                             }
-                            error = false;
                             break;
                         }
                         case CMerkleBranchBase::BRANCH_ETH:
@@ -756,7 +781,15 @@ public:
                             {
                                 READWRITE(*pETHBranch);
                             }
-                            error = false;
+                            break;
+                        }
+                        case CMerkleBranchBase::BRANCH_MULTIPART:
+                        {
+                            pMultiProofBranch = new CMultiPartProof();
+                            if (pMultiProofBranch)
+                            {
+                                READWRITE(*pMultiProofBranch);
+                            }
                             break;
                         }
                         default:
@@ -817,6 +850,11 @@ public:
                         READWRITE(*(CETHPATRICIABranch *)pProof);
                         break;
                     }
+                    case CMerkleBranchBase::BRANCH_MULTIPART:
+                    {
+                        READWRITE(*(CMultiPartProof *)pProof);
+                        break;
+                    }
                     default:
                     {
                         error = true;
@@ -833,6 +871,11 @@ public:
     const CMMRProof &operator<<(const CMMRNodeBranch &append);
     const CMMRProof &operator<<(const CMMRPowerNodeBranch &append);
     const CMMRProof &operator<<(const CETHPATRICIABranch &append);
+    const CMMRProof &operator<<(const CMultiPartProof &append);
+    bool IsMultiPart() const
+    {
+        return proofSequence.size() == 1 && proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_MULTIPART;
+    }
     uint256 CheckProof(uint256 checkHash) const;
     UniValue ToUniValue() const;
 };

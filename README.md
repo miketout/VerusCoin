@@ -1,5 +1,5 @@
 
-## VerusCoin version 0.7.4
+## VerusCoin version 0.9.4-2
 
 Arguably the world's most advanced technology, zero knowledge privacy-centric blockchain, Verus Coin brings Sapling performance and zero knowledge features to an intelligent system with interchain smart contracts and a completely original, combined proof of stake/proof of work consensus algorithm that solves the nothing at stake problem. With this and its approach towards CPU mining and ASICs, Verus Coin strives to be one of the most naturally decentralizing and attack resistant blockchains in existence.
 
@@ -19,7 +19,7 @@ The wallet downloads and stores the block chain or asset chain of the coin you s
 - FAQs & How-to: [https://wiki.verus.io/#!index.md](https://wiki.veruscoin.io/#!index.md)
 - API references: [https://wiki.verus.io/#!faq-cli/clifaq-02_verus_commands.md](https://wiki.verus.io/#!faq-cli/clifaq-02_verus_commands.md)
 - Medium: [https://medium.com/@veruscoin](https://medium.com/@veruscoin)
-- Explorer: [https://explorer.verus.io/](https://explorer.veruscoin.io/)
+- Explorer: [https://explorer.verus.io/](https://explorer.verus.io/)
 ## Tech Specification
 - Launch Date May 21, 2018
 - Max Supply: 83,540,184 VRSC

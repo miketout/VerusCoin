@@ -270,7 +270,6 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
                     EVAL_CURRENCYSTATE,
                     EVAL_RESERVE_TRANSFER,
                     EVAL_RESERVE_OUTPUT,
-                    EVAL_RESERVE_EXCHANGE,
                     EVAL_RESERVE_DEPOSIT,
                     EVAL_CROSSCHAIN_EXPORT,
                     EVAL_CROSSCHAIN_IMPORT,
@@ -279,6 +278,7 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
                     EVAL_IDENTITY_RECOVER,
                     EVAL_IDENTITY_COMMITMENT,
                     EVAL_IDENTITY_RESERVATION,
+                    EVAL_IDENTITY_ADVANCEDRESERVATION,
                     EVAL_FINALIZE_EXPORT,
                     EVAL_FEE_POOL
                 });

@@ -28,7 +28,7 @@ extern "C" {
 #endif
 
 
-#define BUF_SIZE 4096 
+#define BUF_SIZE 5120
 
 typedef char bool;
 

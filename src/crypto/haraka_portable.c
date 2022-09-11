@@ -134,7 +134,7 @@ static const unsigned char sbox[256] =
 void aesenc(unsigned char *s, const unsigned char *rk) 
 {
 //#define XT(x) (((x) << 1) ^ (((x) >> 7) ? 0x1b : 0))
-    uint32_t *t = saes_table[0];
+    const uint32_t *t = saes_table[0];
 //#define XT4(x) ((((x) << 1) & 0xfefefefe) ^ ((((x) >> 31) & 1) ? 0x1b000000 : 0)^ ((((x) >> 23)&1) ? 0x001b0000 : 0)^ ((((x) >> 15)&1) ? 0x00001b00 : 0)^ ((((x) >> 7)&1) ? 0x0000001b : 0))
 	uint32_t x0 = ((uint32_t*)s)[0];
 	uint32_t x1 = ((uint32_t*)s)[1];

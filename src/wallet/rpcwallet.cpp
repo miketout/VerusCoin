@@ -22,7 +22,7 @@
 #include "primitives/transaction.h"
 #include "zcbenchmarks.h"
 #include "script/interpreter.h"
-#include "zcash/zip32.h"
+#include <zcash/address/zip32.h>
 
 #include "utiltime.h"
 #include "asyncrpcoperation.h"
@@ -902,6 +902,19 @@ std::string SignMessageHash(const CIdentity &identity, const uint256 &_msgHash, 
 
     uint256 msgHash = ss.GetHash();
 
+    if (LogAcceptCategory("signaturehash"))
+    {
+        std::vector<unsigned char> vch;
+        LogPrintf("%s: Signing hash with all additional metadata:\nsignatureprefix: %s\nsystemid: %s\nblockheight: %s\nidentityid: %s\nmsghash: %s\nfinalhash: %s\n",
+                  __func__,
+                  HexBytes(&((vch = ::AsVector(verusDataSignaturePrefix), vch)[0]), vch.size()).c_str(),
+                  HexBytes(&((vch = ::AsVector(ConnectedChains.ThisChain().GetID()), vch)[0]), vch.size()).c_str(),
+                  HexBytes(&((vch = ::AsVector(blockHeight), vch)[0]), vch.size()).c_str(),
+                  HexBytes(&((vch = ::AsVector(identity.GetID()), vch)[0]), vch.size()).c_str(),
+                  _msgHash.GetHex().c_str(),
+                  msgHash.GetHex().c_str());
+    }
+
     // get the signature, a hex string, which is deserialized into an instance of the ID signature class
     std::vector<unsigned char> sigVec;
     try
@@ -1234,27 +1247,6 @@ UniValue signmessage(const UniValue& params, bool fHelp)
 }
 
 uint256 HashFile(std::string filepath);
-
-bool printoutAPI = false;
-UniValue printapis(const UniValue& params, bool fHelp)
-{
-    if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "printapis trueorfalse\n"
-            "\nPrints the name of all APIs if parameter is true"
-
-            "\nResult:\n"
-            ""
-            "\nExamples:\n"
-            + HelpExampleCli("signfile", "\"RD6GgnrMpPaTSMn8vai6yiGA7mN4QGPV\" \"filepath/filename\"") +
-            "\nVerify the signature\n"
-            + HelpExampleCli("verifyfile", "\"RD6GgnrMpPaTSMn8vai6yiGA7mN4QGPV\" \"signature\" \"filepath/filename\"") +
-            "\nAs json rpc\n"
-            + HelpExampleRpc("signfile", "\"RD6GgnrMpPaTSMn8vai6yiGA7mN4QGPV\", \"filepath/filename\"")
-        );
-    printoutAPI = uni_get_bool(params[0]);
-    return NullUniValue;
-}
 
 UniValue signfile(const UniValue& params, bool fHelp)
 {
@@ -2140,7 +2132,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
     bool bIsStake = false;
     bool bIsCoinbase = false;
     bool bIsMint = false;
-    bool bIsReserve = ConnectedChains.ThisChain().IsFractional();
+    bool isPBaaS = CConstVerusSolutionVector::GetVersionByHeight(chainActive.Height()) > CActivationHeight::ACTIVATE_PBAAS;
     CReserveTransactionDescriptor rtxd;
     CCoinsViewCache view(pcoinsTip);
     uint32_t nHeight = chainActive.Height();
@@ -2152,25 +2144,17 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
     else
     {
         bIsCoinbase = wtx.IsCoinBase();
-        bIsMint = bIsCoinbase && wtx.vout.size() > 0 && wtx.vout[0].scriptPubKey.IsPayToCryptoCondition();
+        CBlockIndex *pIndex = mapBlockIndex.count(wtx.hashBlock) ? mapBlockIndex[wtx.hashBlock] : nullptr;
+        bIsMint = pIndex && pIndex->IsVerusPOSBlock();
     }
 
-    if (bIsReserve && (rtxd = CReserveTransactionDescriptor(wtx, view, nHeight)).IsReserve())
+    if (isPBaaS)
     {
-        ret.push_back(Pair("isreserve", true));
-        bool isReserveExchange = rtxd.IsReserveExchange();
-        ret.push_back(Pair("isreserveexchange", isReserveExchange));
-        if (isReserveExchange)
-        {
-            if (rtxd.IsMarket())
-            {
-                ret.push_back(Pair("exchangetype", "market"));
-            }
-            else if (rtxd.IsLimit())
-            {
-                ret.push_back(Pair("exchangetype", "limit"));
-            }
-        }
+        if (rtxd.IsReserveTransfer()) ret.push_back(Pair("isreservetransfer", true));
+        if (rtxd.flags & rtxd.IS_IMPORT) ret.push_back(Pair("isimport", true));
+        if (rtxd.flags & rtxd.IS_IDENTITY) ret.push_back(Pair("isidentity", true));
+        if (rtxd.flags & rtxd.IS_CURRENCY_DEFINITION) ret.push_back(Pair("iscurrencydefinition", true));
+        if (rtxd.flags & rtxd.IS_CHAIN_NOTARIZATION) ret.push_back(Pair("isnotarization", true));
         ret.push_back(Pair("nativefees", rtxd.NativeFees()));
         ret.push_back(Pair("reservefees", rtxd.ReserveFees().ToUniValue()));
         if (rtxd.nativeConversionFees || (rtxd.ReserveConversionFeesMap() > CCurrencyValueMap()))
@@ -2178,10 +2162,6 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
             ret.push_back(Pair("nativeconversionfees", rtxd.nativeConversionFees));
             ret.push_back(Pair("reserveconversionfees", rtxd.ReserveConversionFeesMap().ToUniValue()));
         }
-    }
-    else
-    {
-        ret.push_back(Pair("isreserve", false));
     }
 
     wtx.GetAmounts(listReceived, listSent, nFee, strSentAccount, bIsStake ? ISMINE_ALLANDCHANGE : filter);
@@ -2260,18 +2240,14 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                 }
                 
                 COptCCParams p;
-                if (rtxd.IsValid() && wtx.vout[r.vout].scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid())
+                if (wtx.vout[r.vout].scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid())
                 {
                     UniValue ccUni;
                     ScriptPubKeyToJSON(wtx.vout[r.vout].scriptPubKey, ccUni, false, false);
-                    entry.push_back(Pair("cryptocondition", ccUni));
+                    entry.push_back(Pair("smartoutput", ccUni));
                 }
 
                 entry.push_back(Pair("amount", ValueFromAmount(r.amount)));
-                if (wtx.vout.size() > r.vout && rtxd.IsReserve())
-                {
-                    entry.push_back(Pair("reserveamount", wtx.vout[r.vout].scriptPubKey.ReserveOutValue().ToUniValue()));
-                }
                 entry.push_back(Pair("vout", r.vout));
                 if (fLong)
                     WalletTxToJSON(wtx, entry);
@@ -2768,6 +2744,50 @@ static void LockWallet(CWallet* pWallet)
     pWallet->Lock();
 }
 
+UniValue openwallet(const UniValue& params, bool fHelp)
+{
+    if (!EnsureWalletIsAvailable(fHelp))
+        return NullUniValue;
+
+    if (pwalletMain->IsCrypted() && (fHelp || params.size() != 1))
+        throw runtime_error(
+            "openwallet \"passphrase\"\n"
+            "\nStores the wallet decryption key in memory to load the wallet.\n"
+            "This is needed prior to the initial loading of the wallet" + strprintf("%s",komodo_chainname()) + "\n"
+            "\nArguments:\n"
+            "1. \"passphrase\"     (string, required) The wallet passphrase\n"
+            "\nNote:\n"
+            "\nExamples:\n"
+            + HelpExampleCli("openwallet", "\"my pass phrase\"")
+            + HelpExampleRpc("openwallet", "\"my pass phrase\"")
+        );
+
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+
+    if (fHelp)
+        return true;
+    if (!pwalletMain->IsCrypted())
+        throw JSONRPCError(RPC_WALLET_WRONG_ENC_STATE, "Error: running with an unencrypted wallet, but alletpassphrase was called.");
+
+    // Note that the walletpassphrase is stored in params[0] which is not mlock()ed
+    SecureString strWalletPass;
+    strWalletPass.reserve(100);
+    // TODO: get rid of this .c_str() by implementing SecureString::operator=(std::string)
+    // Alternately, find a way to make params[0] mlock()'d to begin with.
+    strWalletPass = params[0].get_str().c_str();
+
+    if (strWalletPass.length() > 0)
+    {
+        if (!pwalletMain->Unlock(strWalletPass))
+            throw JSONRPCError(RPC_WALLET_PASSPHRASE_INCORRECT, "Error: The wallet passphrase entered was incorrect.");
+    }
+    else
+        throw runtime_error(
+            "openwallet <passphrase>\n");
+
+    return NullUniValue;
+}
+
 UniValue walletpassphrase(const UniValue& params, bool fHelp)
 {
     if (!EnsureWalletIsAvailable(fHelp))
@@ -2974,14 +2994,38 @@ UniValue encryptwallet(const UniValue& params, bool fHelp)
             "encryptwallet <passphrase>\n"
             "Encrypts the wallet with <passphrase>.");
 
-    if (!pwalletMain->EncryptWallet(strWalletPass))
-        throw JSONRPCError(RPC_WALLET_ENCRYPTION_FAILED, "Error: Failed to encrypt the wallet.");
+    auto nTime = GetTime();
+    std::string walletFile = pwalletMain->strWalletFile;
+    std::string fileBackup = "unencrypted_walletbackup" + std::to_string(nTime) + ".dat";
+    boost::filesystem::path pathBackup = GetDataDir() / fileBackup;
+    boost::filesystem::path pathWallet = GetDataDir() / walletFile;
 
-    // BDB seems to have a bad habit of writing old data into
-    // slack space in .dat files; that is bad if the old data is
-    // unencrypted private keys. So:
-    StartShutdown();
-    return "wallet encrypted; Verus server stopping, restart to run with encrypted wallet. The keypool has been flushed, you need to make a new backup.";
+    bitdb.Flush(false);
+    if (!BackupWallet(*pwalletMain, pathBackup.string()))
+        throw JSONRPCError(RPC_WALLET_ERROR, "Error: Wallet backup failed!");
+
+    if (!pwalletMain->EncryptWallet(strWalletPass)) {
+        bitdb.Flush(false);
+
+        // Flush log data to the dat file
+        bitdb.CloseDb(walletFile);
+        bitdb.CheckpointLSN(walletFile);
+        bitdb.mapFileUseCount.erase(walletFile);
+
+        //replace the file with the previous backup
+        boost::filesystem::remove(pathWallet);
+        copy_file(pathBackup, pathWallet, boost::filesystem::copy_option::overwrite_if_exists);
+        boost::filesystem::remove(pathBackup);
+
+        //shutdown
+        StartShutdown();
+        return "wallet encryption failed; Verus server stopping, restart to restore unencrypted wallet.";
+    } else {
+        // remove unneeded backup
+        boost::filesystem::remove(pathBackup);
+    }
+
+    return "wallet encrypted; The keypool has been flushed, you need to make a new backup.";
 }
 
 UniValue lockunspent(const UniValue& params, bool fHelp)
@@ -3178,7 +3222,7 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
     uint32_t nHeight = chainActive.Height();
-    bool checkunlockedIDs = CConstVerusSolutionVector::GetVersionByHeight(nHeight) >= CActivationHeight::ACTIVATE_PBAAS;
+    bool checkunlockedIDs = CConstVerusSolutionVector::GetVersionByHeight(nHeight) >= CActivationHeight::ACTIVATE_VERUSVAULT;
 
     UniValue obj(UniValue::VOBJ);
     obj.push_back(Pair("walletversion", pwalletMain->GetVersion()));
@@ -3236,7 +3280,7 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
 
     for (auto &oneBalance : resBal.valueMap)
     {
-        reserveBal.push_back(make_pair(ConnectedChains.GetCachedCurrency(oneBalance.first).name, ValueFromAmount(oneBalance.second)));
+        reserveBal.push_back(make_pair(ConnectedChains.GetFriendlyCurrencyName(oneBalance.first), ValueFromAmount(oneBalance.second)));
     }
     if (reserveBal.size())
     {
@@ -3249,7 +3293,7 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
             {
                 for (auto &oneBalance : unlockedResBal.valueMap)
                 {
-                    unlockedReserveBal.push_back(make_pair(ConnectedChains.GetCachedCurrency(oneBalance.first).name, ValueFromAmount(oneBalance.second)));
+                    unlockedReserveBal.push_back(make_pair(ConnectedChains.GetFriendlyCurrencyName(oneBalance.first), ValueFromAmount(oneBalance.second)));
                 }
                 obj.push_back(Pair("unlocked_reserve_balance", unlockedReserveBal));
             }
@@ -3259,7 +3303,7 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
     UniValue unconfirmedReserveBal(UniValue::VOBJ);
     for (auto &oneBalance : pwalletMain->GetUnconfirmedReserveBalance().valueMap)
     {
-        unconfirmedReserveBal.push_back(make_pair(ConnectedChains.GetCachedCurrency(oneBalance.first).name, ValueFromAmount(oneBalance.second)));
+        unconfirmedReserveBal.push_back(make_pair(ConnectedChains.GetFriendlyCurrencyName(oneBalance.first), ValueFromAmount(oneBalance.second)));
     }
     if (unconfirmedReserveBal.size())
     {
@@ -3269,7 +3313,7 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
     UniValue immatureReserveBal(UniValue::VOBJ);
     for (auto &oneBalance : pwalletMain->GetImmatureReserveBalance().valueMap)
     {
-        immatureReserveBal.push_back(make_pair(ConnectedChains.GetCachedCurrency(oneBalance.first).name, ValueFromAmount(oneBalance.second)));
+        immatureReserveBal.push_back(make_pair(ConnectedChains.GetFriendlyCurrencyName(oneBalance.first), ValueFromAmount(oneBalance.second)));
     }
     if (immatureReserveBal.size())
     {
@@ -3611,10 +3655,10 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
             obj.push_back(Pair("outindex", (int)entry.op.n));
             obj.push_back(Pair("confirmations", entry.confirmations));
             libzcash::SaplingIncomingViewingKey ivk;
-            libzcash::SaplingFullViewingKey fvk;
+            libzcash::SaplingExtendedFullViewingKey extfvk;
             pwalletMain->GetSaplingIncomingViewingKey(boost::get<libzcash::SaplingPaymentAddress>(entry.address), ivk);
-            pwalletMain->GetSaplingFullViewingKey(ivk, fvk);
-            bool hasSaplingSpendingKey = pwalletMain->HaveSaplingSpendingKey(fvk);
+            pwalletMain->GetSaplingFullViewingKey(ivk, extfvk);
+            bool hasSaplingSpendingKey = pwalletMain->HaveSaplingSpendingKey(extfvk);
             obj.push_back(Pair("spendable", hasSaplingSpendingKey));
             obj.push_back(Pair("address", EncodePaymentAddress(entry.address)));
             obj.push_back(Pair("amount", ValueFromAmount(CAmount(entry.note.value())))); // note.value() is equivalent to plaintext.value()
@@ -4249,11 +4293,7 @@ UniValue z_listaddresses(const UniValue& params, bool fHelp)
         libzcash::SaplingIncomingViewingKey ivk;
         libzcash::SaplingFullViewingKey fvk;
         for (auto addr : addresses) {
-            if (fIncludeWatchonly || (
-                pwalletMain->GetSaplingIncomingViewingKey(addr, ivk) &&
-                pwalletMain->GetSaplingFullViewingKey(ivk, fvk) &&
-                pwalletMain->HaveSaplingSpendingKey(fvk)
-            )) {
+            if (fIncludeWatchonly || HaveSpendingKeyForPaymentAddress(pwalletMain)(addr)) {
                 ret.push_back(EncodePaymentAddress(addr));
             }
         }
@@ -4262,7 +4302,7 @@ UniValue z_listaddresses(const UniValue& params, bool fHelp)
 }
 
 CAmount getBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ignoreUnspendable=true) {
-    std::set<CTxDestination> destinations;
+    CTxDestination destination;
     vector<COutput> vecOutputs;
     CAmount balance = 0;
 
@@ -4276,53 +4316,83 @@ CAmount getBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ign
     }
 
     if (!(wildCardRAddress || wildCardiAddress) && transparentAddress.length() > 0) {
-        CTxDestination taddr = DecodeDestination(transparentAddress);
-        if (!IsValidDestination(taddr)) {
+        destination = DecodeDestination(transparentAddress);
+        if (!IsValidDestination(destination)) {
             throw std::runtime_error("invalid transparent address");
         }
-        destinations.insert(taddr);
     }
 
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
     pwalletMain->AvailableCoins(vecOutputs, false, NULL, true);
 
-    BOOST_FOREACH(const COutput& out, vecOutputs) {
-        if (out.nDepth < minDepth) {
+    BOOST_FOREACH(const COutput& out, vecOutputs) 
+    {
+        if (out.nDepth < minDepth) 
+        {
             continue;
         }
 
-        if (ignoreUnspendable && !out.fSpendable) {
+        if (ignoreUnspendable && !out.fSpendable) 
+        {
             continue;
         }
 
-        if (wildCardRAddress || wildCardiAddress || destinations.size()) {
-            CTxDestination address;
-            if (!ExtractDestination(out.tx->vout[out.i].scriptPubKey, address)) {
+        if (wildCardRAddress || wildCardiAddress || IsValidDestination(destination)) 
+        {
+            std::vector<CTxDestination> addresses;
+            txnouttype typeRet;
+            bool canSign, canSpend;
+            int nRequired;
+            if (!ExtractDestinations(out.tx->vout[out.i].scriptPubKey, typeRet, addresses, nRequired, pwalletMain, &canSign, &canSpend))
+            {
                 continue;
             }
 
+            int keepCount = 0;
+            std::pair<CIdentityMapKey, CIdentityMapValue> keyAndIdentity;
             if (wildCardRAddress || wildCardiAddress)
             {
-                bool keep = false;
-                if (wildCardRAddress)
+                for (auto oneAddr : addresses)
                 {
-                    keep = address.which() == COptCCParams::ADDRTYPE_PKH || address.which() == COptCCParams::ADDRTYPE_PK;
+                    if (wildCardRAddress &&
+                        (oneAddr.which() == COptCCParams::ADDRTYPE_PKH || oneAddr.which() == COptCCParams::ADDRTYPE_PK) &&
+                        pwalletMain->HaveKey(GetDestinationID(oneAddr)))
+                    {
+                        keepCount++;
+                    }
+                    if (keepCount < nRequired &&
+                        wildCardiAddress &&
+                        oneAddr.which() == COptCCParams::ADDRTYPE_ID &&
+                        pwalletMain->GetIdentity(CIdentityID(GetDestinationID(oneAddr)), keyAndIdentity) &&
+                        keyAndIdentity.first.CanSign())
+                    {
+                        keepCount++;
+                    }
+                    if (keepCount >= nRequired)
+                    {
+                        break;
+                    }
                 }
-                if (!keep && wildCardiAddress)
-                {
-                    keep = address.which() == COptCCParams::ADDRTYPE_ID;
-                }
-                if (!keep)
+                if (keepCount < nRequired)
                 {
                     continue;
                 }
             }
-            else
+            else if (nRequired == 1)
             {
-                if (!destinations.count(address)) {
-                    continue;
+                for (auto oneAddr : addresses)
+                {
+                    if (destination == oneAddr || (oneAddr.which() == COptCCParams::ADDRTYPE_PK && GetDestinationID(oneAddr) == GetDestinationID(destination)))
+                    {
+                        keepCount++;
+                        break;
+                    }
                 }
+            }
+            if (keepCount < nRequired)
+            {
+                continue;
             }
         }
 
@@ -4333,7 +4403,7 @@ CAmount getBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ign
 }
 
 CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ignoreUnspendable=true) {
-    std::set<CTxDestination> destinations;
+    CTxDestination destination;
     vector<COutput> vecOutputs;
     CCurrencyValueMap balance;
 
@@ -4347,53 +4417,83 @@ CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int mi
     }
 
     if (!(wildCardRAddress || wildCardiAddress) && transparentAddress.length() > 0) {
-        CTxDestination taddr = DecodeDestination(transparentAddress);
-        if (!IsValidDestination(taddr)) {
+        destination = DecodeDestination(transparentAddress);
+        if (!IsValidDestination(destination)) {
             throw std::runtime_error("invalid transparent address");
         }
-        destinations.insert(taddr);
     }
 
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
     pwalletMain->AvailableCoins(vecOutputs, false, NULL, true);
 
-    BOOST_FOREACH(const COutput& out, vecOutputs) {
-        if (out.nDepth < minDepth) {
+    BOOST_FOREACH(const COutput& out, vecOutputs)
+    {
+        if (out.nDepth < minDepth) 
+        {
             continue;
         }
 
-        if (ignoreUnspendable && !out.fSpendable) {
+        if (ignoreUnspendable && !out.fSpendable) 
+        {
             continue;
         }
 
-        if (wildCardRAddress || wildCardiAddress || destinations.size()) {
-            CTxDestination address;
-            if (!ExtractDestination(out.tx->vout[out.i].scriptPubKey, address)) {
+        if (wildCardRAddress || wildCardiAddress || IsValidDestination(destination))
+        {
+            std::vector<CTxDestination> addresses;
+            txnouttype typeRet;
+            bool canSign, canSpend;
+            int nRequired;
+            if (!ExtractDestinations(out.tx->vout[out.i].scriptPubKey, typeRet, addresses, nRequired, pwalletMain, &canSign, &canSpend))
+            {
                 continue;
             }
 
+            int keepCount = 0;
+            std::pair<CIdentityMapKey, CIdentityMapValue> keyAndIdentity;
             if (wildCardRAddress || wildCardiAddress)
             {
-                bool keep = false;
-                if (wildCardRAddress)
+                for (auto oneAddr : addresses)
                 {
-                    keep = address.which() == COptCCParams::ADDRTYPE_PKH || address.which() == COptCCParams::ADDRTYPE_PK;
+                    if (wildCardRAddress &&
+                        (oneAddr.which() == COptCCParams::ADDRTYPE_PKH || oneAddr.which() == COptCCParams::ADDRTYPE_PK) &&
+                        pwalletMain->HaveKey(GetDestinationID(oneAddr)))
+                    {
+                        keepCount++;
+                    }
+                    if (keepCount < nRequired &&
+                        wildCardiAddress &&
+                        oneAddr.which() == COptCCParams::ADDRTYPE_ID &&
+                        pwalletMain->GetIdentity(CIdentityID(GetDestinationID(oneAddr)), keyAndIdentity) &&
+                        keyAndIdentity.first.CanSign())
+                    {
+                        keepCount++;
+                    }
+                    if (keepCount >= nRequired)
+                    {
+                        break;
+                    }
                 }
-                if (!keep && wildCardiAddress)
-                {
-                    keep = address.which() == COptCCParams::ADDRTYPE_ID;
-                }
-                if (!keep)
+                if (keepCount < nRequired)
                 {
                     continue;
                 }
             }
-            else
+            else if (nRequired == 1)
             {
-                if (!destinations.count(address)) {
-                    continue;
+                for (auto oneAddr : addresses)
+                {
+                    if (destination == oneAddr || (oneAddr.which() == COptCCParams::ADDRTYPE_PK && GetDestinationID(oneAddr) == GetDestinationID(destination)))
+                    {
+                        keepCount++;
+                        break;
+                    }
                 }
+            }
+            if (keepCount < nRequired)
+            {
+                continue;
             }
         }
 
@@ -4401,6 +4501,7 @@ CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int mi
         balance += out.tx->vout[out.i].ReserveOutValue();
         if (nValue)
         {
+            //printf("%s: hash: %s, amount %ld\n", __func__, out.tx->GetHash().GetHex().c_str(), nValue);
             balance.valueMap[ASSETCHAINS_CHAINID] += nValue;
         }
     }
@@ -4514,6 +4615,27 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
             UniValue obj(UniValue::VOBJ);
             obj.push_back(Pair("txid", entry.op.hash.ToString()));
             obj.push_back(Pair("amount", ValueFromAmount(CAmount(entry.note.value()))));
+            std::string memoMessage;
+            // this has data. if it is readable ASCII, display it as such.
+            int charPos;
+            for (charPos = 0; charPos < entry.memo.max_size(); charPos++)
+            {
+                uint8_t &curCh = entry.memo[charPos];
+                if (curCh == 0)
+                {
+                    break;
+                }
+                if (!isprint(curCh))
+                {
+                    charPos = 0;
+                    break;
+                }
+                memoMessage += curCh;
+            }
+            if (memoMessage.size())
+            {
+                obj.push_back(Pair("memostr", memoMessage));
+            }
             obj.push_back(Pair("memo", HexStr(entry.memo)));
             obj.push_back(Pair("outindex", (int)entry.op.n));
             obj.push_back(Pair("confirmations", entry.confirmations));
@@ -4691,14 +4813,14 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
     UniValue currencyBal(UniValue::VOBJ);
     if (balance.valueMap.count(ASSETCHAINS_CHAINID))
     {
-        std::string name = friendlyNames ? ConnectedChains.ThisChain().name : EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID()));
+        std::string name = friendlyNames ? ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID) : EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID()));
         currencyBal.push_back(make_pair(name, ValueFromAmount(balance.valueMap[ASSETCHAINS_CHAINID])));
         balance.valueMap.erase(ASSETCHAINS_CHAINID);
     }
     for (auto &oneBalance : balance.valueMap)
     {
-        std::string name = friendlyNames ? ConnectedChains.GetCachedCurrency(oneBalance.first).name : 
-                                           EncodeDestination(CIdentityID(ConnectedChains.GetCachedCurrency(oneBalance.first).GetID()));
+        std::string name = friendlyNames ? ConnectedChains.GetFriendlyCurrencyName(oneBalance.first) : 
+                                           EncodeDestination(CIdentityID(oneBalance.first));
         currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
     }
 
@@ -4910,9 +5032,9 @@ UniValue z_viewtransaction(const UniValue& params, bool fHelp)
         auto pa = decrypted.second;
 
         // Store the OutgoingViewingKey for recovering outputs
-        libzcash::SaplingFullViewingKey fvk;
-        assert(pwalletMain->GetSaplingFullViewingKey(wtxPrev.mapSaplingNoteData.at(op).ivk, fvk));
-        ovks.insert(fvk.ovk);
+        libzcash::SaplingExtendedFullViewingKey extfvk;
+        assert(pwalletMain->GetSaplingFullViewingKey(wtxPrev.mapSaplingNoteData.at(op).ivk, extfvk));
+        ovks.insert(extfvk.fvk.ovk);
 
         UniValue entry(UniValue::VOBJ);
         entry.push_back(Pair("type", ADDR_TYPE_SAPLING));
@@ -5245,6 +5367,21 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
     }
 
     int nextBlockHeight = chainActive.Height() + 1;
+
+    if (taddr.which() == COptCCParams::ADDRTYPE_ID && !GetDestinationID(taddr).IsNull())
+    {
+        std::pair<CIdentityMapKey, CIdentityMapValue> keyAndIdentity;
+        if (!pwalletMain->GetIdentity(GetDestinationID(taddr), keyAndIdentity) ||
+            !keyAndIdentity.second.IsValid())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid identity or identity not in wallet");
+        }
+        if (keyAndIdentity.second.IsLocked(nextBlockHeight))
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot send currency from a locked identity");
+        }
+    }
+
     CMutableTransaction mtx;
     mtx.fOverwintered = true;
     mtx.nVersionGroupId = SAPLING_VERSION_GROUP_ID;
@@ -5355,131 +5492,6 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
     return operationId;
 }
 
-UniValue z_setmigration(const UniValue& params, bool fHelp) {
-    if (!EnsureWalletIsAvailable(fHelp))
-        return NullUniValue;
-    if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "z_setmigration enabled\n"
-            "When enabled the Sprout to Sapling migration will attempt to migrate all funds from this wallet’s\n"
-            "Sprout addresses to either the address for Sapling account 0 or the address specified by the parameter\n"
-            "'-migrationdestaddress'.\n"
-            "\n"
-            "This migration is designed to minimize information leakage. As a result for wallets with a significant\n"
-            "Sprout balance, this process may take several weeks. The migration works by sending, up to 5, as many\n"
-            "transactions as possible whenever the blockchain reaches a height equal to 499 modulo 500. The transaction\n"
-            "amounts are picked according to the random distribution specified in ZIP 308. The migration will end once\n"
-            "the wallet’s Sprout balance is below " + strprintf("%s %s", FormatMoney(CENT), CURRENCY_UNIT) + ".\n"
-            "\nArguments:\n"
-            "1. enabled  (boolean, required) 'true' or 'false' to enable or disable respectively.\n"
-        );
-    LOCK(pwalletMain->cs_wallet);
-    pwalletMain->fSaplingMigrationEnabled = params[0].get_bool();
-    return NullUniValue;
-}
-
-UniValue z_getmigrationstatus(const UniValue& params, bool fHelp) {
-    if (!EnsureWalletIsAvailable(fHelp))
-        return NullUniValue;
-    if (fHelp || params.size() != 0)
-        throw runtime_error(
-            "z_getmigrationstatus\n"
-            "Returns information about the status of the Sprout to Sapling migration.\n"
-            "Note: A transaction is defined as finalized if it has at least ten confirmations.\n"
-            "Also, it is possible that manually created transactions involving this wallet\n"
-            "will be included in the result.\n"
-            "\nResult:\n"
-            "{\n"
-            "  \"enabled\": true|false,                    (boolean) Whether or not migration is enabled\n"
-            "  \"destination_address\": \"zaddr\",           (string) The Sapling address that will receive Sprout funds\n"
-            "  \"unmigrated_amount\": nnn.n,               (numeric) The total amount of unmigrated " + CURRENCY_UNIT +" \n"
-            "  \"unfinalized_migrated_amount\": nnn.n,     (numeric) The total amount of unfinalized " + CURRENCY_UNIT + " \n"
-            "  \"finalized_migrated_amount\": nnn.n,       (numeric) The total amount of finalized " + CURRENCY_UNIT + " \n"
-            "  \"finalized_migration_transactions\": nnn,  (numeric) The number of migration transactions involving this wallet\n"
-            "  \"time_started\": ttt,                      (numeric, optional) The block time of the first migration transaction as a Unix timestamp\n"
-            "  \"migration_txids\": [txids]                (json array of strings) An array of all migration txids involving this wallet\n"
-            "}\n"
-        );
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-    UniValue migrationStatus(UniValue::VOBJ);
-    migrationStatus.push_back(Pair("enabled", pwalletMain->fSaplingMigrationEnabled));
-    //  The "destination_address" field MAY be omitted if the "-migrationdestaddress"
-    // parameter is not set and no default address has yet been generated.
-    // Note: The following function may return the default address even if it has not been added to the wallet
-    auto destinationAddress = AsyncRPCOperation_saplingmigration::getMigrationDestAddress(pwalletMain->GetHDSeedForRPC());
-    migrationStatus.push_back(Pair("destination_address", EncodePaymentAddress(destinationAddress)));
-    //  The values of "unmigrated_amount" and "migrated_amount" MUST take into
-    // account failed transactions, that were not mined within their expiration
-    // height.
-    {
-        std::vector<SproutNoteEntry> sproutEntries;
-        std::vector<SaplingNoteEntry> saplingEntries;
-        std::set<PaymentAddress> noFilter;
-        // Here we are looking for any and all Sprout notes for which we have the spending key, including those
-        // which are locked and/or only exist in the mempool, as they should be included in the unmigrated amount.
-        pwalletMain->GetFilteredNotes(sproutEntries, saplingEntries, noFilter, 0, INT_MAX, true, true, false);
-        CAmount unmigratedAmount = 0;
-        for (const auto& sproutEntry : sproutEntries) {
-            unmigratedAmount += sproutEntry.note.value();
-        }
-        migrationStatus.push_back(Pair("unmigrated_amount", FormatMoney(unmigratedAmount)));
-    }
-    //  "migration_txids" is a list of strings representing transaction IDs of all
-    // known migration transactions involving this wallet, as lowercase hexadecimal
-    // in RPC byte order.
-    UniValue migrationTxids(UniValue::VARR);
-    CAmount unfinalizedMigratedAmount = 0;
-    CAmount finalizedMigratedAmount = 0;
-    int numFinalizedMigrationTxs = 0;
-    uint64_t timeStarted = 0;
-    for (const auto& txPair : pwalletMain->mapWallet) {
-        CWalletTx tx = txPair.second;
-        // A given transaction is defined as a migration transaction iff it has:
-        // * one or more Sprout JoinSplits with nonzero vpub_new field; and
-        // * no Sapling Spends, and;
-        // * one or more Sapling Outputs.
-        if (tx.vJoinSplit.size() > 0 && tx.vShieldedSpend.empty() && tx.vShieldedOutput.size() > 0) {
-            bool nonZeroVPubNew = false;
-            for (const auto& js : tx.vJoinSplit) {
-                if (js.vpub_new > 0) {
-                    nonZeroVPubNew = true;
-                    break;
-                }
-            }
-            if (!nonZeroVPubNew) {
-                continue;
-            }
-            migrationTxids.push_back(txPair.first.ToString());
-            //  A transaction is "finalized" iff it has at least 10 confirmations.
-            // TODO: subject to change, if the recommended number of confirmations changes.
-            if (tx.GetDepthInMainChain() >= 10) {
-                finalizedMigratedAmount -= tx.valueBalance;
-                ++numFinalizedMigrationTxs;
-            } else {
-                unfinalizedMigratedAmount -= tx.valueBalance;
-            }
-            // If the transaction is in the mempool it will not be associated with a block yet
-            if (tx.hashBlock.IsNull() || mapBlockIndex[tx.hashBlock] == nullptr) {
-                continue;
-            }
-            CBlockIndex* blockIndex = mapBlockIndex[tx.hashBlock];
-            //  The value of "time_started" is the earliest Unix timestamp of any known
-            // migration transaction involving this wallet; if there is no such transaction,
-            // then the field is absent.
-            if (timeStarted == 0 || timeStarted > blockIndex->GetBlockTime()) {
-                timeStarted = blockIndex->GetBlockTime();
-            }
-        }
-    }
-    migrationStatus.push_back(Pair("unfinalized_migrated_amount", FormatMoney(unfinalizedMigratedAmount)));
-    migrationStatus.push_back(Pair("finalized_migrated_amount", FormatMoney(finalizedMigratedAmount)));
-    migrationStatus.push_back(Pair("finalized_migration_transactions", numFinalizedMigrationTxs));
-    if (timeStarted > 0) {
-        migrationStatus.push_back(Pair("time_started", timeStarted));
-    }
-    migrationStatus.push_back(Pair("migration_txids", migrationTxids));
-    return migrationStatus;
-}
 
 /**
 When estimating the number of coinbase utxos we can shield in a single transaction:
@@ -5504,6 +5516,7 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
     if (fHelp || params.size() < 2 || params.size() > 4)
         throw runtime_error(
             "z_shieldcoinbase \"fromaddress\" \"tozaddress\" ( fee ) ( limit )\n"
+            "\nTHIS API IS DEPRECATED AND NON NECESSARY TO USE ON VERUS OR STANDARD PBAAS NETWORKS"
             "\nShield transparent coinbase funds by sending to a shielded zaddr.  This is an asynchronous operation and utxos"
             "\nselected for shielding will be locked.  If there is an error, they are unlocked.  The RPC call `listlockunspent`"
             "\ncan be used to return a list of locked utxos.  The number of coinbase utxos selected for shielding can be limited"
@@ -5532,6 +5545,7 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
             + HelpExampleRpc("z_shieldcoinbase", "\"RD6GgnrMpPaTSMn8vai6yiGA7mN4QGPV\", \"ztfaW34Gj9FrnGUEf833ywDVL62NWXBM81u6EQnM6VR45eYnXhwztecW1SjxA7JrmAXKJhxhj3vDNEpVCQoSvVoSpmbhtjf\"")
         );
 
+    printf("Shielding coinbases in Verus or standard PBaaS bockchain networks is unnecessary and %s is a deprecated function\n", __func__);
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
     // Validate the from address
@@ -5546,9 +5560,10 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
     }
 
     // Validate the destination address
-    auto destaddress = params[1].get_str();
-    if (!IsValidPaymentAddressString(destaddress, CurrentEpochBranchId(chainActive.Height(), Params().GetConsensus()))) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, unknown address format: ") + destaddress );
+    libzcash::PaymentAddress zaddress;
+    if (!pwalletMain->GetAndValidateSaplingZAddress(params[1].get_str(), zaddress))
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, unknown address format: ") + params[1].get_str() );
     }
 
     // Convert fee from currency format to zatoshis
@@ -5572,19 +5587,6 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
     int nextBlockHeight = chainActive.Height() + 1;
     bool overwinterActive = Params().GetConsensus().NetworkUpgradeActive(nextBlockHeight, Consensus::UPGRADE_OVERWINTER);
     unsigned int max_tx_size = MAX_TX_SIZE_AFTER_SAPLING;
-    if (!Params().GetConsensus().NetworkUpgradeActive(nextBlockHeight, Consensus::UPGRADE_SAPLING)) {
-        max_tx_size = MAX_TX_SIZE_BEFORE_SAPLING;
-        auto res = DecodePaymentAddress(destaddress);
-        // If Sapling is not active, do not allow sending to a Sapling address.
-        if (IsValidPaymentAddress(res)) {
-            bool toSapling = boost::get<libzcash::SaplingPaymentAddress>(&res) != nullptr;
-            if (toSapling) {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, Sapling has not activated");
-            }
-        } else {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, unknown address format: ") + destaddress );
-        }
-    }
 
     // Prepare to get coinbase utxos
     std::vector<ShieldCoinbaseUTXO> inputs;
@@ -5677,9 +5679,10 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
     }
 
     // Keep record of parameters in context object
+    std::string destaddress = EncodePaymentAddress(zaddress);
     UniValue contextInfo(UniValue::VOBJ);
     contextInfo.push_back(Pair("fromaddress", params[0]));
-    contextInfo.push_back(Pair("toaddress", params[1]));
+    contextInfo.push_back(Pair("toaddress", destaddress));
     contextInfo.push_back(Pair("fee", ValueFromAmount(nFee)));
 
     // Builder (used if Sapling addresses are involved)
@@ -5865,7 +5868,7 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
             if (IsValidPaymentAddress(res)) {
                 isToSaplingZaddr = boost::get<libzcash::SaplingPaymentAddress>(&res) != nullptr;
             } else {
-                isToSproutZaddr = true;
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Legacy Sprout address not supported as destination. Use a transparent or Sapling compatible address");
             }
         } else {
             throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, unknown address format: ") + destaddress );
@@ -8057,6 +8060,7 @@ UniValue getbalance64(const UniValue& params, bool fHelp)
 
 extern UniValue dumpprivkey(const UniValue& params, bool fHelp); // in rpcdump.cpp
 extern UniValue importprivkey(const UniValue& params, bool fHelp);
+extern UniValue rescanfromheight(const UniValue& params, bool fHelp);
 extern UniValue importaddress(const UniValue& params, bool fHelp);
 extern UniValue dumpwallet(const UniValue& params, bool fHelp);
 extern UniValue importwallet(const UniValue& params, bool fHelp);
@@ -8094,6 +8098,7 @@ static const CRPCCommand commands[] =
     { "wallet",             "getwalletinfo",            &getwalletinfo,            false },
     { "wallet",             "convertpassphrase",        &convertpassphrase,        true  },
     { "wallet",             "importprivkey",            &importprivkey,            true  },
+    { "wallet",             "rescanfromheight",         &rescanfromheight,         true  },
     { "wallet",             "importwallet",             &importwallet,             true  },
     { "wallet",             "importaddress",            &importaddress,            true  },
     { "wallet",             "keypoolrefill",            &keypoolrefill,            true  },
@@ -8112,10 +8117,10 @@ static const CRPCCommand commands[] =
     { "wallet",             "sendtoaddress",            &sendtoaddress,            false },
     { "wallet",             "setaccount",               &setaccount,               true  },
     { "wallet",             "settxfee",                 &settxfee,                 true  },
-    { "wallet",             "signmessage",              &signmessage,              true  },
-    { "wallet",             "signfile",                 &signfile,                 true  },
-    { "hidden",             "printapis",                &printapis,                true  },
+    { "identity",           "signmessage",              &signmessage,              true  },
+    { "identity",           "signfile",                 &signfile,                 true  },
     // { "hidden",             "signhash",                 &signhash,                 true  }, // disable due to risk of signing something that doesn't contain the content
+    { "wallet",             "openwallet",               &openwallet,               true  },
     { "wallet",             "walletlock",               &walletlock,               true  },
     { "wallet",             "walletpassphrasechange",   &walletpassphrasechange,   true  },
     { "wallet",             "walletpassphrase",         &walletpassphrase,         true  },
@@ -8130,8 +8135,6 @@ static const CRPCCommand commands[] =
     { "wallet",             "z_gettotalbalance",        &z_gettotalbalance,        false },
     { "wallet",             "z_mergetoaddress",         &z_mergetoaddress,         false },
     { "wallet",             "z_sendmany",               &z_sendmany,               false },
-    { "wallet",             "z_setmigration",           &z_setmigration,           false },
-    { "wallet",             "z_getmigrationstatus",     &z_getmigrationstatus,     false },
     { "wallet",             "z_shieldcoinbase",         &z_shieldcoinbase,         false },
     { "wallet",             "z_getoperationstatus",     &z_getoperationstatus,     true  },
     { "wallet",             "z_getoperationresult",     &z_getoperationresult,     true  },

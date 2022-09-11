@@ -46,7 +46,16 @@ uint64_t komodo_accrued_interest(int32_t *txheightp,uint32_t *locktimep,uint256 
 CConnectedChains ConnectedChains;
 CCurrencyDefinition CConnectedChains::GetCachedCurrency(const uint160 &currencyID)
 {
+    assert(false);
     return CCurrencyDefinition();
+}
+
+// unused in client, but here for linking
+bool fIdIndex;
+uint160 CIdentity::IdentityPrimaryAddressKey(const CTxDestination &dest)
+{
+    assert(false);
+    return uint160();
 }
 
 static bool fCreateBlank;

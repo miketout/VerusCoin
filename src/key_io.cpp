@@ -208,7 +208,8 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
         std::string cleanName = CleanName(str, parent);
         if (cleanName != "")
         {
-            return CIdentityID(CIdentity::GetID(cleanName, parent));
+            parent.SetNull();
+            return CIdentityID(CIdentity::GetID(str, parent));
         }
     }
 
@@ -267,14 +268,17 @@ public:
         return ret;
     }
 
-    std::string operator()(const libzcash::SaplingIncomingViewingKey& vk) const
+    std::string operator()(const libzcash::SaplingExtendedFullViewingKey& extfvk) const
     {
         CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
-        ss << vk;
+        ss << extfvk;
+        // ConvertBits requires unsigned char, but CDataStream uses char
         std::vector<unsigned char> serkey(ss.begin(), ss.end());
         std::vector<unsigned char> data;
+        // See calculation comment below
+        data.reserve((serkey.size() * 8 + 4) / 5);
         ConvertBits<8, 5, true>([&](unsigned char c) { data.push_back(c); }, serkey.begin(), serkey.end());
-        std::string ret = bech32::Encode(m_params.Bech32HRP(CChainParams::SAPLING_INCOMING_VIEWING_KEY), data);
+        std::string ret = bech32::Encode(m_params.Bech32HRP(CChainParams::SAPLING_EXTENDED_FVK), data);
         memory_cleanse(serkey.data(), serkey.size());
         memory_cleanse(data.data(), data.size());
         return ret;
@@ -326,6 +330,7 @@ public:
 // regular serialized size in bytes, convert to bits, and then
 // perform ceiling division to get the number of 5-bit clusters.
 const size_t ConvertedSaplingPaymentAddressSize = ((32 + 11) * 8 + 4) / 5;
+const size_t ConvertedSaplingExtendedFullViewingKeySize = (ZIP32_XFVK_SIZE * 8 + 4) / 5;
 const size_t ConvertedSaplingExtendedSpendingKeySize = (ZIP32_XSK_SIZE * 8 + 4) / 5;
 const size_t ConvertedSaplingIncomingViewingKeySize = (32 * 8 + 4) / 5;
 } // namespace
@@ -340,6 +345,15 @@ CKey DecodeSecret(const std::string& str)
             std::equal(privkey_prefix.begin(), privkey_prefix.end(), data.begin())) {
             bool compressed = data.size() == 33 + privkey_prefix.size();
             key.Set(data.begin() + privkey_prefix.size(), data.begin() + privkey_prefix.size() + 32, compressed);
+        }
+    }
+    else
+    {
+        // if it's hex and 32 bytes of data, use it as the raw secret
+        if (IsHex(str) && str.length() == 64)
+        {
+            data = ParseHex(str);
+            key.Set(data.begin(), data.begin() + 32, true);
         }
     }
     memory_cleanse(data.data(), data.size());
@@ -497,14 +511,14 @@ libzcash::ViewingKey DecodeViewingKey(const std::string& str)
         }
     }
     data.clear();
-    auto bech = bech32::Decode(str);
-    if(bech.first == Params().Bech32HRP(CChainParams::SAPLING_INCOMING_VIEWING_KEY) &&
-       bech.second.size() == ConvertedSaplingIncomingViewingKeySize) {
+    auto bechFvk = bech32::Decode(str);
+    if(bechFvk.first == Params().Bech32HRP(CChainParams::SAPLING_EXTENDED_FVK) &&
+       bechFvk.second.size() == ConvertedSaplingExtendedFullViewingKeySize) {
         // Bech32 decoding
-        data.reserve((bech.second.size() * 5) / 8);
-        if (ConvertBits<5, 8, false>([&](unsigned char c) { data.push_back(c); }, bech.second.begin(), bech.second.end())) {
+        data.reserve((bechFvk.second.size() * 5) / 8);
+        if (ConvertBits<5, 8, false>([&](unsigned char c) { data.push_back(c); }, bechFvk.second.begin(), bechFvk.second.end())) {
             CDataStream ss(data, SER_NETWORK, PROTOCOL_VERSION);
-            libzcash::SaplingIncomingViewingKey ret;
+            libzcash::SaplingExtendedFullViewingKey ret;
             ss >> ret;
             memory_cleanse(data.data(), data.size());
             return ret;
@@ -613,7 +627,7 @@ CReserveTransfer::CReserveTransfer(const UniValue &uni) : CTokenOutput(uni), nFe
 
 CPrincipal::CPrincipal(const UniValue &uni)
 {
-    nVersion = uni_get_int(find_value(uni, "version"), VERSION_PBAAS);
+    nVersion = uni_get_int(find_value(uni, "version"), VERSION_VAULT);
     flags = uni_get_int(find_value(uni, "flags"));
     UniValue primaryAddressesUni = find_value(uni, "primaryaddresses");
     if (primaryAddressesUni.isArray())
@@ -642,7 +656,15 @@ CPrincipal::CPrincipal(const UniValue &uni)
 CIdentity::CIdentity(const UniValue &uni) : CPrincipal(uni)
 {
     UniValue parentUni = find_value(uni, "parent");
-    parent = uint160(GetDestinationID(DecodeDestination(uni_get_str(parentUni))));
+    std::string parentStr = uni_get_str(parentUni);
+    if (!parentStr.empty())
+    {
+        parent = GetDestinationID(DecodeDestination(parentStr));
+        if (parent.IsNull() && parentStr.back() != '@')
+        {
+            parent = GetDestinationID(DecodeDestination(parentStr + "@"));
+        }
+    }
     name = CleanName(uni_get_str(find_value(uni, "name")), parent);
 
     if (parent.IsNull())
@@ -654,7 +676,7 @@ CIdentity::CIdentity(const UniValue &uni) : CPrincipal(uni)
         parent = (!parentUni.isNull() || GetID() == VERUS_CHAINID) ? uint160() : ASSETCHAINS_CHAINID;
     }
 
-    if (nVersion >= VERSION_PBAAS)
+    if (nVersion >= VERSION_VAULT)
     {
         systemID = uint160(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "systemid")))));
         if (systemID.IsNull())
@@ -676,9 +698,9 @@ CIdentity::CIdentity(const UniValue &uni) : CPrincipal(uni)
         {
             try
             {
-                std::vector<unsigned char> vch(ParseHex(keys[i]));
                 uint160 key;
-                if (vch.size() == 20 && !((key = uint160(vch)).IsNull() || i >= values.size()))
+                key.SetHex(keys[i]);
+                if (!key.IsNull() && i < values.size())
                 {
                     contentMap[key] = uint256S(uni_get_str(values[i]));
                 }
@@ -751,13 +773,47 @@ CTransferDestination::CTransferDestination(const UniValue &obj) : fees(0)
         case CTransferDestination::DEST_ETH:
         {
             uint160 ethDestID = DecodeEthDestination(uni_get_str(find_value(obj, "address")));
-            destination = std::vector<unsigned char>(ethDestID.begin(), ethDestID.end());
+            destination = ::AsVector(ethDestID);
             break;
         }
 
         case CTransferDestination::DEST_FULLID:
         {
-            CIdentity destID = CIdentity(find_value(obj, "identity"));
+            std::string serializedHex(uni_get_str(find_value(obj, "serializeddata")));
+            CIdentity destID;
+            if (serializedHex.size() && IsHex(serializedHex))
+            {
+                try
+                {
+                    ::FromVector(ParseHex(serializedHex), destID);
+                }
+                catch(...)
+                {
+                    destID = CIdentity();
+                }
+                // DEBUG ONLY
+                auto checkVec = ::AsVector(CIdentity(find_value(obj, "identity")));
+                std::string checkString(HexBytes(&(checkVec[0]), checkVec.size()));
+                if (checkString != serializedHex)
+                {
+                    CIdentity checkID;
+                    try
+                    {
+                        ::FromVector(ParseHex(checkString), checkID);
+                    }
+                    catch(...)
+                    {
+                        checkID = CIdentity();
+                    }
+                    printf("%s: mismatch check in serialized identity vs. JSON identity\nserializedHex: \"%s\"\nsourceID: \"%s\"\ncheckString: \"%s\"\ncheckID: \"%s\"\n",
+                           __func__, serializedHex.c_str(), destID.ToUniValue().write(1,2).c_str(), checkString.c_str(), checkID.ToUniValue().write(1,2).c_str());
+                }
+                // END DEBUG */
+            }
+            else
+            {
+                destID = CIdentity(find_value(obj, "identity"));
+            }
             if (destID.IsValid())
             {
                 destination = ::AsVector(destID);
@@ -771,7 +827,41 @@ CTransferDestination::CTransferDestination(const UniValue &obj) : fees(0)
 
         case CTransferDestination::DEST_REGISTERCURRENCY:
         {
-            CCurrencyDefinition currencyToRegister(find_value(obj, "currency"));
+            std::string serializedHex(uni_get_str(find_value(obj, "serializeddata")));
+            CCurrencyDefinition currencyToRegister;
+            if (serializedHex.size() && IsHex(serializedHex))
+            {
+                try
+                {
+                    ::FromVector(ParseHex(serializedHex), currencyToRegister);
+                }
+                catch(...)
+                {
+                    currencyToRegister = CCurrencyDefinition();
+                }
+                // DEBUG ONLY
+                auto checkVec = ::AsVector(CCurrencyDefinition(find_value(obj, "currency")));
+                std::string checkString(HexBytes(&(checkVec[0]), checkVec.size()));
+                if (checkString != serializedHex)
+                {
+                    CCurrencyDefinition checkCur;
+                    try
+                    {
+                        ::FromVector(ParseHex(checkString), checkCur);
+                    }
+                    catch(...)
+                    {
+                        checkCur = CCurrencyDefinition();
+                    }
+                    printf("%s: mismatch check in serialized currency vs. JSON currency\nserializedHex: \"%s\"\nsourceID: \"%s\"\ncheckString: \"%s\"\nprocessedID: \"%s\"\n",
+                           __func__, serializedHex.c_str(), currencyToRegister.ToUniValue().write(1,2).c_str(), checkString.c_str(), checkCur.ToUniValue().write(1,2).c_str());
+                }
+                // END DEBUG */
+            }
+            else
+            {
+                currencyToRegister = CCurrencyDefinition(find_value(obj, "currency"));
+            }
             if (currencyToRegister.IsValid())
             {
                 destination = ::AsVector(currencyToRegister);
@@ -797,10 +887,30 @@ CTransferDestination::CTransferDestination(const UniValue &obj) : fees(0)
             break;
         }
     }
+
+    UniValue auxDestArr = find_value(obj, "auxdests");
+    if ((type & FLAG_DEST_AUX) && auxDestArr.isArray() && auxDestArr.size())
+    {
+        for (int i = 0; i < auxDestArr.size(); i++)
+        {
+            CTransferDestination oneAuxDest(auxDestArr[i]);
+            if (!oneAuxDest.IsValid() || oneAuxDest.type & FLAG_DEST_AUX)
+            {
+                type = DEST_INVALID;
+                break;
+            }
+            auxDests.push_back(::AsVector(oneAuxDest));
+        }
+    }
+    else
+    {
+        type &= ~FLAG_DEST_AUX;
+    }
+
     if (type & FLAG_DEST_GATEWAY)
     {
-        gatewayID = DecodeEthDestination(uni_get_str(find_value(obj, "gateway")));
-        fees = uni_get_int64(find_value(obj, "fees"));
+        gatewayID = GetDestinationID(DecodeDestination(uni_get_str(find_value(obj, "gateway"))));
+        fees = AmountFromValueNoErr(find_value(obj, "fees"));
     }
 }
 
@@ -833,6 +943,35 @@ uint160 CCrossChainRPCData::GetConditionID(const uint160 &cid, const uint160 &co
     return Hash160(chainHash.begin(), chainHash.end());
 }
 
+uint160 CCrossChainRPCData::GetConditionID(const uint160 &cid, const uint256 &txid, int32_t voutNum)
+{
+    CHashWriter hw(SER_GETHASH, PROTOCOL_VERSION);
+    hw << cid;
+    hw << txid;
+    hw << voutNum;
+    uint256 chainHash = hw.GetHash();
+    return Hash160(chainHash.begin(), chainHash.end());
+}
+
+uint160 CCrossChainRPCData::GetConditionID(const uint160 &cid, const uint256 &txid)
+{
+    CHashWriter hw(SER_GETHASH, PROTOCOL_VERSION);
+    hw << cid;
+    hw << txid;
+    uint256 chainHash = hw.GetHash();
+    return Hash160(chainHash.begin(), chainHash.end());
+}
+
+uint160 CCrossChainRPCData::GetConditionID(const uint160 &cid, const uint160 &condition, const uint256 &txid)
+{
+    CHashWriter hw(SER_GETHASH, PROTOCOL_VERSION);
+    hw << condition;
+    hw << cid;
+    hw << txid;
+    uint256 chainHash = hw.GetHash();
+    return Hash160(chainHash.begin(), chainHash.end());
+}
+
 uint160 CCrossChainRPCData::GetConditionID(std::string name, uint32_t condition)
 {
     uint160 parent;
@@ -852,6 +991,44 @@ UniValue CNotaryEvidence::ToUniValue() const
     retObj.push_back(Pair("type", type));
     retObj.push_back(Pair("systemid", EncodeDestination(CIdentityID(systemID))));
     retObj.push_back(Pair("output", output.ToUniValue()));
+    retObj.push_back(Pair("state", (int)state));
+    retObj.push_back(Pair("evidence", evidence.ToUniValue()));
+    return retObj;
+}
+
+CNotarySignature::CNotarySignature(const UniValue &uniObj) : confirmed(false)
+{
+    version = uni_get_int64(find_value(uniObj, "version"), VERSION_CURRENT);
+    systemID = DecodeCurrencyName(uni_get_str(find_value(uniObj, "systemid")));
+    output = CUTXORef(find_value(uniObj, "output"));
+    confirmed = uni_get_bool(find_value(uniObj, "confirmed"));
+    UniValue sigsObj = find_value(uniObj, "signatures");
+    auto keys = sigsObj.getKeys();
+    auto values = sigsObj.getValues();
+    for (int i = 0; i < keys.size(); i++)
+    {
+        CTxDestination idDest = DecodeDestination(keys[i]);
+        if (idDest.which() != COptCCParams::ADDRTYPE_ID)
+        {
+            version = VERSION_INVALID;
+            break;
+        }
+        CIdentitySignature oneSig(values[i]);
+        if (!oneSig.IsValid())
+        {
+            version = VERSION_INVALID;
+            break;
+        }
+        signatures[CIdentityID(GetDestinationID(idDest))] = oneSig;
+    }
+}
+
+UniValue CNotarySignature::ToUniValue() const
+{
+    UniValue retObj(UniValue::VOBJ);
+    retObj.push_back(Pair("version", version));
+    retObj.push_back(Pair("systemid", EncodeDestination(CIdentityID(systemID))));
+    retObj.push_back(Pair("output", output.ToUniValue()));
     retObj.push_back(Pair("confirmed", confirmed));
     UniValue sigObj(UniValue::VOBJ);
     for (auto &oneSig : signatures)
@@ -859,12 +1036,6 @@ UniValue CNotaryEvidence::ToUniValue() const
         sigObj.push_back(Pair(EncodeDestination(CIdentityID(oneSig.first)), oneSig.second.ToUniValue()));
     }
     retObj.push_back(Pair("signatures", sigObj));
-    UniValue evidenceProofs(UniValue::VARR);
-    for (auto &oneProof : evidence)
-    {
-        evidenceProofs.push_back(oneProof.ToUniValue());
-    }
-    retObj.push_back(Pair("evidence", evidenceProofs));
     return retObj;
 }
 
@@ -1012,7 +1183,7 @@ CScript CIdentity::TransparentOutput(const CIdentityID &destinationID)
     return MakeMofNCCScript(ccObj);
 }
 
-CScript CIdentity::IdentityUpdateOutputScript(uint32_t height) const
+CScript CIdentity::IdentityUpdateOutputScript(uint32_t height, const std::vector<CTxDestination> *indexDests) const
 {
     CScript ret;
 
@@ -1025,19 +1196,29 @@ CScript CIdentity::IdentityUpdateOutputScript(uint32_t height) const
     CConditionObj<CIdentity> primary(EVAL_IDENTITY_PRIMARY, dests1, 1, this);
 
     // when PBaaS activates, we no longer need redundant entries, so reduce the size a bit
-    if (CConstVerusSolutionVector::GetVersionByHeight(height) >= CActivationHeight::ACTIVATE_PBAAS)
+    if (CConstVerusSolutionVector::GetVersionByHeight(height) >= CActivationHeight::ACTIVATE_VERUSVAULT)
     {
+        std::vector<CTxDestination> dests3({CTxDestination(CIdentityID(recoveryAuthority))});
+        if (HasTokenizedControl())
+        {
+            CCcontract_info CC;
+            CCcontract_info *cp;
+
+            // make a currency definition
+            cp = CCinit(&CC, EVAL_IDENTITY_RECOVER);
+            dests3.push_back(CPubKey(ParseHex(CC.CChexstr)).GetID());
+        }
+        CConditionObj<CIdentity> recovery(EVAL_IDENTITY_RECOVER, dests3, 1);
+
         if (IsRevoked())
         {
-            std::vector<CTxDestination> dests3({CTxDestination(CIdentityID(recoveryAuthority))});
-            CConditionObj<CIdentity> recovery(EVAL_IDENTITY_RECOVER, dests3, 1);
-            ret = MakeMofNCCScript(1, primary, recovery);
+            ret = MakeMofNCCScript(1, primary, recovery, indexDests);
         }
         else
         {
             std::vector<CTxDestination> dests2({CTxDestination(CIdentityID(revocationAuthority))});
             CConditionObj<CIdentity> revocation(EVAL_IDENTITY_REVOKE, dests2, 1);
-            ret = MakeMofNCCScript(1, primary, revocation);
+            ret = MakeMofNCCScript(1, primary, revocation, recovery, indexDests);
         }
     }
     else
@@ -1046,7 +1227,7 @@ CScript CIdentity::IdentityUpdateOutputScript(uint32_t height) const
         CConditionObj<CIdentity> revocation(EVAL_IDENTITY_REVOKE, dests2, 1);
         std::vector<CTxDestination> dests3({CTxDestination(CIdentityID(recoveryAuthority))});
         CConditionObj<CIdentity> recovery(EVAL_IDENTITY_RECOVER, dests3, 1);
-        ret = MakeMofNCCScript(1, primary, revocation, recovery);
+        ret = MakeMofNCCScript(1, primary, revocation, recovery, indexDests);
     }
 
     return ret;

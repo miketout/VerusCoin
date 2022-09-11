@@ -46,627 +46,6 @@ static const int64_t PBAAS_MINNOTARIZATIONOUTPUT = 10000;   // enough for one fe
 static const int32_t PBAAS_MINSTARTBLOCKDELTA = 50;         // minimum number of blocks to wait for starting a chain after definition
 static const int32_t PBAAS_MAXPRIORBLOCKS = 16;             // maximum prior block commitments to include in prior blocks chain object
 
-// these are object types that can be stored and recognized in an opret array
-enum CHAIN_OBJECT_TYPES
-{
-    CHAINOBJ_INVALID = 0,
-    CHAINOBJ_HEADER = 1,            // serialized full block header w/proof
-    CHAINOBJ_HEADER_REF = 2,        // equivalent to header, but only includes non-canonical data
-    CHAINOBJ_TRANSACTION_PROOF = 3, // serialized transaction or partial transaction with proof
-    CHAINOBJ_PROOF_ROOT = 4,        // merkle proof of preceding block or transaction
-    CHAINOBJ_PRIORBLOCKS = 5,       // prior block commitments to ensure recognition of overlapping notarizations
-    CHAINOBJ_RESERVETRANSFER = 6,   // serialized transaction, sometimes without an opret, which will be reconstructed
-    CHAINOBJ_COMPOSITEOBJECT = 7,   // can hold and index a variety and multiplicity of objects
-    CHAINOBJ_CROSSCHAINPROOF = 8,   // specific composite object, which is a single or multi-proof
-    CHAINOBJ_NOTARYSIGNATURE = 9    // notary signature
-};
-
-// the proof of an opret output, which is simply the types of objects and hashes of each
-class COpRetProof
-{
-public:
-    uint32_t orIndex;                   // index into the opret objects to begin with
-    std::vector<uint8_t>    types;
-    std::vector<uint256>    hashes;
-
-    COpRetProof() : orIndex(0), types(0), hashes(0) {}
-    COpRetProof(std::vector<uint8_t> &rTypes, std::vector<uint256> &rHashes, uint32_t opretIndex = 0) : types(rTypes), hashes(rHashes), orIndex(opretIndex) {}
-
-    void AddObject(CHAIN_OBJECT_TYPES typeCode, uint256 objHash)
-    {
-        types.push_back(typeCode);
-        hashes.push_back(objHash);
-    }
-
-    template <typename CHAINOBJTYPE>
-    void AddObject(CHAINOBJTYPE &co, uint256 objHash)
-    {
-        types.push_back(ObjTypeCode(co));
-        hashes.push_back(objHash);
-    }
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action)
-    {
-        READWRITE(orIndex);
-        READWRITE(types);
-        READWRITE(hashes);
-    }
-};
-
-class CHeaderRef
-{
-public:
-    uint256 hash;               // block hash
-    CPBaaSPreHeader preHeader;  // non-canonical pre-header data of source chain
-
-    CHeaderRef() : hash() {}
-    CHeaderRef(uint256 &rHash, CPBaaSPreHeader ph) : hash(rHash), preHeader(ph) {}
-    CHeaderRef(const CBlockHeader &bh) : hash(bh.GetHash()), preHeader(bh) {}
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action)
-    {
-        READWRITE(hash);
-        READWRITE(preHeader);
-    }
-
-    uint256 GetHash() { return hash; }
-};
-
-class CPriorBlocksCommitment
-{
-public:
-    std::vector<uint256> priorBlocks;       // prior block commitments, which are node hashes that include merkle root, block hash, and compact power
-    uint256 pastBlockType;                  // 1 = POS, 0 = POW indicators for past blocks, enabling selective, pseudorandom proofs of past blocks by type
-
-    CPriorBlocksCommitment() : priorBlocks() {}
-    CPriorBlocksCommitment(const std::vector<uint256> &priors, const uint256 &pastTypes) : priorBlocks(priors), pastBlockType(pastTypes) {}
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action)
-    {
-        READWRITE(priorBlocks);
-        READWRITE(pastBlockType);
-    }
-};
-
-void DeleteOpRetObjects(std::vector<CBaseChainObject *> &ora);
-
-class CBaseChainObject
-{
-public:
-    uint16_t objectType;                    // type of object, such as blockheader, transaction, proof, tokentx, etc.
-
-    CBaseChainObject() : objectType(CHAINOBJ_INVALID) {}
-    CBaseChainObject(uint16_t objType) : objectType(objType) {}
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action)
-    {
-        READWRITE(objectType);
-    }
-};
-
-template <typename SERIALIZABLE>
-class CChainObject : public CBaseChainObject
-{
-public:
-    SERIALIZABLE object;                    // the actual object
-
-    CChainObject() : CBaseChainObject() {}
-
-    CChainObject(uint16_t objType, const SERIALIZABLE &rObject) : CBaseChainObject(objType), object(rObject) { }
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action)
-    {
-        READWRITE(*(CBaseChainObject *)this);
-        READWRITE(object);
-    }
-
-    uint256 GetHash() const
-    {
-        CHashWriter hw(SER_GETHASH, PROTOCOL_VERSION);
-
-        hw << object;
-        return GetHash();
-    }
-};
-
-// each notarization will have an opret object that contains various kind of proof of the notarization itself
-// as well as recent POW and POS headers and entropy sources.
-class CCrossChainProof
-{
-public:
-    enum
-    {
-        VERSION_INVALID = 0,
-        VERSION_FIRST = 1,
-        VERSION_CURRENT = 1,
-        VERSION_LAST = 1
-    };
-    uint32_t version;
-    std::vector<CBaseChainObject *> chainObjects;    // this owns the memory associated with chainObjects and deletes it on destructions
-
-    CCrossChainProof() : version(VERSION_CURRENT) {}
-    CCrossChainProof(const CCrossChainProof &oldObj)
-    {
-        CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
-        s << oldObj;
-        s >> *this;
-    }
-    CCrossChainProof(const std::vector<CBaseChainObject *> &objects, int Version=VERSION_CURRENT) : version(Version), chainObjects(objects) { }
-
-    ~CCrossChainProof()
-    {
-        DeleteOpRetObjects(chainObjects);
-        version = VERSION_INVALID;
-    }
-
-    const CCrossChainProof &operator=(const CCrossChainProof &operand)
-    {
-        CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
-        s << operand;
-        DeleteOpRetObjects(chainObjects);
-        s >> *this;
-        return *this;
-    }
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(version);
-        if (ser_action.ForRead())
-        {
-            int32_t proofSize;
-            READWRITE(VARINT(proofSize));
-
-            bool error = false;
-            for (int i = 0; i < proofSize && !error; i++)
-            {
-                try
-                {
-                    uint16_t objType;
-                    READWRITE(objType);
-                    union {
-                        CChainObject<CBlockHeaderAndProof> *pNewHeader;
-                        CChainObject<CPartialTransactionProof> *pNewTx;
-                        CChainObject<uint256> *pNewProof;
-                        CChainObject<CBlockHeaderProof> *pNewHeaderRef;
-                        CChainObject<CPriorBlocksCommitment> *pPriors;
-                        CChainObject<CReserveTransfer> *pExport;
-                        CChainObject<CCrossChainProof> *pCrossChainProof;
-                        CChainObject<CNotaryEvidence> *pNotarySignature;
-                        CBaseChainObject *pobj;
-                    };
-
-                    pobj = nullptr;
-
-                    switch(objType)
-                    {
-                        case CHAINOBJ_HEADER:
-                        {
-                            CBlockHeaderAndProof obj;
-                            READWRITE(obj);
-                            pNewHeader = new CChainObject<CBlockHeaderAndProof>();
-                            if (pNewHeader)
-                            {
-                                pNewHeader->objectType = objType;
-                                pNewHeader->object = obj;
-                            }
-                            break;
-                        }
-                        case CHAINOBJ_TRANSACTION_PROOF:
-                        {
-                            CPartialTransactionProof obj;
-                            READWRITE(obj);
-                            pNewTx = new CChainObject<CPartialTransactionProof>();
-                            if (pNewTx)
-                            {
-                                pNewTx->objectType = objType;
-                                pNewTx->object = obj;
-                            }
-                            break;
-                        }
-                        case CHAINOBJ_PROOF_ROOT:
-                        {
-                            uint256 obj;
-                            READWRITE(obj);
-                            pNewProof = new CChainObject<uint256>();
-                            if (pNewProof)
-                            {
-                                pNewProof->objectType = objType;
-                                pNewProof->object = obj;
-                            }
-                            break;
-                        }
-                        case CHAINOBJ_HEADER_REF:
-                        {
-                            CBlockHeaderProof obj;
-                            READWRITE(obj);
-                            pNewHeaderRef = new CChainObject<CBlockHeaderProof>();
-                            if (pNewHeaderRef)
-                            {
-                                pNewHeaderRef->objectType = objType;
-                                pNewHeaderRef->object = obj;
-                            }
-                            break;
-                        }
-                        case CHAINOBJ_PRIORBLOCKS:
-                        {
-                            CPriorBlocksCommitment obj;
-                            READWRITE(obj);
-                            pPriors = new CChainObject<CPriorBlocksCommitment>();
-                            if (pPriors)
-                            {
-                                pPriors->objectType = objType;
-                                pPriors->object = obj;
-                            }
-                            break;
-                        }
-                        case CHAINOBJ_RESERVETRANSFER:
-                        {
-                            CReserveTransfer obj;
-                            READWRITE(obj);
-                            pExport = new CChainObject<CReserveTransfer>();
-                            if (pExport)
-                            {
-                                pExport->objectType = objType;
-                                pExport->object = obj;
-                            }
-                            break;
-                        }
-                        case CHAINOBJ_CROSSCHAINPROOF:
-                        {
-                            CCrossChainProof obj;
-                            READWRITE(obj);
-                            pCrossChainProof = new CChainObject<CCrossChainProof>();
-                            if (pCrossChainProof)
-                            {
-                                pCrossChainProof->objectType = objType;
-                                pCrossChainProof->object = obj;
-                            }
-                            break;
-                        }
-                        case CHAINOBJ_COMPOSITEOBJECT:
-                        {
-                            CCrossChainProof obj;
-                            READWRITE(obj);
-                            pCrossChainProof = new CChainObject<CCrossChainProof>();
-                            if (pCrossChainProof)
-                            {
-                                pCrossChainProof->objectType = CHAINOBJ_COMPOSITEOBJECT;
-                                pCrossChainProof->object = obj;
-                            }
-                            break;
-                        }
-                        case CHAINOBJ_NOTARYSIGNATURE:
-                        {
-                            CNotaryEvidence obj;
-                            READWRITE(obj);
-                            pNotarySignature = new CChainObject<CNotaryEvidence>();
-                            if (pNotarySignature)
-                            {
-                                pNotarySignature->objectType = CHAINOBJ_NOTARYSIGNATURE;
-                                pNotarySignature->object = obj;
-                            }
-                            break;
-                        }
-                    }
-
-                    if (pobj)
-                    {
-                        //printf("%s: storing object, code %u\n", __func__, objType);
-                        chainObjects.push_back(pobj);
-                    }
-                }
-                catch(const std::exception& e)
-                {
-                    error = true;
-                    break;
-                }
-            }
-
-            if (error)
-            {
-                printf("%s: ERROR: opret is likely corrupt\n", __func__);
-                LogPrintf("%s: ERROR: opret is likely corrupt\n", __func__);
-                DeleteOpRetObjects(chainObjects);
-            }
-        }
-        else
-        {
-            //printf("entering CCrossChainProof serialize\n");
-            int32_t proofSize = chainObjects.size();
-            READWRITE(VARINT(proofSize));
-            for (auto &oneVal : chainObjects)
-            {
-                DehydrateChainObject(s, oneVal);
-            }
-        }
-    }
-
-    bool IsValid() const
-    {
-        return (version >= VERSION_FIRST || version <= VERSION_LAST);
-    }
-
-    bool Empty() const
-    {
-        return chainObjects.size() == 0;
-    }
-
-    const std::vector<uint16_t> TypeVector() const
-    {
-        std::vector<uint16_t> retVal;
-        for (auto &pChainObj : chainObjects)
-        {
-            if (pChainObj)
-            {
-                retVal.push_back(pChainObj->objectType);
-            }
-        }
-        return retVal;
-    }
-
-    const CCrossChainProof &operator<<(const CPartialTransactionProof &partialTxProof)
-    {
-        chainObjects.push_back(static_cast<CBaseChainObject *>(new CChainObject<CPartialTransactionProof>(CHAINOBJ_TRANSACTION_PROOF, partialTxProof)));
-        return *this;
-    }
-
-    const CCrossChainProof &operator<<(const CBlockHeaderAndProof &headerRefProof)
-    {
-        chainObjects.push_back(static_cast<CBaseChainObject *>(new CChainObject<CBlockHeaderAndProof>(CHAINOBJ_HEADER_REF, headerRefProof)));
-        return *this;
-    }
-
-    const CCrossChainProof &operator<<(const CBlockHeaderProof &headerProof)
-    {
-        chainObjects.push_back(static_cast<CBaseChainObject *>(new CChainObject<CBlockHeaderProof>(CHAINOBJ_HEADER, headerProof)));
-        return *this;
-    }
-
-    const CCrossChainProof &operator<<(const CPriorBlocksCommitment &priorBlocks)
-    {
-        chainObjects.push_back(static_cast<CBaseChainObject *>(new CChainObject<CPriorBlocksCommitment>(CHAINOBJ_PRIORBLOCKS, priorBlocks)));
-        return *this;
-    }
-
-    const CCrossChainProof &operator<<(const uint256 &proofRoot)
-    {
-        chainObjects.push_back(static_cast<CBaseChainObject *>(new CChainObject<uint256>(CHAINOBJ_PROOF_ROOT, proofRoot)));
-        return *this;
-    }
-
-    const CCrossChainProof &operator<<(const CReserveTransfer &reserveTransfer)
-    {
-        chainObjects.push_back(static_cast<CBaseChainObject *>(new CChainObject<CReserveTransfer>(CHAINOBJ_RESERVETRANSFER, reserveTransfer)));
-        return *this;
-    }
-
-    const CCrossChainProof &operator<<(const CCrossChainProof &crossChainProof)
-    {
-        chainObjects.push_back(static_cast<CBaseChainObject *>(new CChainObject<CCrossChainProof>(CHAINOBJ_CROSSCHAINPROOF, crossChainProof)));
-        return *this;
-    }
-};
-
-// this must remain cast/data compatible with CCompositeChainObject
-class CCompositeChainObject : public CCrossChainProof
-{
-public:
-    CCompositeChainObject() : CCrossChainProof() {}
-    CCompositeChainObject(const std::vector<CBaseChainObject *> &proofs, int Version=VERSION_CURRENT) : 
-        CCrossChainProof(proofs, Version) { }
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(*(CCrossChainProof *)this);
-    }
-
-    const CCompositeChainObject &operator<<(const CCompositeChainObject &compositeChainObject)
-    {
-        chainObjects.push_back(static_cast<CBaseChainObject *>(new CChainObject<CCompositeChainObject>(CHAINOBJ_COMPOSITEOBJECT, compositeChainObject)));
-        return *this;
-    }
-};
-
-// returns a pointer to a base chain object, which can be cast to the
-// object type indicated in its objType member
-uint256 GetChainObjectHash(const CBaseChainObject &bo);
-
-// returns a pointer to a base chain object, which can be cast to the
-// object type indicated in its objType member
-template <typename OStream>
-CBaseChainObject *RehydrateChainObject(OStream &s)
-{
-    int16_t objType;
-
-    try
-    {
-        s >> objType;
-    }
-    catch(const std::exception& e)
-    {
-        return NULL;
-    }
-
-    union {
-        CChainObject<CBlockHeaderAndProof> *pNewHeader;
-        CChainObject<CPartialTransactionProof> *pNewTx;
-        CChainObject<uint256> *pNewProof;
-        CChainObject<CBlockHeaderProof> *pNewHeaderRef;
-        CChainObject<CPriorBlocksCommitment> *pPriors;
-        CChainObject<CReserveTransfer> *pExport;
-        CChainObject<CCrossChainProof> *pCrossChainProof;
-        CChainObject<CCompositeChainObject> *pCompositeChainObject;
-        CBaseChainObject *retPtr;
-    };
-
-    retPtr = NULL;
-
-    switch(objType)
-    {
-        case CHAINOBJ_HEADER:
-            pNewHeader = new CChainObject<CBlockHeaderAndProof>();
-            if (pNewHeader)
-            {
-                s >> pNewHeader->object;
-                pNewHeader->objectType = objType;
-            }
-            break;
-        case CHAINOBJ_TRANSACTION_PROOF:
-            pNewTx = new CChainObject<CPartialTransactionProof>();
-            if (pNewTx)
-            {
-                s >> pNewTx->object;
-                pNewTx->objectType = objType;
-            }
-            break;
-        case CHAINOBJ_PROOF_ROOT:
-            pNewProof = new CChainObject<uint256>();
-            if (pNewProof)
-            {
-                s >> pNewProof->object;
-                pNewProof->objectType = objType;
-            }
-            break;
-        case CHAINOBJ_HEADER_REF:
-            pNewHeaderRef = new CChainObject<CBlockHeaderProof>();
-            if (pNewHeaderRef)
-            {
-                s >> pNewHeaderRef->object;
-                pNewHeaderRef->objectType = objType;
-            }
-            break;
-        case CHAINOBJ_PRIORBLOCKS:
-            pPriors = new CChainObject<CPriorBlocksCommitment>();
-            if (pPriors)
-            {
-                s >> pPriors->object;
-                pPriors->objectType = objType;
-            }
-            break;
-        case CHAINOBJ_RESERVETRANSFER:
-            pExport = new CChainObject<CReserveTransfer>();
-            if (pExport)
-            {
-                s >> pExport->object;
-                pExport->objectType = objType;
-            }
-            break;
-        case CHAINOBJ_CROSSCHAINPROOF:
-            pCrossChainProof = new CChainObject<CCrossChainProof>();
-            if (pCrossChainProof)
-            {
-                s >> pCrossChainProof->object;
-                pCrossChainProof->objectType = objType;
-            }
-            break;
-        case CHAINOBJ_COMPOSITEOBJECT:
-            pCompositeChainObject = new CChainObject<CCompositeChainObject>();
-            if (pCompositeChainObject)
-            {
-                s >> pCompositeChainObject->object;
-                pCompositeChainObject->objectType = objType;
-            }
-            break;
-    }
-    return retPtr;
-}
-
-// returns a pointer to a base chain object, which can be cast to the
-// object type indicated in its objType member
-template <typename OStream>
-bool DehydrateChainObject(OStream &s, const CBaseChainObject *pobj)
-{
-    switch(pobj->objectType)
-    {
-        case CHAINOBJ_HEADER:
-        {
-            s << *(CChainObject<CBlockHeaderAndProof> *)pobj;
-            return true;
-        }
-
-        case CHAINOBJ_TRANSACTION_PROOF:
-        {
-            s << *(CChainObject<CPartialTransactionProof> *)pobj;
-            return true;
-        }
-
-        case CHAINOBJ_PROOF_ROOT:
-        {
-            s << *(CChainObject<uint256> *)pobj;
-            return true;
-        }
-
-        case CHAINOBJ_HEADER_REF:
-        {
-            s << *(CChainObject<CBlockHeaderProof> *)pobj;
-            return true;
-        }
-
-        case CHAINOBJ_PRIORBLOCKS:
-        {
-            s << *(CChainObject<CPriorBlocksCommitment> *)pobj;
-            return true;
-        }
-
-        case CHAINOBJ_RESERVETRANSFER:
-        {
-            s << *(CChainObject<CReserveTransfer> *)pobj;
-            return true;
-        }
-        case CHAINOBJ_CROSSCHAINPROOF:
-        {
-            s << *(CChainObject<CCrossChainProof> *)pobj;
-            return true;
-        }
-        case CHAINOBJ_COMPOSITEOBJECT:
-        {
-            s << *(CChainObject<CCompositeChainObject> *)pobj;
-            return true;
-        }
-    }
-    return false;
-}
-
-int8_t ObjTypeCode(const CBlockHeaderAndProof &obj);
-
-int8_t ObjTypeCode(const CPartialTransactionProof &obj);
-
-int8_t ObjTypeCode(const CBlockHeaderProof &obj);
-
-int8_t ObjTypeCode(const CPriorBlocksCommitment &obj);
-
-int8_t ObjTypeCode(const CReserveTransfer &obj);
-
-int8_t ObjTypeCode(const CCrossChainProof &obj);
-
-int8_t ObjTypeCode(const CCompositeChainObject &obj);
-
-// this adds an opret to a mutable transaction that provides the necessary evidence of a signed, cheating stake transaction
-CScript StoreOpRetArray(const std::vector<CBaseChainObject *> &objPtrs);
-
-void DeleteOpRetObjects(std::vector<CBaseChainObject *> &ora);
-
-std::vector<CBaseChainObject *> RetrieveOpRetArray(const CScript &opRetScript);
-
 // This data structure is used on an output that provides proof of stake validation for other crypto conditions
 // with rate limited spends based on a PoS contest
 class CPoSSelector
@@ -780,7 +159,6 @@ public:
 class CPBaaSMergeMinedChainData : public CRPCChainData
 {
 public:
-    static const uint32_t MAX_MERGE_CHAINS = 15;
     CBlock          block;                  // full block to submit upon winning header
 
     CPBaaSMergeMinedChainData() {}
@@ -822,6 +200,8 @@ public:
     virtual uint160 GatewayID() const;
 };
 
+class CObjectFinalization;
+
 // This is the data for a PBaaS notarization transaction, either of a PBaaS chain into the Verus chain, or the Verus
 // chain into a PBaaS chain.
 
@@ -846,6 +226,7 @@ public:
         DEFAULT_NOTARIZATION_FEE = 10000,               // price of a notarization fee in native or launch system currency
         BLOCK_NOTARIZATION_MODULO = 10,                 // incentive to earn one valid notarization during this many blocks
         MIN_BLOCKS_BEFORE_NOTARY_FINALIZED = 15,        // 15 blocks must go by before notary signatures or confirming evidence can be provided
+        MAX_NOTARIZATION_CONVERSION_PRICING_INTERVAL = 100,  // there must be a notarization with conversion at least 100 blocks before reserve transfer
         MAX_NODES = 2,                                  // only provide 2 nodes per notarization
         MIN_NOTARIZATION_OUTPUT = 0,                    // minimum amount for notarization output
     };
@@ -875,7 +256,8 @@ public:
     CCoinbaseCurrencyState currencyState;   // state of the currency being notarized as of this notarization
 
     CUTXORef prevNotarization;              // reference of the prior notarization on this system with which we agree
-    uint256 hashPrevNotarization;           // hash of the prior notarization on this system with which we agree, even one not accepted yet
+    uint256 hashPrevCrossNotarization;      // (this is not the same notarization as the prev notarization or prev height)
+                                            //  it is the hash of the prior notarization on the other chain with which we agree, even one not yet confirmed
     uint32_t prevHeight;                    // height of previous notarization we agree with
 
     std::map<uint160, CCoinbaseCurrencyState> currencyStates; // currency state of other currencies to be co-notarized for gateways
@@ -932,23 +314,23 @@ public:
         READWRITE(currencyState);
         READWRITE(notarizationHeight);
         READWRITE(prevNotarization);
-        READWRITE(hashPrevNotarization);
+        READWRITE(hashPrevCrossNotarization);
         READWRITE(prevHeight);
 
         std::vector<std::pair<uint160, CCoinbaseCurrencyState>> vecCurrencyStates;
         if (ser_action.ForRead())
         {
             READWRITE(vecCurrencyStates);
-            for (auto &oneRoot : vecCurrencyStates)
+            for (auto &oneState : vecCurrencyStates)
             {
-                currencyStates.insert(oneRoot);
+                currencyStates.insert(oneState);
             }
         }
         else
         {
-            for (auto &oneRoot : currencyStates)
+            for (auto &oneState : currencyStates)
             {
-                vecCurrencyStates.push_back(oneRoot);
+                vecCurrencyStates.push_back(oneState);
             }
             READWRITE(vecCurrencyStates);
         }
@@ -990,6 +372,21 @@ public:
         return "vrsc::system.notarization.notarization";
     }
 
+    static std::string DefinitionNotarizationKeyName()
+    {
+        return "vrsc::system.notarization.definitionnotarization";
+    }
+
+    static std::string EarnedNotarizationKeyName()
+    {
+        return "vrsc::system.notarization.earnednotarization";
+    }
+
+    static std::string AcceptedNotarizationKeyName()
+    {
+        return "vrsc::system.notarization.acceptednotarization";
+    }
+
     static std::string LaunchNotarizationKeyName()
     {
         return "vrsc::system.currency.launch.notarization";
@@ -1020,6 +417,27 @@ public:
         static uint160 nameSpace;
         static uint160 notaryNotarizationKey = CVDXF::GetDataKey(NotaryNotarizationKeyName(), nameSpace);
         return notaryNotarizationKey;
+    }
+
+    static uint160 DefinitionNotarizationKey()
+    {
+        static uint160 nameSpace;
+        static uint160 definitionNotarizationKey = CVDXF::GetDataKey(DefinitionNotarizationKeyName(), nameSpace);
+        return definitionNotarizationKey;
+    }
+
+    static uint160 EarnedNotarizationKey()
+    {
+        static uint160 nameSpace;
+        static uint160 earnedNotarizationKey = CVDXF::GetDataKey(EarnedNotarizationKeyName(), nameSpace);
+        return earnedNotarizationKey;
+    }
+
+    static uint160 AcceptedNotarizationKey()
+    {
+        static uint160 nameSpace;
+        static uint160 acceptedNotarizationKey = CVDXF::GetDataKey(AcceptedNotarizationKeyName(), nameSpace);
+        return acceptedNotarizationKey;
     }
 
     static uint160 LaunchNotarizationKey()
@@ -1081,13 +499,17 @@ public:
                               CCurrencyValueMap &importedCurrency,
                               CCurrencyValueMap &gatewayDepositsUsed,
                               CCurrencyValueMap &spentCurrencyOut,
+                              CTransferDestination feeRecipient=CTransferDestination(),
                               bool forcedRefunding=false) const;
 
     static bool CreateEarnedNotarization(const CRPCChainData &externalSystem,
                                          const CTransferDestination &Proposer,
+                                         bool isStake,
                                          CValidationState &state,
                                          std::vector<CTxOut> &txOutputs,
                                          CPBaaSNotarization &notarization);
+
+    bool FindEarnedNotarization(CObjectFinalization &finalization, CAddressIndexDbEntry *pEarnedNotarizationIndex=nullptr) const;
 
     // accepts enough information to build a local accepted notarization transaction
     // miner fees are deferred until an import that uses this notarization, in which case
@@ -1099,11 +521,20 @@ public:
                                            CValidationState &state,
                                            TransactionBuilder &txBuilder);
 
-    static bool ConfirmOrRejectNotarizations(const CWallet *pWallet,
+    static bool ConfirmOrRejectNotarizations(CWallet *pWallet,
                                              const CRPCChainData &externalSystem,
                                              CValidationState &state,
-                                             TransactionBuilder &txBuilder,
+                                             std::vector<TransactionBuilder> &txBuilders,
+                                             uint32_t nHeight,
                                              bool &finalized);
+
+    bool IsNotarizationConfirmed(const CPBaaSNotarization &notarization,
+                                 const CNotaryEvidence &notaryEvidence,
+                                 CValidationState &state) const;
+
+    bool IsNotarizationRejected(const CPBaaSNotarization &notarization,
+                                const CNotaryEvidence &notaryEvidence,
+                                CValidationState &state) const;
 
     static std::vector<uint256> SubmitFinalizedNotarizations(const CRPCChainData &externalSystem,
                                                              CValidationState &state);
@@ -1301,7 +732,7 @@ public:
     CRPCChainData notaryChain;                  // notary chain information and connectivity for PBaaS protocol
     CPBaaSNotarization lastConfirmedNotarization;
 
-    CNotarySystemInfo() : notarySystemVersion(VERSION_INVALID), height(0) {}
+    CNotarySystemInfo(uint32_t NotarySystemType=TYPE_PBAAS, uint32_t NotaryVersion=VERSION_INVALID) : notarySystemVersion(NotaryVersion), notarySystemType(NotarySystemType), height(0) {}
 
     CNotarySystemInfo(uint32_t Height, 
                       const CRPCChainData &NotaryChain, 
@@ -1322,27 +753,23 @@ protected:
     CPBaaSMergeMinedChainData *GetChainInfo(uint160 chainID);
 
 public:
+    uint32_t lastBlockHeight;
+    CBlock lastBlock;
     std::map<uint160, CPBaaSMergeMinedChainData> mergeMinedChains;
     std::multimap<arith_uint256, CPBaaSMergeMinedChainData *> mergeMinedTargets;
 
     std::map<uint160, std::pair<CCurrencyDefinition, const CGateway *>> gateways;       // gateway currencies, which bridge to other blockchains/systems
 
-    // incoming export transactions from one currency & system and a UTXORef to a valid notarization each depends upon
-    // indexed by the target, destination currency
-    std::map<uint160, std::pair<uint32_t, std::pair<CUTXORef, CPartialTransactionProof>>> incomingBridgeTransfers;
-
     // currency definition cache, needs LRU
     std::map<uint160, CCurrencyDefinition> currencyDefCache;                            // protected by cs_main, which is used for lookup
 
-    // make earned notarizations on one or more notary chains
-    // On Verus, this can be set to ETH and Ethereum chain data will be pushed to us through Alan (Bridgekeeper) and the RPC API
+    // make earned notarizations for one or more notary chains
     std::map<uint160, CNotarySystemInfo> notarySystems;
 
     CCurrencyDefinition thisChain;
     bool readyToStart;
     std::vector<CNodeData> defaultPeerNodes;    // updated by notarizations
     std::vector<CTxOut> latestMiningOutputs;    // accessible from all merge miners - can be invalid
-    int64_t lastAggregation = 0;                // adjusted time of last aggregation
 
     int32_t earnedNotarizationHeight;           // zero or the height of one or more potential submissions
     CBlock earnedNotarizationBlock;
@@ -1355,7 +782,7 @@ public:
     CCriticalSection cs_mergemining;
     CSemaphore sem_submitthread;
 
-    CConnectedChains() : readyToStart(0), sem_submitthread(0), earnedNotarizationHeight(0), dirty(0), lastSubmissionFailed(0) {}
+    CConnectedChains() : lastBlockHeight(0), readyToStart(0), sem_submitthread(0), earnedNotarizationHeight(0), dirty(0), lastSubmissionFailed(0) {}
 
     arith_uint256 LowestTarget()
     {
@@ -1380,6 +807,9 @@ public:
     // send new imports from this chain to the specified chain, which generally will be the notary chain
     void ProcessLocalImports();
 
+    // return the last block if one is cached
+    bool GetLastBlock(CBlock &block, uint32_t height);
+    void SetLastBlock(CBlock &block, uint32_t height);
     bool AddMergedBlock(CPBaaSMergeMinedChainData &blkData);
     bool RemoveMergedBlock(uint160 chainID);
     bool GetChainInfo(uint160 chainID, CRPCChainData &rpcChainData);
@@ -1388,9 +818,10 @@ public:
 
     // returns false if destinations are empty or first is not either pubkey or pubkeyhash
     bool SetLatestMiningOutputs(const std::vector<CTxOut> &minerOutputs);
-    void AggregateChainTransfers(const CTxDestination &feeOutput, uint32_t nHeight);
+    void AggregateChainTransfers(const CTransferDestination &feeRecipient, uint32_t nHeight);
     CCurrencyDefinition GetCachedCurrency(const uint160 &currencyID);
-    CCurrencyDefinition UpdateCachedCurrency(const uint160 &currencyID, uint32_t height);
+    std::string GetFriendlyCurrencyName(const uint160 &currencyID);
+    CCurrencyDefinition UpdateCachedCurrency(const CCurrencyDefinition &currentCurrency, uint32_t height);
 
     bool GetLastImport(const uint160 &currencyID, 
                        CTransaction &lastImport, 
@@ -1421,6 +852,17 @@ public:
                                CPBaaSNotarization &launchNotarization,
                                CPBaaSNotarization &notaryNotarization);
 
+    // gets the definition notarization if it was defined on this system
+    bool GetDefinitionNotarization(const CCurrencyDefinition &curDef,
+                                   CInputDescriptor &notarizationRef,
+                                   CPBaaSNotarization &definitionNotarization);
+
+    // gets the definition notarization if it was defined on this system
+    bool GetDefinitionNotarization(const CCurrencyDefinition &curDef,
+                                   std::pair<CInputDescriptor, CPartialTransactionProof> &notarizationTx,
+                                   CPBaaSNotarization &definitionNotarization,
+                                   CPBaaSNotarization &notaryNotarization);
+
     // get the exports to a specific system on this chain from a specific height up to a specific height
     bool GetCurrencyExports(const uint160 &currencyID,                             // transactions exported to system
                             std::vector<std::pair<std::pair<CInputDescriptor, CPartialTransactionProof>, std::vector<CReserveTransfer>>> &exports,
@@ -1441,6 +883,16 @@ public:
 
     static bool GetReserveDeposits(const uint160 &currencyID, const CCoinsViewCache &view, std::vector<CInputDescriptor> &reserveDeposits);
 
+    static bool IsValidCurrencyDefinitionImport(const CCurrencyDefinition &sourceSystemDef,
+                                                const CCurrencyDefinition &destSystemDef,
+                                                const CCurrencyDefinition &importingCurrency,
+                                                uint32_t height);
+
+    static bool IsValidIdentityDefinitionImport(const CCurrencyDefinition &sourceSystemDef,
+                                                const CCurrencyDefinition &destSystemDef,
+                                                const CIdentity &importingIdentity,
+                                                uint32_t height);
+
     static bool CurrencyExportStatus(const CCurrencyValueMap &totalExports,
                                      const uint160 &sourceSystemID,
                                      const uint160 &destSystemID,
@@ -1454,9 +906,9 @@ public:
                                      CCurrencyValueMap &exportBurn);
 
     bool CreateNextExport(const CCurrencyDefinition &_curDef,
-                          const std::vector<ChainTransferData> &txInputs,
+                          const std::multimap<uint32_t, ChainTransferData> &txInputs,
                           const std::vector<CInputDescriptor> &priorExports,
-                          const CTxDestination &feeOutput,
+                          const CTransferDestination &feeRecipient,
                           uint32_t sinceHeight,
                           uint32_t curHeight,
                           int32_t inputStartNum,
@@ -1493,6 +945,8 @@ public:
         return notarySystems;
     }
 
+    CProofRoot ConfirmedNotaryChainRoot();
+    CProofRoot FinalizedChainRoot();
     uint32_t NotaryChainHeight();
 
     CCurrencyDefinition &ThisChain()
@@ -1535,7 +989,7 @@ public:
     bool CheckVerusPBaaSAvailable();      // may use RPC to call Verus
     bool IsVerusPBaaSAvailable();
     bool IsNotaryAvailable(bool callToCheck=false);
-    bool ConfigureEthBridge();
+    bool ConfigureEthBridge(bool callToCheck=false);
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {
@@ -1659,15 +1113,26 @@ CTxOut MakeCC1of2Vout(uint8_t evalcode, CAmount nValue, CPubKey pk1, CPubKey pk2
 bool IsVerusActive();
 bool IsVerusMainnetActive();
 
+bool IsValidExportCurrency(const CCurrencyDefinition &systemDest, const uint160 &exportCurrencyID, uint32_t height);
+std::set<uint160> BaseBridgeCurrencies(const CCurrencyDefinition &systemDest, uint32_t height, bool feeOnly=false);
+std::set<uint160> ValidExportCurrencies(const CCurrencyDefinition &systemDest, uint32_t height);
+
+
 // used to export coins from one chain to another, if they are not native, they are represented on the other
 // chain as tokens
 bool ValidateCrossChainExport(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
+bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 bool IsCrossChainExportInput(const CScript &scriptSig);
 
 // used to validate import of coins from one chain to another. if they are not native and are supported,
 // they are represented o the chain as tokens
 bool ValidateCrossChainImport(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
+bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 bool IsCrossChainImportInput(const CScript &scriptSig);
+
+bool ValidateFinalizeExport(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
+bool IsFinalizeExportInput(const CScript &scriptSig);
+bool PreCheckFinalizeExport(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 
 bool ValidateNotaryEvidence(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
 bool IsNotaryEvidenceInput(const CScript &scriptSig);
@@ -1696,10 +1161,18 @@ bool ValidateCurrencyState(struct CCcontract_info *cp, Eval* eval, const CTransa
 bool IsCurrencyStateInput(const CScript &scriptSig);
 
 bool SetPeerNodes(const UniValue &nodes);
-bool SetThisChain(const UniValue &chainDefinition);
+bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef);
 
 extern CConnectedChains ConnectedChains;
 extern uint160 ASSETCHAINS_CHAINID;
+extern CCriticalSection smartTransactionCS;
+
 CCoinbaseCurrencyState GetInitialCurrencyState(const CCurrencyDefinition &chainDef);
+
+CCurrencyDefinition ValidateNewUnivalueCurrencyDefinition(const UniValue &uniObj,
+                                                          uint32_t height,
+                                                          const uint160 systemID,
+                                                          std::map<uint160, std::string> &requiredDefinitions,
+                                                          bool checkMempool=true);
 
 #endif

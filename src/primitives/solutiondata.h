@@ -20,7 +20,7 @@ class CActivationHeight
         enum {
             MAX_HEIGHT = INT_MAX,
             DEFAULT_UPGRADE_HEIGHT = MAX_HEIGHT,
-            NUM_VERSIONS = 7,   // NEVER ADD A NEW VERSION WITHOUT UPDATING THE ARRAY BELOW WITH ALL ENTRIES PRESENT
+            NUM_VERSIONS = 8,   // NEVER ADD A NEW VERSION WITHOUT UPDATING THE ARRAY BELOW WITH ALL ENTRIES PRESENT
             SOLUTION_VERUSV1 = 0,
             SOLUTION_VERUSV2 = 1,
             SOLUTION_VERUSV3 = 2,
@@ -28,6 +28,7 @@ class CActivationHeight
             SOLUTION_VERUSV5 = 4,
             SOLUTION_VERUSV5_1 = 5,
             SOLUTION_VERUSV6 = 6,
+            SOLUTION_VERUSV7 = 7,
             ACTIVATE_VERUSHASH2 = SOLUTION_VERUSV2,
             ACTIVATE_EXTENDEDSOLUTION = SOLUTION_VERUSV3,
             ACTIVATE_IDENTITY = SOLUTION_VERUSV4,
@@ -37,11 +38,12 @@ class CActivationHeight
             ACTIVATE_VERUSHASH2_2 = SOLUTION_VERUSV5,
             ACTIVATE_PBAAS_HEADER = SOLUTION_VERUSV5_1,
             ACTIVATE_STAKEHEADER = SOLUTION_VERUSV6,
-            ACTIVATE_PBAAS = SOLUTION_VERUSV6
+            ACTIVATE_VERUSVAULT = SOLUTION_VERUSV6,
+            ACTIVATE_PBAAS = SOLUTION_VERUSV7
         };
         bool active;
         int32_t heights[NUM_VERSIONS];
-        CActivationHeight() : heights{0, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT}, active(true) {}
+        CActivationHeight() : heights{0, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT}, active(true) {}
 
         void SetActivationHeight(int32_t version, int32_t height)
         {
@@ -112,6 +114,11 @@ public:
     }
 
     void SetBlockData(CBlockHeader &bh);
+    
+    bool IsValid() const
+    {
+        return !(hashPrevBlock.IsNull() && hashMerkleRoot.IsNull() && hashFinalSaplingRoot.IsNull() && nNonce.IsNull() && !nBits && hashBlockMMRRoot.IsNull());
+    }
 };
 
 // this class provides a minimal and compact hash pair and identity for a merge mined PBaaS header

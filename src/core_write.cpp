@@ -209,6 +209,183 @@ uint160 CCurrencyDefinition::GetConditionID(int32_t condition) const
     return CCrossChainRPCData::GetConditionID(name, condition);
 }
 
+UniValue CCurrencyDefinition::ToUniValue() const
+{
+    UniValue obj(UniValue::VOBJ);
+
+    obj.push_back(Pair("version", (int64_t)nVersion));
+    obj.push_back(Pair("options", (int64_t)options));
+    obj.push_back(Pair("name", name));
+    obj.push_back(Pair("currencyid", EncodeDestination(CIdentityID(GetID()))));
+    if (!parent.IsNull())
+    {
+        obj.push_back(Pair("parent", EncodeDestination(CIdentityID(parent))));
+    }
+
+    obj.push_back(Pair("systemid", EncodeDestination(CIdentityID(systemID))));
+    obj.push_back(Pair("notarizationprotocol", (int)notarizationProtocol));
+    obj.push_back(Pair("proofprotocol", (int)proofProtocol));
+
+    if (nativeCurrencyID.IsValid())
+    {
+        obj.push_back(Pair("nativecurrencyid", nativeCurrencyID.ToUniValue()));
+    }
+
+    if (!launchSystemID.IsNull())
+    {
+        obj.push_back(Pair("launchsystemid", EncodeDestination(CIdentityID(launchSystemID))));
+    }
+    obj.push_back(Pair("startblock", (int64_t)startBlock));
+    obj.push_back(Pair("endblock", (int64_t)endBlock));
+
+    // currencies that can be converted for pre-launch or fractional usage
+    if (currencies.size())
+    {
+        UniValue currencyArr(UniValue::VARR);
+        for (auto &currency : currencies)
+        {
+            currencyArr.push_back(EncodeDestination(CIdentityID(currency)));
+        }
+        obj.push_back(Pair("currencies", currencyArr));
+    }
+
+    if (weights.size())
+    {
+        UniValue weightArr(UniValue::VARR);
+        for (auto &weight : weights)
+        {
+            weightArr.push_back(ValueFromAmount(weight));
+        }
+        obj.push_back(Pair("weights", weightArr));
+    }
+
+    if (conversions.size())
+    {
+        UniValue conversionArr(UniValue::VARR);
+        for (auto &conversion : conversions)
+        {
+            conversionArr.push_back(ValueFromAmount(conversion));
+        }
+        obj.push_back(Pair("conversions", conversionArr));
+    }
+
+    if (minPreconvert.size())
+    {
+        UniValue minPreconvertArr(UniValue::VARR);
+        for (auto &oneMin : minPreconvert)
+        {
+            minPreconvertArr.push_back(ValueFromAmount(oneMin));
+        }
+        obj.push_back(Pair("minpreconversion", minPreconvertArr));
+    }
+
+    if (maxPreconvert.size())
+    {
+        UniValue maxPreconvertArr(UniValue::VARR);
+        for (auto &oneMax : maxPreconvert)
+        {
+            maxPreconvertArr.push_back(ValueFromAmount(oneMax));
+        }
+        obj.push_back(Pair("maxpreconversion", maxPreconvertArr));
+    }
+
+    if (preLaunchDiscount)
+    {
+        obj.push_back(Pair("prelaunchdiscount", ValueFromAmount(preLaunchDiscount)));
+    }
+
+    if (IsFractional())
+    {
+        obj.push_back(Pair("initialsupply", ValueFromAmount(initialFractionalSupply)));
+        obj.push_back(Pair("prelaunchcarveout", ValueFromAmount(preLaunchCarveOut)));
+    }
+
+    if (preAllocation.size())
+    {
+        UniValue preAllocationArr(UniValue::VARR);
+        for (auto &onePreAllocation : preAllocation)
+        {
+            UniValue onePreAlloc(UniValue::VOBJ);
+            onePreAlloc.push_back(Pair(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)), 
+                                       ValueFromAmount(onePreAllocation.second)));
+            preAllocationArr.push_back(onePreAlloc);
+        }
+        obj.push_back(Pair("preallocations", preAllocationArr));
+    }
+
+    if (!gatewayID.IsNull())
+    {
+        obj.push_back(Pair("gateway", EncodeDestination(CIdentityID(gatewayID))));
+    }
+
+    if (contributions.size())
+    {
+        UniValue initialContributionArr(UniValue::VARR);
+        for (auto &oneCurContributions : contributions)
+        {
+            initialContributionArr.push_back(ValueFromAmount(oneCurContributions));
+        }
+        obj.push_back(Pair("initialcontributions", initialContributionArr));
+    }
+
+    if (IsGateway() || IsGatewayConverter() || IsPBaaSChain())
+    {
+        obj.push_back(Pair("gatewayconverterissuance", ValueFromAmount(gatewayConverterIssuance)));
+    }
+
+    obj.push_back(Pair("idregistrationfees", ValueFromAmount(idRegistrationFees)));
+    obj.push_back(Pair("idreferrallevels", idReferralLevels));
+    obj.push_back(Pair("idimportfees", ValueFromAmount(idImportFees)));
+
+    if (IsGateway() || IsPBaaSChain())
+    {
+        // notaries are identities that perform specific functions for the currency's operation
+        // related to notarizing an external currency source, as well as proving imports
+        if (notaries.size())
+        {
+            UniValue notaryArr(UniValue::VARR);
+            for (auto &notary : notaries)
+            {
+                notaryArr.push_back(EncodeDestination(CIdentityID(notary)));
+            }
+            obj.push_back(Pair("notaries", notaryArr));
+        }
+        obj.push_back(Pair("minnotariesconfirm", minNotariesConfirm));
+
+        obj.push_back(Pair("currencyregistrationfee", ValueFromAmount(currencyRegistrationFee)));
+        obj.push_back(Pair("pbaassystemregistrationfee", ValueFromAmount(pbaasSystemLaunchFee)));
+        obj.push_back(Pair("currencyimportfee", ValueFromAmount(currencyImportFee)));
+        obj.push_back(Pair("transactionimportfee", ValueFromAmount(transactionImportFee)));
+        obj.push_back(Pair("transactionexportfee", ValueFromAmount(transactionExportFee)));
+
+        if (!gatewayConverterName.empty())
+        {
+            obj.push_back(Pair("gatewayconverterid", EncodeDestination(CIdentityID(GatewayConverterID()))));
+            obj.push_back(Pair("gatewayconvertername", gatewayConverterName));
+        }
+
+        if (IsPBaaSChain())
+        {
+            arith_uint256 target;
+            target.SetCompact(initialBits);
+            obj.push_back(Pair("initialtarget", ArithToUint256(target).GetHex()));
+            UniValue eraArr(UniValue::VARR);
+            for (int i = 0; i < rewards.size(); i++)
+            {
+                UniValue era(UniValue::VOBJ);
+                era.push_back(Pair("reward", rewards.size() > i ? rewards[i] : (int64_t)0));
+                era.push_back(Pair("decay", rewardsDecay.size() > i ? rewardsDecay[i] : (int64_t)0));
+                era.push_back(Pair("halving", halving.size() > i ? (int32_t)halving[i] : (int32_t)0));
+                era.push_back(Pair("eraend", eraEnd.size() > i ? (int32_t)eraEnd[i] : (int32_t)0));
+                eraArr.push_back(era);
+            }
+            obj.push_back(Pair("eras", eraArr));
+        }
+    }
+
+    return obj;
+}
+
 UniValue CCurrencyState::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
@@ -662,8 +839,8 @@ UniValue CPBaaSNotarization::ToUniValue() const
     obj.push_back(Pair("currencystate", currencyState.ToUniValue()));
     obj.push_back(Pair("prevnotarizationtxid", prevNotarization.hash.GetHex()));
     obj.push_back(Pair("prevnotarizationout", (int64_t)prevNotarization.n));
-    obj.push_back(Pair("hashprevnotarizationobject", hashPrevNotarization.GetHex()));
     obj.push_back(Pair("prevheight", (int64_t)prevHeight));
+    obj.push_back(Pair("hashprevcrossnotarization", hashPrevCrossNotarization.GetHex()));
 
     // now get states and roots, of which there may be multiple
     UniValue curStateArr(UniValue::VARR);
@@ -691,184 +868,6 @@ UniValue CPBaaSNotarization::ToUniValue() const
     return obj;
 }
 
-UniValue CCurrencyDefinition::ToUniValue() const
-{
-    UniValue obj(UniValue::VOBJ);
-
-    obj.push_back(Pair("version", (int64_t)nVersion));
-    obj.push_back(Pair("options", (int64_t)options));
-    obj.push_back(Pair("name", name));
-    obj.push_back(Pair("currencyid", EncodeDestination(CIdentityID(GetID()))));
-    if (!parent.IsNull())
-    {
-        obj.push_back(Pair("parent", EncodeDestination(CIdentityID(parent))));
-    }
-
-    obj.push_back(Pair("systemid", EncodeDestination(CIdentityID(systemID))));
-    obj.push_back(Pair("notarizationprotocol", (int)notarizationProtocol));
-    obj.push_back(Pair("proofprotocol", (int)proofProtocol));
-
-    if (nativeCurrencyID.IsValid())
-    {
-        obj.push_back(Pair("nativecurrencyid", nativeCurrencyID.ToUniValue()));
-    }
-
-    if (!launchSystemID.IsNull())
-    {
-        obj.push_back(Pair("launchsystemid", EncodeDestination(CIdentityID(launchSystemID))));
-    }
-    obj.push_back(Pair("startblock", (int64_t)startBlock));
-    obj.push_back(Pair("endblock", (int64_t)endBlock));
-
-    // currencies that can be converted for pre-launch or fractional usage
-    if (currencies.size())
-    {
-        UniValue currencyArr(UniValue::VARR);
-        for (auto &currency : currencies)
-        {
-            currencyArr.push_back(EncodeDestination(CIdentityID(currency)));
-        }
-        obj.push_back(Pair("currencies", currencyArr));
-    }
-
-    if (weights.size())
-    {
-        UniValue weightArr(UniValue::VARR);
-        for (auto &weight : weights)
-        {
-            weightArr.push_back(ValueFromAmount(weight));
-        }
-        obj.push_back(Pair("weights", weightArr));
-    }
-
-    if (conversions.size())
-    {
-        UniValue conversionArr(UniValue::VARR);
-        for (auto &conversion : conversions)
-        {
-            conversionArr.push_back(ValueFromAmount(conversion));
-        }
-        obj.push_back(Pair("conversions", conversionArr));
-    }
-
-    if (minPreconvert.size())
-    {
-        UniValue minPreconvertArr(UniValue::VARR);
-        for (auto &oneMin : minPreconvert)
-        {
-            minPreconvertArr.push_back(ValueFromAmount(oneMin));
-        }
-        obj.push_back(Pair("minpreconversion", minPreconvertArr));
-    }
-
-    if (maxPreconvert.size())
-    {
-        UniValue maxPreconvertArr(UniValue::VARR);
-        for (auto &oneMax : maxPreconvert)
-        {
-            maxPreconvertArr.push_back(ValueFromAmount(oneMax));
-        }
-        obj.push_back(Pair("maxpreconversion", maxPreconvertArr));
-    }
-
-    if (preLaunchDiscount)
-    {
-        obj.push_back(Pair("prelaunchdiscount", ValueFromAmount(preLaunchDiscount)));
-    }
-
-    if (IsFractional())
-    {
-        obj.push_back(Pair("initialsupply", ValueFromAmount(initialFractionalSupply)));
-        obj.push_back(Pair("prelaunchcarveout", ValueFromAmount(preLaunchCarveOut)));
-    }
-
-    if (preAllocation.size())
-    {
-        UniValue preAllocationArr(UniValue::VARR);
-        for (auto &onePreAllocation : preAllocation)
-        {
-            UniValue onePreAlloc(UniValue::VOBJ);
-            onePreAlloc.push_back(Pair(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)), 
-                                       ValueFromAmount(onePreAllocation.second)));
-            preAllocationArr.push_back(onePreAlloc);
-        }
-        obj.push_back(Pair("preallocations", preAllocationArr));
-    }
-
-    if (IsGateway() && !GatewayConverterID().IsNull())
-    {
-        obj.push_back(Pair("gatewayid", gatewayID.GetHex()));
-    }
-
-    if (IsGateway() || IsPBaaSConverter() || IsPBaaSChain())
-    {
-        obj.push_back(Pair("gatewayconverterissuance", ValueFromAmount(gatewayConverterIssuance)));
-    }
-
-    if (contributions.size())
-    {
-        UniValue initialContributionArr(UniValue::VARR);
-        for (auto &oneCurContributions : contributions)
-        {
-            initialContributionArr.push_back(ValueFromAmount(oneCurContributions));
-        }
-        obj.push_back(Pair("initialcontributions", initialContributionArr));
-    }
-
-    if (preconverted.size())
-    {
-        UniValue preconversionArr(UniValue::VARR);
-        for (auto &onePreconversion : preconverted)
-        {
-            preconversionArr.push_back(ValueFromAmount(onePreconversion));
-        }
-        obj.push_back(Pair("preconversions", preconversionArr));
-    }
-
-    if (IsGateway() || IsPBaaSChain())
-    {
-        // notaries are identities that perform specific functions for the currency's operation
-        // related to notarizing an external currency source, as well as proving imports
-        if (notaries.size())
-        {
-            UniValue notaryArr(UniValue::VARR);
-            for (auto &notary : notaries)
-            {
-                notaryArr.push_back(EncodeDestination(CIdentityID(notary)));
-            }
-            obj.push_back(Pair("notaries", notaryArr));
-        }
-        obj.push_back(Pair("minnotariesconfirm", minNotariesConfirm));
-
-        obj.push_back(Pair("idregistrationprice", ValueFromAmount(idRegistrationFees)));
-        obj.push_back(Pair("idreferrallevels", idReferralLevels));
-
-        if (IsPBaaSChain())
-        {
-            UniValue eraArr(UniValue::VARR);
-            for (int i = 0; i < rewards.size(); i++)
-            {
-                UniValue era(UniValue::VOBJ);
-                era.push_back(Pair("reward", rewards.size() > i ? rewards[i] : (int64_t)0));
-                era.push_back(Pair("decay", rewardsDecay.size() > i ? rewardsDecay[i] : (int64_t)0));
-                era.push_back(Pair("halving", halving.size() > i ? (int32_t)halving[i] : (int32_t)0));
-                era.push_back(Pair("eraend", eraEnd.size() > i ? (int32_t)eraEnd[i] : (int32_t)0));
-                eraArr.push_back(era);
-            }
-            obj.push_back(Pair("eras", eraArr));
-
-            obj.push_back(Pair("gatewayconvertername", gatewayConverterName));
-            if (!gatewayConverterName.empty())
-            {
-                uint160 gatewayParent = GetID();
-                obj.push_back(Pair("gatewayconverterid", EncodeDestination(CIdentity::GetID(gatewayConverterName, gatewayParent))));
-            }
-        }
-    }
-
-    return obj;
-}
-
 UniValue CTokenOutput::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
@@ -887,7 +886,7 @@ UniValue CReserveDeposit::ToUniValue() const
 UniValue CTransferDestination::ToUniValue() const
 {
     UniValue destVal = UniValue(UniValue::VOBJ);
-    destVal.push_back(Pair("type", type));
+    uint8_t newType = type;
 
     switch (TypeNoFlags())
     {
@@ -921,11 +920,13 @@ UniValue CTransferDestination::ToUniValue() const
 
         case CTransferDestination::DEST_FULLID:
             destVal.push_back(Pair("identity", CIdentity(destination).ToUniValue()));
+            destVal.push_back(Pair("serializeddata", HexBytes(&(destination[0]), destination.size())));
             break;
 
         case CTransferDestination::DEST_REGISTERCURRENCY:
         {
             destVal.push_back(Pair("currency", CCurrencyDefinition(destination).ToUniValue()));
+            destVal.push_back(Pair("serializeddata", HexBytes(&(destination[0]), destination.size())));
             break;
         }
 
@@ -938,8 +939,36 @@ UniValue CTransferDestination::ToUniValue() const
             break;
 
         default:
-            destVal.push_back(Pair("nodestination", ""));
+            destVal.push_back(Pair("undefined", ""));
             break;
+    }
+    if ((type & FLAG_DEST_AUX))
+    {
+        if (auxDests.size())
+        {
+            UniValue auxDestsUni(UniValue::VARR);
+            for (auto &oneVec : auxDests)
+            {
+                CTransferDestination oneDest;
+                bool success = true;
+                ::FromVector(oneVec, oneDest, &success);
+                // can't nest aux destinations
+                if (!success || (oneDest.type & FLAG_DEST_AUX))
+                {
+                    newType = DEST_INVALID;
+                    break;
+                }
+                auxDestsUni.push_back(oneDest.ToUniValue());
+            }
+            if (newType != DEST_INVALID)
+            {
+                destVal.push_back(Pair("auxdests", auxDestsUni));
+            }
+        }
+        else
+        {
+            newType &= ~FLAG_DEST_AUX;
+        }
     }
     if (type & FLAG_DEST_GATEWAY)
     {
@@ -950,6 +979,7 @@ UniValue CTransferDestination::ToUniValue() const
         destVal.push_back(Pair("gateway", EncodeDestination(CIdentityID(gatewayID))));
         destVal.push_back(Pair("fees", ValueFromAmount(fees)));
     }
+    destVal.push_back(Pair("type", newType));
     return destVal;
 }
 
@@ -1077,26 +1107,23 @@ UniValue CObjectFinalization::ToUniValue() const
                                     IsRejected() ? 
                                         "rejected" : 
                                         "pending"));
-    if (IsConfirmed() || IsRejected())
+    if (evidenceInputs.size())
     {
-        if (evidenceInputs.size())
+        UniValue inputsUni(UniValue::VARR);
+        for (auto i : evidenceInputs)
         {
-            UniValue inputsUni(UniValue::VARR);
-            for (auto i : evidenceInputs)
-            {
-                inputsUni.push_back(i);
-            }
-            ret.pushKV("evidenceinputs", inputsUni);
+            inputsUni.push_back(i);
         }
-        if (evidenceOutputs.size())
+        ret.pushKV("evidenceinputs", inputsUni);
+    }
+    if (evidenceOutputs.size())
+    {
+        UniValue outputsUni(UniValue::VARR);
+        for (auto i : evidenceOutputs)
         {
-            UniValue outputsUni(UniValue::VARR);
-            for (auto i : evidenceOutputs)
-            {
-                outputsUni.push_back(i);
-            }
-            ret.pushKV("evidenceoutputs", outputsUni);
+            outputsUni.push_back(i);
         }
+        ret.pushKV("evidenceoutputs", outputsUni);
     }
     ret.push_back(Pair("currencyid", EncodeDestination(CIdentityID(currencyID))));
     ret.push_back(Pair("output", output.ToUniValue()));
@@ -1197,18 +1224,54 @@ UniValue CMMRProof::ToUniValue() const
             {
                 CETHPATRICIABranch &branch = *(CETHPATRICIABranch *)(proof);
                 retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_ETH));
-               // retObj.push_back(Pair("index", (int64_t)(branch.nIndex)));
-               // retObj.push_back(Pair("mmvsize", (int64_t)(branch.nSize)));
-              //  for (auto &oneHash : branch.branch)
-              //  {
-              //      branchArray.push_back(oneHash.GetHex());
-               // }
-              //  retObj.push_back(Pair("hashes", branchArray));
-               // break;
+                // univalue of ETH proof is just hex of whole object
+                std::vector<unsigned char> serBytes(::AsVector(*this));
+                retObj.push_back(Pair("data", HexBytes(&(serBytes[0]), serBytes.size())));
             }
         };
     }
     return retObj;
+}
+
+UniValue CNameReservation::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+    ret.push_back(Pair("name", name));
+    ret.push_back(Pair("salt", salt.GetHex()));
+    ret.push_back(Pair("referral", referral.IsNull() ? "" : EncodeDestination(referral)));
+
+    if (_IsVerusActive())
+    {
+        if (boost::to_lower_copy(name) == VERUS_CHAINNAME)
+        {
+            ret.push_back(Pair("parent", ""));
+        }
+        else
+        {
+            ret.push_back(Pair("parent", EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID()))));
+        }
+        ret.push_back(Pair("nameid", EncodeDestination(DecodeDestination(name + "@"))));
+    }
+    else
+    {
+        ret.push_back(Pair("parent", EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID()))));
+        ret.push_back(Pair("nameid", EncodeDestination(DecodeDestination(name + "." + ConnectedChains.ThisChain().name + "@"))));
+    }
+
+    return ret;
+}
+
+UniValue CAdvancedNameReservation::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+    ret.push_back(Pair("version", (uint64_t)version));
+    ret.push_back(Pair("name", name));
+    ret.push_back(Pair("parent", EncodeDestination(CIdentityID(parent))));
+    ret.push_back(Pair("salt", salt.GetHex()));
+    ret.push_back(Pair("referral", referral.IsNull() ? "" : EncodeDestination(referral)));
+    uint160 ParentID = parent;
+    ret.push_back(Pair("nameid", EncodeDestination(CIdentity::GetID(name, ParentID))));
+    return ret;
 }
 
 void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fIncludeHex, bool fIncludeAsm)
@@ -1338,9 +1401,33 @@ void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fInclud
                 break;
             }
 
-            case EVAL_RESERVE_EXCHANGE:
+            case EVAL_IDENTITY_RESERVATION:
             {
-                out.push_back(Pair("invalidreserveexchangout", "invalid"));
+                CNameReservation ar;
+
+                if (p.vData.size() && (ar = CNameReservation(p.vData[0])).IsValid())
+                {
+                    out.push_back(Pair("identityreservation", ar.ToUniValue()));
+                }
+                else
+                {
+                    out.push_back(Pair("identityreservation", "invalid"));
+                }
+                break;
+            }
+
+            case EVAL_IDENTITY_ADVANCEDRESERVATION:
+            {
+                CAdvancedNameReservation anr;
+
+                if (p.vData.size() && (anr = CAdvancedNameReservation(p.vData[0])).IsValid())
+                {
+                    out.push_back(Pair("identityreservation", anr.ToUniValue()));
+                }
+                else
+                {
+                    out.push_back(Pair("identityreservation", "invalid"));
+                }
                 break;
             }
 
@@ -1413,12 +1500,20 @@ void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fInclud
                 break;
 
             case EVAL_IDENTITY_COMMITMENT:
-                out.push_back(Pair("identitycommitment", ""));
-                break;
+            {
+                CCommitmentHash ch;
 
-            case EVAL_IDENTITY_RESERVATION:
-                out.push_back(Pair("identityreservation", ""));
+                if (p.vData.size())
+                {
+                    ch = CCommitmentHash(p.vData[0]);
+                    out.push_back(Pair("commitmenthash", ch.ToUniValue()));
+                }
+                else
+                {
+                    out.push_back(Pair("commitmenthash", ""));
+                }
                 break;
+            }
 
             case EVAL_STAKEGUARD:
                 out.push_back(Pair("stakeguard", ""));
@@ -1453,7 +1548,7 @@ void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fInclud
         }
     }
 
-    out.push_back(Pair("spendableoutput", scriptPubKey.IsSpendableOutputType() ? true : false));
+    out.push_back(Pair("spendableoutput", scriptPubKey.IsSpendableOutputType()));
 
     if (tokensOut.valueMap.size())
     {

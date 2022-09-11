@@ -21,10 +21,11 @@
 #include "librustzcash.h"
 #endif // ENABLE_RUST
 uint32_t komodo_chainactive_timestamp();
+int64_t komodo_current_supply(uint32_t nHeight);
 
-extern uint32_t ASSETCHAINS_ALGO, ASSETCHAINS_EQUIHASH, ASSETCHAINS_VERUSHASH, ASSETCHAINS_STAKED, ASSETCHAINS_LWMAPOS;
+extern uint32_t ASSETCHAINS_ALGO, ASSETCHAINS_EQUIHASH, ASSETCHAINS_VERUSHASH, ASSETCHAINS_STAKED, ASSETCHAINS_LWMAPOS, ASSETCHAINS_STARTING_DIFF;
 extern char ASSETCHAINS_SYMBOL[65];
-extern int32_t VERUS_BLOCK_POSUNITS, VERUS_CONSECUTIVE_POS_THRESHOLD, VERUS_V2_CONSECUTIVE_POS_THRESHOLD, VERUS_NOPOS_THRESHHOLD;
+extern int32_t VERUS_BLOCK_POSUNITS, VERUS_CONSECUTIVE_POS_THRESHOLD, VERUS_PBAAS_CONSECUTIVE_POS_THRESHOLD, VERUS_NOPOS_THRESHHOLD, VERUS_PBAAS_NOPOS_THRESHHOLD;
 unsigned int lwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params);
 unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const Consensus::Params& params);
 
@@ -122,20 +123,33 @@ unsigned int lwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const CBlock
 
 unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const Consensus::Params& params)
 {
-    arith_uint256 nextTarget {0}, sumTarget {0}, bnTmp, bnLimit;
+    arith_uint256 nextTarget {0}, sumTarget {0}, bnTmp, bnLimit, bnDefault;
     if (_IsVerusMainnetActive() && pindexLast && pindexLast->GetHeight() <= 1568100 && pindexLast->GetHeight() >= 1567999)
     {
         arith_uint256 maxDiffAdjust = UintToArith256(uint256S("00000000000f0f0f000000000000000000000000000000000000000000000000"));
         return maxDiffAdjust.GetCompact();
     }
 
+    int32_t nHeight = pindexLast ? pindexLast->GetHeight() : 0;
+    bool isPBaaS = CConstVerusSolutionVector::activationHeight.ActiveVersion(nHeight + 1) >= CActivationHeight::ACTIVATE_PBAAS;
+
     if (ASSETCHAINS_ALGO == ASSETCHAINS_EQUIHASH)
     {
         bnLimit = UintToArith256(params.powLimit);
+        bnDefault = bnLimit;
     }
     else
     {
         bnLimit = UintToArith256(params.powAlternate);
+        if (isPBaaS)
+        {
+            bnDefault.SetCompact(ASSETCHAINS_STARTING_DIFF);
+            bnLimit = UintToArith256(uint256S("000000ff0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"));
+        }
+        else
+        {
+            bnDefault = bnLimit;
+        }
     }
 
     // Find the first block in the averaging interval as we total the linearly weighted average
@@ -146,7 +160,8 @@ unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const 
     // if changing from VerusHash V1 to V2, shift the last blocks by the same shift as the limit
     int targetShift = 0;
     uint32_t height = pindexLast->GetHeight() + 1;
-    if (CConstVerusSolutionVector::activationHeight.ActiveVersion(height) >= CConstVerusSolutionVector::activationHeight.SOLUTION_VERUSV2)
+
+    if (_IsVerusMainnetActive() && CConstVerusSolutionVector::activationHeight.ActiveVersion(height) >= CConstVerusSolutionVector::activationHeight.SOLUTION_VERUSV2)
     {
         targetShift = VERUSHASH2_SHIFT;
         bnLimit <<= targetShift;
@@ -177,12 +192,14 @@ unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const 
     // Check we have enough blocks
     if (!pindexFirst)
     {
-        if (!_IsVerusActive() && ASSETCHAINS_ALGO == ASSETCHAINS_VERUSHASH)
+        if (isPBaaS)
         {
-            // startup 16 times harder on PBaaS chains
-            bnLimit = bnLimit >> 4;
+            return bnDefault.GetCompact();
         }
-        return bnLimit.GetCompact();
+        else
+        {
+            return bnLimit.GetCompact();
+        }
     }
 
     // Keep t reasonable in case strange solvetimes occurred.
@@ -214,24 +231,42 @@ bool DoesHashQualify(const CBlockIndex *pbindex)
 uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::Params& params)
 {
     arith_uint256 nextTarget {0}, sumTarget {0}, bnTmp, bnLimit;
-    bnLimit = UintToArith256(params.posLimit);
-    uint32_t nProofOfStakeLimit = bnLimit.GetCompact();
+
     int64_t t = 0, solvetime = 0;
     int64_t k = params.nLwmaPOSAjustedWeight;
     int64_t N = params.nPOSAveragingWindow;
 
     int32_t nHeight = pindexLast->GetHeight();
+
     int32_t maxConsecutivePos = VERUS_CONSECUTIVE_POS_THRESHOLD;
+    int32_t maxConsecutiveNoPos = VERUS_NOPOS_THRESHHOLD;
 
-    if (CConstVerusSolutionVector::activationHeight.ActiveVersion(nHeight + 1) >= CActivationHeight::SOLUTION_VERUSV4)
+    bnLimit = UintToArith256(params.posLimit);
+    uint32_t nProofOfStakeDefault = bnLimit.GetCompact();
+
+    if (CConstVerusSolutionVector::activationHeight.ActiveVersion(nHeight + 1) >= CActivationHeight::ACTIVATE_PBAAS)
     {
-        maxConsecutivePos = VERUS_V2_CONSECUTIVE_POS_THRESHOLD;
-    }
+        maxConsecutivePos = VERUS_PBAAS_CONSECUTIVE_POS_THRESHOLD;
+        maxConsecutiveNoPos = VERUS_PBAAS_NOPOS_THRESHHOLD;
 
-    if (_IsVerusMainnetActive() && pindexLast && pindexLast->GetHeight() >= 1567999)
+        // the default staking difficulty is based on an expectation of 25% of the supply staking, which if facing 100%, will not be catastrophic
+        // neither will it be impossible to adapt if only 1/64th or even less is staking, though it will take longer to get to an equilibrium.
+        arith_uint256 fiftyPercentPerSatoshi = UintToArith256(uint256S("7f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"));
+        uint64_t supplyDivisor = nHeight ? komodo_current_supply(nHeight) : MAX_MONEY;
+
+        // default is if 1/4th of expected max supply is staking
+        supplyDivisor = ((supplyDivisor >> 2) == 0) ? 1 : supplyDivisor >> 2;
+        nProofOfStakeDefault = ((arith_uint256)(fiftyPercentPerSatoshi / supplyDivisor)).GetCompact();
+
+        // the lowest 50% equilibrium we can achieve is if one millionth of expected max supply is staking,
+        // set that as the lower difficulty limit
+        supplyDivisor = ((supplyDivisor >> 16) == 0) ? 1 : supplyDivisor >> 16;
+        bnLimit = fiftyPercentPerSatoshi / supplyDivisor;
+    }
+    else if (_IsVerusMainnetActive() && pindexLast && pindexLast->GetHeight() >= 1567999)
     {
         bnLimit = UintToArith256(uint256S("00000000000f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"));
-        nProofOfStakeLimit = bnLimit.GetCompact();
+        nProofOfStakeDefault = bnLimit.GetCompact();
     }
 
     struct solveSequence {
@@ -253,12 +288,12 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
     // we need to make sure we have a starting nBits reference, which is either the last POS block, or the default
     // if we have had no POS block in the threshold number of blocks, we must return the default, otherwise, we'll now have
     // a starting point
-    uint32_t nBits = nProofOfStakeLimit;
-    for (int64_t i = 0; i < VERUS_NOPOS_THRESHHOLD; i++)
+    uint32_t nBits = nProofOfStakeDefault;
+    for (int64_t i = 0; i < maxConsecutiveNoPos; i++)
     {
         if (!pindexFirst)
         {
-            return nProofOfStakeLimit;
+            return nProofOfStakeDefault;
         }
 
         CBlockHeader hdr = pindexFirst->GetBlockHeader();
@@ -280,13 +315,13 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
         // we measure our solve time in passing of blocks, where one bock == VERUS_BLOCK_POSUNITS units
         // consecutive blocks in either direction have their solve times exponentially multiplied or divided by power of 2
         int x;
-        for (x = 0; x < VERUS_CONSECUTIVE_POS_THRESHOLD; x++)
+        for (x = 0; x < maxConsecutivePos; x++)
         {
             pindexFirst = pindexFirst->pprev;
 
             if (!pindexFirst)
             {
-                return nProofOfStakeLimit;
+                return nProofOfStakeDefault;
             }
 
             CBlockHeader hdr = pindexFirst->GetBlockHeader();
@@ -300,7 +335,7 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
         if (x)
         {
             idx[i].consecutive = false;
-            if (!memcmp(ASSETCHAINS_SYMBOL, "VRSC", 4) && nHeight < 67680)
+            if (_IsVerusMainnetActive() && nHeight < 67680)
             {
                 idx[i].solveTime = VERUS_BLOCK_POSUNITS * (x + 1);
             }
@@ -328,7 +363,7 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
                 if (idx[j].consecutive == true)
                 {
                     idx[j].solveTime = st;
-                    if ((j - i) >= VERUS_CONSECUTIVE_POS_THRESHOLD)
+                    if ((j - i) >= maxConsecutivePos)
                     {
                         // if this is real time, return zero
                         if (j == (N - 1))

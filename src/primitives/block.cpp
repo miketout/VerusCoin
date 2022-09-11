@@ -77,7 +77,7 @@ ChainMMRNode CBlockHeader::GetBlockMMRNode() const
 {
     uint256 blockHash = GetHash();
 
-    uint256 preHash = ChainMMRNode::HashObj(hashMerkleRoot, blockHash);
+    uint256 preHash = ChainMMRNode::HashObj(GetBlockMMRRoot(), blockHash);
     uint256 power = ArithToUint256(GetCompactPower(nNonce, nBits, nVersion));
 
     return ChainMMRNode(ChainMMRNode::HashObj(preHash, power), power);
@@ -488,6 +488,19 @@ CDefaultMMRNode CBlock::GetMMRNode(int index) const
 }
 
 
+CPBaaSPreHeader CBlock::GetSubstitutedPreHeader() const
+{
+    CPBaaSPreHeader substitutedPreHeader(*this);
+    auto solutionCopy = nSolution;
+    arith_uint256 extraData = (arith_uint256((uint64_t)CVerusSolutionVector(solutionCopy).Version()) << 64) +
+                              (arith_uint256((uint64_t)((uint32_t)nVersion)) << 32) +
+                              arith_uint256((uint64_t)nTime);
+
+    substitutedPreHeader.hashBlockMMRRoot = ArithToUint256(extraData);
+    return substitutedPreHeader;
+}
+
+
 // This creates the MMR tree for the block, which replaces the merkle tree used today
 // while enabling a proof of the transaction hash as well as parts of the transaction
 // such as inputs, outputs, shielded spends and outputs, transaction header info, etc.
@@ -504,6 +517,21 @@ BlockMMRange CBlock::BuildBlockMMRTree() const
     {
         mmRange.Add(tx.GetDefaultMMRNode());
     }
+
+    if (IsPBaaS() != 0)
+    {
+        // add one additional object to the block MMR that contains
+        // a hash of the entire CPBaaSPreHeader for this block, except
+        // the hashBlockMMRRoot, which is dependent on the rest
+        // this enables a blockhash-algorithm-independent proof of
+        // sapling transactions, nonces, nBits, and nTime of a block,
+        // which is stored in the pre header in place of hashBlockMMRRoot
+        // before hashing.
+        auto hw = CDefaultMMRNode::GetHashWriter();
+        hw << GetSubstitutedPreHeader();
+        mmRange.Add(CDefaultMMRNode(hw.GetHash()));
+    }
+
     return mmRange;
 }
 
@@ -513,6 +541,32 @@ BlockMMRange CBlock::GetBlockMMRTree() const
     return BuildBlockMMRTree();
 }
 
+CPartialTransactionProof CBlock::GetPreHeaderProof() const
+{
+    if (IsPBaaS() != 0)
+    {
+        // make a partial transaction proof for the export opret only
+        BlockMMRange blockMMR(GetBlockMMRTree());
+        BlockMMView blockMMV(blockMMR);
+        CMMRProof txProof;
+
+        if (!blockMMV.GetProof(txProof, vtx.size()))
+        {
+            LogPrintf("%s: Cannot make pre header proof in block\n", __func__);
+            printf("%s: Cannot make pre header in block\n", __func__);
+            return CPartialTransactionProof();
+        }
+        return CPartialTransactionProof(txProof, CPBaaSPreHeader(*this));
+    }
+    else
+    {
+        // invalid proof
+        CPartialTransactionProof errorProof;
+        errorProof.version = errorProof.VERSION_INVALID;
+        return errorProof;
+    }
+}
+
 CPartialTransactionProof CBlock::GetPartialTransactionProof(const CTransaction &tx, int txIndex, const std::vector<std::pair<int16_t, int16_t>> &partIndexes) const
 {
     std::vector<CTransactionComponentProof> components;
@@ -520,7 +574,7 @@ CPartialTransactionProof CBlock::GetPartialTransactionProof(const CTransaction &
     if (IsPBaaS() != 0)
     {
         // make a partial transaction proof for the export opret only
-        BlockMMRange blockMMR(BuildBlockMMRTree());
+        BlockMMRange blockMMR(GetBlockMMRTree());
         BlockMMView blockMMV(blockMMR);
         CMMRProof txProof;
 
@@ -608,4 +662,67 @@ std::string CBlock::ToString() const
         s << " " << vMerkleTree[i].ToString();
     s << "\n";
     return s.str();
+}
+
+// used to span multiple outputs if a cross-chain proof becomes too big for just one
+std::vector<CNotaryEvidence> CNotaryEvidence::BreakApart(int maxChunkSize) const
+{
+    std::vector<CNotaryEvidence> retVal;
+
+    CNotaryEvidence scratchEvidence;
+
+    int baseOverhead = ::AsVector(scratchEvidence).size() + 4;
+    assert(maxChunkSize > baseOverhead);
+
+    // we put our entire self into a multipart proof and return multiple parts that must be reconstructed
+    std::vector<unsigned char> serialized = ::AsVector(*this);
+    size_t fullLength = serialized.size();
+    size_t startOffset = 0;
+    int indexNum = 0;
+
+    while (serialized.size())
+    {
+        int curLength = std::min(maxChunkSize - baseOverhead, (int)serialized.size());
+        CEvidenceData oneDataChunk(std::vector<unsigned char>(&(serialized[0]), &(serialized[0]) + curLength), indexNum++, fullLength, startOffset, CEvidenceData::TYPE_MULTIPART_DATA);
+        serialized.erase(serialized.begin(), serialized.begin() + curLength);
+        startOffset += curLength;
+
+        CCrossChainProof oneChunkProof;
+        oneChunkProof << oneDataChunk;
+        retVal.push_back(CNotaryEvidence(systemID, output, state, oneChunkProof, (int)CNotaryEvidence::TYPE_MULTIPART_DATA));
+    }
+
+    return retVal;
+}
+
+CNotaryEvidence::CNotaryEvidence(const std::vector<CNotaryEvidence> &evidenceVec)
+{
+    if (!evidenceVec.size() ||
+        !evidenceVec[0].IsValid() ||
+        evidenceVec[0].type != TYPE_MULTIPART_DATA ||
+        evidenceVec[0].evidence.chainObjects.size() != 1 ||
+        evidenceVec[0].evidence.chainObjects[0]->objectType != CHAINOBJ_EVIDENCEDATA)
+    {
+        return;
+    }
+    size_t fullLength = ((CChainObject<CEvidenceData> *)(evidenceVec[0].evidence.chainObjects[0]))->object.md.totalLength;
+    std::vector<unsigned char> fullVec;
+    int index = 0;
+    for (auto &onePart : evidenceVec)
+    {
+        if (onePart.type != onePart.TYPE_MULTIPART_DATA ||
+            onePart.evidence.chainObjects.size() != 1 ||
+            onePart.evidence.chainObjects[0]->objectType != CHAINOBJ_EVIDENCEDATA ||
+            ((CChainObject<CEvidenceData> *)(onePart.evidence.chainObjects[0]))->object.type != CEvidenceData::TYPE_MULTIPART_DATA ||
+            ((CChainObject<CEvidenceData> *)(onePart.evidence.chainObjects[0]))->object.md.totalLength != fullLength ||
+            ((CChainObject<CEvidenceData> *)(onePart.evidence.chainObjects[0]))->object.md.index != index++ ||
+            ((CChainObject<CEvidenceData> *)(onePart.evidence.chainObjects[0]))->object.md.start != fullVec.size())
+        {
+            version = VERSION_INVALID;
+            return;
+        }
+        std::vector<unsigned char> &onePartVec = ((CChainObject<CEvidenceData> *)(onePart.evidence.chainObjects[0]))->object.dataVec;
+        fullVec.insert(fullVec.end(), onePartVec.begin(), onePartVec.end());
+    }
+    ::FromVector(fullVec, *this);
 }

@@ -16,7 +16,7 @@ BEGIN
         BLOCK "040904E4" // U.S. English - multilingual (hex)
         BEGIN
             VALUE "CompanyName",        "The VerusCoin Foundation"
-            VALUE "FileDescription",    "verusd (Komodo node with a JSON-RPC server)"
+            VALUE "FileDescription",    "verusd (Verus or PBaaS node with a JSON-RPC server)"
             VALUE "FileVersion",        VER_FILEVERSION_STR
             VALUE "InternalName",       "verusd"
             VALUE "LegalCopyright",     COPYRIGHT_STR

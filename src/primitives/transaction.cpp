@@ -149,7 +149,7 @@ uint256 JSDescription::h_sig(ZCJoinSplit& params, const uint256& joinSplitPubKey
 
 std::string COutPoint::ToString() const
 {
-    return strprintf("COutPoint(%s, %u)", hash.ToString().substr(0,10), n);
+    return strprintf("COutPoint(%s, %u)", hash.ToString(), n);
 }
 
 std::string SaplingOutPoint::ToString() const
@@ -406,20 +406,13 @@ CCurrencyValueMap CTransaction::GetReserveValueOut() const
 
         for (auto &oneCur : oneOut.valueMap)
         {
-            auto reserveIt = retVal.valueMap.find(oneCur.first);
-            if (reserveIt == retVal.valueMap.end())
+            if (oneCur.second &&
+                (retVal.valueMap[oneCur.first] += oneCur.second) < 0)
             {
-                retVal.valueMap[oneCur.first] = oneCur.second;
-            }
-            else
-            {
-                reserveIt->second += oneCur.second;
-                if (reserveIt->second < 0)
-                {
-                    printf("%s: currency value overflow total: %ld, adding: %ld\n", __func__, reserveIt->second, oneCur.second);
-                    LogPrintf("%s: currency value overflow total: %ld, adding: %ld\n", __func__, reserveIt->second, oneCur.second);
-                    return std::map<uint160, CAmount>();
-                }
+                // TODO: HARDENING - confirm this is correct overflow behavior
+                printf("%s: currency value overflow total: %ld, adding: %ld - pegging to max\n", __func__, retVal.valueMap[oneCur.first], oneCur.second);
+                LogPrintf("%s: currency value overflow total: %ld, adding: %ld - pegging to max\n", __func__, retVal.valueMap[oneCur.first], oneCur.second);
+                retVal.valueMap[oneCur.first] = INT64_MAX;
             }
         }
     }
@@ -755,7 +748,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
             {
                 // unpack data specific to export and reserve transfers
                 CDataStream s = CDataStream(vdxfObj.data, SER_NETWORK, PROTOCOL_VERSION);
-                std::vector<CReserveTransfer> reserveTransfers;
+                uint256 prevtxid;
                 CCrossChainExport ccx;
                 CCcontract_info CC;
                 CCcontract_info *cp;
@@ -763,51 +756,34 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                 try
                 {
                     s >> ccx;
-                    s >> reserveTransfers;
+                    s >> prevtxid;
                 }
                 catch (const std::runtime_error &e)
                 {
-                    LogPrintf("Cross Chain : %s\n", e.what());
-                    checkOK = false;
-                }
-                auto hw  = CNativeHashWriter(CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
-
-                // TODO: HARDENING - ensure this is completely valid
-                for (auto &oneTransfer : reserveTransfers)
-                {
-                    hw << oneTransfer;
-                }
-
-                if (!ccx.IsValid() || !checkOK || (ccx.hashReserveTransfers != hw.GetHash()) )
-                {
-
-                    printf("%s: Cross chain ReserveTransfer check invalid.\n", __func__);
-                    LogPrintf("%s: Cross chain ReserveTransfer check invalid.\n", __func__);
-                    
+                    LogPrintf("ETH Rehydrate(vdxfObj) Error : %s\n", e.what());
                     checkOK = false;
                 }
 
-                if (checkOK)
+                if (ccx.IsValid() && checkOK)
                 {
-                    auto hw2 = CNativeHashWriter(CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
+                    CNativeHashWriter hw2(CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
                     hw2 << ccx;
-                    for (auto &oneTransfer : reserveTransfers)
-                    {
-                        hw2 << oneTransfer;
-                    }
-                   
+                    hw2 << prevtxid;
+
                     txRoot = hw2.GetHash();
                     cp = CCinit(&CC, EVAL_CROSSCHAIN_EXPORT);
                     std::vector<CTxDestination> dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
-
+                    mtx.vin.push_back(CTxIn(prevtxid, 0));
                     mtx.vout.push_back(CTxOut(0, MakeMofNCCScript(CConditionObj<CCrossChainExport>(EVAL_CROSSCHAIN_EXPORT, dests, 1, &ccx))));
-                
+
                     isPartial = true;
-                    
+
                     outTx = mtx;
                 }
                 else
                 {
+                    if(checkOK)
+                        LogPrintf("Invalid ETH ccx : %s\n", __func__);
                     txRoot = uint256();
                 }
             }
@@ -826,3 +802,15 @@ uint256 CPartialTransactionProof::CheckPartialTransaction(CTransaction &outTx, b
 {
     return txProof.CheckProof(GetPartialTransaction(outTx, pIsPartial));
 }
+
+uint256 CPartialTransactionProof::CheckBlockPreHeader(CPBaaSPreHeader &outPreHeader) const
+{
+    CPBaaSPreHeader preHeader = GetBlockPreHeader();
+    if (preHeader.IsValid())
+    {
+        auto hw = CDefaultMMRNode::GetHashWriter();
+        return txProof.CheckProof((hw << preHeader).GetHash());
+    }
+    return uint256();
+}
+

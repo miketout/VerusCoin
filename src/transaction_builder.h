@@ -153,7 +153,7 @@ public:
 
     bool AddTransparentOutput(const CScript &scriptPubKey, CAmount value);
 
-    void AddOpRet(CScript &s);
+    void AddOpRet(const CScript &s);
 
     bool AddOpRetLast();
 

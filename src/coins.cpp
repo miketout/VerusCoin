@@ -623,6 +623,7 @@ CAmount CCoinsViewCache::GetValueIn(int32_t nHeight, int64_t *interestp, const C
         }
         else
         {
+            printf("%s: input #%d not available in view. returning 0\n", __func__, i);
             return 0;
         }
 

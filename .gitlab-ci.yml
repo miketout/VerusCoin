@@ -7,7 +7,7 @@ stages:
 ########################################################################################################################
 variables:
 
-  VERSION: 0.7.4
+  VERSION: 0.9.4-2
 
   VERUS_CLI_ARM64_LINUX: Verus-CLI-Linux-v${VERSION}-arm64.tar.gz
   VERUS_CLI_LINUX_X86_64: Verus-CLI-Linux-v${VERSION}-x86_64.tar.gz
@@ -30,7 +30,8 @@ variables:
 ####START####                                            LINUX                                             ####START####
 ########################################################################################################################
 build:linux:
-  image: asherd/verus-builders:verus-debian-9
+  tags: [ "verusd" ]
+  image: asherd/verus-builders:verus-debian-10
   variables:
     DOCKER_DRIVER: overlay2
     CONFIGURE_FLAGS: --with-gcc-arch=x86-64
@@ -58,12 +59,6 @@ build:linux:
     - tar -czvf ${VERUS_CLI_LINUX_X86_64} verus-cli
     - sha256sum ${VERUS_CLI_LINUX_X86_64} > ${VERUS_CLI_LINUX_X86_64}.sha256
     - git status
-  after_script:
-    - curl -F file=@"${VERUS_CLI_LINUX_X86_64}"
-      -F channels="${CLI_POST_CHANNEL}"
-      -F initial_comment="${POST_MESSAGE}"
-      -H "${SLACK_BOT_AUTH}"
-      "https://slack.com/api/files.upload"
   artifacts:
     paths:
       - ${VERUS_CLI_LINUX_X86_64}
@@ -72,6 +67,7 @@ build:linux:
 
 
 build:linux:arm64:
+  tags: [ "verusd" ]
   image: asherd/verus-builders:cross-arm
   variables:
     DOCKER_DRIVER: overlay2
@@ -100,13 +96,6 @@ build:linux:arm64:
     - chmod +x verus-cli/fetch-bootstrap
     - tar -czvf ${VERUS_CLI_ARM64_LINUX} verus-cli
     - sha256sum ${VERUS_CLI_ARM64_LINUX} > ${VERUS_CLI_ARM64_LINUX}.sha256
-    - git status
-  after_script:
-    - curl -F file=@"${VERUS_CLI_ARM64_LINUX}"
-      -F channels="${CLI_POST_CHANNEL}"
-      -F initial_comment="${POST_MESSAGE}"
-      -H "${SLACK_BOT_AUTH}"
-      "https://slack.com/api/files.upload"
   artifacts:
     paths:
       - ${VERUS_CLI_ARM64_LINUX}
@@ -118,6 +107,7 @@ build:linux:arm64:
 ####START####                                           WINDOWS                                            ####START####
 ########################################################################################################################
 build:windows:
+  tags: [ "verusd" ]
   image: asherd/verus-builders:verus-windows
   variables:
     DOCKER_DRIVER: overlay2
@@ -139,11 +129,6 @@ build:windows:
     - if [ "${STRIP_BINARIES}" = "true" ]; then strip --strip-unneeded verus-cli/verusd.exe && strip --strip-unneeded verus-cli/verus.exe; fi
     - zip -r ${VERUS_CLI_WINDOWS} verus-cli
     - sha256sum ${VERUS_CLI_WINDOWS} > ${VERUS_CLI_WINDOWS}.sha256
-    - curl -F file=@"${VERUS_CLI_WINDOWS}"
-      -F channels="${CLI_POST_CHANNEL}"
-      -F initial_comment="${POST_MESSAGE}"
-      -H "${SLACK_BOT_AUTH}"
-      "https://slack.com/api/files.upload"
   artifacts:
     paths:
       - ${VERUS_CLI_WINDOWS}
@@ -155,10 +140,10 @@ build:windows:
 ####START####                                            MACOS                                             ####START####
 ########################################################################################################################
 build:mac:
+  tags: [ "MacOS" ]
   variables:
     CONFIGURE_FLAGS: --with-gcc-arch=x86-64
   stage: build
-  tags: ["Mojave"]
   cache:
     key: "${CI_JOB_NAME}${CI_COMMIT_REF_NAME}"
     paths:
@@ -180,11 +165,6 @@ build:mac:
     - chmod +x verus-cli/verusd
     - tar -czvf ${VERUS_CLI_MACOS} verus-cli
     - shasum -a 256 ${VERUS_CLI_MACOS} > ${VERUS_CLI_MACOS}.sha256
-    - curl -F file=@"${VERUS_CLI_MACOS}"
-      -F channels="${CLI_POST_CHANNEL}"
-      -F initial_comment="${POST_MESSAGE}"
-      -H "${SLACK_BOT_AUTH}"
-      "https://slack.com/api/files.upload"
   artifacts:
     paths:
       - ${VERUS_CLI_MACOS}
@@ -197,174 +177,10 @@ build:mac:
 ####END####                                           Build Stage                                            ####END####
 ########################################################################################################################
 ########################################################################################################################
-########################################################################################################################
-########################################################################################################################
-####START####     Test stage: Test functionality of komodo binaries. Produce code quality and SAST reports. ####START####
-########################################################################################################################
-########################################################################################################################
-########################################################################################################################
-####START####                                        Code Quality                                          ####START####
-########################################################################################################################
-.code_quality:
-  image: docker:stable
-  variables:
-    DOCKER_DRIVER: overlay2
-  allow_failure: true
-  services:
-    - docker:stable-dind
-  script:
-    - export SP_VERSION=$(echo "$CI_SERVER_VERSION" | sed 's/^\([0-9]*\)\.\([0-9]*\).*/\1-\2-stable/')
-    - docker run
-      --env SOURCE_CODE="$PWD"
-      --volume "$PWD":/code
-      --volume /var/run/docker.sock:/var/run/docker.sock
-      "registry.gitlab.com/gitlab-org/security-products/codequality:$SP_VERSION" /code
-  artifacts:
-    paths: [gl-code-quality-report.json]
-########################################################################################################################
-####END####                                          Code Quality                                            ####END####
-########################################################################################################################
-########################################################################################################################
-####START####                              Static Application Security Tests                               ####START####
-########################################################################################################################
-.sast:
-  image: docker:stable
-  variables:
-    DOCKER_DRIVER: overlay2
-  allow_failure: true
-  services:
-    - docker:stable-dind
-  script:
-    - export SP_VERSION=$(echo "$CI_SERVER_VERSION" | sed 's/^\([0-9]*\)\.\([0-9]*\).*/\1-\2-stable/')
-    - docker run
-      --env SAST_CONFIDENCE_LEVEL="${SAST_CONFIDENCE_LEVEL:-3}"
-      --volume "$PWD:/code"
-      --volume /var/run/docker.sock:/var/run/docker.sock
-      "registry.gitlab.com/gitlab-org/security-products/sast:$SP_VERSION" /app/bin/run /code
-  artifacts:
-    paths: [gl-sast-report.json]
-########################################################################################################################
-####END####                                Static Application Security Tests                                 ####END####
-########################################################################################################################
-########################################################################################################################
-####START####                            Run Verus CLI on Ubuntu Xenial (16.04)                            ####START####
-########################################################################################################################
-.ubuntu:xenial:
-  image: ubuntu:xenial
-  variables:
-    DOCKER_DRIVER: overlay2
-  stage: test
-  before_script:
-    - apt update && apt install -y wget libgomp1 python
-    - rm -rf /root/.komodo || true
-    - mv .komodo /root/ || true
-  script:
-    - tar -xzvf ${VERUS_CLI_LINUX_X86_64}
-    - export PATH=$PATH:$CI_PROJECT_DIR/verus-cli
-    - python qa/verus-cli-tests/verus-cli-tester.py
-  after_script:
-    - mv /root/.komodo ./ || true
-  cache:
-    key: ${CI_JOB_NAME}
-    paths: [.komodo]
-  artifacts:
-    paths: [log.txt]
-    expire_in: 1 week
-  dependencies:
-    - build:linux
-########################################################################################################################
-####END####                               Run Verus CLI on Ubuntu Xenial (16.04)                             ####END####
-########################################################################################################################
-########################################################################################################################
-####START####                             Run Verus CLI on Ubuntu Bionic (18.04)                           ####START####
-########################################################################################################################
-.ubuntu:bionic:
-  image: ubuntu:bionic
-  variables:
-    DOCKER_DRIVER: overlay2
-  stage: test
-  before_script:
-    - apt update && apt install -y wget libgomp1 python
-    - rm -rf /root/.komodo || true
-    - mv .komodo /root/ || true
-  script:
-    - tar -xzvf ${VERUS_CLI_LINUX_X86_64}
-    - export PATH=$PATH:$CI_PROJECT_DIR/verus-cli
-    - python qa/verus-cli-tests/verus-cli-tester.py
-  after_script:
-    - mv /root/.komodo ./ || true
-  cache:
-    key: ${CI_JOB_NAME}
-    paths: [.komodo]
-  artifacts:
-    paths: [log.txt]
-    expire_in: 1 week
-  dependencies:
-    - build:linux
-########################################################################################################################
-####END####                               Run Verus CLI on Ubuntu Bionic (18.04)                             ####END####
-########################################################################################################################
-########################################################################################################################
-####START####                             Run Verus CLI on MacOS Sierra (10.12.6)                          ####START####
-########################################################################################################################
-.macos:sierra:
-  stage: test
-  tags: ["Sierra"]
-  script:
-    - tar -xzvf $VERUS_CLI_MACOS
-    - export PATH=$PATH:$CI_PROJECT_DIR/verus-cli
-    - python qa/verus-cli-tests/verus-cli-tester.py
-  artifacts:
-    paths: [log.txt]
-    expire_in: 1 week
-  dependencies:
-    - build:mac
-########################################################################################################################
-####END####                               Run Verus CLI on MacOS Sierra (10.12.6)                            ####END####
-########################################################################################################################
-########################################################################################################################
-####START####                          Run Verus CLI on MacOS High Sierra (10.12.6)                        ####START####
-########################################################################################################################
-.macos:high-sierra:
-  stage: test
-  tags: ["High Sierra"]
-  script:
-    - tar -xzvf ${VERUS_CLI_MACOS}
-    - export PATH=$PATH:$CI_PROJECT_DIR/verus-cli
-    - python qa/verus-cli-tests/verus-cli-tester.py
-  artifacts:
-    paths: [log.txt]
-    expire_in: 1 week
-  dependencies:
-    - build:mac
-########################################################################################################################
-####START####                          Run Verus CLI on MacOS High Sierra (10.12.6)                        ####START####
-########################################################################################################################
-########################################################################################################################
-####START####                              Run Verus CLI on Windows 10                                     ####START####
-########################################################################################################################
-.windows:10:
-  stage: test
-  tags: ["Windows 10"]
-  script:
-    - PowerShell Expand-Archive -Path %VERUS_CLI_WINDOWS% -DestinationPath %CI_PROJECT_DIR%
-    - set PATH=%PATH%;%CI_PROJECT_DIR%\verus-cli
-    - qa\verus-cli-tests\verus-cli-tester.py
-  artifacts:
-    paths: [log.txt]
-    expire_in: 1 week
-  dependencies:
-    - build:windows
-########################################################################################################################
-####END####                                Run Verus CLI on Windows 10                                       ####END####
-########################################################################################################################
-########################################################################################################################
-####END####                                           Test Stage                                             ####END####
-########################################################################################################################
-########################################################################################################################
 ####START####                                         Deploy                                               ####START####
 ########################################################################################################################
 deploy:
+  tags: [ "verusd" ]
   stage: deploy
   image: google/cloud-sdk:alpine
   variables:

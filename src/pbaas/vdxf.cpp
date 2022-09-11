@@ -208,14 +208,15 @@ uint160 CVDXF::GetID(const std::string &Name)
     {
         idHash = Hash(idName, idName + strlen(idName));
         idHash = Hash(parent.begin(), parent.end(), idHash.begin(), idHash.end());
-
     }
     return Hash160(idHash.begin(), idHash.end());
 }
 
 uint160 CVDXF::GetID(const std::string &Name, uint160 &parent)
 {
-    std::string cleanName = CleanName(Name, parent);
+    std::string cleanName;
+    cleanName = Name == DATA_KEY_SEPARATOR ? Name : CleanName(Name, parent);
+
     if (cleanName.empty())
     {
         return uint160();
@@ -246,12 +247,12 @@ uint160 CVDXF::GetDataKey(const std::string &keyName, uint160 &nameSpaceID)
     std::vector<std::string> addressParts;
     boost::split(addressParts, keyCopy, boost::is_any_of(":"));
 
-    // if the first part of the address is a namespace, it is followed by double colon
+    // if the first part of the address is a namespace, it is followed by a double colon
     // namespace specifiers have no implicit root
     if (addressParts.size() > 2 && addressParts[1].empty())
     {
-        // look up to see if this is the private address of an ID. if not, or if the ID does not have a valid, Sapling address, it is invalid
-        uint160 nsID = DecodeCurrencyName(addressParts[0] + ".");
+        uint160 nsID = DecodeCurrencyName(addressParts[0].back() == '.' ? addressParts[0] : addressParts[0] + ".");
+
         if (!nsID.IsNull())
         {
             nameSpaceID = nsID;

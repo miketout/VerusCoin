@@ -91,7 +91,7 @@ public:
     CMainParams()
     {
         strNetworkID = "main";
-        strCurrencyUnits = "KMD";
+        strCurrencyUnits = "VRSC";
         bip44CoinType = 133; // As registered in https://github.com/satoshilabs/slips/blob/master/slip-0044.md (ZCASH, should be VRSC)
         consensus.fCoinbaseMustBeProtected = false; // true this is only true wuth Verus and enforced after block 12800 (enforcement ending at solution V3)
         consensus.nSubsidySlowStartInterval = 20000;
@@ -195,6 +195,7 @@ public:
         bech32HRPs[SAPLING_FULL_VIEWING_KEY]     = "zviews";
         bech32HRPs[SAPLING_INCOMING_VIEWING_KEY] = "zivks";
         bech32HRPs[SAPLING_EXTENDED_SPEND_KEY]   = "secret-extended-key-main";
+        bech32HRPs[SAPLING_EXTENDED_FVK]         = "zxviews";
 
         vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_main, pnSeed6_main + ARRAYLEN(pnSeed6_main));
 
@@ -246,14 +247,7 @@ void *chainparams_commandline(void *ptr)
             // nLwmaAjustedWeight = (N+1)/2 * (0.9989^(500/nPowAveragingWindow)) * nPowTargetSpacing 
             mainParams.consensus.nLwmaAjustedWeight = 1350;
             mainParams.consensus.nPowAveragingWindow = 45;
-            if (strcmp(ASSETCHAINS_SYMBOL, "VRSC") == 0)
-            {
-                mainParams.consensus.powAlternate = uint256S("00000f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f");
-            }
-            else
-            {
-                mainParams.consensus.powAlternate = uint256S("0000000f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f");
-            }
+            mainParams.consensus.powAlternate = uint256S("00000f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f");
         }
 
         if (ASSETCHAINS_LWMAPOS != 0)
@@ -306,7 +300,10 @@ void *chainparams_commandline(void *ptr)
             if (_IsVerusActive())
             {
                 mainParams.vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_test, pnSeed6_test + ARRAYLEN(pnSeed6_test));
-                mainParams.vSeeds.push_back(CDNSSeedData("veruscoin.io", "seeds.veruscoin.io"));
+                if (_IsVerusMainnetActive())
+                {
+                    mainParams.vSeeds.push_back(CDNSSeedData("veruscoin.io", "seeds.veruscoin.io"));
+                }
             }
             mainParams.consensus.nMinimumChainWork = uint256S("0x0000000000000000000000000000000000000000000000000000000000000020");
             mainParams.consensus.vUpgrades[Consensus::UPGRADE_SAPLING].nActivationHeight = ASSETCHAINS_SAPLING;
@@ -568,6 +565,7 @@ public:
         bech32HRPs[SAPLING_FULL_VIEWING_KEY]     = "zviewtestsapling";
         bech32HRPs[SAPLING_INCOMING_VIEWING_KEY] = "zivktestsapling";
         bech32HRPs[SAPLING_EXTENDED_SPEND_KEY]   = "secret-extended-key-test";
+        bech32HRPs[SAPLING_EXTENDED_FVK]         = "zxviewtestsapling";
 
         vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_test, pnSeed6_test + ARRAYLEN(pnSeed6_test));
 
@@ -727,6 +725,7 @@ public:
         bech32HRPs[SAPLING_FULL_VIEWING_KEY]     = "zviewregtestsapling";
         bech32HRPs[SAPLING_INCOMING_VIEWING_KEY] = "zivkregtestsapling";
         bech32HRPs[SAPLING_EXTENDED_SPEND_KEY]   = "secret-extended-key-regtest";
+        bech32HRPs[SAPLING_EXTENDED_FVK]         = "zxviewregtestsapling";
 
         // Founders reward script expects a vector of 2-of-3 multisig addresses
         vFoundersRewardAddress = { "t2FwcEhFdNXuFMv1tcYwaBJtYVtMj8b1uTg" };

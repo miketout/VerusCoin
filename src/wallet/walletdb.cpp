@@ -71,8 +71,7 @@ bool CWalletDB::WriteKey(const CPubKey& vchPubKey, const CPrivKey& vchPrivKey, c
 {
     nWalletDBUpdated++;
 
-    if (!Write(std::make_pair(std::string("keymeta"), vchPubKey),
-               keyMeta, false))
+    if (!Write(std::make_pair(std::string("keymeta"), vchPubKey), keyMeta, false))
         return false;
 
     // hash pubkey/privkey to accelerate wallet load
@@ -91,8 +90,7 @@ bool CWalletDB::WriteCryptedKey(const CPubKey& vchPubKey,
     const bool fEraseUnencryptedKey = true;
     nWalletDBUpdated++;
 
-    if (!Write(std::make_pair(std::string("keymeta"), vchPubKey),
-            keyMeta))
+    if (!Write(std::make_pair(std::string("keymeta"), vchPubKey), keyMeta))
         return false;
 
     if (!Write(std::make_pair(std::string("ckey"), vchPubKey), vchCryptedSecret, false))
@@ -127,6 +125,7 @@ bool CWalletDB::WriteCryptedZKey(const libzcash::SproutPaymentAddress & addr,
 
 bool CWalletDB::WriteCryptedSaplingZKey(
     const libzcash::SaplingExtendedFullViewingKey &extfvk,
+    const uint256 &sha256addr,
     const std::vector<unsigned char>& vchCryptedSecret,
     const CKeyMetadata &keyMeta)
 {
@@ -134,14 +133,18 @@ bool CWalletDB::WriteCryptedSaplingZKey(
     nWalletDBUpdated++;
     auto ivk = extfvk.fvk.in_viewing_key();
 
-    if (!Write(std::make_pair(std::string("sapzkeymeta"), ivk), keyMeta))
+    if (!WriteTxn(std::make_pair(std::string("sapzkeymeta"), sha256addr), keyMeta, __FUNCTION__))
         return false;
 
-    if (!Write(std::make_pair(std::string("csapzkey"), ivk), std::make_pair(extfvk, vchCryptedSecret), false))
+    if (!WriteTxn(std::make_pair(std::string("csapzkey"), sha256addr), vchCryptedSecret, __FUNCTION__, false))
         return false;
 
     if (fEraseUnencryptedKey)
     {
+      //Update the key to something invalid before deleting it, so any if the record ends up in the slack space it contains an invalid key
+        if (!WriteTxn(std::make_pair(std::string("sapzkey"), ivk), 0, __FUNCTION__))
+            return false;
+
         Erase(std::make_pair(std::string("sapzkey"), ivk));
     }
     return true;
@@ -150,7 +153,7 @@ bool CWalletDB::WriteCryptedSaplingZKey(
 bool CWalletDB::WriteMasterKey(unsigned int nID, const CMasterKey& kMasterKey)
 {
     nWalletDBUpdated++;
-    return Write(std::make_pair(std::string("mkey"), nID), kMasterKey, true);
+    return WriteTxn(std::make_pair(std::string("mkey"), nID), kMasterKey, __FUNCTION__, true);
 }
 
 bool CWalletDB::WriteZKey(const libzcash::SproutPaymentAddress& addr, const libzcash::SproutSpendingKey& key, const CKeyMetadata &keyMeta)
@@ -212,6 +215,12 @@ bool CWalletDB::EraseWatchOnly(const CScript &dest)
 {
     nWalletDBUpdated++;
     return Erase(std::make_pair(std::string("watchs"), *(const CScriptBase*)(&dest)));
+}
+
+bool CWalletDB::WriteIsCrypted(const bool &crypted)
+{
+    nWalletDBUpdated++;
+    return Write(std::string("iscrypted"), crypted);
 }
 
 bool CWalletDB::WriteIdentity(const CIdentityMapKey &mapKey, const CIdentityMapValue &id)
@@ -661,21 +670,6 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                 return false;
             }
         }
-        else if (strType == "mkey")
-        {
-            unsigned int nID;
-            ssKey >> nID;
-            CMasterKey kMasterKey;
-            ssValue >> kMasterKey;
-            if(pwallet->mapMasterKeys.count(nID) != 0)
-            {
-                strErr = strprintf("Error reading wallet database: duplicate CMasterKey id %u", nID);
-                return false;
-            }
-            pwallet->mapMasterKeys[nID] = kMasterKey;
-            if (pwallet->nMasterKeyMaxID < nID)
-                pwallet->nMasterKeyMaxID = nID;
-        }
         else if (strType == "ckey")
         {
             vector<unsigned char> vchPubKey;
@@ -718,7 +712,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             ssValue >> extfvk;
             vector<unsigned char> vchCryptedSecret;
             ssValue >> vchCryptedSecret;
-            wss.nCKeys++;
+            wss.nCZKeys++;
 
             if (!pwallet->LoadCryptedSaplingZKey(extfvk, vchCryptedSecret))
             {
@@ -857,19 +851,6 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                 return false;
             }
         }
-        else if (strType == "chdseed")
-        {
-            uint256 seedFp;
-            vector<unsigned char> vchCryptedSecret;
-            ssKey >> seedFp;
-            ssValue >> vchCryptedSecret;
-            if (!pwallet->LoadCryptedHDSeed(seedFp, vchCryptedSecret))
-            {
-                strErr = "Error reading wallet database: LoadCryptedHDSeed failed";
-                return false;
-            }
-            wss.fIsEncrypted = true;
-        }
         else if (strType == "hdchain")
         {
             CHDChain chain;
@@ -892,6 +873,100 @@ static bool IsKeyType(string strType)
             strType == "vkey" ||
             strType == "mkey" || strType == "ckey");
 }
+
+bool ReadCryptedSeedValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
+             CWalletScanState &wss, string& strType, string& strErr)
+{
+    try {
+        // Unserialize
+        // Taking advantage of the fact that pair serialization
+        // is just the two items serialized one after the other
+        ssKey >> strType;
+        if (strType == "chdseed")
+        {
+            uint256 seedFp;
+            vector<unsigned char> vchCryptedSecret;
+            ssKey >> seedFp;
+            ssValue >> vchCryptedSecret;
+            if (!pwallet->LoadCryptedHDSeed(seedFp, vchCryptedSecret))
+            {
+                strErr = "Error reading wallet database: LoadCryptedHDSeed failed";
+                return false;
+            }
+            wss.fIsEncrypted = true;
+        }
+        else if (strType == "mkey")
+        {
+            unsigned int nID;
+            ssKey >> nID;
+            CMasterKey kMasterKey;
+            ssValue >> kMasterKey;
+            if(pwallet->mapMasterKeys.count(nID) != 0)
+            {
+                strErr = strprintf("Error reading wallet database: duplicate CMasterKey id %u", nID);
+                return false;
+            }
+            pwallet->mapMasterKeys[nID] = kMasterKey;
+            if (pwallet->nMasterKeyMaxID < nID)
+                pwallet->nMasterKeyMaxID = nID;
+        }
+    } catch (...)
+    {
+        return false;
+    }
+    return true;
+}
+
+DBErrors CWalletDB::InitalizeCryptedLoad(CWallet* pwallet) {
+    LOCK(pwallet->cs_wallet);
+    bool isCrypted = false;
+
+    if (Read((string)"iscrypted", isCrypted)) {
+        return DB_LOAD_CRYPTED;
+    }
+    return DB_LOAD_OK;
+}
+
+DBErrors CWalletDB::LoadCryptedSeedFromDB(CWallet* pwallet) {
+    LOCK(pwallet->cs_wallet);
+    CWalletScanState wss;
+
+    // Get cursor
+    Dbc* pcursor = GetCursor();
+    if (!pcursor)
+    {
+        LogPrintf("Error getting wallet database cursor\n");
+        return DB_CORRUPT;
+    }
+
+
+    while (true)
+    {
+        // Read next record
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
+        CDataStream ssValue(SER_DISK, CLIENT_VERSION);
+        int ret = ReadAtCursor(pcursor, ssKey, ssValue);
+        if (ret == DB_NOTFOUND)
+            break;
+        else if (ret != 0)
+        {
+            LogPrintf("Error reading next record from wallet database\n");
+            return DB_CORRUPT;
+        }
+
+
+        string strType, strErr;
+        if (!ReadCryptedSeedValue(pwallet, ssKey, ssValue, wss, strType, strErr))
+        {
+            LogPrintf("DB_Corrupt reading crypted seed\n");
+            return DB_CORRUPT;
+        }
+
+    }
+    pcursor->close();
+    return DB_LOAD_OK;
+}
+
 
 DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
 {
@@ -982,6 +1057,8 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
 
     LogPrintf("ZKeys: %u plaintext, %u encrypted, %u w/metadata, %u total\n",
            wss.nZKeys, wss.nCZKeys, wss.nZKeyMeta, wss.nZKeys + wss.nCZKeys);
+
+    LogPrintf("Sapling Addresses: %u \n",wss.nSapZAddrs);
 
     // nTimeFirstKey is only reliable if all keys have metadata
     if ((wss.nKeys + wss.nCKeys) != wss.nKeyMeta)
@@ -1299,7 +1376,7 @@ bool CWalletDB::WriteHDSeed(const HDSeed& seed)
 bool CWalletDB::WriteCryptedHDSeed(const uint256& seedFp, const std::vector<unsigned char>& vchCryptedSecret)
 {
     nWalletDBUpdated++;
-    return Write(std::make_pair(std::string("chdseed"), seedFp), vchCryptedSecret);
+    return WriteTxn(std::make_pair(std::string("chdseed"), seedFp), vchCryptedSecret, __FUNCTION__);
 }
 
 bool CWalletDB::WriteHDChain(const CHDChain& chain)

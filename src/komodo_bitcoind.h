@@ -1941,11 +1941,16 @@ void GetImmatureCoins(std::map<uint32_t, int64_t> *pimmatureBlockAmounts, CBlock
 
     // PBaaS chains release block one outputs without maturity, since the entire chain is either
     // valid or not
-    if (block.vtx.size() && IsVerusActive() || height != 1)
+    CAmount instantAmt = 0;
+    if (block.vtx.size())
     {
         const CTransaction &tx = block.vtx[0];
         uint32_t unlockHeight = 0;
-        if (IsCoinbaseTimeLocked(tx, unlockHeight) && unlockHeight > (height + COINBASE_MATURITY))
+        if (!IsVerusActive() && height == 1)
+        {
+            maturity = 1;
+        }
+        else if (IsCoinbaseTimeLocked(tx, unlockHeight) && unlockHeight > (height + COINBASE_MATURITY))
         {
             maturity = unlockHeight;
         }
@@ -1955,12 +1960,18 @@ void GetImmatureCoins(std::map<uint32_t, int64_t> *pimmatureBlockAmounts, CBlock
         }
         for (auto &out : tx.vout)
         {
-            if (!out.scriptPubKey.IsInstantSpend())
+            if (out.scriptPubKey.IsInstantSpend())
+            {
+                instantAmt += out.nValue;
+            }
+            else
             {
                 amount += out.nValue;
             }
         }
+        unlockBlockAmounts[1] += instantAmt;
         unlockBlockAmounts[maturity] += amount;
+        amount += instantAmt;
     }
 }
 

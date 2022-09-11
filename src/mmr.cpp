@@ -16,6 +16,54 @@ void ErrorAndBP(std::string msg)
 }
 
 
+CMultiPartProof::CMultiPartProof(const std::vector<CMMRProof> &chunkVec) : CMerkleBranchBase(BRANCH_MULTIPART)
+{
+    for (const CMMRProof &oneChunk : chunkVec)
+    {
+        assert(oneChunk.IsMultiPart());
+        vch.insert(vch.end(), ((CMultiPartProof *)oneChunk.proofSequence[0])->vch.begin(), ((CMultiPartProof *)oneChunk.proofSequence[0])->vch.end());
+    }
+}
+
+std::vector<CMMRProof> CMultiPartProof::BreakToChunks(int maxSize) const
+{
+    std::vector<CMMRProof> retVal;
+
+    int curIndex, bytesLeft;
+    CDataStream ds(SER_DISK, PROTOCOL_VERSION);
+    CMMRProof wrapper;
+    wrapper << CMultiPartProof();
+    int minOverhead = GetSerializeSize(ds, wrapper);
+
+    // make sure we have some space for overhead and vector in each chunk
+    assert(maxSize > minOverhead + 8);
+
+    for (curIndex = 0, bytesLeft = vch.size(); bytesLeft > 0; )
+    {
+        CMMRProof oneChunk;
+        std::vector<unsigned char> oneVch(vch.begin() + curIndex, vch.begin() + curIndex + std::min(vch.size() - curIndex, (size_t)(maxSize - minOverhead)));
+        oneChunk << CMultiPartProof(CMerkleBranchBase::BRANCH_MULTIPART, oneVch);
+
+        int removeBytes = GetSerializeSize(ds, oneChunk) - maxSize;
+
+        // if we are at the end and have space
+        if (removeBytes <= 0)
+        {
+            bytesLeft = 0;
+            retVal.push_back(oneChunk);
+        }
+        else
+        {
+            std::vector<unsigned char> &oneChunkVec = ((CMultiPartProof *)oneChunk.proofSequence[0])->vch;
+            oneChunkVec.erase(oneChunkVec.begin() + (oneChunkVec.size() - removeBytes), oneChunkVec.end());
+            bytesLeft -= oneChunkVec.size();
+            curIndex += oneChunkVec.size();
+            retVal.push_back(oneChunk);
+        }
+    }
+    return retVal;
+}
+
 void CMMRProof::DeleteProofSequence()
 {
     // delete any objects that may be present
@@ -42,6 +90,11 @@ void CMMRProof::DeleteProofSequence()
             case CMerkleBranchBase::BRANCH_ETH:
             {
                 delete (CETHPATRICIABranch *)pProof;
+                break;
+            }
+            case CMerkleBranchBase::BRANCH_MULTIPART:
+            {
+                delete (CMultiPartProof *)pProof;
                 break;
             }
             default:
@@ -87,6 +140,13 @@ const CMMRProof &CMMRProof::operator<<(const CETHPATRICIABranch &append)
     return *this;
 }
 
+const CMMRProof &CMMRProof::operator<<(const CMultiPartProof &append)
+{
+    CMultiPartProof *pNewProof = new CMultiPartProof(append);
+    proofSequence.push_back(pNewProof);
+    return *this;
+}
+
 uint256 CMMRProof::CheckProof(uint256 hash) const
 {
     for (auto &pProof : proofSequence)
@@ -113,7 +173,7 @@ uint256 CMMRProof::CheckProof(uint256 hash) const
             case CMerkleBranchBase::BRANCH_ETH:
             {
                 hash = ((CETHPATRICIABranch *)pProof)->SafeCheck(hash);
-                printf("Result from ETHBranch check: %s\n", hash.GetHex().c_str());
+                LogPrint("crosschain", "Result from ETHBranch check: %s\n", hash.GetHex().c_str());
                 break;
             }
         }

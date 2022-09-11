@@ -66,7 +66,7 @@ std::vector<unsigned char> uint64_to_vec(uint64_t input){
          temp[7 - i] = (input >> (i * 8));
     
     for (int i=0; i<8; i++){
-        if(temp[i] == 0)
+        if(temp[0] == 0)
             temp.erase(temp.begin());
         else 
             break;    
@@ -407,8 +407,6 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
     //Check the storage value hash, which is the hash of the crosschain export transaction
     //matches the the RLP decoded information from the bridge keeper
 
-    
-
     std::vector<unsigned char> ccExporthash_vec(ccExporthash.begin(),ccExporthash.end());
     RLP rlp;
     try{
@@ -420,9 +418,14 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
         std::vector<unsigned char> storageValue = verifyProof(storageHash,storageProofKey_vec,storageProof.proof_branch);
         RLP::rlpDecoded decodedValue = rlp.decode(bytes_to_hex(storageValue));
 
+        while(decodedValue.data[0].size() < 32)
+        {
+            decodedValue.data[0].insert(decodedValue.data[0].begin(), 0x00); //proofs can be truncated on the left.
+        }
+
         if(ccExporthash_vec != decodedValue.data[0])
         {
-            throw std::invalid_argument(std::string("RLP Storage Value does no match"));
+            throw std::invalid_argument(std::string("RLP Storage Value does not match"));
         }
     
     }catch(const std::invalid_argument& e){
@@ -449,21 +452,27 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
     //rlp encode the nonce , account balance , storageRootHash and codeHash
     std::vector<unsigned char> encodedAccount;
     std::vector<unsigned char> storage(storageHash.begin(),storageHash.end());
-    try{
+    try
+    {
         std::vector<std::vector<unsigned char>> toEncode;
         toEncode.push_back(ParseHex(uint64_to_hex(nonce)));
-        toEncode.push_back(uint64_to_vec(balance));
+        toEncode.push_back(GetBalanceAsBEVector());
         toEncode.push_back(storage);
         std::vector<unsigned char> codeHash_vec(codeHash.begin(),codeHash.end());
         toEncode.push_back(codeHash_vec);
         encodedAccount = rlp.encode(toEncode);
-
-    }catch(const std::invalid_argument& e){
+    }
+    catch(const std::invalid_argument& e)
+    {
         LogPrintf("RLP Encode failed : %s\n", e.what());
         memset(&stateRoot,0,stateRoot.size());
         return stateRoot;
     }
     //confim that the encoded account details match those stored in the proof
+    while(accountValue.size() < 32)
+    {
+        accountValue.insert(accountValue.begin(), 0x00); //proofs can be truncated on the left.
+    }
 
     if(encodedAccount != accountValue){
         memset(&stateRoot,0,stateRoot.size());
@@ -472,9 +481,7 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
         return stateRoot;
     }
     else {
-        
-        printf("PATRICIA Tree proof Account Matches\n");
-    
+        LogPrint("crosschain", "%s: PATRICIA Tree proof Account Matches\n", __func__);
     }
     //run the storage proof
 

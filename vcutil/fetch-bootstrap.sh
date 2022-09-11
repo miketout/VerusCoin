@@ -25,7 +25,7 @@ function set_data_dir() {
   fi
 }
 
-BOOTSTRAP_URL="https://bootstrap.veruscoin.io"
+BOOTSTRAP_URL="https://bootstrap.verus.io"
 BOOTSTRAP_ARCHIVE="VRSC-bootstrap.tar.gz"
 BOOTSTRAP_ARCHIVE_SIG="$BOOTSTRAP_ARCHIVE.verusid"
 SHA256CMD="$(command -v sha256sum || echo shasum)"

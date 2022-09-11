@@ -345,12 +345,10 @@ static bool SignStepCC(const BaseSignatureCreator& creator, const CScript& scrip
             std::vector<CC*> ccs;
 
             CIdentity identity;
-            bool identitySpend = false;
             uint160 idID;
             if (p.evalCode == EVAL_IDENTITY_PRIMARY)
             {
                 identity = CIdentity(p.vData[0]);
-                identitySpend = identity.IsValid();
                 idID = identity.GetID();
             }
 
@@ -368,7 +366,7 @@ static bool SignStepCC(const BaseSignatureCreator& creator, const CScript& scrip
                     conditions.push_back(CConditionObj<COptCCParams>(oneP.evalCode, oneP.vKeys, oneP.m));
 
                     CCcontract_info C;
-                    if (p.evalCode && CCinit(&C, p.evalCode))
+                    if (oneP.evalCode && CCinit(&C, oneP.evalCode))
                     {
                         CPubKey evalPK(ParseHex(C.CChexstr));
                         CKey priv;
@@ -378,7 +376,7 @@ static bool SignStepCC(const BaseSignatureCreator& creator, const CScript& scrip
                     }
                     else
                     {
-                        if (p.evalCode)
+                        if (oneP.evalCode)
                         {
                             return false;
                         }
@@ -393,7 +391,7 @@ static bool SignStepCC(const BaseSignatureCreator& creator, const CScript& scrip
                             // if revoked or undefined
                             CIdentity id;
 
-                            // if this is an identity self spend, we always use the absolute latest version to control it ,mcf 
+                            // if this is an identity self spend, we always use the absolute latest version to control it
                             if (destId == idID)
                             {
                                 id = identity;
@@ -479,6 +477,8 @@ static bool SignStepCC(const BaseSignatureCreator& creator, const CScript& scrip
             {
                 // loop through keys and sign with all that we have
                 std::map<CKeyID, CKey> privKeys;
+                std::map<CKeyID, CKey> defaultKeys;
+
                 for (auto destPair : destMap)
                 {
                     //printf("Checking for private key of destination: %s ", EncodeDestination(destPair.second).c_str());
@@ -487,13 +487,21 @@ static bool SignStepCC(const BaseSignatureCreator& creator, const CScript& scrip
                     auto dit = privKeyMap.find(destPair.first);
                     if (dit != privKeyMap.end())
                     {
-                        privKeys[dit->first] = dit->second;
+                        defaultKeys[dit->first] = dit->second;
                         //printf("...using key for crypto condition\n");
                     }
                     else if (creator.IsKeystoreValid() && creator.KeyStore().GetKey(destPair.first, privKey))
                     {
                         privKeys[destPair.first] = privKey;
                         //printf("...using key from wallet\n");
+                    }
+                }
+                // to save space, use default only if we don't have all other private keys for signing
+                if (!(privKeys.size() && (privKeys.size() + defaultKeys.size()) != destMap.size()))
+                {
+                    for (auto &oneDefaultKey : defaultKeys)
+                    {
+                        privKeys.insert(oneDefaultKey);
                     }
                 }
 
@@ -1025,14 +1033,36 @@ SignatureData CombineSignatures(const CScript& scriptPubKey, const BaseSignature
     {
         CSmartTransactionSignatures smartSigs1, smartSigs2;
         std::vector<unsigned char> ffVec1 = _GetFulfillmentVector(scriptSig1.scriptSig);
-        smartSigs1 = CSmartTransactionSignatures(std::vector<unsigned char>(ffVec1.begin(), ffVec1.end()));
-        std::vector<unsigned char> ffVec2 = _GetFulfillmentVector(scriptSig2.scriptSig);
-        smartSigs2 = CSmartTransactionSignatures(std::vector<unsigned char>(ffVec2.begin(), ffVec2.end()));
-        if (smartSigs1.sigHashType == smartSigs2.sigHashType && smartSigs1.version == smartSigs2.version)
+        if (ffVec1.size())
         {
-            for (auto oneSig : smartSigs2.signatures)
+            smartSigs1 = CSmartTransactionSignatures(std::vector<unsigned char>(ffVec1.begin(), ffVec1.end()));
+        }
+        std::vector<unsigned char> ffVec2 = _GetFulfillmentVector(scriptSig2.scriptSig);
+        if (ffVec2.size())
+        {
+            smartSigs2 = CSmartTransactionSignatures(std::vector<unsigned char>(ffVec2.begin(), ffVec2.end()));
+            if (!ffVec1.size())
             {
-                smartSigs1.AddSignature(oneSig.second);
+                smartSigs1.sigHashType = smartSigs2.sigHashType;
+            }
+        }
+        else if (!ffVec1.size())
+        {
+            return SignatureData();
+        }
+        else
+        {
+            smartSigs2.sigHashType = smartSigs1.sigHashType;
+        }
+
+        if (ffVec2.size())
+        {
+            if (smartSigs1.sigHashType == smartSigs2.sigHashType && smartSigs1.version == smartSigs2.version)
+            {
+                for (auto oneSig : smartSigs2.signatures)
+                {
+                    smartSigs1.AddSignature(oneSig.second);
+                }
             }
         }
         SignatureData sigRet;

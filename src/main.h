@@ -105,7 +105,7 @@ static const unsigned int MAX_HEADERS_RESULTS = 160;
  *  harder). We'll probably want to make this a per-peer adaptive value at some point. */
 static const unsigned int BLOCK_DOWNLOAD_WINDOW = 1024;
 /** Time to wait (in seconds) between writing blocks/block index to disk. */
-static const unsigned int DATABASE_WRITE_INTERVAL = 60 * 60;
+static const unsigned int DATABASE_WRITE_INTERVAL = 15 * 60;
 /** Time to wait (in seconds) between flushing chainstate to disk. */
 static const unsigned int DATABASE_FLUSH_INTERVAL = 24 * 60 * 60;
 /** Maximum length of reject messages. */
@@ -116,7 +116,6 @@ static const int64_t DEFAULT_MAX_TIP_AGE = 24 * 60 * 60;
 //static const bool DEFAULT_SPENTINDEX = false;
 #define DEFAULT_ADDRESSINDEX (GetArg("-ac_cc",0) != 0 || GetArg("-ac_ccactivate",0) != 0)
 #define DEFAULT_SPENTINDEX (GetArg("-ac_cc",0) != 0 || GetArg("-ac_ccactivate",0) != 0)
-static const bool DEFAULT_INSIGHTEXPLORER = true;
 static const bool DEFAULT_TIMESTAMPINDEX = false;
 static const unsigned int DEFAULT_DB_MAX_OPEN_FILES = 1000;
 static const bool DEFAULT_DB_COMPRESSION = true;
@@ -151,6 +150,7 @@ extern bool fImporting;
 extern bool fReindex;
 extern int nScriptCheckThreads;
 extern bool fTxIndex;
+extern bool fIdIndex;
 
 // START insightexplorer
 extern bool fInsightExplorer;
@@ -268,8 +268,6 @@ bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock, b
 /** Find the best known block, and make it the tip of the block chain */
 bool ActivateBestChain(CValidationState& state, const CChainParams& chainparams, const CBlock* pblock = NULL);
 CAmount GetBlockSubsidy(int nHeight, const Consensus::Params& consensusParams);
-CAmount GetBlockOnePremine();
-void SetBlockOnePremine(CAmount value);
 
 /**
  * Prune block and undo files (blk???.dat and undo???.dat) so that the disk space used is less than a user-defined target.

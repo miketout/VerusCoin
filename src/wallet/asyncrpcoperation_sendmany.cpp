@@ -577,8 +577,9 @@ bool AsyncRPCOperation_sendmany::main_impl() {
                         "Could not generate a taddr to use as a change address");
                 }
                 changeAddr = vchPubKey.GetID();
+                keyChange.KeepKey();
             }
-            
+
             builder_.SendChangeTo(changeAddr);
         }
 
@@ -1111,7 +1112,15 @@ bool AsyncRPCOperation_sendmany::find_utxos(bool fAcceptProtectedCoinbase)
     }
     else
     {
-        destinations.insert(fromtaddr_);
+        // public key must match pkh as an address, so store as phk if we see pk and check pkh
+        if (fromtaddr_.which() == COptCCParams::ADDRTYPE_PK)
+        {
+            destinations.insert(CKeyID(GetDestinationID(fromtaddr_)));
+        }
+        else
+        {
+            destinations.insert(fromtaddr_);
+        }
     }
 
     vector<COutput> vecOutputs;
@@ -1131,7 +1140,7 @@ bool AsyncRPCOperation_sendmany::find_utxos(bool fAcceptProtectedCoinbase)
     }
     else
     {
-        pwalletMain->AvailableCoins(vecOutputs, false, NULL, false, true, fAcceptProtectedCoinbase);
+        pwalletMain->AvailableCoins(vecOutputs, false, NULL, false, true, fAcceptProtectedCoinbase, false, false);
     }
 
     for (COutput& out : vecOutputs) 
@@ -1194,8 +1203,14 @@ bool AsyncRPCOperation_sendmany::find_utxos(bool fAcceptProtectedCoinbase)
         }
 
         bool keep = false;
+        std::pair<CIdentityMapKey, CIdentityMapValue> keyAndIdentity;
         for (auto &address : addresses)
         {
+            // we check as hash, not key
+            if (address.which() == COptCCParams::ADDRTYPE_PK)
+            {
+                address = CTxDestination(CKeyID(GetDestinationID(address)));
+            }
             if (isFromSpecificID)
             {
                 if (address == fromtaddr_)
@@ -1207,11 +1222,14 @@ bool AsyncRPCOperation_sendmany::find_utxos(bool fAcceptProtectedCoinbase)
             {
                 if (wildCardPKH)
                 {
-                    keep = address.which() == COptCCParams::ADDRTYPE_PKH || address.which() == COptCCParams::ADDRTYPE_PK;
+                    keep = (address.which() == COptCCParams::ADDRTYPE_PKH || address.which() == COptCCParams::ADDRTYPE_PK) &&
+                            pwalletMain->HaveKey(GetDestinationID(address));
                 }
                 if (!keep && wildCardID)
                 {
-                    keep = address.which() == COptCCParams::ADDRTYPE_ID;
+                    keep = address.which() == COptCCParams::ADDRTYPE_ID  &&
+                           pwalletMain->GetIdentity(CIdentityID(GetDestinationID(address)), keyAndIdentity) &&
+                           keyAndIdentity.first.CanSign();
                 }
             }
             else

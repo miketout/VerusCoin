@@ -108,6 +108,7 @@ enum SigVersion
     SIGVERSION_SAPLING = 2,
 };
 
+class UniValue;
 uint256 SignatureHash(
     const CScript &scriptCode,
     const CTransaction& txTo,
@@ -115,7 +116,8 @@ uint256 SignatureHash(
     int nHashType,
     const CAmount& amount,
     uint32_t consensusBranchId,
-    const PrecomputedTransactionData* cache = NULL);
+    const PrecomputedTransactionData* cache = NULL,
+    UniValue *pHashedDataReturn=nullptr);
 
 class BaseSignatureChecker
 {

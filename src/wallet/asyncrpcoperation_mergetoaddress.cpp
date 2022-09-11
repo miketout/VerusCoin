@@ -981,7 +981,7 @@ void AsyncRPCOperation_mergetoaddress::unlock_utxos() {
 /**
  * Lock input notes
  */
- void AsyncRPCOperation_mergetoaddress::lock_notes() {
+void AsyncRPCOperation_mergetoaddress::lock_notes() {
     LOCK2(cs_main, pwalletMain->cs_wallet);
     for (auto note : sproutNoteInputs_) {
         pwalletMain->LockNote(std::get<0>(note));

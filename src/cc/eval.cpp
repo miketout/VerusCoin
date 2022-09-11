@@ -28,35 +28,48 @@
 
 Eval* EVAL_TEST = 0;
 struct CCcontract_info CCinfos[0x100];
-extern pthread_mutex_t KOMODO_CC_mutex;
+extern CCriticalSection smartTransactionCS;
 
 bool RunCCEval(const CC *cond, const CTransaction &tx, unsigned int nIn, bool fulfilled)
 {
     EvalRef eval;
-    // Verus commenting out Komodo lock since it is not used in Verus CCs, and other locks are
-    pthread_mutex_lock(&KOMODO_CC_mutex);
-    bool out = eval->Dispatch(cond, tx, nIn, fulfilled);
-    pthread_mutex_unlock(&KOMODO_CC_mutex);
+    bool out;
+    {
+        LOCK(smartTransactionCS);
+        out = eval->Dispatch(cond, tx, nIn, fulfilled);
+    }
+
     //fprintf(stderr,"out %d vs %d isValid\n",(int32_t)out,(int32_t)eval->state.IsValid());
     assert(eval->state.IsValid() == out);
 
     if (eval->state.IsValid()) return true;
 
-    /*
-    std::string lvl = eval->state.IsInvalid() ? "Invalid" : "Error!";
-    fprintf(stderr, "CC Eval %s %s: %s spending tx %s\n",
-            EvalToStr(cond->code[0]).data(),
-            lvl.data(),
-            eval->state.GetRejectReason().data(),
-            tx.vin[nIn].prevout.hash.GetHex().data());
-    if (eval->state.IsError()) fprintf(stderr, "Culprit: %s\n", EncodeHexTx(tx).data());
-    */
+    LogPrint("smarttransactionevalerrors", "%s: eval code: %s\nreason: %s\ntxid: %s, outnum: %u\n",
+                __func__,
+                EvalToStr(cond->code[0]).c_str(),
+                eval->state.GetRejectReason().c_str(),
+                tx.vin[nIn].prevout.hash.GetHex().c_str(),
+                nIn);
     return false;
 }
 
 bool DefaultCCContextualPreCheck(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
 {
     // make sure that if the destinations include identities that those identities are valid on this blockchain
+    auto upgradeVersion = CConstVerusSolutionVector::GetVersionByHeight(height);
+    if (upgradeVersion < CActivationHeight::ACTIVATE_VERUSVAULT)
+    {
+        return true;
+    }
+    else if (upgradeVersion < CActivationHeight::ACTIVATE_PBAAS)
+    {
+        return false;
+    }
+    return true;
+}
+
+bool EvalNoneContextualPreCheck(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
+{
     return true;
 }
 
@@ -85,7 +98,6 @@ bool Eval::Dispatch(const CC *cond, const CTransaction &txTo, unsigned int nIn, 
         case EVAL_ACCEPTEDNOTARIZATION:
         case EVAL_FINALIZE_NOTARIZATION:
         case EVAL_RESERVE_OUTPUT:
-        case EVAL_RESERVE_EXCHANGE:
         case EVAL_RESERVE_TRANSFER:
         case EVAL_RESERVE_DEPOSIT:
         case EVAL_CROSSCHAIN_EXPORT:

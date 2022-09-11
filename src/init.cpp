@@ -25,6 +25,7 @@
 #include "metrics.h"
 #include "miner.h"
 #include "net.h"
+#include "params.h"
 #include "rpc/server.h"
 #include "rpc/pbaasrpc.h"
 #include "rpc/register.h"
@@ -378,6 +379,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-sysperms", _("Create new files with system default permissions, instead of umask 077 (only effective with disabled wallet functionality)"));
 #endif
     strUsage += HelpMessageOpt("-txindex", strprintf(_("Maintain a full transaction index, used by the getrawtransaction rpc call (default: %u)"), 0));
+    strUsage += HelpMessageOpt("-idindex", strprintf(_("Maintain a full identity index, enabling queries to select IDs with addresses, revocation or recovery IDs (default: %u)"), 0));
     strUsage += HelpMessageOpt("-addressindex", strprintf(_("Maintain a full address index, used to query for the balance, txids and unspent outputs for addresses (default: %u)"), DEFAULT_ADDRESSINDEX));
     strUsage += HelpMessageOpt("-timestampindex", strprintf(_("Maintain a timestamp index for block hashes, used to query blocks hashes by a range of timestamps (default: %u)"), DEFAULT_TIMESTAMPINDEX));
     strUsage += HelpMessageOpt("-spentindex", strprintf(_("Maintain a full spent index, used to query the spending txid and input index for an outpoint (default: %u)"), DEFAULT_SPENTINDEX));
@@ -410,6 +412,14 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-timeout=<n>", strprintf(_("Specify connection timeout in milliseconds (minimum: 1, default: %d)"), DEFAULT_CONNECT_TIMEOUT));
     strUsage += HelpMessageOpt("-torcontrol=<ip>:<port>", strprintf(_("Tor control port to use if onion listening enabled (default: %s)"), DEFAULT_TOR_CONTROL));
     strUsage += HelpMessageOpt("-torpassword=<pass>", _("Tor control port password (default: empty)"));
+    strUsage += HelpMessageOpt("-tlsenforcement=<0 or 1>", _("Only connect to TLS compatible peers. (default: 0)"));
+    strUsage += HelpMessageOpt("-tlsdisable=<0 or 1>", _("Disable TLS connections. (default: 0)"));
+    strUsage += HelpMessageOpt("-tlsfallbacknontls=<0 or 1>", _("If a TLS connection fails, the next connection attempt of the same peer (based on IP address) takes place without TLS (default: 1)"));
+    strUsage += HelpMessageOpt("-tlsvalidate=<0 or 1>", _("Connect to peers only with valid certificates (default: 0)"));
+    strUsage += HelpMessageOpt("-tlskeypath=<path>", _("Full path to a private key"));
+    strUsage += HelpMessageOpt("-tlskeypwd=<password>", _("Password for a private key encryption (default: not set, i.e. private key will be stored unencrypted)"));
+    strUsage += HelpMessageOpt("-tlscertpath=<path>", _("Full path to a certificate"));
+    strUsage += HelpMessageOpt("-tlstrustdir=<path>", _("Full path to a trusted certificates directory"));
     strUsage += HelpMessageOpt("-whitebind=<addr>", _("Bind to given address and whitelist peers connecting to it. Use [host]:port notation for IPv6"));
     strUsage += HelpMessageOpt("-whitelist=<netmask>", _("Whitelist peers connecting from the given netmask or IP address. Can be specified multiple times.") +
         " " + _("Whitelisted peers cannot be DoS banned and their transactions are always relayed, even if they are already in the mempool, useful e.g. for a gateway"));
@@ -496,7 +506,16 @@ std::string HelpMessage(HelpMessageMode mode)
             "This is intended for regression testing tools and app development.");
     }
     // strUsage += HelpMessageOpt("-shrinkdebugfile", _("Shrink debug.log file on client startup (default: 1 when no -debug)"));
-    strUsage += HelpMessageOpt("-testnet", _("Use the test network"));
+    strUsage += HelpMessageOpt("-mineraddress=<address>", _("Mining rewards will go to this address"));
+    strUsage += HelpMessageOpt("-pubkey=<hexpubkey>", _("If set, mining and staking rewards will go to this address by default"));
+    strUsage += HelpMessageOpt("-defaultid=<i-address>", _("VerusID used for default change out and staking reward recipient"));
+    strUsage += HelpMessageOpt("-defaultzaddr=<sapling-address>", _("sapling address to receive fraud proof rewards and if used with \"-privatechange=1\", z-change address for the sendcurrency command"));
+    strUsage += HelpMessageOpt("-cheatcatcher=<sapling-address>", _("same as \"-defaultzaddr\""));
+    strUsage += HelpMessageOpt("-privatechange", _("directs all change from sendcurency or z_sendmany APIs to the defaultzaddr set, if it is a valid sapling address"));
+    strUsage += HelpMessageOpt("-miningdistribution={\"addressorid\":<n>,...}", _("destination addresses and relative amounts used as ratios to divide total rewards + fees"));
+    strUsage += HelpMessageOpt("-miningdistributionpassthrough", _("uses the same miningdistribution values and addresses/IDs as Verus when merge mining"));
+    strUsage += HelpMessageOpt("-chain=pbaaschainname", _("loads either mainnet or resolves and loads a PBaaS chain if not vrsc or vrsctest"));
+    strUsage += HelpMessageOpt("-testnet", _("loads PBaaS network in testmode"));
 
     strUsage += HelpMessageGroup(_("Node relay options:"));
     strUsage += HelpMessageOpt("-datacarrier", strprintf(_("Relay and mine data carrier transactions (default: %u)"), 1));
@@ -714,7 +733,7 @@ bool InitSanityCheck(void)
 
 
 static void ZC_LoadParams(
-    const CChainParams& chainparams
+    const CChainParams& chainparams, bool verified
 )
 {
     struct timeval tv_start, tv_end;
@@ -951,6 +970,9 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             LogPrintf("%s: parameter interaction: -zapwallettxes=<mode> -> setting -rescan=1\n", __func__);
     }
 
+    //Default tlsenforcement to false
+    SoftSetArg("-tlsenforcement","0");
+    
     // Make sure enough file descriptors are available
     int nBind = std::max((int)mapArgs.count("-bind") + (int)mapArgs.count("-whitebind"), 1);
     nMaxConnections = GetArg("-maxconnections", DEFAULT_MAX_PEER_CONNECTIONS);
@@ -1218,6 +1240,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV4, 800200);
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV5, 1053660);
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV5_1, 1053660);
+            CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV6, 1796400);
         }
         else if (IsVerusActive())
         {
@@ -1226,7 +1249,8 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV4, 1);
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV5, 1);
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV5_1, 1);
-            CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV6, 1);
+            CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV6, 50);
+            CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV7, 100);
         }
         else
         {
@@ -1236,6 +1260,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV5, 1);
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV5_1, 1);
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV6, 1);
+            CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV7, 1);
         }
     }
 
@@ -1339,7 +1364,20 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     libsnark::inhibit_profiling_counters = true;
 
     // Initialize Zcash circuit parameters
-    ZC_LoadParams(chainparams);
+    uiInterface.InitMessage(_("Verifying Params..."));
+    initalizeMapParam();
+    bool paramsVerified = checkParams();
+    if(!paramsVerified) {
+        downloadFiles("Network Params");
+    }
+    if (fRequestShutdown)
+    {
+        LogPrintf("Shutdown requested. Exiting.\n");
+        return false;
+    }
+
+    // Initialize Zcash circuit parameters
+    ZC_LoadParams(chainparams, paramsVerified);
 
     if (GetBoolArg("-savesproutr1cs", false)) {
         boost::filesystem::path r1cs_path = ZC_GetParamsDir() / "r1cs";
@@ -1499,9 +1537,30 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         }
     }
 
-    for (auto &oneNode : ConnectedChains.defaultPeerNodes)
+    if (!GetBoolArg("-forcednsseed", false) && !(mapArgs.count("-connect") && mapMultiArgs["-connect"].size() > 0))
     {
-        AddOneShot(oneNode.networkAddress);
+        for (auto &oneNode : ConnectedChains.defaultPeerNodes)
+        {
+            AddOneShot(oneNode.networkAddress);
+        }
+    }
+
+        if (mapArgs.count("-tlskeypath")) {
+        boost::filesystem::path pathTLSKey(GetArg("-tlskeypath", ""));
+    if (!boost::filesystem::exists(pathTLSKey))
+         return InitError(strprintf(_("Cannot find TLS key file: '%s'"), pathTLSKey.string()));
+    }
+
+    if (mapArgs.count("-tlscertpath")) {
+        boost::filesystem::path pathTLSCert(GetArg("-tlscertpath", ""));
+    if (!boost::filesystem::exists(pathTLSCert))
+        return InitError(strprintf(_("Cannot find TLS cert file: '%s'"), pathTLSCert.string()));
+    }
+
+    if (mapArgs.count("-tlstrustdir")) {
+        boost::filesystem::path pathTLSTrustredDir(GetArg("-tlstrustdir", ""));
+        if (!boost::filesystem::exists(pathTLSTrustredDir))
+            return InitError(strprintf(_("Cannot find trusted certificates directory: '%s'"), pathTLSTrustredDir.string()));
     }
 
 #if ENABLE_ZMQ
@@ -1530,6 +1589,36 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     // ********************************************************* Step 7: load block chain
 
     fReindex = GetBoolArg("-reindex", false);
+
+    bool useBootstrap = false;
+    bool newInstall = (!boost::filesystem::exists(GetDataDir() / "blocks") || !boost::filesystem::exists(GetDataDir() / "chainstate"));
+
+    //Prompt on new install
+    if (newInstall && GetBoolArg("-bootstrapinstall", false)) {
+        useBootstrap = true;
+    }
+
+    //Force Download- used for CLI
+    if (GetBoolArg("-bootstrap", false)) {
+        useBootstrap = true;
+    }
+
+    if (IsVerusMainnetActive() && useBootstrap) {
+        fReindex = false;
+        //wipe transactions from wallet to create a clean slate
+        OverrideSetArg("-zappwallettxes","2");
+        boost::filesystem::remove_all(GetDataDir() / "blocks");
+        boost::filesystem::remove_all(GetDataDir() / "chainstate");
+        boost::filesystem::remove_all(GetDataDir() / "notarisations");
+        boost::filesystem::remove(GetDataDir() / "peers.dat");
+        boost::filesystem::remove(GetDataDir() / "komodostate");
+        boost::filesystem::remove(GetDataDir() / "signedmasks");
+        boost::filesystem::remove(GetDataDir() / "komodostate.ind");
+        if (!getBootstrap() && !fRequestShutdown ) {
+            printf("\n\nBootstrap download failed!!! Shutting down. Try to bootstrap again or load and sync without the -bootstrap option\n");
+            fRequestShutdown = true;
+        }
+    }
 
     // Upgrading to 0.8; hard-link the old blknnnn.dat files into /blocks/
     boost::filesystem::path blocksDir = GetDataDir() / "blocks";
@@ -1613,8 +1702,17 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             fReindex = true;
         }
 
-        fInsightExplorer = GetBoolArg("-insightexplorer", DEFAULT_INSIGHTEXPLORER);
+        pblocktree->ReadFlag("idindex", checkval);
+        fIdIndex = GetBoolArg("-idindex", checkval);
+        if ( checkval != fIdIndex )
+        {
+            pblocktree->WriteFlag("idindex", fIdIndex);
+            fprintf(stderr,"set idindex, will reindex. sorry will take a while.\n");
+            fReindex = true;
+        }
+
         pblocktree->ReadFlag("insightexplorer", checkval);
+        fInsightExplorer = GetBoolArg("-insightexplorer", checkval);
         if ( checkval != fInsightExplorer )
         {
             pblocktree->WriteFlag("insightexplorer", fInsightExplorer);
@@ -1688,8 +1786,15 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                     break;
                 }
 
+                pblocktree->ReadFlag("idindex", fIdIndex);
+                if (!fReindex && fIdIndex != GetBoolArg("-idindex", fIdIndex) ) {
+                    strLoadError = _("You need to rebuild the database using -reindex to change -idindex");
+                    break;
+                }
+
                 // Check for changed -insightexplorer state
-                if (!fReindex && fInsightExplorer != GetBoolArg("-insightexplorer", DEFAULT_INSIGHTEXPLORER) ) {
+                pblocktree->ReadFlag("insightexplorer", fInsightExplorer);
+                if (!fReindex && fInsightExplorer != GetBoolArg("-insightexplorer", fInsightExplorer) ) {
                     strLoadError = _("You need to rebuild the database using -reindex to change -insightexplorer");
                     break;
                 }
@@ -1706,6 +1811,44 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                     if (!RewindBlockIndex(chainparams, clearWitnessCaches)) {
                         strLoadError = _("Unable to rewind the database to a pre-upgrade state. You will need to redownload the blockchain");
                         break;
+                    }
+                }
+
+                if (!IsVerusActive() &&
+                    chainActive.Height() > 1)
+                {
+                    // get currency definition from the coinbase in block 1
+                    CCurrencyDefinition loadedDefinition;
+                    if (GetCurrencyDefinition(ConnectedChains.ThisChain().GetID(), loadedDefinition))
+                    {
+                        ConnectedChains.UpdateCachedCurrency(loadedDefinition, chainActive.Height());
+                    }
+                }
+
+                if (_IsVerusActive() &&
+                    CConstVerusSolutionVector::GetVersionByHeight(chainActive.Height()) >= CActivationHeight::ACTIVATE_PBAAS)
+                {
+                    // until we have connected to the ETH bridge, after PBaaS has launched, we check each block to see if there is now an
+                    // ETH bridge defined
+                    ConnectedChains.ConfigureEthBridge(true);
+                }
+
+                CChainNotarizationData cnd;
+                if (ConnectedChains.FirstNotaryChain().IsValid())
+                {
+                    uint160 notaryChainID = ConnectedChains.FirstNotaryChain().GetID();
+                    CNotarySystemInfo &notarySystem = ConnectedChains.notarySystems[notaryChainID];
+                    LOCK(cs_main);
+                    if (GetNotarizationData(notaryChainID, cnd) &&
+                        cnd.IsConfirmed() &&
+                        cnd.vtx[cnd.lastConfirmed].second.proofRoots.count(notaryChainID) &&
+                        (!notarySystem.lastConfirmedNotarization.IsValid() ||
+                        !notarySystem.lastConfirmedNotarization.proofRoots.count(notaryChainID) ||
+                        notarySystem.lastConfirmedNotarization.proofRoots[notaryChainID].rootHeight <
+                            cnd.vtx[cnd.lastConfirmed].second.proofRoots[notaryChainID].rootHeight))
+                    {
+
+                        ConnectedChains.notarySystems[ConnectedChains.FirstNotaryChain().GetID()].lastConfirmedNotarization = cnd.vtx[cnd.lastConfirmed].second;
                     }
                 }
 
@@ -1793,11 +1936,35 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             pwalletMain = NULL;
         }
 
-        uiInterface.InitMessage(_("Loading wallet..."));
-
         nStart = GetTimeMillis();
         bool fFirstRun = true;
         pwalletMain = new CWallet(strWalletFile);
+
+        //Check for crypted flag and wait for the wallet password if crypted
+        DBErrors nInitalizeCryptedLoad = pwalletMain->InitalizeCryptedLoad();
+        if (nInitalizeCryptedLoad == DB_LOAD_CRYPTED) {
+            pwalletMain->SetDBCrypted();
+            uiInterface.InitMessage(_("Wallet waiting for passphrase..."));
+            SetRPCNeedsUnlocked(true);
+            DBErrors nLoadCryptedSeed = pwalletMain->LoadCryptedSeedFromDB();
+            if (nLoadCryptedSeed != DB_LOAD_OK) {
+                uiInterface.InitMessage(_("Error loading wallet.dat: Wallet crypted seed corrupted"));
+                return false;
+            }
+        }
+        while (pwalletMain->IsLocked()) {
+            //wait for response from GUI
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (fRequestShutdown)
+            {
+                LogPrintf("Shutdown requested. Exiting.\n");
+                return false;
+            }
+        }
+
+        uiInterface.InitMessage(_("Loading wallet..."));
+        SetRPCNeedsUnlocked(false);
+
         DBErrors nLoadWalletRet = pwalletMain->LoadWallet(fFirstRun);
         if (nLoadWalletRet != DB_LOAD_OK)
         {
@@ -1846,9 +2013,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                 pwalletMain->GenerateNewSeed();
             }
         }
-
-        // Set sapling migration status
-        pwalletMain->fSaplingMigrationEnabled = GetBoolArg("-migration", false);
 
         if (fFirstRun)
         {
@@ -2080,6 +2244,10 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     // SENDALERT
     threadGroup.create_thread(boost::bind(ThreadSendAlert));
+
+    if (pwalletMain && pwalletMain->IsCrypted()) {
+        pwalletMain->Lock();
+    }
 
     return !fRequestShutdown;
 }

@@ -1198,7 +1198,8 @@ uint256 SignatureHash(
     int nHashType,
     const CAmount& amount,
     uint32_t consensusBranchId,
-    const PrecomputedTransactionData* cache)
+    const PrecomputedTransactionData* cache,
+    UniValue *pHashedDataReturn)
 {
     if (nIn >= txTo.vin.size() && nIn != NOT_AN_INPUT) {
         //  nIn out of range
@@ -1244,9 +1245,25 @@ uint256 SignatureHash(
         }
 
         uint32_t leConsensusBranchId = htole32(consensusBranchId);
-        unsigned char personalization[16] = {};
+        const int PERSONALIZATION_SIZE = 16;
+        unsigned char personalization[PERSONALIZATION_SIZE] = {};
         memcpy(personalization, "ZcashSigHash", 12);
         memcpy(personalization+12, &leConsensusBranchId, 4);
+
+        if (pHashedDataReturn)
+        {
+            pHashedDataReturn->pushKV("personalizationhexbytes", HexBytes(&(std::vector<unsigned char>(personalization, personalization + PERSONALIZATION_SIZE)[0]), 16));
+            pHashedDataReturn->pushKV("hashprevouts", hashPrevouts.GetHex());
+            pHashedDataReturn->pushKV("hashsequence", hashSequence.GetHex());
+            pHashedDataReturn->pushKV("hashoutputs", hashOutputs.GetHex());
+            pHashedDataReturn->pushKV("hashjoinsplits", hashJoinSplits.GetHex());
+            pHashedDataReturn->pushKV("hashshieldedspends", hashShieldedSpends.GetHex());
+            pHashedDataReturn->pushKV("hashshieldedoutputs", hashShieldedOutputs.GetHex());
+            pHashedDataReturn->pushKV("txheader", (int64_t)txTo.GetHeader());
+            pHashedDataReturn->pushKV("versiongroupid", (int64_t)txTo.nVersionGroupId);
+            pHashedDataReturn->pushKV("sigversionsapling", (sigversion == SIGVERSION_SAPLING));
+            pHashedDataReturn->pushKV("sighashtype", nHashType);
+        }
 
         CBLAKE2bWriter ss(SER_GETHASH, 0, personalization);
         // Header
@@ -1287,9 +1304,30 @@ uint256 SignatureHash(
             ss << static_cast<const CScriptBase&>(scriptCode);
             ss << amount;
             ss << txTo.vin[nIn].nSequence;
+
+            if (pHashedDataReturn)
+            {
+                std::vector<unsigned char> vchBytes = ::AsVector(txTo.vin[nIn].prevout);
+                pHashedDataReturn->pushKV("prevoutbytes", HexBytes(&(vchBytes[0]), vchBytes.size()));
+                vchBytes = ::AsVector(static_cast<const CScriptBase&>(scriptCode));
+                pHashedDataReturn->pushKV("scriptcodebytes", HexBytes(&(vchBytes[0]), vchBytes.size()));
+                vchBytes = ::AsVector(amount);
+                pHashedDataReturn->pushKV("amountbytes", HexBytes(&(vchBytes[0]), vchBytes.size()));
+                vchBytes = ::AsVector(txTo.vin[nIn].nSequence);
+                pHashedDataReturn->pushKV("sequencebytes", HexBytes(&(vchBytes[0]), vchBytes.size()));
+            }
         }
 
-        return ss.GetHash();
+        if (pHashedDataReturn)
+        {
+            uint256 sigHash = ss.GetHash();
+            pHashedDataReturn->pushKV("signaturehash", sigHash.GetHex());
+            return sigHash;
+        }
+        else
+        {
+            return ss.GetHash();
+        }
     }
 
     // Check for invalid use of SIGHASH_SINGLE

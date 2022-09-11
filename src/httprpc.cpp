@@ -136,11 +136,11 @@ static bool HTTPReq_JSONRPC(HTTPRequest* req, const std::string &)
                 return false;
             }
 
-            extern bool printoutAPI;
-            if (printoutAPI ==  true)
+            if (LogAcceptCategory("rpcapiconsole"))
             {
                 printf("%s %s\n", jreq.strMethod.c_str(), jreq.params.write().c_str());
             }
+            LogPrint("rpcapi", "%s %s\n", jreq.strMethod.c_str(), jreq.params.write().c_str());
 
             UniValue result = tableRPC.execute(jreq.strMethod, jreq.params);
 

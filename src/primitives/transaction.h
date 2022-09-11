@@ -489,11 +489,6 @@ public:
         return scriptPubKey.ReserveOutValue();
     }
 
-    bool SetReserveOutValue(CCurrencyValueMap newValues)
-    {
-        return scriptPubKey.SetReserveOutValue(newValues);
-    }
-
     friend bool operator==(const CTxOut& a, const CTxOut& b)
     {
         return (a.nValue == b.nValue && a.scriptPubKey == b.scriptPubKey);
@@ -905,12 +900,13 @@ public:
     enum {
         TX_FULL = 0,
         TX_HEADER = 1,
-        TX_PREVOUTSEQ = 2,      // prev out and sequence
-        TX_SIGNATURE = 3,
+        TX_PREVOUTSEQ = 2,          // prev out and sequence
+        TX_SIGNATURE = 3,           // TODO: should include transaction hash but does not yet
         TX_OUTPUT = 4,
         TX_SHIELDEDSPEND = 5,
         TX_SHIELDEDOUTPUT = 6,
-        TX_ETH_OBJECT = 7
+        TX_ETH_OBJECT = 7,
+        TX_BLOCK_PREHEADER = 8      // virtual transaction added after others to prove block data without VerusHash
     };
 
     uint256 txHash;
@@ -1134,6 +1130,18 @@ public:
                 return CheckFullTxProof(tx);
             }
 
+            case CTransactionHeader::TX_BLOCK_PREHEADER:
+            {
+                CPBaaSPreHeader preHeader;
+                if (Rehydrate(preHeader))
+                {
+                    auto hw = CDefaultMMRNode::GetHashWriter();
+                    hw << preHeader;
+                    return elProof.CheckProof(hw.GetHash());
+                }
+                break;
+            }
+
             case CTransactionHeader::TX_HEADER:
             {
                 CTransactionHeader txPart;
@@ -1150,6 +1158,7 @@ public:
                     hw << txPart.nSequence;
                     return elProof.CheckProof(hw.GetHash());
                 }
+                break;
             }
 
             case CTransactionHeader::TX_SIGNATURE:
@@ -1177,6 +1186,7 @@ public:
                     hw << txPart.zkproof;
                     return elProof.CheckProof(hw.GetHash());
                 }
+                break;
             }
 
             case CTransactionHeader::TX_SHIELDEDOUTPUT:
@@ -1191,6 +1201,10 @@ public:
     static uint16_t ElementType(const CTransaction &tx)
     {
         return CTransactionHeader::TX_FULL;
+    }
+    static uint16_t ElementType(const CPBaaSPreHeader &preHeader)
+    {
+        return CTransactionHeader::TX_BLOCK_PREHEADER;
     }
     static uint16_t ElementType(const CTransactionHeader &txHeader)
     {
@@ -1267,6 +1281,25 @@ public:
     CPartialTransactionProof(const CMMRProof &txRootProof, const CTransaction &tx) : 
         version(VERSION_CURRENT), type(TYPE_FULLTX), txProof(txRootProof), components({CTransactionComponentProof(tx, 0, CMMRProof())}) { }
 
+    // This creates a proof for the pre-header of a block, which enables proof of sapling txes and other things in a block header
+    // without requiring an implementation of VerusHash
+    CPartialTransactionProof(const CMMRProof &txRootProof, const CPBaaSPreHeader &preHeader) : 
+        version(VERSION_CURRENT), type(TYPE_PBAAS), txProof(txRootProof), components({CTransactionComponentProof(preHeader, 0, CMMRProof())}) { }
+
+    CPartialTransactionProof(const std::vector<CPartialTransactionProof> &parts)
+    {
+        std::vector<CMMRProof> chunkVec;
+        for (int i = 0; i < parts.size(); i++)
+        {
+            if (parts[i].txProof.IsMultiPart())
+            {
+                chunkVec.push_back(parts[i].txProof);
+            }
+        }
+        CMultiPartProof assembled = CMultiPartProof(chunkVec);
+        ::FromVector(assembled.vch, *this);
+    }
+
     const CPartialTransactionProof &operator=(const CPartialTransactionProof &operand)
     {
         CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
@@ -1285,13 +1318,14 @@ public:
         READWRITE(components);
     }
 
-    uint256 TransactionHash()
+    uint256 TransactionHash() const
     {
         if (components.size())
         {
             CTransaction outTx;
             CTransactionHeader txh;
             CVDXF_Data vdxfObj;
+            CPBaaSPreHeader preHeader;
             if (components[0].elType == CTransactionHeader::TX_HEADER && components[0].Rehydrate(txh))
             {
                 return txh.txHash;
@@ -1300,16 +1334,22 @@ public:
             {
                 return outTx.GetHash();
             }
+            else if (components[0].elType == CTransactionHeader::TX_BLOCK_PREHEADER && components[0].Rehydrate(preHeader))
+            {
+                auto hw2 = CDefaultMMRNode::GetHashWriter();
+                hw2 << preHeader;
+                return hw2.GetHash();
+            }
             else if (components[0].elType == CTransactionHeader::TX_ETH_OBJECT && components[0].Rehydrate(vdxfObj))
             {
                 CDataStream s = CDataStream(vdxfObj.data, SER_NETWORK, PROTOCOL_VERSION);
-                std::vector<CReserveTransfer> reserveTransfers;
+                uint256 prevtxid;
                 CCrossChainExport ccx;
 
                 try
                 {
                     s >> ccx;
-                    s >> reserveTransfers;
+                    s >> prevtxid;
                 }
                 catch (const std::runtime_error &e)
                 {
@@ -1317,16 +1357,11 @@ public:
                     return uint256();
                 }
                  
-                auto hw2 = CNativeHashWriter(CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
+                CNativeHashWriter hw2(CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
                 hw2 << ccx;
-                
-                for (auto &oneTransfer : reserveTransfers)
-                {
-                    hw2 << oneTransfer;
-                }
+                hw2 << prevtxid;
                 
                 return hw2.GetHash();
-                
             }
         }
         return uint256();
@@ -1339,6 +1374,24 @@ public:
     // this validates that all parts of a transaction match and either returns a full transaction
     // and its hash, a partially filled transaction and its MMR root, or NULL
     uint256 CheckPartialTransaction(CTransaction &outTx, bool *pIsPartial=nullptr) const;
+
+    bool IsBlockPreHeader() const
+    {
+        return components[0].elType == CTransactionHeader::TX_BLOCK_PREHEADER;
+    }
+
+    CPBaaSPreHeader GetBlockPreHeader() const
+    {
+        CPBaaSPreHeader preHeader;
+        if (components[0].elType == CTransactionHeader::TX_BLOCK_PREHEADER && components[0].Rehydrate(preHeader))
+        {
+            return preHeader;
+        }
+        return CPBaaSPreHeader();
+    }
+
+    // this validates that a preheader is correct
+    uint256 CheckBlockPreHeader(CPBaaSPreHeader &outPreHeader) const;
 
     // for PBaaS chain proofs, we can determine the hash, block height, and power, depending on if we are block specific or
     // proven at the blockchain level
@@ -1357,6 +1410,31 @@ public:
     bool IsValid() const
     {
         return version >= VERSION_FIRST && version <= VERSION_LAST && type != TYPE_INVALID && type <= TYPE_LAST;
+    }
+
+    bool IsMultipart() const
+    {
+        return IsValid() && txProof.proofSequence.size() == 1 && txProof.proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_MULTIPART;
+    }
+
+    std::vector<CPartialTransactionProof> BreakApart(int maxChunkSize=CScript::MAX_SCRIPT_ELEMENT_SIZE) const
+    {
+        CDataStream ds(SER_DISK, PROTOCOL_VERSION);
+        // we put our entire self into a multipart proof and return multiple parts that must be reconstructed
+        std::vector<unsigned char> serialized = ::AsVector(*this);
+        CMultiPartProof allPartProof(CMerkleBranchBase::BRANCH_MULTIPART, serialized);
+
+        CPartialTransactionProof withoutProof(CMMRProof(), components, version, type);
+
+        // we could be more efficient with variable sized chunks
+        std::vector<CMMRProof> allParts = allPartProof.BreakToChunks(maxChunkSize - GetSerializeSize(ds, withoutProof));
+
+        std::vector<CPartialTransactionProof> retVal;
+        for (auto &onePart : allParts)
+        {
+            retVal.push_back(CPartialTransactionProof(onePart, std::vector<CTransactionComponentProof>(), version, type));
+        }
+        return retVal;
     }
 
     uint256 GetBlockHash() const
@@ -1486,7 +1564,7 @@ public:
     uint8_t sigHashType;
     std::map<uint160, CSmartTransactionSignature> signatures;
 
-    CSmartTransactionSignatures() : version(VERSION) {}
+    CSmartTransactionSignatures() : version(VERSION), sigHashType(1) {}
     CSmartTransactionSignatures(uint8_t hashType, const std::map<uint160, CSmartTransactionSignature> &signatureMap, uint8_t ver=VERSION) : version(ver), sigHashType(hashType), signatures(signatureMap) {}
     CSmartTransactionSignatures(const std::vector<unsigned char> &asVector)
     {
@@ -1498,30 +1576,33 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(version);
-        READWRITE(sigHashType);
-        std::vector<CSmartTransactionSignature> sigVec;
-        if (ser_action.ForRead())
+        if (version >= FIRST_VERSION && version <= LAST_VERSION)
         {
-            READWRITE(sigVec);
-            for (auto oneSig : sigVec)
+            READWRITE(sigHashType);
+            std::vector<CSmartTransactionSignature> sigVec;
+            if (ser_action.ForRead())
             {
-                if (oneSig.sigType == oneSig.SIGTYPE_SECP256K1)
+                READWRITE(sigVec);
+                for (auto oneSig : sigVec)
                 {
-                    CPubKey pk(oneSig.pubKeyData);
-                    if (pk.IsFullyValid())
+                    if (oneSig.sigType == oneSig.SIGTYPE_SECP256K1)
                     {
-                        signatures[pk.GetID()] = oneSig;
+                        CPubKey pk(oneSig.pubKeyData);
+                        if (pk.IsFullyValid())
+                        {
+                            signatures[pk.GetID()] = oneSig;
+                        }
                     }
                 }
             }
-        }
-        else
-        {
-            for (auto oneSigPair : signatures)
+            else
             {
-                sigVec.push_back(oneSigPair.second);
+                for (auto oneSigPair : signatures)
+                {
+                    sigVec.push_back(oneSigPair.second);
+                }
+                READWRITE(sigVec);
             }
-            READWRITE(sigVec);
         }
     }
 
@@ -1632,203 +1713,6 @@ public:
     }
 
     UniValue ToUniValue() const;
-};
-
-// this is a spend that only exists to provide a signature and be indexed as having done
-// so. It is a form of vote, expressed by signing a specific output script, this is used 
-// for finalizing notarizations and can be used for other types of votes where signatures
-// are required.
-//
-// to be valid, a finalization vote is authorized via the currency definition,
-// and, if so, their signature is checked against the serialised notarization in the output
-// script. once validated, all IDs are indexed.
-//
-class CNotaryEvidence
-{
-public:
-    enum {
-        VERSION_INVALID = 0,
-        VERSION_FIRST = 1,
-        VERSION_LAST = 1,
-        VERSION_CURRENT = 1
-    };
-
-    enum EConstants {
-        DEFAULT_OUTPUT_VALUE = 0,
-        MAX_EVIDENCE_SUPPLEMENTALS = 25     // how many reserve transfers can be max in each output
-    };
-
-    enum ETypes {
-        TYPE_INVALID = 0,
-        TYPE_NOTARY_SIGNATURE = 1,          // this is a notary signature
-        TYPE_CURRENCY_START = 2,            // finalizing initiation of the start or refund state of a currency
-        TYPE_PARTIAL_TXPROOF = 3,           // holding a transaction proof of export with finalization referencing finalization of root notarization
-    };
-
-    uint8_t version;
-    uint8_t type;
-    uint160 systemID;                       // system this evidence is from
-    CUTXORef output;                        // output to finalize or root notarization for partial tx proof, can have multiple for one object output
-    bool confirmed;                         // confirmed or rejected if signed
-    std::map<CIdentityID, CIdentitySignature> signatures; // one or more notary signatures with same statements combined
-    std::vector<CPartialTransactionProof> evidence; // evidence in the form of cross chain proofs of transactions, block hashes, and power
-
-    CNotaryEvidence(uint8_t EvidenceType=TYPE_NOTARY_SIGNATURE, uint8_t nVersion=VERSION_CURRENT) : version(nVersion), type(EvidenceType) {}
-    CNotaryEvidence(const uint160 &sysID, 
-                     const CUTXORef &finalRef,
-                     bool Confirmed=true,
-                     const std::map<CIdentityID, CIdentitySignature> &Signatures=std::map<CIdentityID, CIdentitySignature>(),
-                     const std::vector<CPartialTransactionProof> &Evidence=std::vector<CPartialTransactionProof>(), 
-                     uint8_t Type=TYPE_NOTARY_SIGNATURE,
-                     uint8_t Version=VERSION_CURRENT) : 
-                     version(Version),
-                     type(Type),
-                     systemID(sysID), 
-                     output(finalRef),
-                     confirmed(Confirmed),
-                     signatures(Signatures),
-                     evidence(Evidence)
-    {}
-
-    CNotaryEvidence(const std::vector<unsigned char> &asVector)
-    {
-        ::FromVector(asVector, *this);
-    }
-
-    CNotaryEvidence(const UniValue &uni);
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(version);
-        READWRITE(type);
-        READWRITE(systemID);
-        READWRITE(output);
-        READWRITE(confirmed);
-        std::vector<std::pair<CIdentityID, CIdentitySignature>> sigVec;
-        if (ser_action.ForRead())
-        {
-            READWRITE(sigVec);
-            for (auto &oneSig : sigVec)
-            {
-                signatures[oneSig.first] = oneSig.second;
-            }
-        }
-        else
-        {
-            for (auto &oneSigPair : signatures)
-            {
-                sigVec.push_back(oneSigPair);
-            }
-            READWRITE(sigVec);
-        }
-        READWRITE(evidence);
-    }
-
-    static std::string NotarySignatureKeyName()
-    {
-        return "vrsc::system.notarization.signature";
-    }
-
-    static uint160 NotarySignatureKey()
-    {
-        static uint160 nameSpace;
-        static uint160 signatureKey = CVDXF::GetDataKey(NotarySignatureKeyName(), nameSpace);
-        return signatureKey;
-    }
-
-    static std::string NotarySignaturesKeyName()
-    {
-        return "vrsc::system.notarization.signatures";
-    }
-
-    static uint160 NotarySignaturesKey()
-    {
-        static uint160 nameSpace;
-        static uint160 signatureKey = CVDXF::GetDataKey(NotarySignaturesKeyName(), nameSpace);
-        return signatureKey;
-    }
-
-    static std::string NotarizationHashDataKeyName()
-    {
-        return "vrsc::system.notarization.hashdata";
-    }
-
-    static uint160 NotarizationHashDataKey()
-    {
-        static uint160 nameSpace;
-        static uint160 signatureKey = CVDXF::GetDataKey(NotarizationHashDataKeyName(), nameSpace);
-        return signatureKey;
-    }
-
-    static std::string NotaryConfirmedKeyName()
-    {
-        return "vrsc::system.notarization.confirmed";
-    }
-
-    static uint160 NotaryConfirmedKey()
-    {
-        static uint160 nameSpace;
-        static uint160 signatureKey = CVDXF::GetDataKey(NotaryConfirmedKeyName(), nameSpace);
-        return signatureKey;
-    }
-
-    static std::string NotaryRejectedKeyName()
-    {
-        return "vrsc::system.notarization.rejected";
-    }
-
-    static uint160 NotaryRejectedKey()
-    {
-        static uint160 nameSpace;
-        static uint160 signatureKey = CVDXF::GetDataKey(NotaryRejectedKeyName(), nameSpace);
-        return signatureKey;
-    }
-
-    CIdentitySignature::ESignatureVerification SignConfirmed(const CKeyStore &keyStore, const CTransaction &txToConfirm, const CIdentityID &signWithID, uint32_t height, CCurrencyDefinition::EProofProtocol hashType);
-    CIdentitySignature::ESignatureVerification SignRejected(const CKeyStore &keyStore, const CTransaction &txToConfirm, const CIdentityID &signWithID, uint32_t height, CCurrencyDefinition::EProofProtocol hashType);
-
-    bool IsPartialTxProof() const
-    {
-        return type == TYPE_PARTIAL_TXPROOF;
-    }
-
-    bool IsNotarySignature() const
-    {
-        return type == TYPE_NOTARY_SIGNATURE;
-    }
-
-    bool IsCurrencyStart() const
-    {
-        return type == TYPE_CURRENCY_START;
-    }
-
-    bool IsConfirmed() const
-    {
-        return confirmed;
-    }
-
-    bool IsRejected() const
-    {
-        return !confirmed;
-    }
-
-    bool IsSigned() const
-    {
-        return signatures.size() != 0;
-    }
-
-    UniValue ToUniValue() const;
-
-    bool IsValid() const
-    {
-        return version >= VERSION_FIRST && 
-               version <= VERSION_LAST && 
-               !systemID.IsNull() && 
-               output.IsValid() && 
-               (signatures.size() || evidence.size());
-    }
 };
 
 #endif // BITCOIN_PRIMITIVES_TRANSACTION_H

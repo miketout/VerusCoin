@@ -1356,6 +1356,10 @@ uint16_t _komodo_userpass(char *username,char *password, FILE *fp)
     return(port);
 }
 
+// create a config file. if this is a PBaaS chain, we assume that the loaded CCurrencyDefinition is complete, which may not
+// be the case when loading without VRSC active.
+extern std::string CanonicalChainFileName(std::string chainName);
+
 void komodo_statefname(char *fname,char *symbol,char *str)
 {
     int32_t n,len;
@@ -1365,7 +1369,8 @@ void komodo_statefname(char *fname,char *symbol,char *str)
         checkName = boost::to_lower_copy(std::string(ASSETCHAINS_SYMBOL));
     }
 
-    const char *chkName = checkName.c_str();
+    std::string chkNameStr = CanonicalChainFileName(checkName);
+    const char *chkName = chkNameStr.c_str();
     sprintf(fname, "%s", GetDataDir(false).string().c_str());
     if ( (n = (int32_t)strlen(chkName)) != 0 )
     {
@@ -1374,7 +1379,7 @@ void komodo_statefname(char *fname,char *symbol,char *str)
             fname[len - n] = 0;
         else
         {
-            printf("unexpected fname.(%s) vs %s [%s] n.%d len.%d (%s)\n",fname,symbol,ASSETCHAINS_SYMBOL,n,len,&fname[len - n]);
+            printf("unexpected fname.(%s) vs %s [%s] n.%d len.%d (%s)\n",fname, chkName, ASSETCHAINS_SYMBOL, n, len, &fname[len - n]);
             return;
         }
     }
@@ -1388,7 +1393,7 @@ void komodo_statefname(char *fname,char *symbol,char *str)
     }
     if ( symbol != 0 && symbol[0] != 0 && strcmp("KMD",symbol) != 0 )
     {
-        strcat(fname, symbol);
+        strcat(fname, chkName);
         //printf("statefname.(%s) -> (%s)\n",symbol,fname);
 #ifdef _WIN32
         strcat(fname,"\\");
@@ -1400,16 +1405,11 @@ void komodo_statefname(char *fname,char *symbol,char *str)
     //printf("test.(%s) -> [%s] statename.(%s) %s\n",test,ASSETCHAINS_SYMBOL,symbol,fname);
 }
 
-// create a config file. if this is a PBaaS chain, we assume that the loaded CCurrencyDefinition is complete, which may not
-// be the case when loading without VRSC active.
 void komodo_configfile(char *symbol, uint16_t rpcport)
 {
-    std::string fileName(symbol);
-    if (fileName != "VRSC")
-    {
-        fileName = boost::to_lower_copy(fileName);
-    }
+    std::string fileName = CanonicalChainFileName(symbol);
     const char *_symbol = fileName.c_str();
+
     static char myusername[512], mypassword[7168];
     FILE *fp; uint16_t kmdport; uint8_t buf2[33]; char fname[512],buf[128],username[512],password[7168]; uint32_t crc,r,r2,i;
     if ( !fileName.empty() && rpcport != 0 )
@@ -1443,14 +1443,17 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
                 fprintf(fp,"rpcuser=user%u\nrpcpassword=pass%s\nrpcport=%u\nserver=1\ntxindex=1\nrpcworkqueue=256\nrpcallowip=127.0.0.1\nrpchost=127.0.0.1\n",crc,password,rpcport);
 
                 // add basic chain parameters for non-VRSC chains
-                if (!_IsVerusActive())
+                if (!_IsVerusMainnetActive())
                 {
                     const char *charPtr;
                     // basic coin parameters. the rest will come from block 1
                     fprintf(fp,"ac_algo=verushash\nac_veruspos=50\nac_cc=1\n");
                     fprintf(fp,"launchsystemid=%s\n", EncodeDestination(CIdentityID(ConnectedChains.thisChain.launchSystemID)).c_str());
+                    fprintf(fp,"parentid=%s\n", EncodeDestination(CIdentityID(ConnectedChains.thisChain.parent)).c_str());
+                    fprintf(fp,"systemid=%s\n", EncodeDestination(CIdentityID(ConnectedChains.thisChain.systemID)).c_str());
                     fprintf(fp,"startblock=%d\n", ConnectedChains.thisChain.startBlock);
                     fprintf(fp,"endblock=%d\n", ConnectedChains.thisChain.endBlock);
+                    fprintf(fp,"gatewayconverterissuance=%s\n", (charPtr = mapArgs["-gatewayconverterissuance"].c_str())[0] == 0 ? "0" : charPtr);
                     fprintf(fp,"ac_supply=%s\n", (charPtr = mapArgs["-ac_supply"].c_str())[0] == 0 ? "0" : charPtr);
                     fprintf(fp,"ac_halving=%s\n", (charPtr = mapArgs["-ac_halving"].c_str())[0] == 0 ? "0" : charPtr);
                     fprintf(fp,"ac_decay=%s\n", (charPtr = mapArgs["-ac_decay"].c_str())[0] == 0 ? "0" : charPtr);
@@ -1512,18 +1515,12 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
     } //else printf("couldnt open.(%s)\n",fname);
 }
 
+extern boost::filesystem::path GetConfigFile();
 uint16_t komodo_userpass(char *userpass, char *symbol)
 {
     FILE *fp; uint16_t port = 0; char fname[512],username[512],password[512],confname[KOMODO_ASSETCHAIN_MAXLEN + 5];
     userpass[0] = 0;
-    std::string fileName(symbol);
-    if (fileName != "VRSC")
-    {
-        fileName = boost::to_lower_copy(fileName);
-    }
-    sprintf(confname, "%s.conf", fileName.c_str());
-    komodo_statefname(fname, symbol, confname);
-    if ( (fp= fopen(fname,"rb")) != 0 )
+    if ( (fp = fopen(GetConfigFile().generic_string().c_str(),"rb")) != 0 )
     {
         port = _komodo_userpass(username,password,fp);
         sprintf(userpass,"%s:%s",username,password);
@@ -1534,7 +1531,7 @@ uint16_t komodo_userpass(char *userpass, char *symbol)
     return(port);
 }
 
-uint32_t komodo_assetmagic(char *symbol,uint64_t supply,uint8_t *extraptr,int32_t extralen)
+uint32_t komodo_assetmagic(const char *symbol,uint64_t supply,uint8_t *extraptr,int32_t extralen)
 {
     std::string name(symbol);
     if (name != "VRSC")
@@ -1570,7 +1567,7 @@ uint16_t komodo_assetport(uint32_t magic,int32_t extralen)
     else return(16000 + (magic % 49500));
 }
 
-uint16_t komodo_port(char *symbol,uint64_t supply,uint32_t *magicp,uint8_t *extraptr,int32_t extralen)
+uint16_t komodo_port(const char *symbol,uint64_t supply,uint32_t *magicp,uint8_t *extraptr,int32_t extralen)
 {
     *magicp = komodo_assetmagic(symbol,supply,extraptr,extralen);
     return(komodo_assetport(*magicp,extralen));
@@ -1689,11 +1686,11 @@ uint64_t komodo_ac_block_subsidy(int nHeight)
     }
     if (nHeight == 1)
     {
-        if (_IsVerusActive() && !PBAAS_TESTMODE)
+        if (_IsVerusMainnetActive())
         {
             subsidy += ASSETCHAINS_SUPPLY + (ASSETCHAINS_MAGIC & 0xffffff);
         }
-        else
+        else if (_IsVerusActive())
         {
             subsidy += ASSETCHAINS_SUPPLY;
         }
@@ -1704,7 +1701,7 @@ uint64_t komodo_ac_block_subsidy(int nHeight)
 extern int64_t MAX_MONEY;
 extern int64_t MAX_SUPPLY;
 extern std::string VERUS_DEFAULT_ZADDR;
-bool SetThisChain(const UniValue &chainDefinition);
+bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef);
 
 void komodo_args(char *argv0)
 {
@@ -1769,7 +1766,7 @@ void komodo_args(char *argv0)
     */
 
     // either the testmode parameter or calling this chain VRSCTEST will put us into testmode
-    PBAAS_TESTMODE = GetBoolArg("-testmode", false);
+    PBAAS_TESTMODE = GetBoolArg("-testnet", false);
 
     // setting test mode also prevents the name of this chain from being set to VRSC
 
@@ -1781,6 +1778,7 @@ void komodo_args(char *argv0)
 
     std::string lowerName = boost::to_lower_copy(name);
 
+    // TODO: POST HARDENING - right now, all PBaaS chains assume testmode. change before mainnet
     if (lowerName != "vrsc")
     {
         PBAAS_TESTMODE = true;
@@ -1798,8 +1796,6 @@ void komodo_args(char *argv0)
         name = "VRSC";
     }
 
-    //printf("%s: chain name: %s\n", __func__, name.c_str());
-
     mapArgs["-ac_name"] = name;
     memset(ASSETCHAINS_SYMBOL, 0, sizeof(ASSETCHAINS_SYMBOL));
     strcpy(ASSETCHAINS_SYMBOL, name.c_str());
@@ -1810,56 +1806,101 @@ void komodo_args(char *argv0)
 
     bool paramsLoaded = false;
 
-    if (name == "VRSC")
+    CCurrencyDefinition mainVerusCurrency;
+
+    mapArgs["-ac_algo"] = "verushash";
+    mapArgs["-ac_cc"] = "1";
+    mapArgs["-ac_veruspos"] = "50";
+
+    VERUS_CHAINNAME = PBAAS_TESTMODE ? "VRSCTEST" : "VRSC";
+    VERUS_CHAINID = CCrossChainRPCData::GetID(VERUS_CHAINNAME);
+
+    if (name == "VRSC" || name == "VRSCTEST")
     {
-        // first setup Verus parameters
-        mapArgs["-ac_algo"] = "verushash";
-        mapArgs["-ac_cc"] = "1";
-        mapArgs["-ac_supply"] = "0";
-        mapArgs["-ac_eras"] = "3";
-        mapArgs["-ac_reward"] = "0,38400000000,2400000000";
-        mapArgs["-ac_halving"] = "1,43200,1051920";
-        mapArgs["-ac_decay"] = "100000000,0,0";
-        mapArgs["-ac_options"] = "72,0,0";      // OPTION_ID_REFERRALS + OPTION_CANBERESERVE
-        mapArgs["-ac_end"] = "10080,226080,0";
-        mapArgs["-ac_timelockgte"] = "19200000000";
-        mapArgs["-ac_timeunlockfrom"] = "129600";
-        mapArgs["-ac_timeunlockto"] = "1180800";
-        mapArgs["-ac_veruspos"] = "50";
+        mainVerusCurrency = CCurrencyDefinition(name, PBAAS_TESTMODE);
 
-        ASSETCHAINS_TIMELOCKGTE = 19200000000;
-        ASSETCHAINS_TIMEUNLOCKFROM = 129600;
-        ASSETCHAINS_TIMEUNLOCKTO = 1180800;
+        name = mainVerusCurrency.name;
 
-        if (!ReadConfigFile("VRSC", mapArgs, mapMultiArgs))
-        {
-            LogPrintf("Config file for %s not found.\n", name.c_str());
-        }
-    }
-    else if (name == "VRSCTEST")
-    {
-        // setup Verus test parameters
-        mapArgs["-ac_algo"] = "verushash";
-        mapArgs["-ac_cc"] = "1";
-        mapArgs["-ac_supply"] = "5000000000000000";
-        mapArgs["-ac_eras"] = "1";
-        mapArgs["-ac_reward"] = "1200000000";
-        mapArgs["-ac_decay"] = "0";
-        mapArgs["-ac_options"] = "72";       // OPTION_ID_REFERRALS + OPTION_CANBERESERVE
-        mapArgs["-ac_end"] = "0";
-        mapArgs["-ac_veruspos"] = "50";
+        ASSETCHAINS_ERAOPTIONS[0] = mainVerusCurrency.options;
 
-        ASSETCHAINS_TIMELOCKGTE = _ASSETCHAINS_TIMELOCKOFF;
-        ASSETCHAINS_TIMEUNLOCKFROM = 0;
-        ASSETCHAINS_TIMEUNLOCKTO = 0;
-
-        if (!ReadConfigFile("VRSCTEST", mapArgs, mapMultiArgs))
+        if (!ReadConfigFile(name, mapArgs, mapMultiArgs))
         {
             LogPrintf("Config file for %s not found.\n", name.c_str());
         }
 
-        std::string halving = GetArg("-ac_halving", mapArgs.count("-ac_halving") ? mapArgs["-ac_halving"] : "1300004"); // this assignment is required for an ARM compiler workaround
-        mapArgs["-ac_halving"] = halving;    // allow testing easily with different values here
+        auto numEras = mainVerusCurrency.rewards.size();
+        ASSETCHAINS_LASTERA = numEras - 1;
+        mapArgs["-ac_eras"] = to_string(numEras);
+
+        if (PBAAS_TESTMODE)
+        {
+            uint32_t defaultHalving = mainVerusCurrency.halving[0];
+            std::string halving = GetArg("-ac_halving", mapArgs.count("-ac_halving") ? mapArgs["-ac_halving"] : std::to_string(defaultHalving)); // this assignment is required for an ARM compiler workaround
+            mainVerusCurrency.halving[0] = atoi(halving);
+        }
+
+        for (int j = 0; j < ASSETCHAINS_MAX_ERAS; j++)
+        {
+            if (j > ASSETCHAINS_LASTERA)
+            {
+                ASSETCHAINS_REWARD[j] = ASSETCHAINS_REWARD[j-1];
+                ASSETCHAINS_DECAY[j] = ASSETCHAINS_DECAY[j-1];
+                ASSETCHAINS_HALVING[j] = ASSETCHAINS_HALVING[j-1];
+                ASSETCHAINS_ENDSUBSIDY[j] = 0;
+                ASSETCHAINS_ERAOPTIONS[j] = mainVerusCurrency.options;
+            }
+            else
+            {
+                ASSETCHAINS_REWARD[j] = mainVerusCurrency.rewards[j];
+                ASSETCHAINS_DECAY[j] = mainVerusCurrency.rewardsDecay[j];
+                ASSETCHAINS_HALVING[j] = mainVerusCurrency.halving[j];
+                ASSETCHAINS_ENDSUBSIDY[j] = mainVerusCurrency.eraEnd[j];
+                ASSETCHAINS_ERAOPTIONS[j] = mainVerusCurrency.options;
+                if (j == 0)
+                {
+                    mapArgs["-ac_reward"] = to_string(ASSETCHAINS_REWARD[j]);
+                    mapArgs["-ac_decay"] = to_string(ASSETCHAINS_DECAY[j]);
+                    mapArgs["-ac_halving"] = to_string(ASSETCHAINS_HALVING[j]);
+                    mapArgs["-ac_end"] = to_string(ASSETCHAINS_ENDSUBSIDY[j]);
+                    mapArgs["-ac_options"] = to_string(ASSETCHAINS_ERAOPTIONS[j]);
+                }
+                else
+                {
+                    mapArgs["-ac_reward"] += "," + to_string(ASSETCHAINS_REWARD[j]);
+                    mapArgs["-ac_decay"] += "," + to_string(ASSETCHAINS_DECAY[j]);
+                    mapArgs["-ac_halving"] += "," + to_string(ASSETCHAINS_HALVING[j]);
+                    mapArgs["-ac_end"] += "," + to_string(ASSETCHAINS_ENDSUBSIDY[j]);
+                    mapArgs["-ac_options"] += "," + to_string(ASSETCHAINS_ERAOPTIONS[j]);
+                }
+            }
+        }
+
+        PBAAS_STARTBLOCK = mainVerusCurrency.startBlock;
+        mapArgs["-startblock"] = to_string(PBAAS_STARTBLOCK);
+        PBAAS_ENDBLOCK = mainVerusCurrency.endBlock;
+        mapArgs["-endblock"] = to_string(PBAAS_ENDBLOCK);
+
+        ASSETCHAINS_SUPPLY = mainVerusCurrency.GetTotalPreallocation();
+        ASSETCHAINS_ISSUANCE = mainVerusCurrency.gatewayConverterIssuance;
+        mapArgs["-ac_supply"] = to_string(ASSETCHAINS_SUPPLY);
+        mapArgs["-gatewayconverterissuance"] = to_string(ASSETCHAINS_ISSUANCE);
+
+        if (name == "VRSC")
+        {
+            mapArgs["-ac_timelockgte"] = "19200000000";
+            mapArgs["-ac_timeunlockfrom"] = "129600";
+            mapArgs["-ac_timeunlockto"] = "1180800";
+
+            ASSETCHAINS_TIMELOCKGTE = 19200000000;
+            ASSETCHAINS_TIMEUNLOCKFROM = 129600;
+            ASSETCHAINS_TIMEUNLOCKTO = 1180800;
+        }
+        else
+        {
+            ASSETCHAINS_TIMELOCKGTE = _ASSETCHAINS_TIMELOCKOFF;
+            ASSETCHAINS_TIMEUNLOCKFROM = 0;
+            ASSETCHAINS_TIMEUNLOCKTO = 0;
+        }
     }
     else
     {
@@ -1892,14 +1933,20 @@ void komodo_args(char *argv0)
                 UniValue result;
                 try
                 {
+                    CCurrencyDefinition thisCurrency;
                     result = RPCCallRoot("getcurrency", params);
                     // set local parameters
                     result = find_value(result, "result");
-                    if (result.isNull() || !SetThisChain(result))
+                    if (result.isNull() || !SetThisChain(result, &thisCurrency))
                     {
                         throw error("Cannot find blockchain data");
                     }
                     name = string(ASSETCHAINS_SYMBOL);
+                    ASSETCHAINS_ERAOPTIONS[0] = thisCurrency.options;
+                    ASSETCHAINS_SUPPLY = thisCurrency.GetTotalPreallocation();
+                    ASSETCHAINS_ISSUANCE = thisCurrency.gatewayConverterIssuance;
+                    mapArgs["-ac_supply"] = to_string(ASSETCHAINS_SUPPLY);
+                    mapArgs["-gatewayconverterissuance"] = to_string(ASSETCHAINS_ISSUANCE);
                     paramsLoaded = true;
                 }
                 catch(const std::exception& e)
@@ -1947,8 +1994,6 @@ void komodo_args(char *argv0)
         }
     }
 
-    VERUS_CHAINNAME = PBAAS_TESTMODE ? "VRSCTEST" : "VRSC";
-    VERUS_CHAINID = CCrossChainRPCData::GetID(VERUS_CHAINNAME);
     memset(ASSETCHAINS_SYMBOL, 0, sizeof(ASSETCHAINS_SYMBOL));
     strcpy(ASSETCHAINS_SYMBOL, name.c_str());
 
@@ -2010,8 +2055,9 @@ void komodo_args(char *argv0)
             PBAAS_STARTBLOCK = GetArg("-startblock", 0);
             PBAAS_ENDBLOCK = GetArg("-endblock", 0);
 
-            // supply is the total of all pre-allocations
+            // supply is the total of all pre-allocations && issuance
             ASSETCHAINS_SUPPLY = GetArg("-ac_supply", 0);
+            ASSETCHAINS_ISSUANCE = GetArg("-gatewayconverterissuance", 0);
             ASSETCHAINS_RPCHOST = GetArg("-rpchost", "127.0.0.1");
         }
 
@@ -2103,7 +2149,8 @@ void komodo_args(char *argv0)
         MAX_MONEY = komodo_max_money();
 
         //printf("baseid.%d MAX_MONEY.%s %.8f\n",baseid,ASSETCHAINS_SYMBOL,(double)MAX_MONEY/SATOSHIDEN);
-        ASSETCHAINS_P2PPORT = komodo_port(ASSETCHAINS_SYMBOL,ASSETCHAINS_SUPPLY,&ASSETCHAINS_MAGIC,extraptr,extralen);
+        ASSETCHAINS_P2PPORT = komodo_port(_IsVerusName(name) ? ASSETCHAINS_SYMBOL : boost::to_lower_copy(name).c_str(),
+                                          ASSETCHAINS_SUPPLY + ASSETCHAINS_ISSUANCE, &ASSETCHAINS_MAGIC, extraptr, extralen);
 
         while ( (dirname= (char *)GetDataDir(false).string().c_str()) == 0 || dirname[0] == 0 )
         {
@@ -2114,6 +2161,7 @@ void komodo_args(char *argv0)
 						boost::this_thread::sleep(boost::posix_time::milliseconds(3000));
 						#endif
         }
+
         //fprintf(stderr,"Got datadir.(%s)\n",dirname);
         if ( ASSETCHAINS_SYMBOL[0] != 0 )
         {
@@ -2143,18 +2191,6 @@ void komodo_args(char *argv0)
             sprintf(&magicstr[i<<1],"%02x",magic[i]);
         magicstr[8] = 0;
 
-/* TODO: HARDENING - see if this is needed for any reason before removing commented section
-#ifndef FROM_CLI
-        sprintf(fname,"%s_7776",ASSETCHAINS_SYMBOL);
-        if ( (fp= fopen(fname,"wb")) != 0 )
-        {
-            fprintf(fp,iguanafmtstr,name.c_str(),name.c_str(),name.c_str(),name.c_str(),magicstr,ASSETCHAINS_P2PPORT,ASSETCHAINS_RPCPORT,"78.47.196.146");
-            fclose(fp);
-            //printf("created (%s)\n",fname);
-        } else printf("error creating (%s)\n",fname);
-#endif
-*/
-
         if ( KOMODO_CCACTIVATE != 0 && ASSETCHAINS_CC < 2 )
         {
             ASSETCHAINS_CC = 2;
@@ -2165,27 +2201,51 @@ void komodo_args(char *argv0)
 
         if (!paramsLoaded)
         {
-            // we need to set the chain definition for this chain based on globals set above
             UniValue obj(UniValue::VOBJ);
 
-            obj.push_back(Pair("premine", ASSETCHAINS_SUPPLY));
-            obj.push_back(Pair("name", ASSETCHAINS_SYMBOL));
-
-            obj.push_back(Pair("startblock", PBAAS_STARTBLOCK));
-            obj.push_back(Pair("endblock", PBAAS_ENDBLOCK));
-
-            UniValue eras(UniValue::VARR);
-            for (int i = 0; i <= ASSETCHAINS_LASTERA; i++)
+            if (mainVerusCurrency.IsValid())
             {
-                UniValue era(UniValue::VOBJ);
-                era.push_back(Pair("reward", ASSETCHAINS_REWARD[i]));
-                era.push_back(Pair("decay", ASSETCHAINS_DECAY[i]));
-                era.push_back(Pair("halving", ASSETCHAINS_HALVING[i]));
-                era.push_back(Pair("eraend", ASSETCHAINS_ENDSUBSIDY[i]));
-                era.push_back(Pair("eraoptions", ASSETCHAINS_ERAOPTIONS[i]));
-                eras.push_back(era);
+                obj = mainVerusCurrency.ToUniValue();
             }
-            obj.push_back(Pair("eras", eras));
+            else
+            {
+                obj.push_back(Pair("options", ASSETCHAINS_ERAOPTIONS[0]));
+
+                // we need to set the chain definition for this chain based on globals set above
+                obj.push_back(Pair("premine", ASSETCHAINS_SUPPLY));
+                obj.push_back(Pair("name", ASSETCHAINS_SYMBOL));
+
+                obj.push_back(Pair("startblock", PBAAS_STARTBLOCK));
+                obj.push_back(Pair("endblock", PBAAS_ENDBLOCK));
+                obj.push_back(Pair("launchsystemid", GetArg("-launchsystemid","")));
+                obj.push_back(Pair("systemid", GetArg("-systemid","")));
+                obj.push_back(Pair("parent", GetArg("-parentid","")));
+
+                UniValue eras(UniValue::VARR);
+                for (int i = 0; i <= ASSETCHAINS_LASTERA; i++)
+                {
+                    UniValue era(UniValue::VOBJ);
+                    era.push_back(Pair("reward", ASSETCHAINS_REWARD[i]));
+                    era.push_back(Pair("decay", ASSETCHAINS_DECAY[i]));
+                    era.push_back(Pair("halving", ASSETCHAINS_HALVING[i]));
+                    era.push_back(Pair("eraend", ASSETCHAINS_ENDSUBSIDY[i]));
+                    eras.push_back(era);
+                }
+                obj.push_back(Pair("eras", eras));
+
+                obj.push_back(Pair("gatewayconverterissuance", ValueFromAmount(ASSETCHAINS_ISSUANCE)));
+
+                // we do not have pre-allocation data here, so fake one lump sum of pre-allocation to a NULL address
+                // this will get replaced from either block 1 of our chain, or a connection to VRSC
+                if (ASSETCHAINS_SUPPLY)
+                {
+                    UniValue preallocArr(UniValue::VARR);
+                    UniValue preallocObj(UniValue::VOBJ);
+                    preallocObj.push_back(Pair("blockoneminer", ValueFromAmount((CAmount)ASSETCHAINS_SUPPLY)));
+                    preallocArr.push_back(preallocObj);
+                    obj.push_back(Pair("preallocations", preallocArr));
+                }
+            }
 
             std::vector<std::string> addn;
             UniValue nodeArr(UniValue::VARR);
@@ -2199,17 +2259,7 @@ void komodo_args(char *argv0)
                 obj.pushKV("nodes", nodeArr);
             }
 
-            // we do not have pre-allocation data here, so fake one lump sum of pre-allocation to a NULL address
-            // this will get replaced from either block 1 of our chain, or a connection to VRSC
-            if (ASSETCHAINS_SUPPLY)
-            {
-                UniValue preallocArr(UniValue::VARR);
-                UniValue preallocObj(UniValue::VOBJ);
-                preallocObj.push_back(Pair("DestinationPending", ValueFromAmount((CAmount)ASSETCHAINS_SUPPLY)));
-                preallocArr.push_back(preallocObj);
-                obj.push_back(Pair("preallocations", preallocArr));
-            }
-            SetThisChain(obj);
+            SetThisChain(obj, nullptr);
             paramsLoaded = true;
         }
     }

@@ -96,10 +96,10 @@ std::string ReserveOutputAddr = "RMXeZGxxRuABFkT4uLSCeuJHLegBNGZq8D";
 std::string ReserveOutputPubKey = "02d3e0f4c308c6e9786a5280ec96ea6d0e07505bae88d28b4b3156c309e2ae5515";
 std::string ReserveOutputWIF = "UrCfRxuFKPg3b3HtPFhvL9X8iePfETRZpgymrxzdDZ3vpjSwHrxH";
 
-// Reserve exchange -- convert from a fractional reserve into its underlying currency, PBaaS reserve chains only
-std::string ReserveExchangeAddr = "REuGNkgunnw1J4Zx6Y9UCp8YHVZqYATe9D";
-std::string ReserveExchangePubKey = "02b68492c495d7d63d908fa641fb6215bc56a7de15fb438c78066ec4c173563527";
-std::string ReserveExchangeWIF = "Uveq2qCQLjaJxdjXBAtBQQjhRDocomeSCtogifMHxwVsLNRCQgqX";
+// Identity advanced name reservation -- output with a versioned identity reservation that includes a parent to make IDs from a currency
+std::string AdvancedNameReservationAddr = "REuGNkgunnw1J4Zx6Y9UCp8YHVZqYATe9D";
+std::string AdvancedNameReservationPubKey = "02b68492c495d7d63d908fa641fb6215bc56a7de15fb438c78066ec4c173563527";
+std::string AdvancedNameReservationWIF = "Uveq2qCQLjaJxdjXBAtBQQjhRDocomeSCtogifMHxwVsLNRCQgqX";
 
 // Reserve transfer -- send reserves from a Verus chain to a PBaaS chain or back with optional conversion, works on Verus or PBaaS chains
 std::string ReserveTransferAddr = "RTqQe58LSj2yr5CrwYFwcsAQ1edQwmrkUU";
@@ -395,7 +395,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv,DecodeSecret(FinalizeNotarizationWIF).begin(),32);
             cp->validate = ValidateFinalizeNotarization;
             cp->ismyvin = IsFinalizeNotarizationInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->contextualprecheck = PreCheckFinalizeNotarization;
             break;
 
         case EVAL_NOTARY_EVIDENCE:
@@ -418,14 +418,14 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             cp->contextualprecheck = DefaultCCContextualPreCheck;
             break;
 
-        case EVAL_RESERVE_EXCHANGE:
-            strcpy(cp->unspendableCCaddr, ReserveExchangeAddr.c_str());
-            strcpy(cp->normaladdr, ReserveExchangeAddr.c_str());
-            strcpy(cp->CChexstr, ReserveExchangePubKey.c_str());
-            memcpy(cp->CCpriv,DecodeSecret(ReserveExchangeWIF).begin(),32);
-            cp->validate = ValidateReserveExchange;
-            cp->ismyvin = IsReserveExchangeInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+        case EVAL_IDENTITY_ADVANCEDRESERVATION:
+            strcpy(cp->unspendableCCaddr, AdvancedNameReservationAddr.c_str());
+            strcpy(cp->normaladdr, AdvancedNameReservationAddr.c_str());
+            strcpy(cp->CChexstr, AdvancedNameReservationPubKey.c_str());
+            memcpy(cp->CCpriv,DecodeSecret(AdvancedNameReservationWIF).begin(),32);
+            cp->validate = ValidateAdvancedNameReservation;
+            cp->ismyvin = IsIdentityInput;
+            cp->contextualprecheck = PrecheckIdentityReservation;
             break;
 
         case EVAL_RESERVE_TRANSFER:
@@ -455,7 +455,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv,DecodeSecret(CrossChainImportWIF).begin(),32);
             cp->validate = ValidateCrossChainImport;
             cp->ismyvin = IsCrossChainImportInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->contextualprecheck = PrecheckCrossChainImport;
             break;
 
         case EVAL_CROSSCHAIN_EXPORT:
@@ -465,7 +465,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv,DecodeSecret(CrossChainExportWIF).begin(),32);
             cp->validate = ValidateCrossChainExport;
             cp->ismyvin = IsCrossChainExportInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->contextualprecheck = PrecheckCrossChainExport;
             break;
 
         case EVAL_CURRENCYSTATE:
@@ -515,7 +515,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv, DecodeSecret(IdentityCommitmentWIF).begin(),32);
             cp->validate = ValidateIdentityCommitment;
             cp->ismyvin = IsIdentityInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->contextualprecheck = PrecheckIdentityCommitment;
             break;
 
         case EVAL_IDENTITY_RESERVATION:
@@ -535,7 +535,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv,DecodeSecret(FinalizeExportWIF).begin(),32);
             cp->validate = ValidateFinalizeExport;
             cp->ismyvin = IsFinalizeExportInput;  // TODO: these input functions are not useful for new CCs
-            cp->contextualprecheck = FinalizeExportContextualPreCheck;
+            cp->contextualprecheck = PreCheckFinalizeExport;
             break;
 
         case EVAL_FEE_POOL:

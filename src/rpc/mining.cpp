@@ -600,6 +600,117 @@ static UniValue BIP22ValidationResult(const CValidationState& state)
     return "valid?";
 }
 
+UniValue setminingdistribution(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "setminingdistribution ( \"jsonminingdistribution\" )\n"
+            "\nSets multiple mining outputs with amounts that will be used to calculate relative outputs to each address for any reward\n"
+
+            "\nArguments:\n"
+            "     {\n"
+            "       \"uniquedestination1\":value    (key/number, required) valid destination address and relative value output to it\n"
+            "       \"uniquedestination2\":value    (key/number, optional) destination address and relative value output\n"
+            "       ...\n"
+            "     }\n"
+            "\n"
+
+            "\nResult:\n"
+            "NULL for success, exceptoin otherwise\n"
+
+            "\nExamples:\n"
+            + HelpExampleCli("setminingdistribution", "{\"myaddress\":0.5, \"otheraddress\":0.5}")
+            + HelpExampleRpc("setminingdistribution", "{\"myaddress\":0.5, \"otheraddress\":0.5}")
+        );
+
+
+    if (params[0].isObject() && params[0].getKeys().size())
+    {
+        std::vector<CTxOut> minerOutputs;
+        auto rewardAddresses = params[0].getKeys();
+        for (int i = 0; i < rewardAddresses.size(); i++)
+        {
+            CTxDestination oneDest = DecodeDestination(rewardAddresses[i]);
+            CAmount relVal = 0;
+            if (oneDest.which() == COptCCParams::ADDRTYPE_INVALID ||
+                !(relVal = AmountFromValue(find_value(params[0], rewardAddresses[i]))))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid destination or zero weight specified in miningdistribution array");
+            }
+            minerOutputs.push_back(CTxOut(relVal, GetScriptForDestination(oneDest)));
+        }
+        mapArgs["-miningdistribution"] = params[0].write();
+    }
+    return NullUniValue;
+}
+
+UniValue getminingdistribution(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getminingdistribution\n"
+            "\nRetrieves current mining distribution\n"
+
+            "\nArguments: NONE\n"
+            "\n"
+
+            "\nResult:\n"
+            "     NULL object if not set\n"
+            "     If set:\n"
+            "     {\n"
+            "       \"uniquedestination1\":value    (key/number) valid destination address and relative value output to it\n"
+            "       \"uniquedestination2\":value    (key/number) destination address and relative value output\n"
+            "       ...\n"
+            "     }\n"
+
+            "\nExamples:\n"
+            + HelpExampleCli("getminingdistribution", "")
+            + HelpExampleRpc("getminingdistribution", "")
+        );
+
+
+    UniValue distributionObj(UniValue::VOBJ);
+    distributionObj.read(mapArgs.count("-miningdistribution") ? mapArgs["-miningdistribution"] : "");
+    return distributionObj;
+}
+
+UniValue getlastminingdistribution(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getlastminingdistribution\n"
+            "\nRetrieves the last used mining distribution when making a block\n"
+
+            "\nArguments: NONE\n"
+            "\n"
+
+            "\nResult:\n"
+            "     NULL object if not set\n"
+            "     If set:\n"
+            "     {\n"
+            "       \"uniquedestination1\":value    (key/number) valid destination address and relative value output to it\n"
+            "       \"uniquedestination2\":value    (key/number) destination address and relative value output\n"
+            "       ...\n"
+            "     }\n"
+
+            "\nExamples:\n"
+            + HelpExampleCli("getlastminingdistribution", "")
+            + HelpExampleRpc("getlastminingdistribution", "")
+        );
+
+
+    UniValue distributionObj(UniValue::VOBJ);
+    for (auto &oneRecipient : ConnectedChains.latestMiningOutputs)
+    {
+        CTxDestination recipient;
+        if (ExtractDestination(oneRecipient.scriptPubKey, recipient) && recipient.which() != COptCCParams::ADDRTYPE_INVALID)
+        {
+            distributionObj.pushKV(EncodeDestination(recipient), oneRecipient.nValue);
+        }
+    }
+    return distributionObj;
+}
+
 UniValue getblocktemplate(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() > 1)
@@ -613,7 +724,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
             "1. \"jsonrequestobject\"       (string, optional) A json object in the following spec\n"
             "     {\n"
             "       \"mode\":\"template\"   (string, optional) This must be set to \"template\" or omitted\n"
-            "       \"rewarddistribution\":{\n"
+            "       \"miningdistribution\":{\n"
             "           \"(recipientaddress)\":n,  (addressorid, relativeweight) key value to determine distribution\n"
             "           \"(recipientaddress)\":n,\n"
             "           \"...\n"
@@ -821,32 +932,23 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
             delete pblocktemplate;
             pblocktemplate = NULL;
         }
-        
+
         UniValue recipientWeights;
         if (params.size() > 0 &&
-            (recipientWeights = find_value(params[0], "recipientdistribution")).isArray() &&
-            recipientWeights.size() &&
-            recipientWeights[0].isObject())
+            ((recipientWeights = find_value(params[0], "miningdistribution")).isObject() ||
+             (recipientWeights = getminingdistribution(UniValue(UniValue::VARR), false)).isObject()) &&
+            recipientWeights.getKeys().size())
         {
             std::vector<CTxOut> minerOutputs;
-            for (int i = 0; i < recipientWeights.size(); i++)
+            auto rewardAddresses = recipientWeights.getKeys();
+            for (int i = 0; i < rewardAddresses.size(); i++)
             {
-                if (!recipientWeights[i].isObject())
-                {
-                    throw JSONRPCError(RPC_INVALID_PARAMS, "recipientdistribution must be an array of objects, each specifing a valid address as key and relative weight value");
-                }
-                std::vector<std::string> keys = recipientWeights[i].getKeys();
-                std::vector<UniValue> values = recipientWeights[i].getValues();
-                if (keys.size() != 1 || values.size() != 1)
-                {
-                    throw JSONRPCError(RPC_INVALID_PARAMS, "Each object in recipientdistribution array must have one valid address as key and one relative weight value");
-                }
-                CTxDestination oneDest = DecodeDestination(keys[0]);
+                CTxDestination oneDest = DecodeDestination(rewardAddresses[i]);
                 CAmount relVal = 0;
                 if (oneDest.which() == COptCCParams::ADDRTYPE_INVALID ||
-                    !(relVal = uni_get_int64(values[0])))
+                    !(relVal = AmountFromValue(find_value(recipientWeights, rewardAddresses[i]))))
                 {
-                    throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid destination or zero weight specified in recipientdistribution array");
+                    throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid destination or zero weight specified in miningdistribution array");
                 }
                 minerOutputs.push_back(CTxOut(relVal, GetScriptForDestination(oneDest)));
             }
@@ -1197,6 +1299,9 @@ static const CRPCCommand commands[] =
     { "mining",             "getnetworkhashps",       &getnetworkhashps,       true  },
     { "mining",             "getmininginfo",          &getmininginfo,          true  },
     { "mining",             "prioritisetransaction",  &prioritisetransaction,  true  },
+    { "mining",             "setminingdistribution",  &setminingdistribution,  true  },
+    { "mining",             "getminingdistribution",  &getminingdistribution,  true  },
+    { "mining",             "getlastminingdistribution",  &getlastminingdistribution,  true  },
     { "mining",             "getblocktemplate",       &getblocktemplate,       true  },
     { "mining",             "submitblock",            &submitblock,            true  },
     { "mining",             "getblocksubsidy",        &getblocksubsidy,        true  },

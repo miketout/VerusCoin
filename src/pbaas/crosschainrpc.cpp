@@ -42,6 +42,7 @@
 #include "hash.h"
 #include "pbaas/crosschainrpc.h"
 #include "pbaas/identity.h"
+#include "sync.h"
 
 using namespace std;
 
@@ -49,6 +50,7 @@ extern string PBAAS_HOST;
 extern string PBAAS_USERPASS;
 extern int32_t PBAAS_PORT;
 extern std::string VERUS_CHAINNAME;
+
 
 //
 // Exception thrown on connection error.  This error is used to determine
@@ -283,6 +285,7 @@ CIdentitySignature::CIdentitySignature(const UniValue &uni)
     try
     {
         version = uni_get_int(find_value(uni, "version"));
+        hashType = uni_get_int(find_value(uni, "hashtype"), CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR);
         blockHeight = uni_get_int64(find_value(uni, "blockheight"));
         UniValue sigs = find_value(uni, "signatures");
         if (sigs.isArray() && sigs.size())
@@ -322,7 +325,7 @@ uint256 CIdentitySignature::IdentitySignatureHash(const std::vector<uint160> &vd
     }
     else
     {
-        auto ss = CNativeHashWriter((CCurrencyDefinition::EProofProtocol)hashType);
+        CNativeHashWriter ss((CCurrencyDefinition::EProofProtocol)hashType);
 
         bool crossChainLogging = LogAcceptCategory("notarysignatures");
         if (crossChainLogging)
@@ -392,7 +395,8 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
                                                                               const std::vector<uint256> &statements, 
                                                                               const uint160 systemID, 
                                                                               const std::string &prefixString, 
-                                                                              const uint256 &msgHash) const
+                                                                              const uint256 &msgHash,
+                                                                              std::vector<std::vector<unsigned char>> *pDupSigs) const
 {
     CPubKey checkKey;
     std::set<uint160> keys;
@@ -418,11 +422,17 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
             return SIGNATURE_INVALID;
         }
         uint160 checkKeyID = checkKey.GetID();
+
         if (!idKeys.count(checkKeyID))
         {
             return SIGNATURE_INVALID;
         }
-        keys.insert(checkKey.GetID());
+
+        if (pDupSigs && keys.count(checkKeyID))
+        {
+            pDupSigs->push_back(oneSig);
+        }
+        keys.insert(checkKeyID);
     }
     if (keys.size() >= signingID.minSigs)
     {
@@ -434,9 +444,52 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
     }
     else
     {
-        return SIGNATURE_INVALID;
+        return SIGNATURE_EMPTY;
     }
 }
+
+CTransferDestination CTransferDestination::GetAuxDest(int destNum) const
+{
+    CTransferDestination retVal;
+    if (destNum < auxDests.size())
+    {
+        ::FromVector(auxDests[destNum], retVal);
+        if (retVal.type & FLAG_DEST_AUX || retVal.auxDests.size())
+        {
+            retVal.type = DEST_INVALID;
+        }
+        // no gateways or flags, only simple destinations work
+        switch (retVal.type)
+        {
+            case DEST_ID:
+            case DEST_PK:
+            case DEST_PKH:
+            case DEST_ETH:
+            case DEST_SH:
+                break;
+            default:
+                retVal.type = DEST_INVALID;
+        }
+    }
+    return retVal;
+}
+
+void CTransferDestination::SetAuxDest(const CTransferDestination &auxDest, int destNum)
+{
+    if (auxDests.size() == destNum)
+    {
+        auxDests.push_back(::AsVector(auxDest));
+    }
+    else if (auxDests.size() > destNum)
+    {
+        auxDests[destNum] = ::AsVector(auxDest);
+    }
+    if (auxDests.size())
+    {
+        type |= FLAG_DEST_AUX;
+    }
+}
+
 
 uint160 DecodeCurrencyName(std::string currencyStr)
 {
@@ -451,13 +504,18 @@ uint160 DecodeCurrencyName(std::string currencyStr)
         return retVal;
     }
     std::string copyStr = currencyStr;
+
     uint160 parent;
-    currencyStr = CleanName(currencyStr, parent, true);
+
+    currencyStr = CleanName(currencyStr, parent, true, currencyStr.back() != '.');
+
     if (!parent.IsNull() && CCurrencyDefinition::GetID(currencyStr, parent) == ASSETCHAINS_CHAINID)
     {
         return ASSETCHAINS_CHAINID;
     }
+
     CTxDestination currencyDest = DecodeDestination(currencyStr);
+
     if (currencyDest.which() == COptCCParams::ADDRTYPE_INVALID)
     {
         currencyDest = DecodeDestination(copyStr + "@");
@@ -470,9 +528,10 @@ uint160 DecodeCurrencyName(std::string currencyStr)
 }
 
 CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
-    preLaunchDiscount(0),
     initialFractionalSupply(0),
     gatewayConverterIssuance(0),
+    preLaunchDiscount(0),
+    preLaunchCarveOut(0),
     minNotariesConfirm(0),
     idRegistrationFees(IDENTITY_REGISTRATION_FEE),
     idReferralLevels(DEFAULT_ID_REFERRAL_LEVELS),
@@ -480,8 +539,9 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
     currencyRegistrationFee(CURRENCY_REGISTRATION_FEE),
     pbaasSystemLaunchFee(PBAAS_SYSTEM_LAUNCH_FEE),
     currencyImportFee(CURRENCY_IMPORT_FEE),
-    transactionImportFee(TRANSACTION_TRANSFER_FEE >> 1),
-    transactionExportFee(TRANSACTION_TRANSFER_FEE >> 1)
+    transactionImportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
+    transactionExportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
+    initialBits(DEFAULT_START_TARGET)
 {
     try
     {
@@ -532,10 +592,10 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             {
                 gatewayID = GetID();
             }
-            uint160 parent = GetID();
-            std::string cleanGatewayName = CleanName(gatewayConverterName, parent, true);
-            uint160 converterID = GetID(cleanGatewayName, parent);
-            if (parent != GetID())
+            uint160 converterParent = GetID();
+            std::string cleanGatewayName = CleanName(gatewayConverterName, converterParent, true);
+            uint160 converterID = GetID(cleanGatewayName, converterParent);
+            if (converterParent != GetID())
             {
                 LogPrintf("%s: invalid name for gateway converter %s\n", __func__, cleanGatewayName.c_str());
                 nVersion = PBAAS_VERSION_INVALID;
@@ -543,9 +603,23 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             }
         }
 
-        if (IsPBaaSChain() || IsGateway() || IsPBaaSConverter())
+        if (IsPBaaSChain() || IsGateway() || IsGatewayConverter())
         {
             gatewayConverterIssuance = AmountFromValueNoErr(find_value(obj, "gatewayconverterissuance"));
+            if (IsGatewayConverter())
+            {
+                std::string gatewayNameID = uni_get_str(find_value(obj, "gateway"));
+                if (!gatewayNameID.empty())
+                {
+                    gatewayID = DecodeCurrencyName(gatewayNameID);
+
+                    if (gatewayID.IsNull() || gatewayID != parent)
+                    {
+                        nVersion = PBAAS_VERSION_INVALID;
+                        return;
+                    }
+                }
+            }
         }
 
         notarizationProtocol = (ENotarizationProtocol)uni_get_int(find_value(obj, "notarizationprotocol"), (int32_t)NOTARIZATION_AUTO);
@@ -564,6 +638,14 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
         }
 
         // TODO: HARDENING - ensure that it makes sense for a chain to have PROOF_CHAINID still or disallow
+        // to enable it, we will need to ensure that all imports and notarizations are spendable to the chain ID and are
+        // considered valid by definition
+        if (proofProtocol == PROOF_CHAINID && IsPBaaSChain())
+        {
+            LogPrintf("%s: proofprotocol %d not yet implemented\n", __func__, (int)PROOF_CHAINID);
+            nVersion = PBAAS_VERSION_INVALID;
+            return;
+        }
 
         nativeCurrencyID = CTransferDestination(find_value(obj, "nativecurrencyid"));
 
@@ -593,6 +675,16 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
         UniValue minPreconvertArr = find_value(obj, "minpreconversion");
         UniValue maxPreconvertArr = find_value(obj, "maxpreconversion");
         UniValue initialContributionArr = find_value(obj, "initialcontributions");
+
+        if ((options & (OPTION_FRACTIONAL | OPTION_GATEWAY | OPTION_PBAAS | OPTION_TOKEN)) == OPTION_TOKEN &&
+            !(currencyArr.isArray() && currencyArr.size()) &&
+            maxPreconvertArr.isArray() &&
+            maxPreconvertArr.size() == 1 &&
+            !uni_get_int(maxPreconvertArr[0]))
+        {
+            currencyArr = UniValue(UniValue::VARR);
+            currencyArr.push_back(EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID)));
+        }
 
         if (currencyArr.isArray() && currencyArr.size())
         {
@@ -866,9 +958,33 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             minNotariesConfirm = uni_get_int(find_value(obj, "minnotariesconfirm"));
         }
 
-        idRegistrationFees = uni_get_int64(find_value(obj, "idregistrationfees"), idRegistrationFees);
+        UniValue registrationFeeValue = find_value(obj, "idregistrationfees");
+        idRegistrationFees = registrationFeeValue.isNull() ? idRegistrationFees : AmountFromValueNoErr(registrationFeeValue);
+
         idReferralLevels = uni_get_int(find_value(obj, "idreferrallevels"), idReferralLevels);
-        idImportFees = uni_get_int64(find_value(obj, "idimportfees"), idImportFees);
+
+        registrationFeeValue = find_value(obj, "idimportfees");
+        idImportFees = registrationFeeValue.isNull() ? idImportFees : AmountFromValueNoErr(registrationFeeValue);
+
+        registrationFeeValue = find_value(obj, "currencyregistrationfee");
+        currencyRegistrationFee = registrationFeeValue.isNull() ? currencyRegistrationFee : AmountFromValueNoErr(registrationFeeValue);
+
+        registrationFeeValue = find_value(obj, "pbaassystemregistrationfee");
+        pbaasSystemLaunchFee = registrationFeeValue.isNull() ? pbaasSystemLaunchFee : AmountFromValueNoErr(registrationFeeValue);
+
+        registrationFeeValue = find_value(obj, "currencyimportfee");
+        currencyImportFee = registrationFeeValue.isNull() ? currencyImportFee : AmountFromValueNoErr(registrationFeeValue);
+
+        registrationFeeValue = find_value(obj, "transactionimportfee");
+        transactionImportFee = registrationFeeValue.isNull() ? transactionImportFee : AmountFromValueNoErr(registrationFeeValue);
+
+        registrationFeeValue = find_value(obj, "transactionexportfee");
+        transactionExportFee = registrationFeeValue.isNull() ? transactionExportFee : AmountFromValueNoErr(registrationFeeValue);
+
+        if (!gatewayID.IsNull())
+        {
+            gatewayConverterIssuance = AmountFromValueNoErr(find_value(obj, "gatewayconverterissuance"));
+        }
 
         auto vEras = uni_getValues(find_value(obj, "eras"));
         if (vEras.size() > ASSETCHAINS_MAX_ERAS)
@@ -878,17 +994,28 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
 
         if (vEras.size())
         {
-            currencyRegistrationFee = uni_get_int64(find_value(obj, "currencyregistrationfee"), currencyRegistrationFee);
-            pbaasSystemLaunchFee = uni_get_int64(find_value(obj, "pbaassystemregistrationfee"), pbaasSystemLaunchFee);
-            currencyImportFee = uni_get_int64(find_value(obj, "currencyimportfee"), currencyImportFee);
-            transactionImportFee = uni_get_int64(find_value(obj, "transactionimportfee"), transactionImportFee);
-            transactionExportFee = uni_get_int64(find_value(obj, "transactionexportfee"), transactionExportFee);
-
-            if (!gatewayID.IsNull())
+            try
             {
-                gatewayConverterIssuance = uni_get_int64(find_value(obj, "gatewayconverterissuance"));
+                if (name == "VRSC" && parent.IsNull())
+                {
+                    initialBits = UintToArith256(uint256S("00000f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f")).GetCompact();
+                }
+                else
+                {
+                    initialBits = UintToArith256(uint256S("000000ff0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f")).GetCompact();
+                }
+                uint32_t newInitialBits = UintToArith256(uint256S(uni_get_str(find_value(obj, "initialtarget")))).GetCompact();
+                if (newInitialBits)
+                {
+                    initialBits = newInitialBits;
+                }
             }
-
+            catch(const std::exception& e)
+            {
+                LogPrintf("%s: Invalid initial target, must be 256 bit hex target\n", __func__);
+                throw e;
+            }
+            
             for (auto era : vEras)
             {
                 rewards.push_back(uni_get_int64(find_value(era, "reward")));
@@ -911,16 +1038,95 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
     }
 }
 
-int64_t CCurrencyDefinition::CalculateRatioOfValue(int64_t value, int64_t ratio)
+CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool testMode) :
+    nVersion(VERSION_CURRENT),
+    preLaunchDiscount(0),
+    initialFractionalSupply(0),
+    gatewayConverterIssuance(0),
+    minNotariesConfirm(0),
+    idRegistrationFees(IDENTITY_REGISTRATION_FEE),
+    idReferralLevels(DEFAULT_ID_REFERRAL_LEVELS),
+    idImportFees(IDENTITY_IMPORT_FEE),
+    currencyRegistrationFee(CURRENCY_REGISTRATION_FEE),
+    pbaasSystemLaunchFee(PBAAS_SYSTEM_LAUNCH_FEE),
+    currencyImportFee(CURRENCY_IMPORT_FEE),
+    transactionImportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
+    transactionExportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
+    initialBits(DEFAULT_START_TARGET)
 {
-    arith_uint256 bigAmount(value);
-    static const arith_uint256 bigSatoshi(SATOSHIDEN);
+    name = boost::to_upper_copy(CleanName(currencyName, parent));
+    if (parent.IsNull())
+    {
+        UniValue uniCurrency(UniValue::VOBJ);
+        uint160 thisCurrencyID = GetID();
 
-    int64_t retVal = ((bigAmount * arith_uint256(ratio)) / bigSatoshi).GetLow64();
-    return retVal;
+        uniCurrency.pushKV("options", CCurrencyDefinition::OPTION_PBAAS + CCurrencyDefinition::OPTION_ID_REFERRALS);
+        uniCurrency.pushKV("name", name);
+        uniCurrency.pushKV("systemid", EncodeDestination(CIdentityID(thisCurrencyID)));
+        uniCurrency.pushKV("notarizationprotocol", (int32_t)NOTARIZATION_AUTO);
+        uniCurrency.pushKV("proofprotocol", (int32_t)PROOF_PBAASMMR);
+
+        if (name == "VRSC" && !testMode)
+        {
+            UniValue uniEras(UniValue::VARR);
+            UniValue uniEra1(UniValue::VOBJ);
+            uniEra1.pushKV("reward", 0);
+            uniEra1.pushKV("decay", 100000000);
+            uniEra1.pushKV("halving", 1);
+            uniEra1.pushKV("eraend", 10080);
+            uniEras.push_back(uniEra1);
+
+            UniValue uniEra2(UniValue::VOBJ);
+            uniEra2.pushKV("reward", (int64_t)38400000000);
+            uniEra2.pushKV("decay", 0);
+            uniEra2.pushKV("halving", 43200);
+            uniEra2.pushKV("eraend", 226080);
+            uniEras.push_back(uniEra2);
+
+            UniValue uniEra3(UniValue::VOBJ);
+            uniEra3.pushKV("reward", (int64_t)2400000000);
+            uniEra3.pushKV("decay", 0);
+            uniEra3.pushKV("halving", 1051920);
+            uniEra3.pushKV("eraend", 0);
+            uniEras.push_back(uniEra3);
+
+            uniCurrency.pushKV("eras", uniEras);
+
+            *this = CCurrencyDefinition(uniCurrency);
+        }
+        else if (name == "VRSCTEST" || (testMode && name == "VRSC"))
+        {
+            name = "vrsctest";
+
+            UniValue preAllocUni(UniValue::VOBJ);
+            preAllocUni.pushKV("blockoneminer", ValueFromAmount((int64_t)5000000000000000));
+            UniValue preAllocArr(UniValue::VARR);
+            preAllocArr.push_back(preAllocUni);
+            uniCurrency.pushKV("preallocations", preAllocArr);
+
+            UniValue uniEras(UniValue::VARR);
+            UniValue uniEra1(UniValue::VOBJ);
+            uniEra1.pushKV("reward", 1200000000);
+            uniEra1.pushKV("decay", 0);
+            uniEra1.pushKV("halving", 163382);
+            uniEra1.pushKV("eraend", 0);
+            uniEras.push_back(uniEra1);
+
+            uniCurrency.pushKV("eras", uniEras);
+
+            *this = CCurrencyDefinition(uniCurrency);
+        }
+        else
+        {
+            nVersion = VERSION_INVALID;
+        }
+    }
+    else
+    {
+        nVersion = VERSION_INVALID;
+    }
 }
 
-// this will only return an accurate result after total preconversion has been updated and before any emission
 int64_t CCurrencyDefinition::GetTotalPreallocation() const
 {
     CAmount totalPreallocatedNative = 0;
@@ -931,10 +1137,360 @@ int64_t CCurrencyDefinition::GetTotalPreallocation() const
     return totalPreallocatedNative;
 }
 
-// this will only return an accurate result after total preconversion has been updated and before any emission
+int64_t CCurrencyDefinition::CalculateRatioOfValue(int64_t value, int64_t ratio)
+{
+    arith_uint256 bigAmount(value);
+    static const arith_uint256 bigSatoshi(SATOSHIDEN);
+
+    int64_t retVal = ((bigAmount * arith_uint256(ratio)) / bigSatoshi).GetLow64();
+    return retVal;
+}
+
 int32_t CCurrencyDefinition::GetTotalCarveOut() const
 {
     return preLaunchCarveOut;
+}
+
+const std::map<uint160, int> &CCrossChainProof::KnownVDXFKeys()
+{
+    static CCriticalSection localCS;
+    static std::map<uint160, int> knownVDXFKeys;
+
+    LOCK(localCS);
+    if (!knownVDXFKeys.size())
+    {
+        knownVDXFKeys.insert(std::make_pair(CrossChainProofKey(), CHAINOBJ_CROSSCHAINPROOF));
+        knownVDXFKeys.insert(std::make_pair(HeaderAndProofKey(), CHAINOBJ_HEADER));
+        knownVDXFKeys.insert(std::make_pair(HeaderProofKey(), CHAINOBJ_HEADER_REF));
+        knownVDXFKeys.insert(std::make_pair(NotarySignatureKey(), CHAINOBJ_NOTARYSIGNATURE));
+        knownVDXFKeys.insert(std::make_pair(HashCommitmentsKey(), CHAINOBJ_COMMITMENTDATA));
+        knownVDXFKeys.insert(std::make_pair(ProofRootKey(), CHAINOBJ_PROOF_ROOT));
+        knownVDXFKeys.insert(std::make_pair(TransactionProofKey(), CHAINOBJ_TRANSACTION_PROOF));
+        knownVDXFKeys.insert(std::make_pair(ReserveTransferKey(), CHAINOBJ_RESERVETRANSFER));
+        knownVDXFKeys.insert(std::make_pair(EvidenceDataKey(), CHAINOBJ_EVIDENCEDATA));
+    }
+    return knownVDXFKeys;
+}
+
+const std::map<int, uint160> &CCrossChainProof::KnownVDXFIndices()
+{
+    static CCriticalSection localCS;
+    static std::map<int, uint160> knownVDXFIndices;
+
+    LOCK(localCS);
+    if (!knownVDXFIndices.size())
+    {
+        knownVDXFIndices.insert(std::make_pair(CHAINOBJ_CROSSCHAINPROOF, CrossChainProofKey()));
+        knownVDXFIndices.insert(std::make_pair(CHAINOBJ_HEADER, HeaderAndProofKey()));
+        knownVDXFIndices.insert(std::make_pair(CHAINOBJ_HEADER_REF, HeaderProofKey()));
+        knownVDXFIndices.insert(std::make_pair(CHAINOBJ_NOTARYSIGNATURE, NotarySignatureKey()));
+        knownVDXFIndices.insert(std::make_pair(CHAINOBJ_COMMITMENTDATA, HashCommitmentsKey()));
+        knownVDXFIndices.insert(std::make_pair(CHAINOBJ_PROOF_ROOT, ProofRootKey()));
+        knownVDXFIndices.insert(std::make_pair(CHAINOBJ_TRANSACTION_PROOF, TransactionProofKey()));
+        knownVDXFIndices.insert(std::make_pair(CHAINOBJ_RESERVETRANSFER, ReserveTransferKey()));
+        knownVDXFIndices.insert(std::make_pair(CHAINOBJ_EVIDENCEDATA, EvidenceDataKey()));
+    }
+    return knownVDXFIndices;
+}
+
+void DeleteOpRetObjects(std::vector<CBaseChainObject *> &ora)
+{
+    for (auto pobj : ora)
+    {
+        switch(pobj->objectType)
+        {
+            case CHAINOBJ_HEADER:
+            {
+                delete (CChainObject<CBlockHeaderAndProof> *)pobj;
+                break;
+            }
+
+            case CHAINOBJ_TRANSACTION_PROOF:
+            {
+                delete (CChainObject<CPartialTransactionProof> *)pobj;
+                break;
+            }
+
+            case CHAINOBJ_PROOF_ROOT:
+            {
+                delete (CChainObject<CProofRoot> *)pobj;
+                break;
+            }
+
+            case CHAINOBJ_EVIDENCEDATA:
+            {
+                delete (CChainObject<CEvidenceData> *)pobj;
+                break;
+            }
+
+            case CHAINOBJ_HEADER_REF:
+            {
+                delete (CChainObject<CBlockHeaderProof> *)pobj;
+                break;
+            }
+
+            case CHAINOBJ_COMMITMENTDATA:
+            {
+                delete (CChainObject<CHashCommitments> *)pobj;
+                break;
+            }
+
+            case CHAINOBJ_RESERVETRANSFER:
+            {
+                delete (CChainObject<CReserveTransfer> *)pobj;
+                break;
+            }
+
+            case CHAINOBJ_CROSSCHAINPROOF:
+            {
+                delete (CChainObject<CCrossChainProof> *)pobj;
+                break;
+            }
+
+            case CHAINOBJ_COMPOSITEOBJECT:
+            {
+                delete (CChainObject<CCompositeChainObject> *)pobj;
+                break;
+            }
+
+            case CHAINOBJ_NOTARYSIGNATURE:
+            {
+                delete (CChainObject<CNotarySignature> *)pobj;
+                break;
+            }
+
+            default:
+            {
+                printf("ERROR: invalid object type (%u), likely corrupt pointer %p\n", pobj->objectType, pobj);
+                printf("generate code that won't be optimized away %s\n", CCurrencyValueMap(std::vector<uint160>({ASSETCHAINS_CHAINID}), std::vector<CAmount>({200000000})).ToUniValue().write(1,2).c_str());
+                
+                delete pobj;
+            }
+        }
+    }
+    ora.clear();
+}
+
+CCrossChainProof::CCrossChainProof(const UniValue &uniObj)
+{
+    version = uni_get_int(find_value(uniObj, "version"), VERSION_CURRENT);
+    UniValue chainObjArr = find_value(uniObj, "chainobjects");
+    if (chainObjArr.isArray())
+    {
+        for (int i = 0; i < chainObjArr.size(); i++)
+        {
+            // each element is an object with a VDXF key and univalue object specific to the VDXF type
+            // for any VDXF object that isn't understood, we skip it as a char vector
+            std::string vdxfKey = uni_get_str(find_value(chainObjArr[i], "vdxftype"));
+            UniValue obj = find_value(chainObjArr[i], "value");
+            CTxDestination keyDest = DecodeDestination(vdxfKey);
+            uint160 namespaceID;
+            if (keyDest.which() == COptCCParams::ADDRTYPE_INVALID)
+            {
+                uint160 vdxfKeyID = CVDXF::GetDataKey(vdxfKey, namespaceID);
+                if (!vdxfKeyID.IsNull())
+                {
+                    keyDest = CIdentityID(vdxfKeyID);
+                }
+            }
+            // if no valid key or empty value
+            if (keyDest.which() != COptCCParams::ADDRTYPE_ID ||
+                obj.isNull())
+            {
+                version = VERSION_INVALID;
+                DeleteOpRetObjects(chainObjects);
+                chainObjects.clear();
+                break;
+            }
+            uint160 vdxfKeyID = GetDestinationID(keyDest);
+            if (KnownVDXFKeys().count(vdxfKeyID))
+            {
+                switch (KnownVDXFKeys().find(vdxfKeyID)->second)
+                {
+                    case CHAINOBJ_HEADER:
+                    {
+                        chainObjects.push_back(new CChainObject<CBlockHeaderAndProof>(CHAINOBJ_HEADER, CBlockHeaderAndProof(obj)));
+                        break;
+                    }
+
+                    case CHAINOBJ_TRANSACTION_PROOF:
+                    {
+                        chainObjects.push_back(new CChainObject<CPartialTransactionProof>(CHAINOBJ_TRANSACTION_PROOF, CPartialTransactionProof(obj)));
+                        break;
+                    }
+
+                    case CHAINOBJ_PROOF_ROOT:
+                    {
+                        chainObjects.push_back(new CChainObject<CProofRoot>(CHAINOBJ_PROOF_ROOT, CProofRoot(obj)));
+                        break;
+                    }
+
+                    case CHAINOBJ_HEADER_REF:
+                    {
+                        chainObjects.push_back(new CChainObject<CBlockHeaderProof>(CHAINOBJ_HEADER_REF, CBlockHeaderProof(obj)));
+                        break;
+                    }
+
+                    case CHAINOBJ_COMMITMENTDATA:
+                    {
+                        chainObjects.push_back(new CChainObject<CHashCommitments>(CHAINOBJ_COMMITMENTDATA, CHashCommitments(obj)));
+                        break;
+                    }
+
+                    case CHAINOBJ_RESERVETRANSFER:
+                    {
+                        chainObjects.push_back(new CChainObject<CReserveTransfer>(CHAINOBJ_RESERVETRANSFER, CReserveTransfer(obj)));
+                        break;
+                    }
+
+                    case CHAINOBJ_CROSSCHAINPROOF:
+                    case CHAINOBJ_COMPOSITEOBJECT:
+                    {
+                        chainObjects.push_back(new CChainObject<CCrossChainProof>(CHAINOBJ_CROSSCHAINPROOF, CCrossChainProof(obj)));
+                        break;
+                    }
+
+                    case CHAINOBJ_NOTARYSIGNATURE:
+                    {
+                        chainObjects.push_back(new CChainObject<CNotarySignature>(CHAINOBJ_NOTARYSIGNATURE, CNotarySignature(obj)));
+                        break;
+                    }
+
+                    case CHAINOBJ_EVIDENCEDATA:
+                    {
+                        chainObjects.push_back(new CChainObject<CEvidenceData>(CHAINOBJ_EVIDENCEDATA, CEvidenceData(obj)));
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                // we ignore elements we don't understand
+            }
+        }
+    }
+}
+
+UniValue CCrossChainProof::ToUniValue() const
+{
+    UniValue chainObjArr(UniValue::VARR);
+
+    for (int i = 0; i < chainObjects.size(); i++)
+    {
+        try
+        {
+            union {
+                CChainObject<CBlockHeaderAndProof> *pNewHeader;
+                CChainObject<CPartialTransactionProof> *pNewTx;
+                CChainObject<CProofRoot> *pNewProof;
+                CChainObject<CBlockHeaderProof> *pNewHeaderRef;
+                CChainObject<CHashCommitments> *pPriors;
+                CChainObject<CReserveTransfer> *pExport;
+                CChainObject<CCrossChainProof> *pCrossChainProof;
+                CChainObject<CNotarySignature> *pNotarySignature;
+                CChainObject<CEvidenceData> *pBytes;
+                CBaseChainObject *pobj;
+            };
+
+            pobj = chainObjects[i];
+            if (pobj)
+            {
+                switch(pobj->objectType)
+                {
+                    case CHAINOBJ_HEADER:
+                    {
+                        UniValue blockHeaderAndProofUni(UniValue::VOBJ);
+                        blockHeaderAndProofUni.pushKV("vdxftype", EncodeDestination(CIdentityID(CCrossChainProof::HeaderAndProofKey())));
+                        blockHeaderAndProofUni.pushKV("value", pNewHeader->object.ToUniValue());
+                        chainObjArr.push_back(blockHeaderAndProofUni);
+                        break;
+                    }
+
+                    case CHAINOBJ_TRANSACTION_PROOF:
+                    {
+                        UniValue partialTransactionProofUni(UniValue::VOBJ);
+                        partialTransactionProofUni.pushKV("vdxftype", EncodeDestination(CIdentityID(CCrossChainProof::TransactionProofKey())));
+                        partialTransactionProofUni.pushKV("value", pNewTx->object.ToUniValue());
+                        chainObjArr.push_back(partialTransactionProofUni);
+                        break;
+                    }
+
+                    case CHAINOBJ_PROOF_ROOT:
+                    {
+                        UniValue proofRootUni(UniValue::VOBJ);
+                        proofRootUni.pushKV("vdxftype", EncodeDestination(CIdentityID(CCrossChainProof::ProofRootKey())));
+                        proofRootUni.pushKV("value", pNewProof->object.ToUniValue());
+                        chainObjArr.push_back(proofRootUni);
+                        break;
+                    }
+
+                    case CHAINOBJ_HEADER_REF:
+                    {
+                        UniValue headerRefUni(UniValue::VOBJ);
+                        headerRefUni.pushKV("vdxftype", EncodeDestination(CIdentityID(CCrossChainProof::HeaderProofKey())));
+                        headerRefUni.pushKV("value", pNewHeaderRef->object.ToUniValue());
+                        chainObjArr.push_back(headerRefUni);
+                        break;
+                    }
+
+                    case CHAINOBJ_COMMITMENTDATA:
+                    {
+                        UniValue priorBlocksUni(UniValue::VOBJ);
+                        priorBlocksUni.pushKV("vdxftype", EncodeDestination(CIdentityID(CCrossChainProof::HashCommitmentsKey())));
+                        priorBlocksUni.pushKV("value", pPriors->object.ToUniValue());
+                        chainObjArr.push_back(priorBlocksUni);
+                        break;
+                    }
+                    case CHAINOBJ_RESERVETRANSFER:
+                    {
+                        UniValue reserveTransferUni(UniValue::VOBJ);
+                        reserveTransferUni.pushKV("vdxftype", EncodeDestination(CIdentityID(CCrossChainProof::ReserveTransferKey())));
+                        reserveTransferUni.pushKV("value", pExport->object.ToUniValue());
+                        chainObjArr.push_back(reserveTransferUni);
+                        break;
+                    }
+
+                    case CHAINOBJ_CROSSCHAINPROOF:
+                    case CHAINOBJ_COMPOSITEOBJECT:
+                    {
+                        UniValue crossChainProofUni(UniValue::VOBJ);
+                        crossChainProofUni.pushKV("vdxftype", EncodeDestination(CIdentityID(CCrossChainProof::CrossChainProofKey())));
+                        crossChainProofUni.pushKV("value", pCrossChainProof->object.ToUniValue());
+                        chainObjArr.push_back(crossChainProofUni);
+                        break;
+                    }
+
+                    case CHAINOBJ_NOTARYSIGNATURE:
+                    {
+                        UniValue notarySignatureUni(UniValue::VOBJ);
+                        notarySignatureUni.pushKV("vdxftype", EncodeDestination(CIdentityID(CCrossChainProof::NotarySignatureKey())));
+                        notarySignatureUni.pushKV("value", pNotarySignature->object.ToUniValue());
+                        chainObjArr.push_back(notarySignatureUni);
+                        break;
+                    }
+
+                    case CHAINOBJ_EVIDENCEDATA:
+                    {
+                        UniValue bytesUni(UniValue::VOBJ);
+                        bytesUni.pushKV("vdxftype", EncodeDestination(CIdentityID(CCrossChainProof::EvidenceDataKey())));
+                        bytesUni.pushKV("value", pBytes->object.ToUniValue());
+                        chainObjArr.push_back(bytesUni);
+                        break;
+                    }
+                }
+            }
+        }
+        catch(const std::exception& e)
+        {
+            printf("%s: ERROR: data is likely corrupt\n", __func__);
+            LogPrintf("%s: ERROR: data is likely corrupt\n", __func__);
+            throw e;
+        }
+    }
+    UniValue retVal(UniValue::VOBJ);
+    retVal.pushKV("version", (int64_t)version);
+    retVal.pushKV("chainobjects", chainObjArr);
+    return retVal;
 }
 
 CAmount AmountFromValue(const UniValue& value)
@@ -948,4 +1504,3 @@ CAmount AmountFromValue(const UniValue& value)
         throw JSONRPCError(RPC_TYPE_ERROR, "Amount out of range");
     return amount;
 }
-

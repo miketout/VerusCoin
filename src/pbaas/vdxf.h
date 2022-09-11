@@ -102,7 +102,7 @@
  *    unambiguous URL references, with defaults for simplicity. Here are some
  *    examples of the names that may be used as URLs:
  * 
- *         verus://idname.vrsc@/namespaceid::keyname/contentprotocol/qualifier1/qualifier2/
+ *         verus://idname.vrsc/namespaceid::keyname/contentprotocol/qualifier1/qualifier2/
  * 
  *          This is a way to refer to values that may be substituted for 
  *          information located through idname.vrsc@exportedchain.vrsc.
@@ -115,11 +115,11 @@
  *          names that provide basic, system level data structure definitions,
  *          such as claim.health.covid and claim.id.passport.firstname, etc.
  * 
- *          If no namespace is specified, the vrsc namespace is assumed.
+ *          If no namespace is specified, vrsc, vrsctest on testnet, is assumed.
  *          That means that an equivalent URL using keys in the vrsc namespace
  *          and leaving out defaults for brevity would be:
  * 
- *         verus://idname@/keyname/contentprotocol/qualifier1/qualifier2
+ *         verus://idname/keyname/contentprotocol/qualifier1/qualifier2
  * 
  *          qualifier1 and qualifier2 are optional specifiers that are 
  *          specific to the type of key, may include sub-storage information,
@@ -131,7 +131,7 @@
  *          which is used as a homepage for an ID. That means that a default 
  *          homepage or ID profile can be specified as simply as:
  * 
- *         verus://idname@
+ *         verus://idname
  * 
  *          As a result of this specification, published data types and
  *          structures, which may include alternate location and qualifier
@@ -140,7 +140,7 @@
  *          any ID specified in the "idname@". The 32 byte value of that
  *          keyed content is considered the initial locator, using the 
  *          default contentprotocol, defined by the specified keyname.
- *          As a result, the URL, verus://idname@, defines a content
+ *          As a result, the URL, verus://idname, defines a content
  *          address to an HTML, index data structure for the specified ID, 
  *          which shall be located in IPFS storage.
  * 
@@ -185,7 +185,8 @@ void FromVector(const std::vector<unsigned char> &vch, SERIALIZABLE &obj, bool *
     }
     catch(const std::exception& e)
     {
-        std::cerr << e.what() << '\n';
+        //printf("%s\n", e.what());
+        LogPrint("serialization", "%s\n", e.what());
     }
 }
 

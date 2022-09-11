@@ -43,27 +43,28 @@ struct komodo_ccdata_entry *komodo_allMoMs(int32_t *nump,uint256 *MoMoMp,int32_t
     struct komodo_ccdata_entry *allMoMs=0; struct komodo_ccdata *ccdata,*tmpptr; int32_t i,num,max;
     bool fMutated; std::vector<uint256> tree, leaves;
     num = max = 0;
-    portable_mutex_lock(&KOMODO_CC_mutex);
-    DL_FOREACH_SAFE(CC_data,ccdata,tmpptr)
     {
-        if ( ccdata->MoMdata.height <= kmdendi && ccdata->MoMdata.height >= kmdstarti )
+        LOCK(smartTransactionCS);
+        DL_FOREACH_SAFE(CC_data,ccdata,tmpptr)
         {
-            if ( num >= max )
+            if ( ccdata->MoMdata.height <= kmdendi && ccdata->MoMdata.height >= kmdstarti )
             {
-                max += 100;
-                allMoMs = (struct komodo_ccdata_entry *)realloc(allMoMs,max * sizeof(*allMoMs));
+                if ( num >= max )
+                {
+                    max += 100;
+                    allMoMs = (struct komodo_ccdata_entry *)realloc(allMoMs,max * sizeof(*allMoMs));
+                }
+                allMoMs[num].MoM = ccdata->MoMdata.MoM;
+                allMoMs[num].notarized_height = ccdata->MoMdata.notarized_height;
+                allMoMs[num].kmdheight = ccdata->MoMdata.height;
+                allMoMs[num].txi = ccdata->MoMdata.txi;
+                strcpy(allMoMs[num].symbol,ccdata->symbol);
+                num++;
             }
-            allMoMs[num].MoM = ccdata->MoMdata.MoM;
-            allMoMs[num].notarized_height = ccdata->MoMdata.notarized_height;
-            allMoMs[num].kmdheight = ccdata->MoMdata.height;
-            allMoMs[num].txi = ccdata->MoMdata.txi;
-            strcpy(allMoMs[num].symbol,ccdata->symbol);
-            num++;
+            if ( ccdata->MoMdata.height < kmdstarti )
+                break;
         }
-        if ( ccdata->MoMdata.height < kmdstarti )
-            break;
     }
-    portable_mutex_unlock(&KOMODO_CC_mutex);
     if ( (*nump= num) > 0 )
     {
         for (i=0; i<num; i++)
@@ -108,31 +109,32 @@ int32_t komodo_MoMoMdata(char *hexstr,int32_t hexsize,struct komodo_ccdataMoMoM 
         return(-1);
     }
     memset(mdata,0,sizeof(*mdata));
-    portable_mutex_lock(&KOMODO_CC_mutex);
-    DL_FOREACH_SAFE(CC_data,ccdata,tmpptr)
     {
-        if ( ccdata->MoMdata.height < kmdheight )
+        LOCK(smartTransactionCS);
+        DL_FOREACH_SAFE(CC_data,ccdata,tmpptr)
         {
-            //fprintf(stderr,"%s notarized.%d kmd.%d\n",ccdata->symbol,ccdata->MoMdata.notarized_height,ccdata->MoMdata.height);
-            if ( strcmp(ccdata->symbol,symbol) == 0 )
+            if ( ccdata->MoMdata.height < kmdheight )
             {
-                if ( endi == 0 )
+                //fprintf(stderr,"%s notarized.%d kmd.%d\n",ccdata->symbol,ccdata->MoMdata.notarized_height,ccdata->MoMdata.height);
+                if ( strcmp(ccdata->symbol,symbol) == 0 )
                 {
-                    endi = ccdata->MoMdata.height;
-                    CCid = ccdata->CCid;
+                    if ( endi == 0 )
+                    {
+                        endi = ccdata->MoMdata.height;
+                        CCid = ccdata->CCid;
+                    }
+                    if ( (mdata->numpairs == 1 && notarized_height == 0) || ccdata->MoMdata.notarized_height <= notarized_height )
+                    {
+                        starti = ccdata->MoMdata.height + 1;
+                        if ( notarized_height == 0 )
+                            notarized_height = ccdata->MoMdata.notarized_height;
+                        break;
+                    }
                 }
-                if ( (mdata->numpairs == 1 && notarized_height == 0) || ccdata->MoMdata.notarized_height <= notarized_height )
-                {
-                    starti = ccdata->MoMdata.height + 1;
-                    if ( notarized_height == 0 )
-                        notarized_height = ccdata->MoMdata.notarized_height;
-                    break;
-                }
+                starti = ccdata->MoMdata.height;
             }
-            starti = ccdata->MoMdata.height;
         }
     }
-    portable_mutex_unlock(&KOMODO_CC_mutex);
     mdata->kmdstarti = starti;
     mdata->kmdendi = endi;
     if ( starti != 0 && endi != 0 && endi >= starti )
@@ -181,7 +183,7 @@ void komodo_purge_ccdata(int32_t height)
     struct komodo_ccdata *ccdata,*tmpptr;
     if ( ASSETCHAINS_SYMBOL[0] == 0 )
     {
-        portable_mutex_lock(&KOMODO_CC_mutex);
+        LOCK(smartTransactionCS);
         DL_FOREACH_SAFE(CC_data,ccdata,tmpptr)
         {
             if ( ccdata->MoMdata.height >= height )
@@ -191,7 +193,6 @@ void komodo_purge_ccdata(int32_t height)
                 free(ccdata);
             } else break;
         }
-        portable_mutex_unlock(&KOMODO_CC_mutex);
     }
     else
     {
@@ -233,9 +234,8 @@ int32_t komodo_rwccdata(char *thischain,int32_t rwflag,struct komodo_ccdata *ccd
         {
             ptr = (struct komodo_ccdata *)calloc(1,sizeof(*ptr));
             *ptr = *ccdata;
-            portable_mutex_lock(&KOMODO_CC_mutex);
+            LOCK(smartTransactionCS);
             DL_PREPEND(CC_data,ptr);
-            portable_mutex_unlock(&KOMODO_CC_mutex);
         }
     }
     else

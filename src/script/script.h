@@ -32,7 +32,9 @@ class CCurrencyState;
 class CIdentity;
 
 static const unsigned int MAX_SCRIPT_ELEMENT_SIZE_V2 = 1024;
-static const unsigned int MAX_SCRIPT_ELEMENT_SIZE_IDENTITY = 3073;    // fulfillment maximum size + 1, MAKE SURE TO KEEP MAX_BINARY_CC_SIZE IN SYNC WITH THIS-1, BUF_SIZE in crypto conditions, should be >=
+static const unsigned int MAX_SCRIPT_ELEMENT_SIZE_IDENTITY = 3073;
+static const unsigned int MAX_SCRIPT_ELEMENT_SIZE_PBAAS = 6000;     // fulfillment maximum size + 1, MAKE SURE TO KEEP MAX_BINARY_CC_SIZE IN SYNC WITH THIS-1, BUF_SIZE in crypto conditions, should be >=
+static const unsigned int ID_SCRIPT_ELEMENT_OVERHEAD = 128;         // overhead in object
 
 // Maximum script length in bytes
 static const int MAX_SCRIPT_SIZE = 10000;
@@ -429,12 +431,12 @@ public:
  */
 typedef boost::variant<CNoDestination, CPubKey, CKeyID, CScriptID, CIdentityID, CIndexID, CQuantumID> CTxDestination;
 
-CTxDestination TransferDestinationToDestination(const CTransferDestination &transferDest);
+CTxDestination TransferDestinationToDestination(const CTransferDestination &transferDest, CCurrencyDefinition::EProofProtocol addressProtocol=CCurrencyDefinition::EProofProtocol::PROOF_INVALID);
+CTxDestination GetCompatibleAuxDestination(const CTransferDestination &transferDest, CCurrencyDefinition::EProofProtocol addressProtocol);
 CTransferDestination DestinationToTransferDestination(const CTxDestination &dest);
 CTransferDestination IdentityToTransferDestination(const CIdentity &identity);
 CIdentity TransferDestinationToIdentity(const CTransferDestination &dest);
 CCurrencyDefinition TransferDestinationToCurrency(const CTransferDestination &dest);
-std::vector<CTxDestination> TransferDestinationsToDestinations(const std::vector<CTransferDestination> &transferDests);
 std::vector<CTransferDestination> DestinationsToTransferDestinations(const std::vector<CTxDestination> &dests);
 
 class COptCCParams
@@ -780,7 +782,6 @@ public:
     bool IsSpendableOutputType() const;
     CCurrencyValueMap ReserveOutValue() const;
     CCurrencyValueMap ReserveOutValue(COptCCParams &p, bool spendingOnly=false) const;
-    bool SetReserveOutValue(const CCurrencyValueMap &newValue);
 
     bool IsCoinImport() const;
     bool MayAcceptCryptoCondition() const;

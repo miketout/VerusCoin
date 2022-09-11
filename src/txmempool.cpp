@@ -19,6 +19,7 @@
 #include "cc/CCinclude.h"
 #include "pbaas/pbaas.h"
 #include "pbaas/identity.h"
+#include "pbaas/notarization.h"
 #define _COINBASE_MATURITY 100
 
 using namespace std;
@@ -382,7 +383,9 @@ int64_t komodo_block_unlocktime(uint32_t nHeight);
 
 void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMemPoolHeight, int flags)
 {
-    // Remove transactions spending a coinbase which are now immature
+    // remove:
+    // 1) transactions spending a coinbase which are now immature
+    // 2) exports, notarizations, and imports that reference heights that are no longer valid
     extern char ASSETCHAINS_SYMBOL[KOMODO_ASSETCHAIN_MAXLEN];
 
     if ( ASSETCHAINS_SYMBOL[0] == 0 )
@@ -408,6 +411,99 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
                                     ((signed long)nMemPoolHeight < komodo_block_unlocktime(coins->nHeight) && 
                                         coins->IsAvailable(0) && coins->vout[0].nValue >= ASSETCHAINS_TIMELOCKGTE))) {
                     transactionsToRemove.push_back(tx);
+                    break;
+                }
+            }
+        }
+        bool oneRemoved = false;
+        for (auto &oneOut : tx.vout)
+        {
+            COptCCParams p;
+
+            if (oneOut.scriptPubKey.IsPayToCryptoCondition(p))
+            {
+                switch(p.evalCode)
+                {
+                    case EVAL_EARNEDNOTARIZATION:
+                    case EVAL_ACCEPTEDNOTARIZATION:
+                    {
+                        CPBaaSNotarization notarization;
+
+                        if (p.vData.size() && (notarization = CPBaaSNotarization(p.vData[0])).IsValid())
+                        {
+                            uint32_t rootHeight;
+                            auto mmv = chainActive.GetMMV();
+                            if ((!notarization.IsMirror() &&
+                                 notarization.IsSameChain() &&
+                                 notarization.notarizationHeight >= nMemPoolHeight) ||
+                                (notarization.proofRoots.count(ASSETCHAINS_CHAINID) &&
+                                 ((rootHeight = notarization.proofRoots[ASSETCHAINS_CHAINID].rootHeight) > (nMemPoolHeight - 1) ||
+                                   (mmv.resize(rootHeight + 1), rootHeight != (mmv.size() - 1)) ||
+                                   notarization.proofRoots[ASSETCHAINS_CHAINID].blockHash != chainActive[rootHeight]->GetBlockHash() ||
+                                   notarization.proofRoots[ASSETCHAINS_CHAINID].stateRoot != mmv.GetRoot())))
+                            {
+                                transactionsToRemove.push_back(tx);
+                                oneRemoved = true;
+                            }
+                        }
+                        else
+                        {
+                            transactionsToRemove.push_back(tx);
+                            oneRemoved = true;
+                        }
+                        break;
+                    }
+
+
+                    // TODO: HARDENING - if we can no longer submit evidence or finalization of a notarization
+                    // due to reorganizing back past the point where a notary can sign, we must consider this transaction
+                    // on hold until it is valid again. on the other hand, if the original notarization it refers to
+                    // is no longer valid, we should purge it.
+                    // probably the easiest way to determine if we can is to do a contextual precheck on this tx at the current
+                    // mem pool height.
+                    case EVAL_NOTARY_EVIDENCE:
+                    case EVAL_FINALIZE_NOTARIZATION:
+                    case EVAL_RESERVE_TRANSFER:
+                    case EVAL_IDENTITY_PRIMARY:
+                    case EVAL_IDENTITY_RESERVATION:
+                    case EVAL_IDENTITY_ADVANCEDRESERVATION:
+                    case EVAL_FINALIZE_EXPORT:
+                    {
+                        break;
+                    }
+
+                    case EVAL_CROSSCHAIN_EXPORT:
+                    {
+                        CCrossChainExport ccx;
+
+                        if (!(p.vData.size() &&
+                             (ccx = CCrossChainExport(p.vData[0])).IsValid() &&
+                             (ccx.sourceSystemID != ASSETCHAINS_CHAINID ||
+                              ccx.sourceHeightEnd < nMemPoolHeight)))
+                        {
+                            transactionsToRemove.push_back(tx);
+                            oneRemoved = true;
+                        }
+                        break;
+                    }
+
+                    case EVAL_CROSSCHAIN_IMPORT:
+                    {
+                        CCrossChainImport cci;
+
+                        if (!(p.vData.size() &&
+                             (cci = CCrossChainImport(p.vData[0])).IsValid() &&
+                             (cci.sourceSystemID != ASSETCHAINS_CHAINID ||
+                              cci.sourceSystemHeight < nMemPoolHeight)))
+                        {
+                            transactionsToRemove.push_back(tx);
+                            oneRemoved = true;
+                        }
+                        break;
+                    }
+                }
+                if (oneRemoved)
+                {
                     break;
                 }
             }

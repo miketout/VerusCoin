@@ -228,7 +228,7 @@ bool TransactionBuilder::AddOpRetLast()
     return true;
 }
 
-void TransactionBuilder::AddOpRet(CScript &s)
+void TransactionBuilder::AddOpRet(const CScript &s)
 {
     opReturn.emplace(CScript(s));
 }
@@ -289,16 +289,25 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
         view.SetBackend(viewMemPool);
 
         CReserveTransactionDescriptor rtxd(mtx, view, chainActive.Height() + 1);
-        if (!rtxd.IsValid())
+        reserveChange = ((rtxd.ReserveInputMap() - rtxd.ReserveOutputMap()) - reserveFee).CanonicalMap();
+
+        if (!rtxd.IsValid() || reserveChange.HasNegative())
         {
             CReserveTransactionDescriptor checkRtxd(mtx, view, chainActive.Height() + 1);
-            LogPrint("txbuilder", "Invalid reserve transaction descriptor\n", __func__);
-            return TransactionBuilderResult("Invalid reserve transaction descriptor");
+            if (rtxd.IsValid())
+            {
+                printf("%s: Reserve change is negative: %s\n", __func__, reserveChange.ToUniValue().write().c_str());
+                return TransactionBuilderResult("Reserve change is negative: " + reserveChange.ToUniValue().write());
+            }
+            else
+            {
+                LogPrint("txbuilder", "Invalid reserve transaction descriptor\n", __func__);
+                return TransactionBuilderResult("Invalid reserve transaction descriptor");
+            }
         }
-        reserveChange = (rtxd.ReserveInputMap() - rtxd.ReserveOutputMap()) - reserveFee;
 
         //printf("\n%s: reserve input:\n%s\noutput:\n%s\nchange:\n%s\n\n", __func__, rtxd.ReserveInputMap().ToUniValue().write(1,2).c_str(), rtxd.ReserveOutputMap().ToUniValue().write(1,2).c_str(), reserveChange.ToUniValue().write(1,2).c_str());
-        bool hasReserveChange = false;
+        bool hasReserveChange = reserveChange > CCurrencyValueMap();
 
         // Valid change
         CAmount change = mtx.valueBalance - fee;
@@ -311,15 +320,10 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
         for (auto tIn : tIns) {
             change += tIn.value;
         }
-        if (reserveChange.valueMap.size())
-        {
-            reserveChange = reserveChange.CanonicalMap();
-            hasReserveChange = reserveChange > CCurrencyValueMap();
-        }
         for (auto tOut : mtx.vout) {
             change -= tOut.nValue;
         }
-        if (change < 0 || reserveChange.HasNegative()) {
+        if (change < 0) {
             // it's possible this is an import transaction that is minting currency
             //UniValue jsonTx(UniValue::VOBJ);
             //TxToUniv(mtx, uint256(), jsonTx);
@@ -330,6 +334,9 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
 
         if ((rtxd.NativeFees() - this->fee) != change)
         {
+            //UniValue jsonTx(UniValue::VOBJ);
+            //TxToUniv(mtx, uint256(), jsonTx);
+            //printf("%s: mtx: %s\n", __func__, jsonTx.write(1,2).c_str());
             printf("%s: native fees do not match builder: %s, blockchain: %s\n", __func__, ValueFromAmount(change).write(1,2).c_str(), ValueFromAmount(rtxd.NativeFees()).write(1,2).c_str());
             LogPrintf("%s: native fees do not match builder: %s, blockchain: %s\n", __func__, ValueFromAmount(change).write(1,2).c_str(), ValueFromAmount(rtxd.NativeFees()).write(1,2).c_str());
             return TransactionBuilderResult("Native fees do not match builder");
@@ -337,11 +344,18 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
 
         bool hasNativeChange = change > 0;
 
-        if ((hasNativeChange && (!tChangeAddr && !saplingChangeAddr && spends.empty())) || (hasReserveChange && !tChangeAddr))
+        if (!tChangeAddr && ((hasNativeChange && !saplingChangeAddr && spends.empty()) || hasReserveChange))
         {
-            printf("%s: nativeChange: %ld, reserveChange: %s\n", __func__, change, reserveChange.ToUniValue().write(1,2).c_str());
+            //printf("%s: nativeChange: %ld, reserveChange: %s\n", __func__, change, reserveChange.ToUniValue().write(1,2).c_str());
             LogPrintf("%s: nativeChange: %ld, reserveChange: %s\n", __func__, change, reserveChange.ToUniValue().write(1,2).c_str());
-            return TransactionBuilderResult("Reserve change must be sent to a transparent change address or VerusID");
+            if (hasReserveChange)
+            {
+                return TransactionBuilderResult("Reserve change must be sent to a transparent change address or VerusID");
+            }
+            else
+            {
+                return TransactionBuilderResult("Change must be sent to a private or transparent change address or VerusID");
+            }
         }
 
         //
@@ -361,6 +375,7 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
                     hasNativeChange = false;    // no more native change to send
                 }
                 std::vector<CTxDestination> dest(1, tChangeAddr.get());
+
 
                 // one output for all reserves, change gets combined
                 // we should separate, or remove any currency that is not whitelisted if specified after whitelist is supported
@@ -565,10 +580,10 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
             TransactionSignatureCreator(keystore, &txNewConst, nIn, tIn.value, tIn.scriptPubKey), tIn.scriptPubKey, sigdata, consensusBranchId);
 
         if (!signSuccess) {
-            //UniValue jsonTx(UniValue::VOBJ);
-            //extern void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry);
-            //TxToUniv(txNewConst, uint256(), jsonTx);
-            //printf("Failed to sign for script:\n%s\n", jsonTx.write(1,2).c_str());
+            UniValue jsonTx(UniValue::VOBJ);
+            extern void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry);
+            TxToUniv(txNewConst, uint256(), jsonTx);
+            printf("Failed to sign for script:\n%s\n", jsonTx.write(1,2).c_str());
             if (sigdata.scriptSig.size() && throwTxWithPartialSig)
             {
                 UpdateTransaction(mtx, nIn, sigdata);

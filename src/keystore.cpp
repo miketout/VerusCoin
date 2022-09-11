@@ -104,9 +104,27 @@ bool CBasicKeyStore::GetCScript(const CScriptID &hash, CScript& redeemScriptOut)
     return false;
 }
 
-void CBasicKeyStore::ClearIdentities()
+void CBasicKeyStore::ClearIdentities(uint32_t fromHeight)
 {
-    mapIdentities.clear();
+    if (fromHeight <= 1)
+    {
+        mapIdentities.clear();
+    }
+    else
+    {
+        std::vector<arith_uint256> vKeys;
+        for (auto &idPair : mapIdentities)
+        {
+            if (CIdentityMapKey(idPair.first).blockHeight >= fromHeight)
+            {
+                vKeys.push_back(idPair.first);
+            }
+        }
+        for (auto &idKey : vKeys)
+        {
+            mapIdentities.erase(idKey);
+        }
+    }
 }
 
 bool CBasicKeyStore::HaveIdentity(const CIdentityID &idID) const
@@ -458,20 +476,19 @@ bool CBasicKeyStore::AddSproutSpendingKey(const libzcash::SproutSpendingKey &sk)
     return true;
 }
 
-//! Sapling 
+//! Sapling
 bool CBasicKeyStore::AddSaplingSpendingKey(
-    const libzcash::SaplingExtendedSpendingKey &sk,
-    const libzcash::SaplingPaymentAddress &defaultAddr)
+    const libzcash::SaplingExtendedSpendingKey &sk)
 {
     LOCK(cs_SpendingKeyStore);
-    auto fvk = sk.expsk.full_viewing_key();
+    auto extfvk = sk.ToXFVK();
 
     // if SaplingFullViewingKey is not in SaplingFullViewingKeyMap, add it
-    if (!AddSaplingFullViewingKey(fvk, defaultAddr)) {
+    if (!AddSaplingFullViewingKey(extfvk)) {
         return false;
     }
 
-    mapSaplingSpendingKeys[fvk] = sk;
+    mapSaplingSpendingKeys[extfvk] = sk;
 
     return true;
 }
@@ -486,17 +503,16 @@ bool CBasicKeyStore::AddSproutViewingKey(const libzcash::SproutViewingKey &vk)
 }
 
 bool CBasicKeyStore::AddSaplingFullViewingKey(
-    const libzcash::SaplingFullViewingKey &fvk,
-    const libzcash::SaplingPaymentAddress &defaultAddr)
+    const libzcash::SaplingExtendedFullViewingKey &extfvk)
 {
     LOCK(cs_SpendingKeyStore);
-    auto ivk = fvk.in_viewing_key();
-    mapSaplingFullViewingKeys[ivk] = fvk;
+    auto ivk = extfvk.fvk.in_viewing_key();
+    mapSaplingFullViewingKeys[ivk] = extfvk;
 
-    return CBasicKeyStore::AddSaplingIncomingViewingKey(ivk, defaultAddr);
+    return CBasicKeyStore::AddSaplingIncomingViewingKey(ivk, extfvk.DefaultAddress());
 }
 
-// This function updates the wallet's internal address->ivk map. 
+// This function updates the wallet's internal address->ivk map.
 // If we add an address that is already in the map, the map will
 // remain unchanged as each address only has one ivk.
 bool CBasicKeyStore::AddSaplingIncomingViewingKey(
@@ -549,13 +565,14 @@ bool CBasicKeyStore::GetSproutViewingKey(
     return false;
 }
 
-bool CBasicKeyStore::GetSaplingFullViewingKey(const libzcash::SaplingIncomingViewingKey &ivk,
-                                   libzcash::SaplingFullViewingKey &fvkOut) const
+bool CBasicKeyStore::GetSaplingFullViewingKey(
+    const libzcash::SaplingIncomingViewingKey &ivk,
+    libzcash::SaplingExtendedFullViewingKey &extfvkOut) const
 {
     LOCK(cs_SpendingKeyStore);
     SaplingFullViewingKeyMap::const_iterator mi = mapSaplingFullViewingKeys.find(ivk);
     if (mi != mapSaplingFullViewingKeys.end()) {
-        fvkOut = mi->second;
+        extfvkOut = mi->second;
         return true;
     }
     return false;
@@ -573,12 +590,13 @@ bool CBasicKeyStore::GetSaplingIncomingViewingKey(const libzcash::SaplingPayment
     return false;
 }
 
-bool CBasicKeyStore::GetSaplingExtendedSpendingKey(const libzcash::SaplingPaymentAddress &addr, 
+bool CBasicKeyStore::GetSaplingExtendedSpendingKey(const libzcash::SaplingPaymentAddress &addr,
                                     libzcash::SaplingExtendedSpendingKey &extskOut) const {
     libzcash::SaplingIncomingViewingKey ivk;
-    libzcash::SaplingFullViewingKey fvk;
+    libzcash::SaplingExtendedFullViewingKey extfvk;
 
+    LOCK(cs_SpendingKeyStore);
     return GetSaplingIncomingViewingKey(addr, ivk) &&
-            GetSaplingFullViewingKey(ivk, fvk) &&
-            GetSaplingSpendingKey(fvk, extskOut);
+            GetSaplingFullViewingKey(ivk, extfvk) &&
+            GetSaplingSpendingKey(extfvk, extskOut);
 }

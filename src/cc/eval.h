@@ -48,7 +48,7 @@
         EVAL(EVAL_CURRENCYSTATE, 0x7)  \
         EVAL(EVAL_RESERVE_TRANSFER, 0x8)  \
         EVAL(EVAL_RESERVE_OUTPUT, 0x9)  \
-        EVAL(EVAL_RESERVE_EXCHANGE, 0xa)  \
+        EVAL(EVAL_IDENTITY_ADVANCEDRESERVATION, 0xa)  \
         EVAL(EVAL_RESERVE_DEPOSIT, 0xb)  \
         EVAL(EVAL_CROSSCHAIN_EXPORT, 0xc)  \
         EVAL(EVAL_CROSSCHAIN_IMPORT, 0xd)  \
@@ -307,6 +307,7 @@ public:
 typedef std::pair<uint256,MerkleBranch> TxProof;
 
 bool DefaultCCContextualPreCheck(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
+bool EvalNoneContextualPreCheck(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 uint256 GetMerkleRoot(const std::vector<uint256>& vLeaves);
 struct CCcontract_info *CCinit(struct CCcontract_info *cp,uint8_t evalcode);
 bool ProcessCC(struct CCcontract_info *cp,Eval* eval, std::vector<uint8_t> paramsNull, const CTransaction &tx, unsigned int nIn, bool fulfilled);

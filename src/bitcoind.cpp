@@ -47,10 +47,12 @@ extern char ASSETCHAINS_SYMBOL[KOMODO_ASSETCHAIN_MAXLEN];
 void komodo_passport_iteration();
 uint64_t komodo_interestsum();
 int32_t komodo_longestchain();
+UniValue closeoffers(const UniValue& params, bool fHelp);
 
 void WaitForShutdown(boost::thread_group* threadGroup)
 {
     bool fShutdown = ShutdownRequested();
+    int64_t curTimeSec = (GetTimeMillis() / 1000);
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
@@ -65,6 +67,22 @@ void WaitForShutdown(boost::thread_group* threadGroup)
             // komodo_interestsum();
             komodo_longestchain();
             MilliSleep(20000);
+        }
+        // attempt to close any open offers every 5 minutes
+        if (pwalletMain &&
+            ((GetTimeMillis() / 1000) - curTimeSec) > 300 &&
+            !IsInitialBlockDownload(Params()))
+        {
+            try
+            {
+                UniValue params(UniValue::VARR);
+                closeoffers(params, false);
+            }
+            catch(...)
+            {
+                //LogPrintf("%s: Error %s\n", __func__, e.what());
+            }
+            curTimeSec = (GetTimeMillis() / 1000);
         }
         fShutdown = ShutdownRequested();
     }

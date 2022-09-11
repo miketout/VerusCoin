@@ -24,6 +24,8 @@ extern void aesenc(unsigned char *s, const unsigned char *rk);
   aesenc((unsigned char *)&s0, (unsigned char *)&(rc[rci + 2])); \
   aesenc((unsigned char *)&s1, (unsigned char *)&(rc[rci + 3]));
 
+// Unused function. Triggers a shift-count-overflow warning on gcc 8 and above when cross compiling for aarch64
+/*
 static inline void mix2_emu(__m128i *s0, __m128i *s1)
 {
     __m128i tmp;
@@ -31,6 +33,7 @@ static inline void mix2_emu(__m128i *s0, __m128i *s1)
     *s1 = ((*s0 >> 64) & 0xffffffff) | (((*s1 >> 64) & 0xffffffff) << 32) | (((*s0 >> 64) & 0xffffffff00000000) << 32) | (((*s1 >> 64) & 0xffffffff00000000) << 64);
     *s0 = tmp;
 }
+*/
 
 typedef unsigned int uint32_t;
 

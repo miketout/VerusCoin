@@ -66,7 +66,9 @@ public:
     AsyncRPCOperation_sendmany(AsyncRPCOperation_sendmany&&) = delete;                  // Move construct
     AsyncRPCOperation_sendmany& operator=(AsyncRPCOperation_sendmany const&) = delete;  // Copy assign
     AsyncRPCOperation_sendmany& operator=(AsyncRPCOperation_sendmany &&) = delete;      // Move assign
-    
+
+    static std::array<unsigned char, ZC_MEMO_SIZE> get_memo_from_hex_string(std::string s);
+
     virtual void main();
 
     virtual UniValue getStatus() const;
@@ -111,7 +113,6 @@ private:
     void add_taddr_outputs_to_tx();
     bool find_unspent_notes();
     bool find_utxos(bool fAcceptProtectedCoinbase);
-    std::array<unsigned char, ZC_MEMO_SIZE> get_memo_from_hex_string(std::string s);
     bool main_impl();
 
     // JoinSplit without any input notes to spend

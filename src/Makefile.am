@@ -8,6 +8,9 @@
 
 DIST_SUBDIRS = secp256k1 univalue cryptoconditions
 
+# AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS) $(SAN_LDFLAGS) $(HARDENED_LDFLAGS) -Wl,--no-as-needed,-lprofiler,--as-needed
+# AM_CXXFLAGS = $(SAN_CXXFLAGS) $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS) -Wl,--no-as-needed -lprofiler -Wl,--as-needed
+# AM_CPPFLAGS = $(HARDENED_CPPFLAGS) -Wl,--no-as-needed -lprofiler -Wl,--as-needed
 AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS) $(SAN_LDFLAGS) $(HARDENED_LDFLAGS)
 AM_CXXFLAGS = $(SAN_CXXFLAGS) $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS)
 AM_CPPFLAGS = $(HARDENED_CPPFLAGS)
@@ -47,7 +50,7 @@ BITCOIN_INCLUDES += -I$(srcdir)/snark
 BITCOIN_INCLUDES += -I$(srcdir)/snark/libsnark
 BITCOIN_INCLUDES += -I$(srcdir)/univalue/include
 
-LIBBITCOIN_SERVER=libbitcoin_server.a -lcurl
+LIBBITCOIN_SERVER=libbitcoin_server.a -lcurl -larchive
 LIBBITCOIN_WALLET=libbitcoin_wallet.a
 LIBBITCOIN_COMMON=libbitcoin_common.a
 LIBBITCOIN_CLI=libbitcoin_cli.a
@@ -60,6 +63,7 @@ LIBCRYPTOCONDITIONS=cryptoconditions/libcryptoconditions_core.la
 LIBSNARK=snark/libsnark.a
 LIBUNIVALUE=univalue/libunivalue.la
 LIBZCASH=libzcash.a
+LIBTLS=libtls.a
 
 if ENABLE_ZMQ
 LIBBITCOIN_ZMQ=libbitcoin_zmq.a
@@ -108,7 +112,9 @@ EXTRA_LIBRARIES += \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_SERVER) \
   $(LIBBITCOIN_CLI) \
-  libzcash.a
+    libzcash.a \
+    libtls.a
+
 if ENABLE_WALLET
 BITCOIN_INCLUDES += $(BDB_CPPFLAGS)
 EXTRA_LIBRARIES += $(LIBBITCOIN_WALLET)
@@ -146,9 +152,12 @@ LIBZCASH_H = \
   zcash/Note.hpp \
   zcash/prf.h \
   zcash/Proof.hpp \
+  zcash/address/sapling.hpp \
+  zcash/address/sprout.hpp \
   zcash/util.h \
   zcash/Zcash.h \
-  zcash/zip32.h
+  zcash/address/zip32.cpp \
+  zcash/address/zip32.h
 
 .PHONY: FORCE collate-libsnark check-symbols check-security
 # bitcoin core #
@@ -275,9 +284,9 @@ BITCOIN_CORE_H = \
   utiltime.h \
   validationinterface.h \
   version.h \
-  wallet/asyncrpcoperation_common.h \
   wallet/asyncrpcoperation_mergetoaddress.h \
-  wallet/asyncrpcoperation_saplingmigration.h \
+  wallet/asyncrpcoperation_saplingconsolidation.h \
+  wallet/asyncrpcoperation_sweeptoaddress.h \
   wallet/asyncrpcoperation_sendmany.h \
   wallet/asyncrpcoperation_shieldcoinbase.h \
   wallet/crypter.h \
@@ -294,6 +303,8 @@ BITCOIN_CORE_H = \
   zmq/zmqnotificationinterface.h \
   zmq/zmqpublishnotifier.h
 
+  LIBTLS_H = \
+      tls/utiltls.h
 
 obj/build.h: FORCE
 	@$(MKDIR_P) $(builddir)/obj
@@ -362,6 +373,7 @@ libbitcoin_server_a_SOURCES = \
   net.cpp \
   noui.cpp \
   notarisationdb.cpp \
+	params.cpp \
   pbaas/identity.cpp \
   pbaas/notarization.cpp \
   pbaas/pbaas.cpp \
@@ -386,7 +398,8 @@ libbitcoin_server_a_SOURCES = \
   txmempool.cpp \
   validationinterface.cpp \
   $(BITCOIN_CORE_H) \
-  $(LIBZCASH_H)
+  $(LIBZCASH_H) \
+  $(LIBTLS_H)
 
 if ENABLE_ZMQ
 libbitcoin_zmq_a_CPPFLAGS = $(BITCOIN_INCLUDES) $(ZMQ_CFLAGS)
@@ -417,7 +430,8 @@ libbitcoin_wallet_a_SOURCES = \
   zcbenchmarks.h \
   wallet/asyncrpcoperation_common.cpp \
   wallet/asyncrpcoperation_mergetoaddress.cpp \
-  wallet/asyncrpcoperation_saplingmigration.cpp \
+  wallet/asyncrpcoperation_saplingconsolidation.cpp \
+  wallet/asyncrpcoperation_sweeptoaddress.cpp \
   wallet/asyncrpcoperation_sendmany.cpp \
   wallet/asyncrpcoperation_shieldcoinbase.cpp \
   wallet/crypter.cpp \
@@ -432,7 +446,7 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/wallet.cpp \
   wallet/wallet_ismine.cpp \
   wallet/walletdb.cpp \
-  zcash/zip32.cpp \
+  zcash/address/zip32.cpp \
   $(BITCOIN_CORE_H) \
   $(LIBZCASH_H)
 
@@ -480,7 +494,7 @@ endif
 # Verus hash specific library - optimized
 if ARCH_ARM
 crypto_libverus_crypto_a_CPPFLAGS = -O3 -g -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_crypto_a_CXXFLAGS = -O3 -Wint-conversion -g -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
+crypto_libverus_crypto_a_CXXFLAGS = -O3 -Wno-error=attributes -Wint-conversion -g -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
 else
 crypto_libverus_crypto_a_CPPFLAGS = -O3 -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -mavx -maes -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 crypto_libverus_crypto_a_CXXFLAGS = -O3 -Wint-conversion -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -mavx -maes -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
@@ -495,7 +509,7 @@ crypto_libverus_crypto_a_SOURCES = \
 # Verus hash specific library - portable
 if ARCH_ARM
 crypto_libverus_portable_crypto_a_CPPFLAGS = -O3 -g -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_portable_crypto_a_CXXFLAGS = -O3 -Wint-conversion -g -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
+crypto_libverus_portable_crypto_a_CXXFLAGS = -O3 -Wno-error=attributes -Wint-conversion -g -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
 else
 crypto_libverus_portable_crypto_a_CPPFLAGS = -O3 -march=$(PLATFORM_VARIANT) -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) -w $(BITCOIN_INCLUDES)
 crypto_libverus_portable_crypto_a_CXXFLAGS = -O3 -Wint-conversion -march=$(PLATFORM_VARIANT) -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
@@ -540,6 +554,7 @@ libbitcoin_common_a_SOURCES = \
   metrics.cpp \
   mmr.cpp \
   pbaas/ethproof.cpp \
+  pbaas/crosschainrpc.h \
   pbaas/crosschainrpc.cpp \
   pbaas/vdxf.cpp \
   primitives/block.cpp \
@@ -594,6 +609,7 @@ endif
 libbitcoin_cli_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 libbitcoin_cli_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_cli_a_SOURCES = \
+  arith_uint256.cpp \
   rpc/client.cpp \
   $(BITCOIN_CORE_H) \
   $(LIBZCASH_H)
@@ -626,6 +642,7 @@ verusd_LDADD = \
   $(LIBVERUS_CRYPTO) \
   $(LIBVERUS_PORTABLE_CRYPTO) \
   $(LIBZCASH) \
+  $(LIBTLS) \
   $(LIBSNARK) \
   $(LIBLEVELDB) \
   $(LIBMEMENV) \
@@ -685,6 +702,7 @@ verus_LDADD = \
 	$(CRYPTO_LIBS) \
 	$(EVENT_LIBS) \
 	$(LIBZCASH) \
+	$(LIBTLS) \
 	$(LIBBITCOIN_CRYPTO) \
 	$(LIBVERUS_CRYPTO) \
 	$(LIBVERUS_PORTABLE_CRYPTO) \
@@ -722,12 +740,13 @@ endif
 
 verus_tx_LDADD = \
   $(LIBUNIVALUE) \
-	$(BOOST_LIBS) \
+  $(BOOST_LIBS) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UTIL) \
-	$(EVENT_LIBS) \
+  $(EVENT_LIBS) \
   $(LIBSECP256K1) \
   $(LIBZCASH) \
+  $(LIBTLS) \
   $(LIBSNARK) \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBVERUS_CRYPTO) \
@@ -747,8 +766,10 @@ libzcash_a_SOURCES = \
 	zcash/Proof.cpp \
 	zcash/Note.cpp \
 	zcash/prf.cpp \
+	zcash/address/sapling.cpp \
+	zcash/address/sprout.cpp \
 	zcash/util.cpp \
-  zcash/zip32.cpp \
+    zcash/address/zip32.cpp \
 	zcash/circuit/commitment.tcc \
 	zcash/circuit/gadget.tcc \
 	zcash/circuit/merkle.tcc \
@@ -777,6 +798,8 @@ libzcashconsensus_la_SOURCES = \
   crypto/sha256.cpp \
   crypto/sha512.cpp \
   hash.cpp \
+  pbaas/crosschainrpc.h \
+  pbaas/crosschainrpc.cpp \
   primitives/transaction.cpp \
   primitives/nonce.cpp \
   pubkey.cpp \
@@ -797,6 +820,18 @@ libzcashconsensus_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
 endif
 #
+
+libtls_a_SOURCES = \
+    tls/utiltls.cpp\
+    tls/tlsmanager.cpp
+
+libtls_a_CPPFLAGS = -DMULTICORE -fopenmp -fPIC -DBINARY_OUTPUT -DCURVE_ALT_BN128 -DBOOST_SPIRIT_THREADSAFE -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS $(HARDENED_CPPFLAGS) -pipe -O2 -g  -Wstack-protector -fstack-protector-all -fPIE -fvisibility=hidden -DSTATIC $(BITCOIN_INCLUDES)
+
+libtls_a_CXXFLAGS = $(HARDENED_CXXFLAGS) -fwrapv -fno-strict-aliasing
+
+libtls_a_LDFLAGS = $(HARDENED_LDFLAGS)
+
+libtls_a_CPPFLAGS += -DMONTGOMERY_OUTPUT
 
 CLEANFILES = leveldb/libleveldb.a leveldb/libmemenv.a *.gcda *.gcno */*.gcno wallet/*/*.gcno
 

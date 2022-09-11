@@ -61,9 +61,68 @@ public:
     static uint160 GetConditionID(const uint160 &cid, uint32_t condition);
     static uint160 GetConditionID(const uint160 &cid, const uint160 &condition);
     static uint160 GetConditionID(const uint160 &cid, const uint160 &condition, const uint256 &txid, int32_t voutNum);
+    static uint160 GetConditionID(const uint160 &cid, const uint256 &hash256);
+    static uint160 GetConditionID(const uint160 &cid, const uint256 &txid, int32_t voutNum);
+    static uint160 GetConditionID(const uint160 &cid, const uint160 &condition, const uint256 &txid);
     static uint160 GetConditionID(std::string name, uint32_t condition);
 
     UniValue ToUniValue() const;
+};
+
+class COnChainOffer
+{
+public:
+    enum EOfferConstants {
+        MIN_LISTING_DEPOSIT = 100000000
+    };
+
+    static std::string OnChainIdentityOfferKeyName()
+    {
+        return "vrsc::system.exchange.identityoffer";
+    }
+
+    static std::string OnChainCurrencyOfferKeyName()
+    {
+        return "vrsc::system.exchange.currencyoffer";
+    }
+
+    static std::string OnChainOfferForIdentityKeyName()
+    {
+        return "vrsc::system.exchange.offerforidentity";
+    }
+
+    static std::string OnChainOfferForCurrencyKeyName()
+    {
+        return "vrsc::system.exchange.offerforcurrency";
+    }
+
+    static uint160 OnChainIdentityOfferKey(const uint160 &idID)
+    {
+        static uint160 nameSpace;
+        static uint160 signatureKey = CVDXF::GetDataKey(OnChainIdentityOfferKeyName(), nameSpace);
+        return CCrossChainRPCData::GetConditionID(signatureKey, idID);
+    }
+
+    static uint160 OnChainCurrencyOfferKey(const uint160 &currencyID)
+    {
+        static uint160 nameSpace;
+        static uint160 signatureKey = CVDXF::GetDataKey(OnChainCurrencyOfferKeyName(), nameSpace);
+        return CCrossChainRPCData::GetConditionID(signatureKey, currencyID);
+    }
+
+    static uint160 OnChainOfferForIdentityKey(const uint160 &idID)
+    {
+        static uint160 nameSpace;
+        static uint160 signatureKey = CVDXF::GetDataKey(OnChainOfferForIdentityKeyName(), nameSpace);
+        return CCrossChainRPCData::GetConditionID(signatureKey, idID);
+    }
+
+    static uint160 OnChainOfferForCurrencyKey(const uint160 &currencyID)
+    {
+        static uint160 nameSpace;
+        static uint160 signatureKey = CVDXF::GetDataKey(OnChainOfferForCurrencyKeyName(), nameSpace);
+        return CCrossChainRPCData::GetConditionID(signatureKey, currencyID);
+    }
 };
 
 // credentials for now are "user:password"
@@ -117,15 +176,19 @@ public:
         DEST_QUANTUM = 7,
         DEST_NESTEDTRANSFER = 8,            // used to chain transfers, enabling them to be routed through multiple systems
         DEST_ETH = 9,
-        DEST_RAW = 10,
-        LAST_VALID_TYPE_NO_FLAGS = 10,
+        DEST_ETHNFT = 10,                   // used when defining a mapped NFT to gateway that uses an ETH compatible model
+        DEST_RAW = 11,
+        LAST_VALID_TYPE_NO_FLAGS = DEST_RAW,
+        FLAG_DEST_AUX = 64,
         FLAG_DEST_GATEWAY = 128,
+        FLAG_MASK = FLAG_DEST_AUX + FLAG_DEST_GATEWAY
     };
     uint8_t type;
     std::vector<unsigned char> destination;
     uint160 gatewayID;                      // gateway fee currency/systemID
     uint160 gatewayCode;                    // code for function to execute on the gateway
     int64_t fees;                           // amount for transfer fees this is holding
+    std::vector<std::vector<unsigned char>> auxDests;
 
     CTransferDestination() : type(DEST_INVALID), fees(0) {}
     CTransferDestination(const UniValue &uni);
@@ -162,12 +225,35 @@ public:
             READWRITE(gatewayCode);
             READWRITE(fees);
         }
+        if (type & FLAG_DEST_AUX)
+        {
+            READWRITE(auxDests);
+        }
     }
 
     bool HasGatewayLeg() const
     {
         return (type & FLAG_DEST_GATEWAY) && !gatewayID.IsNull();
     }
+
+    int AuxDestCount() const
+    {
+        if (type & FLAG_DEST_AUX)
+        {
+            return auxDests.size();
+        }
+        return 0;
+    }
+
+    void ClearAuxDests()
+    {
+        auxDests.clear();
+        type &= ~FLAG_DEST_AUX;
+    }
+
+    CTransferDestination GetAuxDest(int destNum) const;
+
+    void SetAuxDest(const CTransferDestination &auxDest, int destNum);
 
     void SetGatewayLeg(const uint160 &GatewayID=uint160(), int64_t Fees=0, const uint160 &vdxfCode=uint160())
     {
@@ -187,14 +273,28 @@ public:
 
     int TypeNoFlags() const
     {
-        return type & ~FLAG_DEST_GATEWAY;
+        return type & ~FLAG_MASK;
     }
 
     bool IsValid() const
     {
-        return TypeNoFlags() != DEST_INVALID &&
+        // verify aux dests
+        bool valid = (((type & FLAG_DEST_AUX) && auxDests.size()) || (!(type & FLAG_DEST_AUX) && !auxDests.size()));
+        if (valid && auxDests.size())
+        {
+            for (int i = 0; i < auxDests.size(); i++)
+            {
+                if (!GetAuxDest(i).IsValid())
+                {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+        return valid &&
+               TypeNoFlags() != DEST_INVALID &&
                TypeNoFlags() <= LAST_VALID_TYPE_NO_FLAGS &&
-               ((!HasGatewayLeg() && gatewayID.IsNull()) || !gatewayID.IsNull());
+               ((!(type & FLAG_DEST_GATEWAY) && gatewayID.IsNull()) || !gatewayID.IsNull());
     }
 
     static uint160 DecodeEthDestination(const std::string &destStr)
@@ -212,7 +312,87 @@ public:
     static std::string EncodeEthDestination(const uint160 &ethDestID)
     {
         // reverse bytes to match ETH encoding
-        return "0x" + ethDestID.GetHex();
+        return "0x" + HexBytes(ethDestID.begin(), ethDestID.size());
+    }
+
+    static std::pair<uint160, uint256> DecodeEthNFTDestination(const std::string &destStr)
+    {
+        uint160 retContract;
+        uint256 retTokenID;
+        UniValue nftJSON(UniValue::VOBJ);
+        nftJSON.read(destStr);
+ 
+        std::string contractAddrStr = uni_get_str(find_value(nftJSON, "contract"));
+        std::string TokenIDStr = uni_get_str(find_value(nftJSON, "tokenid"));
+
+        if (!(retContract = DecodeEthDestination(contractAddrStr)).IsNull() &&
+            TokenIDStr.length() == 66 &&
+            destStr.substr(0,2) == "0x" &&
+            IsHex(TokenIDStr.substr(2,64)))
+        {
+            retTokenID = uint256S(TokenIDStr.substr(2,64));
+            return std::make_pair(retContract, uint256S(TokenIDStr));
+        }
+        else
+        {
+            return std::make_pair(uint160(), uint256());
+        }
+    }
+
+    static std::string EncodeEthNFTDestination(const uint160 &ethContractID, const uint256 &tokenID)
+    {
+        // reverse bytes to match ETH encoding
+        return "{\"contract\":\"0x" + HexBytes(ethContractID.begin(), ethContractID.size()) + "\", \"tokenid\":\"0x" + HexBytes(tokenID.begin(), tokenID.size()) + "\"}";
+    }
+
+    static std::string CurrencyExportKeyName()
+    {
+        return "vrsc::system.currency.export";
+    }
+
+    static uint160 UnboundCurrencyExportKey()
+    {
+        static uint160 nameSpace;
+        static uint160 exportKey = CVDXF::GetDataKey(CurrencyExportKeyName(), nameSpace);
+        return exportKey;
+    }
+
+    static uint160 CurrencyExportKeyToSystem(const uint160 &exportToSystemID);
+    static uint160 GetBoundCurrencyExportKey(const uint160 &exportToSystemID, const uint160 &curToExportID);
+    uint160 GetBoundCurrencyExportKey(const uint160 &exportToSystemID) const;
+
+    UniValue ToUniValue() const;
+};
+
+class CNFTAddress
+{
+public:
+    uint32_t version;
+    CTransferDestination rootContractOrID;
+    std::vector<uint160> shortHashes;
+    std::vector<uint256> longHashes;
+
+    enum EVersions {
+        VERSION_INVALID = 0,
+        VERSION_VERUSID = 1,
+        VERSION_FIRST = 1,
+        VERSION_DEFAULT = 1,
+        VERSION_LAST = 1
+    };
+
+    CNFTAddress(const UniValue &uni);
+    CNFTAddress(uint32_t ver=VERSION_DEFAULT) : version(ver) {}
+    CNFTAddress(const CTransferDestination &rootDest, const std::vector<uint160> &shorts, const std::vector<uint256> &longs, uint32_t ver=VERSION_DEFAULT) : 
+        version(ver), rootContractOrID(rootDest), shortHashes(shorts), longHashes(longs) {}
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(VARINT(version));
+        READWRITE(rootContractOrID);
+        READWRITE(shortHashes);
+        READWRITE(longHashes);
     }
 
     UniValue ToUniValue() const;
@@ -292,19 +472,29 @@ public:
 
     enum ELimitsDefaults
     {
-        TRANSACTION_TRANSFER_FEE = 2000000, // 0.02 destination currency per cross chain transfer total, chain's accept notary currency or have converter
+        // TODO: HARDENING - reconcile all core fees, including for z-transactions, imports, identities, etc.
+        TRANSACTION_CROSSCHAIN_FEE = 2000000, // 0.02 destination currency per cross chain transfer total, chain's accept notary currency or have converter
+        TRANSACTION_TRANSFER_FEE = 20000,   // 0.0002 per same chain transfer total, chain's accept notary currency or have converter
         CURRENCY_REGISTRATION_FEE = 20000000000, // default 100 to register a currency
         PBAAS_SYSTEM_LAUNCH_FEE = 1000000000000, // default 10000 to register and launch a PBaaS chain
-        CURRENCY_IMPORT_FEE = 2000000000,   // default 100 to import a currency
+        CURRENCY_IMPORT_FEE = 10000000000,  // default 100 to import a currency
         IDENTITY_REGISTRATION_FEE = 10000000000, // 100 to register an identity
-        IDENTITY_IMPORT_FEE = 2000000000,   // 20 in native currency to import an identity
+        IDENTITY_IMPORT_FEE = 2000000,      // 0.02 in native currency to import an identity
         MIN_RESERVE_CONTRIBUTION = 1000000, // 0.01 minimum per reserve contribution minimum
         MIN_BILLING_PERIOD = 960,           // 16 hour minimum billing period for notarization, typically expect days/weeks/months
         MIN_CURRENCY_LIFE = 480,            // 8 hour minimum lifetime, which gives 8 hours of minimum billing to notarize conclusion
         DEFAULT_OUTPUT_VALUE = 0,           // 0 VRSC default output value
         DEFAULT_ID_REFERRAL_LEVELS = 3,
+        MAX_ID_REFERRAL_LEVELS = 5,
         MAX_NAME_LEN = 64,
-        MAX_STARTUP_NODES = 5
+        MAX_STARTUP_NODES = 5,
+        DEFAULT_START_TARGET = 0x1e01e1e1,
+        MAX_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 20,
+        MAX_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 20,
+        MAX_TRANSFER_EXPORTS_PER_BLOCK = 200,
+        MAX_ETH_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 1,
+        MAX_ETH_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 0,
+        MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK = 50
     };
 
     enum ECurrencyOptions
@@ -313,12 +503,15 @@ public:
         OPTION_ID_ISSUANCE = 2,             // clear is permissionless, if set, IDs may only be created by controlling ID
         OPTION_ID_STAKING = 4,              // all IDs on chain stake equally, rather than value-based staking
         OPTION_ID_REFERRALS = 8,            // if set, this chain supports referrals
-        OPTION_ID_REFERRALREQUIRED = 0x10,  // if set, this chain requires referrals
+        OPTION_ID_REFERRALREQUIRED = 0x10,  // if set, this chain requires a referrer to approve an ID issuance
         OPTION_TOKEN = 0x20,                // if set, this is a token, not a native currency
-        OPTION_CANBERESERVE = 0x40,         // if set, this currency can be used as a reserve for a liquid currency
+        OPTION_SINGLECURRENCY = 0x40,       // for PBaaS chains or gateways to potentially restrict to single currency
         OPTION_GATEWAY = 0x80,              // if set, this routes external currencies
         OPTION_PBAAS = 0x100,               // this is a PBaaS chain definition
-        OPTION_PBAAS_CONVERTER = 0x200,     // this means that for a specific PBaaS gateway, this is the default converter and will publish prices
+        OPTION_GATEWAY_CONVERTER = 0x200,   // this means that for a specific PBaaS gateway, this is the default converter and will publish prices
+        OPTION_GATEWAY_NAMECONTROLLER = 0x400, // when not set on a gateway, top level ID and currency registration happen on launch chain 
+        OPTION_NFT_TOKEN = 0x800,           // single satoshi NFT token, tokenizes control over the root ID
+        OPTIONS_FLAG_MASK = 0xfff
     };
 
     // these should be pluggable in function
@@ -326,9 +519,9 @@ public:
     {
         NOTARIZATION_INVALID = 0,           // notarization protocol must have valid type
         NOTARIZATION_AUTO = 1,              // PBaaS autonotarization
-        NOTARIZATION_NOTARY_CONFIRM = 2,    // autonotarization with confirmation by specified notaries
-        NOTARIZATION_NOTARY_CHAINID = 3,    // chain identity controls notarization and currency supply
-        NOTARIZATION_NOTARY_LAST = 3        // chain identity controls notarization and currency supply
+        NOTARIZATION_NOTARY_CONFIRM = 2,    // confirmation by specified notaries with no auto-protocol requirements
+        NOTARIZATION_NOTARY_CHAINID = 3,    // chain identity controls notarization and imports
+        NOTARIZATION_NOTARY_LAST = 3        // last valid value
     };
 
     enum EProofProtocol
@@ -349,9 +542,10 @@ public:
         QUERY_LAUNCHSTATE_CONFIRM = 3,
         QUERY_LAUNCHSTATE_COMPLETE = 4,
         QUERY_SYSTEMTYPE_LOCAL = 5,
-        QUERY_SYSTEMTYPE_GATEWAY = 6,
-        QUERY_SYSTEMTYPE_PBAAS = 7,
-        QUERY_ISCONVERTER = 8
+        QUERY_SYSTEMTYPE_IMPORTED = 6,
+        QUERY_SYSTEMTYPE_GATEWAY = 7,
+        QUERY_SYSTEMTYPE_PBAAS = 8,
+        QUERY_ISCONVERTER = 9
     };
 
     uint32_t nVersion;                      // version of this chain definition data structure to allow for extensions (not daemon version)
@@ -399,7 +593,7 @@ public:
     // costs to register and import IDs
     int64_t idRegistrationFees;             // normal cost of ID registration in PBaaS native currency, for gateways, current native
     int32_t idReferralLevels;               // number of referral levels to divide among
-    int64_t idImportFees;                   // cost to import currency to this system, INT64_MAX excludes ID import beyond launch
+    int64_t idImportFees;                   // for gateway/system - cost to import currency to this system, for fractional - pricing currency index
 
     // costs to register and import currencies
     int64_t currencyRegistrationFee;        // cost in native currency to register a currency on this system
@@ -414,6 +608,7 @@ public:
     // if a currency definition is for a PBaaS chain, its gatewayConverter currency is the one that
     // people can participate in to have access to the currency itself. pre-mine to a NULL address
     // puts it into the initial gateway currency reserves.
+    uint32_t initialBits;                   // initial starting difficulty
     std::vector<int64_t> rewards;           // initial reward in each of native coin, if this is a reserve the number represents percentage of supply w/satoshis
     std::vector<int64_t> rewardsDecay;      // decay of rewards at halvings during the era
     std::vector<int32_t> halving;           // number of blocks between halvings
@@ -437,8 +632,9 @@ public:
                             currencyRegistrationFee(CURRENCY_REGISTRATION_FEE),
                             pbaasSystemLaunchFee(PBAAS_SYSTEM_LAUNCH_FEE),
                             currencyImportFee(CURRENCY_IMPORT_FEE),
-                            transactionImportFee(TRANSACTION_TRANSFER_FEE >> 1),
-                            transactionExportFee(TRANSACTION_TRANSFER_FEE >> 1)
+                            transactionImportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
+                            transactionExportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
+                            initialBits(DEFAULT_START_TARGET)
     {}
 
     CCurrencyDefinition(const UniValue &obj);
@@ -462,10 +658,11 @@ public:
                         const std::vector<int64_t> &chainRewards, const std::vector<int64_t> &chainRewardsDecay,
                         const std::vector<int32_t> &chainHalving, const std::vector<int32_t> &chainEraEnd,
                         const std::string &LaunchGatewayName,
-                        int64_t TransactionTransferFee=TRANSACTION_TRANSFER_FEE, int64_t CurrencyRegistrationFee=CURRENCY_REGISTRATION_FEE,
+                        int64_t TransactionTransferFee=TRANSACTION_CROSSCHAIN_FEE, int64_t CurrencyRegistrationFee=CURRENCY_REGISTRATION_FEE,
                         int64_t PBaaSSystemRegistrationFee=PBAAS_SYSTEM_LAUNCH_FEE,
                         int64_t CurrencyImportFee=CURRENCY_IMPORT_FEE, int64_t IDRegistrationAmount=IDENTITY_REGISTRATION_FEE, 
                         int32_t IDReferralLevels=DEFAULT_ID_REFERRAL_LEVELS, int64_t IDImportFee=IDENTITY_IMPORT_FEE,
+                        uint32_t InitialBits=DEFAULT_START_TARGET,
                         uint32_t Version=VERSION_CURRENT) :
                         nVersion(Version),
                         options(Options),
@@ -501,6 +698,7 @@ public:
                         currencyImportFee(CurrencyImportFee),
                         transactionImportFee(TransactionTransferFee >> 1),
                         transactionExportFee(TransactionTransferFee >> 1),
+                        initialBits(InitialBits),
                         rewards(chainRewards),
                         rewardsDecay(chainRewardsDecay),
                         halving(chainHalving),
@@ -517,6 +715,9 @@ public:
         }
     }
 
+    // get canonical representations of VRSC and VRSCTEST, potentially others later
+    CCurrencyDefinition(const std::string &currencyName, bool testMode);
+
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
@@ -529,6 +730,8 @@ public:
         READWRITE(systemID);
         READWRITE(notarizationProtocol);
         READWRITE(proofProtocol);
+        READWRITE(nativeCurrencyID);
+        READWRITE(gatewayID);
         READWRITE(VARINT(startBlock));
         READWRITE(VARINT(endBlock));
         READWRITE(initialFractionalSupply);
@@ -550,16 +753,20 @@ public:
         READWRITE(VARINT(idImportFees));
         if (IsGateway() || IsPBaaSChain())
         {
-            if (IsGateway())
-            {
-                READWRITE(nativeCurrencyID);
-                READWRITE(gatewayID);
-            }
             READWRITE(VARINT(currencyRegistrationFee));
             READWRITE(VARINT(pbaasSystemLaunchFee));
             READWRITE(VARINT(currencyImportFee));
             READWRITE(VARINT(transactionImportFee));
             READWRITE(VARINT(transactionExportFee));
+            READWRITE(LIMITED_STRING(gatewayConverterName, MAX_NAME_LEN));
+            if (IsPBaaSChain())
+            {
+                READWRITE(initialBits);
+                READWRITE(rewards);
+                READWRITE(rewardsDecay);
+                READWRITE(halving);
+                READWRITE(eraEnd);
+            }
         }
         else
         {
@@ -578,15 +785,6 @@ public:
             READWRITE(VARINT(transactionImportFee));
             READWRITE(VARINT(transactionExportFee));
         }
-        
-        if (options & OPTION_PBAAS)
-        {
-            READWRITE(rewards);
-            READWRITE(rewardsDecay);
-            READWRITE(halving);
-            READWRITE(eraEnd);
-            READWRITE(LIMITED_STRING(gatewayConverterName, MAX_NAME_LEN));
-        }
     }
 
     std::vector<unsigned char> AsVector() const
@@ -602,15 +800,106 @@ public:
         return GetID(Name, Parent);
     }
 
+    std::set<uint160> GetNotarySet() const
+    {
+        std::set<uint160> notarySet;
+        if (notarizationProtocol == NOTARIZATION_NOTARY_CHAINID)
+        {
+            notarySet.insert(GetID());
+        }
+        else
+        {
+            for (auto &oneSigID : notaries)
+            {
+                notarySet.insert(oneSigID);
+            }
+        }
+        return notarySet;
+    }
+
+    int MinimumNotariesConfirm() const
+    {
+        if (notarizationProtocol == NOTARIZATION_NOTARY_CHAINID)
+        {
+            return 1;
+        }
+        else
+        {
+            return minNotariesConfirm;
+        }
+    }
+
     uint160 GatewayConverterID() const
     {
         uint160 retVal;
         if (!gatewayConverterName.empty())
         {
-            uint160 parentID = GetID();
-            retVal = GetID(gatewayConverterName, parentID);
+            uint160 thisParentID = GetID();
+            retVal = GetID(gatewayConverterName, thisParentID);
         }
         return retVal;
+    }
+
+    uint160 SystemOrGatewayID() const
+    {
+        return (IsGateway() ? gatewayID : systemID);
+    }
+
+    uint160 FeePricingCurrency() const
+    {
+        if (!IsFractional() || idImportFees < 0 || idImportFees >= currencies.size())
+        {
+            return GetID();
+        }
+        else
+        {
+            return currencies[idImportFees];
+        }
+    }
+
+    int32_t MaxTransferExportCount() const
+    {
+        return proofProtocol == PROOF_ETHNOTARIZATION ? MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK : MAX_TRANSFER_EXPORTS_PER_BLOCK;
+    }
+
+    int32_t MaxCurrencyDefinitionExportCount() const
+    {
+        return proofProtocol == PROOF_ETHNOTARIZATION ? MAX_ETH_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK : MAX_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK;
+    }
+
+    int32_t MaxIdentityDefinitionExportCount() const
+    {
+        return proofProtocol == PROOF_ETHNOTARIZATION ? MAX_ETH_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK : MAX_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK;
+    }
+
+    static bool IsValidDefinitionImport(const CCurrencyDefinition &sourceSystem, const CCurrencyDefinition &destSystem, const uint160 &nameParent, uint32_t height);
+
+    bool IsValidTransferDestinationType(int destinationType) const
+    {
+        switch (destinationType)
+        {
+            case CTransferDestination::DEST_ETH:
+            {
+                if (proofProtocol != CCurrencyDefinition::PROOF_ETHNOTARIZATION)
+                {
+                    return false;
+                }
+                break;
+            }
+            case CTransferDestination::DEST_FULLID:
+            case CTransferDestination::DEST_ID:
+            case CTransferDestination::DEST_PK:
+            case CTransferDestination::DEST_PKH:
+            case CTransferDestination::DEST_SH:
+            {
+                if (proofProtocol != CCurrencyDefinition::PROOF_PBAASMMR)
+                {
+                    return false;
+                }
+                break;
+            }
+        }
+        return true;
     }
 
     int64_t GetCurrencyRegistrationFee(uint32_t currencyOptions) const
@@ -619,10 +908,38 @@ public:
         {
             return pbaasSystemLaunchFee;
         }
+        else if (currencyOptions & OPTION_NFT_TOKEN)
+        {
+            return idImportFees;
+        }
         else
         {
             return currencyRegistrationFee;
         }
+    }
+
+    int64_t GetCurrencyImportFee(bool isTokenizedControlCurrency=false) const
+    {
+        if ((proofProtocol == PROOF_PBAASMMR || proofProtocol == PROOF_CHAINID) && isTokenizedControlCurrency)
+        {
+            return idImportFees;
+        }
+        return currencyImportFee;
+    }
+
+    int64_t GetTransactionImportFee() const
+    {
+        return transactionImportFee;
+    }
+
+    int64_t GetTransactionExportFee() const
+    {
+        return transactionExportFee;
+    }
+
+    int64_t GetTransactionTransferFee() const
+    {
+        return TRANSACTION_TRANSFER_FEE;
     }
 
     // fee amount released at definition
@@ -712,18 +1029,6 @@ public:
         return signatureKey;
     }
 
-    static std::string ExportedCurrencyKeyName()
-    {
-        return "vrsc::system.currency.exported";
-    }
-
-    static uint160 ExportedCurrencyKey()
-    {
-        static uint160 nameSpace;
-        static uint160 signatureKey = CVDXF::GetDataKey(ExportedCurrencyKeyName(), nameSpace);
-        return signatureKey;
-    }
-
     static std::string CurrencySystemKeyName()
     {
         return "vrsc::system.currency.systemdefinition";
@@ -738,10 +1043,15 @@ public:
 
     bool IsValid() const
     {
-        return (nVersion != PBAAS_VERSION_INVALID) && name.size() > 0 && name.size() <= (KOMODO_ASSETCHAIN_MAXLEN - 1);
+        return (nVersion != PBAAS_VERSION_INVALID) &&
+                !(options & ~OPTIONS_FLAG_MASK) &&
+                idReferralLevels <= MAX_ID_REFERRAL_LEVELS &&
+                name.size() > 0 && 
+                name.size() <= (KOMODO_ASSETCHAIN_MAXLEN - 1) &&
+                std::max({rewards.size(), rewardsDecay.size(), halving.size(), eraEnd.size()}) <= ASSETCHAINS_MAX_ERAS;
     }
 
-    int32_t ChainOptions() const
+    uint32_t ChainOptions() const
     {
         return options;
     }
@@ -755,14 +1065,14 @@ public:
         return ChainOptions() & OPTION_FRACTIONAL;
     }
 
-    bool CanBeReserve() const
-    {
-        return ChainOptions() & OPTION_CANBERESERVE;
-    }
-
     bool IsToken() const
     {
         return ChainOptions() & OPTION_TOKEN;
+    }
+
+    bool IsNFTToken() const
+    {
+        return ChainOptions() & OPTION_NFT_TOKEN;
     }
 
     bool IsGateway() const
@@ -775,9 +1085,20 @@ public:
         return ChainOptions() & OPTION_PBAAS;
     }
 
-    bool IsPBaaSConverter() const
+    bool IsMultiCurrency() const
     {
-        return ChainOptions() & OPTION_PBAAS_CONVERTER;
+        return !(ChainOptions() & OPTION_SINGLECURRENCY);
+    }
+
+    bool IsGatewayConverter() const
+    {
+        // all PBaaS chains are name controllers
+        return ChainOptions() & OPTION_GATEWAY_CONVERTER;
+    }
+
+    bool IsNameController() const
+    {
+        return ChainOptions() & (OPTION_PBAAS | OPTION_GATEWAY_NAMECONTROLLER);
     }
 
     void SetToken(bool isToken)
@@ -789,6 +1110,18 @@ public:
         else
         {
             options &= ~OPTION_TOKEN;
+        }
+    }
+
+    void SetNFTToken(bool isToken)
+    {
+        if (isToken)
+        {
+            options |= OPTION_NFT_TOKEN;
+        }
+        else
+        {
+            options &= ~OPTION_NFT_TOKEN;
         }
     }
 
@@ -863,6 +1196,11 @@ public:
         }
     }
 
+    int64_t IDImportFee() const
+    {
+        return idImportFees;
+    }
+
     static int64_t CalculateRatioOfValue(int64_t value, int64_t ratio);
     int64_t GetTotalPreallocation() const;
     int32_t GetTotalCarveOut() const;
@@ -875,6 +1213,8 @@ public:
 class CIdentitySignature
 {
 public:
+    // TODO HARDENING - move all instances post PBaaS to
+    // VERSION_ETHBRIDGE
     enum EVersions {
         VERSION_INVALID = 0,
         VERSION_VERUSID = 1,
@@ -891,7 +1231,8 @@ public:
     enum ESignatureVerification {
         SIGNATURE_INVALID = 0,
         SIGNATURE_PARTIAL = 1,
-        SIGNATURE_COMPLETE = 2
+        SIGNATURE_COMPLETE = 2,
+        SIGNATURE_EMPTY = 3
     };
 
     uint8_t version;
@@ -1027,7 +1368,8 @@ public:
                                           const std::vector<uint256> &statements, 
                                           const uint160 systemID, 
                                           const std::string &prefixString, 
-                                          const uint256 &msgHash) const;
+                                          const uint256 &msgHash,
+                                          std::vector<std::vector<unsigned char>> *pDupSigs=nullptr) const;
 
     uint32_t Version()
     {
@@ -1080,7 +1422,7 @@ public:
     uint256 blockHash;                      // combination of block hash, block MMR root, and compact power (or external proxy) for the notarization height
     uint256 compactPower;                   // compact power (or external proxy) of the block height notarization to compare
 
-    CProofRoot() : rootHeight(0) {}
+    CProofRoot(int Type=TYPE_PBAAS, int Version=VERSION_CURRENT) : type(Type), version(Version), rootHeight(0) {}
     CProofRoot(const UniValue &uni);
     CProofRoot(const uint160 &sysID, 
                 uint32_t nHeight, 
@@ -1132,7 +1474,7 @@ private:
         CKeccack256Writer *hw_keccack;
     };
     nativeHashWriter state;
-    
+
 public:
     CNativeHashWriter(CCurrencyDefinition::EProofProtocol proofProtocol=CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR,
                       const unsigned char *personal=nullptr)
@@ -1140,6 +1482,7 @@ public:
         nativeHashType = proofProtocol;
         switch (nativeHashType)
         {
+            case CCurrencyDefinition::EProofProtocol::PROOF_CHAINID:
             case CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR:
             {
                 state.hw_blake2b = new CBLAKE2bWriter(SER_GETHASH, PROTOCOL_VERSION, personal);
@@ -1151,7 +1494,9 @@ public:
                 break;
             }
             default:
+            {
                 assert(false);
+            }
         }
     }
 
@@ -1162,6 +1507,7 @@ public:
             switch (nativeHashType)
             {
                 case CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR:
+                case CCurrencyDefinition::EProofProtocol::PROOF_CHAINID:
                 {
                     delete state.hw_blake2b;
                     break;
@@ -1178,7 +1524,9 @@ public:
 
     static bool IsValidHashType(CCurrencyDefinition::EProofProtocol hashType)
     {
-        return (hashType == CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR || hashType == CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
+        return (hashType == CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR ||
+                hashType == CCurrencyDefinition::EProofProtocol::PROOF_CHAINID ||
+                hashType == CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
     }
 
     bool IsValid()
@@ -1196,11 +1544,18 @@ public:
         return (*this);
     }
 
+    // disallow copy/move until we implement these constructors and operators
+    CNativeHashWriter(CNativeHashWriter const&) = delete;             // Copy construct
+    CNativeHashWriter(CNativeHashWriter&&) = delete;                  // Move construct
+    CNativeHashWriter& operator=(CNativeHashWriter const&) = delete;  // Copy assign
+    CNativeHashWriter& operator=(CNativeHashWriter &&) = delete;      // Move assign
+
     CNativeHashWriter& write(const char *pch, size_t size)
     {
         switch (nativeHashType)
         {
             case CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR:
+            case CCurrencyDefinition::EProofProtocol::PROOF_CHAINID:
             {
                 state.hw_blake2b->write(pch, size);
                 break;
@@ -1220,6 +1575,7 @@ public:
         switch (nativeHashType)
         {
             case CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR:
+            case CCurrencyDefinition::EProofProtocol::PROOF_CHAINID:
             {
                 result = state.hw_blake2b->GetHash();
                 break;

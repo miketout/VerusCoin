@@ -20,6 +20,7 @@
 #include "wallet/wallet.h"
 #include "wallet/walletdb.h"
 #endif
+#include "tls/utiltls.h"
 
 #include <stdint.h>
 
@@ -46,6 +47,7 @@ using namespace std;
  * Or alternatively, create a specific query method for the information.
  **/
 
+extern void CopyNodeStats(std::vector<CNodeStats>& vstats);
 int32_t Jumblr_depositaddradd(char *depositaddr);
 int32_t Jumblr_secretaddradd(char *secretaddr);
 uint64_t komodo_interestsum();
@@ -63,7 +65,7 @@ int32_t notarizedtxid_height(char *dest,char *txidstr,int32_t *kmdnotarized_heig
 extern uint16_t ASSETCHAINS_P2PPORT,ASSETCHAINS_RPCPORT;
 extern uint32_t ASSETCHAINS_CC;
 extern uint32_t ASSETCHAINS_MAGIC;
-extern uint64_t ASSETCHAINS_COMMISSION,ASSETCHAINS_STAKED,ASSETCHAINS_SUPPLY,ASSETCHAINS_LASTERA;
+extern uint64_t ASSETCHAINS_COMMISSION,ASSETCHAINS_STAKED,ASSETCHAINS_SUPPLY,ASSETCHAINS_ISSUANCE,ASSETCHAINS_LASTERA;
 extern int32_t ASSETCHAINS_LWMAPOS;
 extern uint64_t ASSETCHAINS_ENDSUBSIDY[],ASSETCHAINS_REWARD[],ASSETCHAINS_HALVING[],ASSETCHAINS_DECAY[];
 extern uint64_t ASSETCHAINS_ERAOPTIONS[];
@@ -83,6 +85,8 @@ UniValue getinfo(const UniValue& params, bool fHelp)
             "  \"blocks\": xxxxxx,           (numeric) the current number of blocks processed in the server\n"
             "  \"timeoffset\": xxxxx,        (numeric) the time offset\n"
             "  \"connections\": xxxxx,       (numeric) the number of connections\n"
+            "  \"tls_established\": xxxxx,   (numeric) the number of TLS connections established\n"
+            "  \"tls_verified\": xxxxx,      (numeric) the number of TLS connection with validated certificates\n"
             "  \"proxy\": \"host:port\",     (string, optional) the proxy used by the server\n"
             "  \"difficulty\": xxxxxx,       (numeric) the current difficulty\n"
             "  \"testnet\": true|false,      (boolean) if the server is using testnet or not\n"
@@ -97,11 +101,8 @@ UniValue getinfo(const UniValue& params, bool fHelp)
             + HelpExampleCli("getinfo", "")
             + HelpExampleRpc("getinfo", "")
         );
-//#ifdef ENABLE_WALLET
-//    LOCK2(cs_main, pwalletMain ? &pwalletMain->cs_wallet : NULL);
-//#else
+
     LOCK(cs_main);
-//#endif
 
     proxyType proxy;
     GetProxy(NET_IPV4, proxy);
@@ -144,6 +145,7 @@ UniValue getinfo(const UniValue& params, bool fHelp)
     obj.push_back(Pair("testnet",       PBAAS_TESTMODE));
 #ifdef ENABLE_WALLET
     if (pwalletMain) {
+        LOCK(pwalletMain->cs_wallet);
         obj.push_back(Pair("keypoololdest", pwalletMain->GetOldestKeyPoolTime()));
         obj.push_back(Pair("keypoolsize",   (int)pwalletMain->GetKeyPoolSize()));
     }
@@ -151,6 +153,22 @@ UniValue getinfo(const UniValue& params, bool fHelp)
         obj.push_back(Pair("unlocked_until", nWalletUnlockTime));
     obj.push_back(Pair("paytxfee",      ValueFromAmount(payTxFee.GetFeePerK())));
 #endif
+
+    //Add TLS stats to getinfo
+    vector<CNodeStats> vstats;
+    CopyNodeStats(vstats);
+    int tlsEstablished = 0;
+    int tlsVerified = 0;
+    BOOST_FOREACH(const CNodeStats& stats, vstats) {
+        if (stats.fTLSEstablished)
+          tlsEstablished++;
+
+        if (stats.fTLSVerified)
+          tlsVerified++;
+    }
+    obj.push_back(Pair("tls_established",   tlsEstablished));
+    obj.push_back(Pair("tls_verified",   tlsVerified));
+
     obj.push_back(Pair("relayfee",      ValueFromAmount(::minRelayTxFee.GetFeePerK())));
     obj.push_back(Pair("errors",        GetWarnings("statusbar")));
     {
@@ -172,13 +190,19 @@ UniValue getinfo(const UniValue& params, bool fHelp)
         obj.push_back(Pair("p2pport",        ASSETCHAINS_P2PPORT));
         obj.push_back(Pair("rpcport",        ASSETCHAINS_RPCPORT));
         obj.push_back(Pair("magic",        (int)ASSETCHAINS_MAGIC));
+        
         obj.push_back(Pair("premine",        ASSETCHAINS_SUPPLY));
+
+        if (ASSETCHAINS_ISSUANCE)
+        {
+            obj.push_back(Pair("issuance",        ASSETCHAINS_ISSUANCE));
+        }
 
         if ( ASSETCHAINS_REWARD[0] != 0 || ASSETCHAINS_LASTERA > 0 )
         {
             std::string acReward = "", acHalving = "", acDecay = "", acEndSubsidy = "";
             int lastEra = (int)ASSETCHAINS_LASTERA;     // this is done to work around an ARM cross compiler
-            bool isReserve = false;
+            bool isFractional = false;
             for (int i = 0; i <= lastEra; i++)
             {
                 if (i == 0)
@@ -189,7 +213,8 @@ UniValue getinfo(const UniValue& params, bool fHelp)
                     acEndSubsidy = std::to_string(ASSETCHAINS_ENDSUBSIDY[i]);
                     if (ASSETCHAINS_ERAOPTIONS[i] & CCurrencyDefinition::OPTION_FRACTIONAL)
                     {
-                        isReserve = true;
+                        //printf("%s: %s, ac_options: %s\n", __func__, std::to_string(ASSETCHAINS_ERAOPTIONS[i]).c_str(), GetArg("-ac_options","").c_str());
+                        isFractional = true;
                     }
                 }
                 else
@@ -206,14 +231,10 @@ UniValue getinfo(const UniValue& params, bool fHelp)
             obj.push_back(Pair("halving", acHalving));
             obj.push_back(Pair("decay", acDecay));
             obj.push_back(Pair("endsubsidy", acEndSubsidy));
-            if (isReserve)
+            if (isFractional)
             {
-                obj.push_back(Pair("isreserve", "true"));
+                obj.push_back(Pair("fractional", "true"));
                 obj.push_back(Pair("currencystate", ConnectedChains.GetCurrencyState((int)chainActive.Height()).ToUniValue()));
-            }
-            else
-            {
-                obj.push_back(Pair("isreserve", "false"));
             }
         }
 
@@ -511,10 +532,10 @@ public:
 #ifdef ENABLE_WALLET
         if (pwalletMain) {
             libzcash::SaplingIncomingViewingKey ivk;
-            libzcash::SaplingFullViewingKey fvk;
+            libzcash::SaplingExtendedFullViewingKey extfvk;
             bool isMine = pwalletMain->GetSaplingIncomingViewingKey(zaddr, ivk) &&
-                pwalletMain->GetSaplingFullViewingKey(ivk, fvk) &&
-                pwalletMain->HaveSaplingSpendingKey(fvk);
+                pwalletMain->GetSaplingFullViewingKey(ivk, extfvk) &&
+                pwalletMain->HaveSaplingSpendingKey(extfvk);
             obj.push_back(Pair("ismine", isMine));
         }
 #endif
@@ -702,17 +723,201 @@ uint256 HashFile(std::string filepath)
     }
 }
 
-UniValue hashdata(const UniValue& params, bool fHelp)
+uint160 ParseVDXFIDInternal(const std::string &vdxfName)
+{
+    uint160 vdxfID;
+    uint160 parentID;
+
+    if (vdxfName.empty())
+    {
+        return uint160();
+    }
+
+    // first, try to interpret the ID as an ID, in case it is
+    CTxDestination idDest = DecodeDestination(vdxfName);
+
+    if (idDest.which() == COptCCParams::ADDRTYPE_ID)
+    {
+        return GetDestinationID(idDest);
+    }
+    else if (vdxfName.back() != '@')
+    {
+        idDest = DecodeDestination(vdxfName + "@");
+    }
+
+    if (idDest.which() == COptCCParams::ADDRTYPE_ID)
+    {
+        vdxfID = GetDestinationID(idDest);
+    }
+    else
+    {
+        vdxfID = CVDXF::GetDataKey(vdxfName, parentID);
+    }
+    return vdxfID;
+}
+
+UniValue getvdxfid(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
-            "hashdata \"hexmessage\"\n"
+            "getvdxfid \"vdxfuri\" '{\"vdxfkey\":\"i-address or vdxfkey\", \"uint256\":\"hexstr\", \"indexnum\":0}'\n"
+            "\nReturns the VDXF key of the URI string. For example \"vrsc::system.currency.export\"\n"
+            "\nArguments:\n"
+            "  \"vdxfuri\"                              (string, required) This message is converted from hex, the data is hashed, then returned\n"
+            "  \"{\"\n"
+            "    \"vdxfkey\":\"i-address or vdxfkey\"   (string, optional) VDXF key or i-address to combine via hash\n"
+            "    \"uint256\":\"32bytehex\"              (hexstr, optional) 256 bit hash to combine with hash\n"
+            "    \"indexnum\":int                       (integer, optional) int32_t number to combine with hash\n"
+            "  \"}\"\n"
+            "\nResult:\n"
+            "{                                          (object) object with both base58check and hex vdxfid values of string and parents\n"
+            "  \"vdxfid\"                               (base58check) i-ID of the URI processed with the VDXF\n"
+            "  \"hash160result\"                        (hexstring) 20 byte hash in hex of the URL string passed in, processed with the VDXF\n"
+            "  \"qualifiedname\":                       (object) separate name and parent ID value\n"
+            "  {\n"
+            "    \"name\": \"namestr\"                  (string) leaf name\n"
+            "    \"parentid\" | \"namespace\":\"string\" (string) parent ID (or namespace if VDXF key) of name\n"
+            "  }\n"
+            "  \"bounddata\": {                         (object) if additional data is bound to create the value, it is returned here"
+            "  {\n"
+            "    \"vdxfkey\":\"i-address or vdxfkey\"   (string) i-address combined via hash\n"
+            "    \"uint256\":\"32bytehex\"              (hexstr) 256 bit hash combined with hash\n"
+            "    \"indexnum\":int                       (integer) int32_t combined with hash\n"
+            "  }\n"
+            "}\n"
+            "\nExamples:\n"
+            "\nCreate the signature\n"
+            + HelpExampleCli("getvdxfid", "\"system.currency.export\"") +
+            "\nVerify the signature\n"
+            + HelpExampleCli("getvdxfid", "\"idname::userdefinedgroup.subgroup.publishedname\"") +
+            "\nAs json rpc\n"
+            + HelpExampleRpc("getvdxfid", "\"idname::userdefinedgroup.subgroup.publishedname\"")
+        );
+
+    std::string vdxfName = uni_get_str(params[0]);
+    if (!vdxfName.size())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "No message to hash");
+    }
+
+    UniValue secondObj = (params.size() > 1) ? params[1] : UniValue(UniValue::VOBJ);
+    UniValue vdxfKeyInputUni = find_value(secondObj, "vdxfkey");
+    UniValue hashUniValue = find_value(secondObj, "uint256");
+    UniValue numUniValue = find_value(secondObj, "indexnum");
+
+    uint160 vdxfKeyInput;
+    uint256 hash256KeyKeyInput;
+    if (!vdxfKeyInputUni.isNull())
+    {
+        std::string vdxfKeyInputStr = uni_get_str(vdxfKeyInputUni);
+        vdxfKeyInput = ParseVDXFIDInternal(vdxfKeyInputStr);
+        if (vdxfKeyInput.IsNull())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid additional vdxf key to combine");
+        }
+    }
+    if (!hashUniValue.isNull())
+    {
+        hash256KeyKeyInput = uint256S(uni_get_str(hashUniValue));
+        if (hash256KeyKeyInput.IsNull())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid hash value to combine");
+        }
+    }
+    int32_t hashInputNum = uni_get_int(numUniValue);
+
+    uint160 vdxfID;
+    uint160 parentID;
+    std::string cleanName;
+    std::string parentIDName = "parentid";
+
+    // first, try to interpret the ID as an ID, in case it is
+    CTxDestination idDest = DecodeDestination(vdxfName);
+
+    if (idDest.which() == COptCCParams::ADDRTYPE_ID)
+    {
+        cleanName = CleanName(vdxfName, parentID, true, true);
+        vdxfID = GetDestinationID(idDest);
+    }
+    else
+    {
+        parentIDName = "namespace";
+        vdxfID = CVDXF::GetDataKey(vdxfName, parentID);
+        cleanName = vdxfName;
+    }
+
+    if (vdxfID.IsNull())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid ID or URI format");
+    }
+
+    // now, add optional values
+    UniValue boundData(UniValue::VOBJ);
+    if (!vdxfKeyInputUni.isNull())
+    {
+        if (hashUniValue.isNull())
+        {
+            vdxfID = CCrossChainRPCData::GetConditionID(vdxfID, vdxfKeyInput);
+            boundData.pushKV("vdxfkey", EncodeDestination(CIdentityID(vdxfKeyInput)));
+            if (!numUniValue.isNull())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify index without hash value");
+            }
+        }
+        else
+        {
+            if (numUniValue.isNull())
+            {
+                vdxfID = CCrossChainRPCData::GetConditionID(vdxfID, vdxfKeyInput, hash256KeyKeyInput);
+                boundData.pushKV("vdxfkey", EncodeDestination(CIdentityID(vdxfKeyInput)));
+                boundData.pushKV("uint256", hash256KeyKeyInput.GetHex());
+            }
+            else
+            {
+                vdxfID = CCrossChainRPCData::GetConditionID(vdxfID, vdxfKeyInput, hash256KeyKeyInput, hashInputNum);
+                boundData.pushKV("vdxfkey", EncodeDestination(CIdentityID(vdxfKeyInput)));
+                boundData.pushKV("uint256", hash256KeyKeyInput.GetHex());
+                boundData.pushKV("indexnum", hashInputNum);
+            }
+        }
+    }
+    else if (!hashUniValue.isNull() && !numUniValue.isNull())
+    {
+        vdxfID = CCrossChainRPCData::GetConditionID(vdxfID, hash256KeyKeyInput, hashInputNum);
+        boundData.pushKV("uint256", hash256KeyKeyInput.GetHex());
+        boundData.pushKV("indexnum", hashInputNum);
+    }
+    else if (!hashUniValue.isNull() || !numUniValue.isNull())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify hash or numeric index without additional vdxf key or hash");
+    }
+
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("vdxfid", EncodeDestination(CIdentityID(vdxfID)));
+    result.pushKV("hash160result", vdxfID.GetHex());
+    UniValue nameWithParent(UniValue::VOBJ);
+    nameWithParent.pushKV(parentIDName, EncodeDestination(CIdentityID(parentID)));
+    nameWithParent.pushKV("name", cleanName);
+    result.pushKV("qualifiedname", nameWithParent);
+    if (boundData.getKeys().size())
+    {
+        result.pushKV("bounddata", boundData);
+    }
+    return result;
+}
+
+UniValue hashdata(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 3)
+        throw runtime_error(
+            "hashdata \"hexdata\" \"hashtype\" \"personalstring\"\n"
             "\nReturns the hash of the data in a hex message\n"
             "\nArguments:\n"
             "  \"hexdata\"            (string, required) This message is converted from hex, the data is hashed, then returned\n"
-            "  \"hashtype\"           (string, optional) one of (\"sha256rev\", \"sha256D\", \"blake2b\", \"keccak256\", \"verushash2\", \"verushash2b\", \"verushash2.1\"), defaults to sha256\n"
+            "  \"hashtype\"           (string, optional) one of (\"sha256rev\", \"sha256D\", \"blake2b\", \"blake2bnopersonal\", \"keccak256\", \"verushash2\", \"verushash2b\", \"verushash2.1\"), defaults to sha256\n"
+            "  \"personalstring\"     (string, optional) For hashes with personalization string, such as blake2b, this is optional and will default to daemon default if not specified\n"
             "\nResult:\n"
-            "  \"hashresult\"         (hexstring) 32 byte has in hex of the data passed in using the hash of the specific blockheight\n"
+            "  \"hashresult\"         (hexstring) 32 byte hash in hex of the data passed in using the hash of the specific blockheight\n"
             "\nExamples:\n"
             "\nCreate the signature\n"
             + HelpExampleCli("signmessage", "\"RNKiEBduBru6Siv1cZRVhp4fkZNyPska6z\" \"my message\"") +
@@ -746,7 +951,7 @@ UniValue hashdata(const UniValue& params, bool fHelp)
     {
         CHashWriterSHA256 hw(SER_GETHASH, PROTOCOL_VERSION);
         hw.write((const char *)vmsg.data(), vmsg.size());
-        uint256 result = hw.GetHash();
+        result = hw.GetHash();
         // to be compatible with data and file hashing tools when users compare the output, such as sha256sum,
         // we reverse the normally little endian value
         std::reverse(result.begin(), result.end());
@@ -759,11 +964,30 @@ UniValue hashdata(const UniValue& params, bool fHelp)
     }
     else if (hashType == "blake2b")
     {
-        CBLAKE2bWriter hw(SER_GETHASH, PROTOCOL_VERSION);
+        std::string personalString;
+        if (params.size() > 2)
+        {
+            personalString = uni_get_str(params[2]);
+            std::vector<unsigned char> personalVec(personalString[0], personalString[0] + personalString.size());
+            personalVec.resize(crypto_generichash_blake2b_PERSONALBYTES);
+            CBLAKE2bWriter hw(SER_GETHASH, PROTOCOL_VERSION, &(personalVec[0]));
+            hw.write((const char *)vmsg.data(), vmsg.size());
+            result = hw.GetHash();
+        }
+        else
+        {
+            CBLAKE2bWriter hw(SER_GETHASH, PROTOCOL_VERSION);
+            hw.write((const char *)vmsg.data(), vmsg.size());
+            result = hw.GetHash();
+        }
+    }
+    else if (hashType == "blake2bnopersonal")
+    {
+        CBLAKE2bWriter hw(SER_GETHASH, PROTOCOL_VERSION, nullptr);
         hw.write((const char *)vmsg.data(), vmsg.size());
         result = hw.GetHash();
     }
-    else if (hashType == "keccack256")
+    else if (hashType == "keccak256")
     {
         CKeccack256Writer hw;
         hw.write((const char *)vmsg.data(), vmsg.size());
@@ -789,7 +1013,7 @@ UniValue hashdata(const UniValue& params, bool fHelp)
     }
     else
     {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Hash type " + hashType + " must be one of (\"sha256\", \"sha256D\",  \"keccak256\", \"verushash2\", \"verushash2b\", \"verushash2.1\")");
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Hash type " + hashType + " must be one of (\"sha256rev\", \"sha256D\", \"blake2b\", \"blake2bnopersonal\", \"keccak256\", \"verushash2\", \"verushash2b\", \"verushash2.1\")");
     }
     return result.GetHex();
 }
@@ -1360,6 +1584,105 @@ bool timestampSort(std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> a,
     return a.second.time < b.second.time;
 }
 
+
+void CurrencyValuesAndNames(UniValue &output, bool spending, const CScript script, CAmount satoshis, bool friendlyNames=false);
+void CurrencyValuesAndNames(UniValue &output, bool spending, const CScript script, CAmount satoshis, bool friendlyNames)
+{
+    if (CConstVerusSolutionVector::GetVersionByHeight(chainActive.Height()) >= CActivationHeight::ACTIVATE_PBAAS)
+    {
+        CCurrencyValueMap reserves = script.ReserveOutValue();
+        if (spending)
+        {
+            reserves = reserves * -1;
+        }
+        if (satoshis)
+        {
+            reserves.valueMap[ASSETCHAINS_CHAINID] = satoshis;
+        }
+        if (reserves.valueMap.size())
+        {
+            UniValue currencyBal(UniValue::VOBJ);
+            UniValue currencyNames(UniValue::VOBJ);
+            for (auto &oneBalance : reserves.valueMap)
+            {
+                std::string name = EncodeDestination(CIdentityID(oneBalance.first));
+                currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
+                if (friendlyNames)
+                {
+                    currencyNames.push_back(make_pair(name, ConnectedChains.GetFriendlyCurrencyName(oneBalance.first)));
+                }
+            }
+            output.pushKV("currencyvalues", currencyBal);
+            if (friendlyNames)
+            {
+                output.pushKV("currencynames", currencyNames);
+            }
+        }
+    }
+}
+
+void CurrencyValuesAndNames(UniValue &output, bool spending, const CTransaction &tx, int index, CAmount satoshis, bool friendlyNames=false);
+void CurrencyValuesAndNames(UniValue &output, bool spending, const CTransaction &tx, int index, CAmount satoshis, bool friendlyNames)
+{
+    CScript script;
+    if (spending) {
+        CTransaction priorOutTx;
+        uint256 blockHash;
+        if (myGetTransaction(tx.vin[index].prevout.hash, priorOutTx, blockHash))
+        {
+            script = priorOutTx.vout[tx.vin[index].prevout.n].scriptPubKey;
+        }
+        else
+        {
+            throw JSONRPCError(RPC_DATABASE_ERROR, "Unable to retrieve data to retrieve spending currency values");
+        }
+    }
+    else
+    {
+        script = tx.vout[index].scriptPubKey;
+    }
+    return CurrencyValuesAndNames(output, spending, script, satoshis, friendlyNames);
+}
+
+UniValue AddressMemPoolUni(const std::vector<std::pair<uint160, int>> &addresses, bool friendlyNames)
+{
+    CTransaction curTx;
+
+    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> > indexes;
+
+    if (!mempool.getAddressIndex(addresses, indexes)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+    }
+
+    std::sort(indexes.begin(), indexes.end(), timestampSort);
+
+    UniValue result(UniValue::VARR);
+
+    for (std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> >::iterator it = indexes.begin();
+        it != indexes.end(); it++) {
+
+        std::string address;
+        if (!getAddressFromIndex(it->first.type, it->first.addressBytes, address)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unknown address type");
+        }
+
+        UniValue delta(UniValue::VOBJ);
+        delta.push_back(Pair("address", address));
+        delta.push_back(Pair("txid", it->first.txhash.GetHex()));
+        delta.push_back(Pair("index", (int)it->first.index));
+        delta.push_back(Pair("satoshis", it->second.amount));
+        delta.push_back(Pair("spending", (bool)it->first.spending));
+        CurrencyValuesAndNames(delta, it->first.spending, curTx, it->first.index, it->second.amount, friendlyNames);
+        delta.push_back(Pair("timestamp", it->second.time));
+        if (it->second.amount < 0) {
+            delta.push_back(Pair("prevtxid", it->second.prevhash.GetHex()));
+            delta.push_back(Pair("prevout", (int)it->second.prevout));
+        }
+        result.push_back(delta);
+    }
+    return result;
+}
+
 UniValue getaddressmempool(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
@@ -1373,6 +1696,7 @@ UniValue getaddressmempool(const UniValue& params, bool fHelp)
             "      \"address\"  (string) The base58check encoded address\n"
             "      ,...\n"
             "    ]\n"
+            "  \"friendlynames\" (boolean) Include additional array of friendly names keyed by currency i-addresses\n"
             "}\n"
             "\nResult:\n"
             "[\n"
@@ -1392,42 +1716,22 @@ UniValue getaddressmempool(const UniValue& params, bool fHelp)
         );
 
     std::vector<std::pair<uint160, int> > addresses;
+    UniValue result(UniValue::VARR);
 
     if (!getAddressesFromParams(params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
-
-    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> > indexes;
-
-    if (!mempool.getAddressIndex(addresses, indexes)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+    
+    if (uni_get_bool(find_value(params[0].get_obj(), "friendlynames")))
+    {
+        LOCK2(cs_main, mempool.cs);
+        result = AddressMemPoolUni(addresses, true);
     }
-
-    std::sort(indexes.begin(), indexes.end(), timestampSort);
-
-    UniValue result(UniValue::VARR);
-
-    for (std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> >::iterator it = indexes.begin();
-         it != indexes.end(); it++) {
-
-        std::string address;
-        if (!getAddressFromIndex(it->first.type, it->first.addressBytes, address)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unknown address type");
-        }
-
-        UniValue delta(UniValue::VOBJ);
-        delta.push_back(Pair("address", address));
-        delta.push_back(Pair("txid", it->first.txhash.GetHex()));
-        delta.push_back(Pair("index", (int)it->first.index));
-        delta.push_back(Pair("satoshis", it->second.amount));
-        delta.push_back(Pair("timestamp", it->second.time));
-        if (it->second.amount < 0) {
-            delta.push_back(Pair("prevtxid", it->second.prevhash.GetHex()));
-            delta.push_back(Pair("prevout", (int)it->second.prevout));
-        }
-        result.push_back(delta);
+    else
+    {
+        LOCK(mempool.cs);
+        result = AddressMemPoolUni(addresses, false);
     }
-
     return result;
 }
 
@@ -1444,7 +1748,8 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
             "      \"address\"  (string) The base58check encoded address\n"
             "      ,...\n"
             "    ],\n"
-            "  \"chainInfo\"  (boolean) Include chain info with results\n"
+            "  \"chaininfo\"    (boolean) Include chain info with results\n"
+            "  \"friendlynames\" (boolean) Include additional array of friendly names keyed by currency i-addresses\n"
             "}\n"
             "\nResult\n"
             "[\n"
@@ -1462,19 +1767,16 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
             + HelpExampleRpc("getaddressutxos", "{\"addresses\": [\"RY5LccmGiX9bUHYGtSWQouNy1yFhc5rM87\"]}")
             );
 
-    bool includeChainInfo = false;
-    if (params[0].isObject()) {
-        UniValue chainInfo = find_value(params[0].get_obj(), "chainInfo");
-        if (chainInfo.isBool()) {
-            includeChainInfo = chainInfo.get_bool();
-        }
-    }
+    bool includeChainInfo = uni_get_bool(find_value(params[0].get_obj(), "chaininfo"));
+    bool friendlyNames = uni_get_bool(find_value(params[0].get_obj(), "friendlynames"));
 
     std::vector<std::pair<uint160, int> > addresses;
 
     if (!getAddressesFromParams(params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
+
+    LOCK(cs_main);
 
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
 
@@ -1524,8 +1826,13 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
         output.push_back(Pair("txid", it->first.txhash.GetHex()));
         output.push_back(Pair("outputIndex", (int)it->first.index));
         output.push_back(Pair("script", HexStr(it->second.script.begin(), it->second.script.end())));
+        CurrencyValuesAndNames(output, false, it->second.script, it->second.satoshis, friendlyNames);
         output.push_back(Pair("satoshis", it->second.satoshis));
         output.push_back(Pair("height", it->second.blockHeight));
+        if (chainActive.Height() >= it->second.blockHeight)
+        {
+            output.push_back(Pair("blocktime", chainActive[it->second.blockHeight]->GetBlockTime()));
+        }
         utxos.push_back(output);
     }
 
@@ -1557,7 +1864,9 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
             "    ]\n"
             "  \"start\" (number) The start block height\n"
             "  \"end\" (number) The end block height\n"
-            "  \"chainInfo\" (boolean) Include chain info in results, only applies if start and end specified\n"
+            "  \"chaininfo\" (boolean) Include chain info in results, only applies if start and end specified\n"
+            "  \"verbosity\" (number) Include additional currency data and values (0 or 1)\n"
+            "  \"friendlynames\" (boolean) Include additional array of friendly names keyed by currency i-addresses\n"
             "}\n"
             "\nResult:\n"
             "[\n"
@@ -1578,11 +1887,9 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
     UniValue startValue = find_value(params[0].get_obj(), "start");
     UniValue endValue = find_value(params[0].get_obj(), "end");
 
-    UniValue chainInfo = find_value(params[0].get_obj(), "chainInfo");
-    bool includeChainInfo = false;
-    if (chainInfo.isBool()) {
-        includeChainInfo = chainInfo.get_bool();
-    }
+    bool includeChainInfo = uni_get_bool(find_value(params[0].get_obj(), "chaininfo"));
+    bool friendlyNames = uni_get_bool(find_value(params[0].get_obj(), "friendlynames"));
+    int verbosity = uni_get_bool(find_value(params[0].get_obj(), "verbosity"));
 
     int start = 0;
     int end = 0;
@@ -1606,34 +1913,53 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
 
     std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
 
-    for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
-        if (start > 0 && end > 0) {
-            if (!GetAddressIndex((*it).first, (*it).second, addressIndex, start, end)) {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
-            }
-        } else {
-            if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+    {
+        LOCK(cs_main);
+        for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
+            if (start > 0 && end > 0) {
+                if (!GetAddressIndex((*it).first, (*it).second, addressIndex, start, end)) {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+                }
+            } else {
+                if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
+                }
             }
         }
     }
 
     UniValue deltas(UniValue::VARR);
+    {
+        LOCK2(cs_main, mempool.cs);
 
-    for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
-        std::string address;
-        if (!getAddressFromIndex(it->first.type, it->first.hashBytes, address)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unknown address type");
+        CTransaction curTx;
+
+        for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
+            std::string address;
+            if (!getAddressFromIndex(it->first.type, it->first.hashBytes, address)) {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unknown address type");
+            }
+
+            UniValue delta(UniValue::VOBJ);
+            delta.push_back(Pair("satoshis", it->second));
+            delta.push_back(Pair("txid", it->first.txhash.GetHex()));
+            delta.push_back(Pair("index", (int)it->first.index));
+            delta.push_back(Pair("blockindex", (int)it->first.txindex));
+            delta.push_back(Pair("height", it->first.blockHeight));
+            delta.push_back(Pair("address", address));
+            if (chainActive.Height() >= it->first.blockHeight)
+            {
+                delta.push_back(Pair("blocktime", chainActive[it->first.blockHeight]->GetBlockTime()));
+            }
+
+            uint256 blockHash;
+            if (verbosity && (it->first.txhash == curTx.GetHash() || myGetTransaction(it->first.txhash, curTx, blockHash)))
+            {
+                CurrencyValuesAndNames(delta, it->first.spending, curTx, it->first.index, it->second, friendlyNames);
+            }
+
+            deltas.push_back(delta);
         }
-
-        UniValue delta(UniValue::VOBJ);
-        delta.push_back(Pair("satoshis", it->second));
-        delta.push_back(Pair("txid", it->first.txhash.GetHex()));
-        delta.push_back(Pair("index", (int)it->first.index));
-        delta.push_back(Pair("blockindex", (int)it->first.txindex));
-        delta.push_back(Pair("height", it->first.blockHeight));
-        delta.push_back(Pair("address", address));
-        deltas.push_back(delta);
     }
 
     UniValue result(UniValue::VOBJ);
@@ -1680,11 +2006,12 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
             "      \"address\"  (string) The base58check encoded address\n"
             "      ,...\n"
             "    ]\n"
+            "  \"friendlynames\" (boolean) Include additional array of friendly names keyed by currency i-addresses\n"
             "}\n"
             "\nResult:\n"
             "{\n"
-            "  \"balance\"  (string) The current balance in satoshis\n"
-            "  \"received\"  (string) The total number of satoshis received (including change)\n"
+            "  \"balance\"  (number) The current balance in satoshis\n"
+            "  \"received\"  (number) The total number of satoshis received (including change)\n"
             "}\n"
             "\nExamples:\n"
             + HelpExampleCli("getaddressbalance", "'{\"addresses\": [\"RY5LccmGiX9bUHYGtSWQouNy1yFhc5rM87\"]}'")
@@ -1696,8 +2023,11 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
     if (!getAddressesFromParams(params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
+    bool friendlyNames = uni_get_bool(find_value(params[0].get_obj(), "friendlynames"));
 
     std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
+
+    LOCK2(cs_main, mempool.cs);
 
     for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
         if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
@@ -1705,10 +2035,36 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
         }
     }
 
+    CTransaction curTx;
+
     CAmount balance = 0;
     CAmount received = 0;
 
+    CCurrencyValueMap reserveBalance;
+    CCurrencyValueMap reserveReceived;
+
     for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
+        uint256 blockHash;
+        if (it->first.txhash == curTx.GetHash() || myGetTransaction(it->first.txhash, curTx, blockHash))
+        {
+            if (it->first.spending) {
+                CTransaction priorOutTx;
+                if (myGetTransaction(curTx.vin[it->first.index].prevout.hash, priorOutTx, blockHash))
+                {
+                    reserveBalance -= priorOutTx.vout[curTx.vin[it->first.index].prevout.n].ReserveOutValue();
+                }
+                else
+                {
+                    throw JSONRPCError(RPC_DATABASE_ERROR, "Unable to retrieve data for reserve output value");
+                }
+            }
+            else
+            {
+                reserveBalance += curTx.vout[it->first.index].ReserveOutValue();
+                reserveReceived += curTx.vout[it->first.index].ReserveOutValue();
+            }
+        }
+
         if (it->second > 0) {
             received += it->second;
         }
@@ -1719,6 +2075,44 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
     result.push_back(Pair("balance", balance));
     result.push_back(Pair("received", received));
 
+    if (CConstVerusSolutionVector::GetVersionByHeight(chainActive.Height()) >= CActivationHeight::ACTIVATE_PBAAS)
+    {
+        if (balance || received)
+        {
+            reserveBalance.valueMap[ASSETCHAINS_CHAINID] = balance;
+            reserveReceived.valueMap[ASSETCHAINS_CHAINID] = received;
+        }
+
+        if (reserveBalance.valueMap.size())
+        {
+            UniValue currencyBal(UniValue::VOBJ);
+            for (auto &oneBalance : reserveBalance.valueMap)
+            {
+                std::string name = EncodeDestination(CIdentityID(oneBalance.first));
+                currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
+            }
+            result.pushKV("currencybalance", currencyBal);
+        }
+        if (reserveReceived.valueMap.size())
+        {
+            UniValue currencyBal(UniValue::VOBJ);
+            UniValue currencyNames(UniValue::VOBJ);
+            for (auto &oneBalance : reserveReceived.valueMap)
+            {
+                std::string name = EncodeDestination(CIdentityID(oneBalance.first));
+                currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
+                if (friendlyNames)
+                {
+                    currencyNames.push_back(make_pair(name, ConnectedChains.GetFriendlyCurrencyName(oneBalance.first)));
+                }
+            }
+            result.pushKV("currencyreceived", currencyBal);
+            if (friendlyNames)
+            {
+                result.pushKV("currencynames", currencyNames);
+            }
+        }
+    }
     return result;
 }
 
@@ -1856,7 +2250,6 @@ UniValue getaddresstxids(const UniValue& params, bool fHelp)
     }
 
     return result;
-
 }
 
 UniValue getspentinfo(const UniValue& params, bool fHelp)
@@ -1913,9 +2306,10 @@ static const CRPCCommand commands[] =
     { "util",               "validateaddress",        &validateaddress,        true  }, /* uses wallet if enabled */
     { "util",               "z_validateaddress",      &z_validateaddress,      true  }, /* uses wallet if enabled */
     { "util",               "createmultisig",         &createmultisig,         true  },
-    { "util",               "verifymessage",          &verifymessage,          true  },
-    { "util",               "verifyfile",             &verifyfile,             true  },
-    { "util",               "verifyhash",             &verifyhash,             true  },
+    { "identity",           "verifymessage",          &verifymessage,          true  },
+    { "identity",           "verifyfile",             &verifyfile,             true  },
+    { "identity",           "verifyhash",             &verifyhash,             true  },
+    { "vdxf",               "getvdxfid",              &getvdxfid,              true  },
     { "hidden",             "hashdata",               &hashdata,               true  }, // not visible in help
 
     // START insightexplorer

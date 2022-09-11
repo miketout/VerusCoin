@@ -292,6 +292,14 @@ public:
         return (ret == 0);
     }
 
+    bool TxnSetTimeout()
+    {
+        if (!pdb || !activeTxn)
+            return false;
+        int ret = activeTxn->set_timeout(10000, DB_SET_TXN_TIMEOUT);
+        return (ret == 0);
+    }
+
     bool ReadVersion(int& nVersion)
     {
         nVersion = 0;

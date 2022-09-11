@@ -2,7 +2,7 @@
 #include "asyncrpcoperation.h"
 #include "univalue.h"
 #include "zcash/Address.hpp"
-#include "zcash/zip32.h"
+#include <zcash/address/zip32.h>
 
 class AsyncRPCOperation_saplingmigration : public AsyncRPCOperation
 {

@@ -76,9 +76,9 @@ public:
 
     enum EFinalizationType {
         FINALIZE_INVALID = 0,
-        FINALIZE_NOTARIZATION = 1,      // confirmed when notarization is deemed correct / final
+        FINALIZE_NOTARIZATION = 1,      // confirmed with FINALIZE_CONFIRMED when notarization is deemed correct / final
         FINALIZE_EXPORT = 2,            // confirmed when export has no more work to do
-        FINALIZE_CURRENCY_LAUNCH = 4,   // confirmed on successful currency launch, rejected on refund
+        FINALIZE_PROPOSAL = 4,          // confirmed on approval of a proposed output
         FINALIZE_REJECTED = 0x40,       // flag set when confirmation is rejected and/or proven false
         FINALIZE_CONFIRMED = 0x80,      // flag set when object finalization is confirmed
         FINALIZE_TYPE_MASK = ~(FINALIZE_REJECTED | FINALIZE_CONFIRMED)
@@ -92,14 +92,14 @@ public:
     std::vector<int32_t> evidenceInputs; // indexes into vin that are evidence to support the current state
     std::vector<int32_t> evidenceOutputs; // tx output indexes that are evidence to support the current state    
 
-    CObjectFinalization() : version(VERSION_INVALID), finalizationType(FINALIZE_INVALID) {}
-    CObjectFinalization(uint8_t fType, const uint160 &curID, const uint256 &TxId, uint32_t outNum, uint32_t minFinalHeight=0) : 
-        version(VERSION_CURRENT), finalizationType(fType), minFinalizationHeight(minFinalHeight), currencyID(curID), output(TxId, outNum) {}
+    CObjectFinalization(uint8_t Version=VERSION_INVALID) : version(Version), finalizationType(FINALIZE_INVALID), minFinalizationHeight(0) {}
+    CObjectFinalization(uint8_t fType, const uint160 &curID, const uint256 &TxId, uint32_t outNum, uint32_t minFinalHeight=0, uint8_t Version=VERSION_CURRENT) : 
+        version(Version), finalizationType(fType), minFinalizationHeight(minFinalHeight), currencyID(curID), output(TxId, outNum) {}
     CObjectFinalization(const std::vector<unsigned char> &vch)
     {
         ::FromVector(vch, *this);
     }
-    CObjectFinalization(const CTransaction &tx, uint32_t *pEcode=nullptr, int32_t *pFinalizationOutNum=nullptr);
+    CObjectFinalization(const CTransaction &tx, uint32_t *pEcode=nullptr, int32_t *pFinalizationOutNum=nullptr, uint32_t minFinalHeight=0, uint8_t Version=VERSION_CURRENT);
     CObjectFinalization(const CScript &script);
 
     ADD_SERIALIZE_METHODS;
@@ -110,11 +110,8 @@ public:
         READWRITE(finalizationType);
         READWRITE(currencyID);
         READWRITE(output);
-        if (IsConfirmed() || IsRejected())
-        {
-            READWRITE(evidenceInputs);
-            READWRITE(evidenceOutputs);
-        }
+        READWRITE(evidenceInputs);
+        READWRITE(evidenceOutputs);
     }
 
     bool IsValid() const
@@ -172,9 +169,9 @@ public:
         }
     }
 
-    bool IsLaunchFinalization() const
+    bool IsProposalFinalization() const
     {
-        return (finalizationType & FINALIZE_TYPE_MASK) == FINALIZE_CURRENCY_LAUNCH;
+        return (finalizationType & FINALIZE_TYPE_MASK) == FINALIZE_PROPOSAL;
     }
 
     bool IsExportFinalization() const
@@ -193,14 +190,15 @@ public:
     }
 
     bool GetOutputTransaction(const CTransaction &initialTx, CTransaction &tx, uint256 &blockHash) const;
+    std::vector<CNotaryEvidence> GetFinalizationEvidence(const CTransaction &thisTx, CValidationState &state, CTransaction *pOutputTx=nullptr) const;
 
     // Sign the output object with an ID or signing authority of the ID from the wallet.
-    CNotaryEvidence SignConfirmed(const CWallet *pWallet, const CTransaction &initialTx, const CIdentityID &signatureID, CCurrencyDefinition::EProofProtocol hashType) const;
-    CNotaryEvidence SignRejected(const CWallet *pWallet, const CTransaction &initialTx, const CIdentityID &signatureID, CCurrencyDefinition::EProofProtocol hashType) const;
+    CNotaryEvidence SignConfirmed(const std::set<uint160> &notarySet, int minConfirming, const CWallet *pWallet, const CTransaction &initialTx, const CIdentityID &signatureID, uint32_t signingHeight, CCurrencyDefinition::EProofProtocol hashType) const;
+    CNotaryEvidence SignRejected(const std::set<uint160> &notarySet, int minConfirming, const CWallet *pWallet, const CTransaction &initialTx, const CIdentityID &signatureID, uint32_t signingHeight, CCurrencyDefinition::EProofProtocol hashType) const;
 
     // Verify that the output object is signed with an ID or signing authority of the ID from the wallet.
-    CIdentitySignature::ESignatureVerification VerifyOutputSignature(const CTransaction &initialTx, const CNotaryEvidence &signature, const COptCCParams &p, uint32_t height) const;
-    CIdentitySignature::ESignatureVerification VerifyOutputSignature(const CTransaction &initialTx, const CNotaryEvidence &signature, uint32_t height) const;
+    CIdentitySignature::ESignatureVerification VerifyOutputSignature(const CTransaction &initialTx, const std::vector<CNotarySignature> &signatureVec, const COptCCParams &p, uint32_t height) const;
+    CIdentitySignature::ESignatureVerification VerifyOutputSignature(const CTransaction &initialTx, const std::vector<CNotarySignature> &signatureVec, uint32_t height) const;
 
     static std::vector<std::pair<uint32_t, CInputDescriptor>> GetUnspentConfirmedFinalizations(const uint160 &currencyID);
     static std::vector<std::pair<uint32_t, CInputDescriptor>> GetUnspentPendingFinalizations(const uint160 &currencyID);
@@ -242,6 +240,12 @@ public:
         return "vrsc::system.finalization.confirmed";
     }
 
+    // enables easily finding all confirmed finalizations
+    static std::string ObjectFinalizationFinalizedKeyName()
+    {
+        return "vrsc::system.finalization.finalized";
+    }
+
     // enables location of rejected finalizations
     static std::string ObjectFinalizationRejectedKeyName()
     {
@@ -280,6 +284,13 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = CVDXF::GetDataKey(ObjectFinalizationConfirmedKeyName(), nameSpace);
+        return key;
+    }
+
+    static uint160 ObjectFinalizationFinalizedKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF::GetDataKey(ObjectFinalizationFinalizedKeyName(), nameSpace);
         return key;
     }
 
@@ -342,14 +353,24 @@ public:
 
     bool IsValid() const
     {
-        // this needs an actual check
-        return version != 0;
+        return version != 0 && ((!vtx.size() && lastConfirmed == -1 && !forks.size()) || (vtx.size() && forks.size()));
     }
 
     bool IsConfirmed() const
     {
         return lastConfirmed != -1;
     }
+
+    bool CorrelatedFinalizationSpends(const std::vector<std::pair<CTransaction, uint256>> &txes,
+                                      std::vector<std::vector<CInputDescriptor>> &spendsToClose,
+                                      std::vector<CInputDescriptor> &extraSpends,
+                                      std::vector<std::vector<CNotaryEvidence>> *pEvidenceSpends=nullptr) const;
+
+    bool CalculateConfirmation(int confirmingIdx, std::set<int> &confirmedOutputNums, std::set<int> &invalidatedOutputNums) const;
+
+    // returns the best notarization with a minimum of minConfirms confirmations by later earned notarizations
+    // without conflicts in agreement. calls out, so should not be called holding locks. returns -1 if none found.
+    int BestConfirmedNotarization(int minConfirms);
 
     UniValue ToUniValue() const;
 };
@@ -360,6 +381,7 @@ bool IsEarnedNotarizationInput(const CScript &scriptSig);
 bool ValidateAcceptedNotarization(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
 bool IsAcceptedNotarizationInput(const CScript &scriptSig);
 bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
+bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 bool ValidateFinalizeNotarization(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled);
 bool IsFinalizeNotarizationInput(const CScript &scriptSig);
 bool IsNotaryEvidenceInput(const CScript &scriptSig);

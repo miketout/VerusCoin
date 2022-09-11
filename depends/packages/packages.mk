@@ -46,4 +46,4 @@ native_packages := native_ccache
 
 wallet_packages=bdb
 
-packages := boost openssl libevent zeromq $(zcash_packages) libcurl googletest #googlemock
+packages := boost openssl libevent zeromq $(zcash_packages) zlib libarchive libcurl googletest #googlemock

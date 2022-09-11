@@ -11,7 +11,7 @@
 #include "key.h"
 #include "keystore.h"
 #include "zcash/Address.hpp"
-#include "zcash/zip32.h"
+#include "zcash/address/zip32.h"
 
 #include <list>
 #include <stdint.h>
@@ -34,6 +34,7 @@ class uint256;
 enum DBErrors
 {
     DB_LOAD_OK,
+    DB_LOAD_CRYPTED,
     DB_CORRUPT,
     DB_NONCRITICAL_ERROR,
     DB_TOO_NEW,
@@ -125,6 +126,46 @@ public:
     {
     }
 
+    template <typename K, typename T>
+    bool WriteTxn(const K& key, const T& value, std::string calling, bool fOverwrite = true)
+    {
+
+        LOCK(bitdb.cs_db);
+        bool txnWrite = false;
+        int retries = 0;
+
+        while(!txnWrite) {
+            //Writing transaction to the database
+            if(!TxnBegin()) {
+                LogPrintf("%s: Failed to begin txn, will retry.\n", calling);
+                TxnAbort();
+            } else {
+                TxnSetTimeout();
+                txnWrite = Write(key, value, fOverwrite);
+                if (!txnWrite) {
+                    LogPrintf("%s: Failed to write txn, will retry.\n", calling);
+                    TxnAbort();
+                } else {
+                    if(!TxnCommit()) {
+                      LogPrintf("%s: Failed to commit txn, warning.\n", calling);
+                    }
+                }
+            }
+
+            if (!txnWrite) {
+              TxnAbort();
+              MilliSleep(500);
+              retries++;
+            }
+
+            if (retries > 3) {
+              LogPrintf("%s Failed!!! Retry, attempts #%d.\n", calling, retries - 1);
+              return false;
+            }
+        }
+        return true;
+    }
+
     bool WriteName(const std::string& strAddress, const std::string& strName);
     bool EraseName(const std::string& strAddress);
 
@@ -142,6 +183,9 @@ public:
 
     bool WriteWatchOnly(const CScript &script);
     bool EraseWatchOnly(const CScript &script);
+
+    //Write crypted status of the wallet
+    bool WriteIsCrypted(const bool &crypted);
 
     bool WriteIdentity(const CIdentityMapKey &mapKey, const CIdentityMapValue &id);
     bool EraseIdentity(const CIdentityMapKey &mapKey);
@@ -174,6 +218,8 @@ public:
     void ListAccountCreditDebit(const std::string& strAccount, std::list<CAccountingEntry>& acentries);
 
     DBErrors ReorderTransactions(CWallet* pwallet);
+    DBErrors InitalizeCryptedLoad(CWallet* pwallet);
+    DBErrors LoadCryptedSeedFromDB(CWallet* pwallet); 
     DBErrors LoadWallet(CWallet* pwallet);
     DBErrors FindWalletTxToZap(CWallet* pwallet, std::vector<uint256>& vTxHash, std::vector<CWalletTx>& vWtx);
     DBErrors ZapWalletTx(CWallet* pwallet, std::vector<CWalletTx>& vWtx);
@@ -197,6 +243,7 @@ public:
                           const std::vector<unsigned char>& vchCryptedSecret,
                           const CKeyMetadata &keyMeta);
     bool WriteCryptedSaplingZKey(const libzcash::SaplingExtendedFullViewingKey &extfvk,
+                          const uint256 &sha256addr,
                           const std::vector<unsigned char>& vchCryptedSecret,
                           const CKeyMetadata &keyMeta);
 

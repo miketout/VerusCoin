@@ -51,7 +51,8 @@ bool IsRPCRunning();
 /** Get the async queue*/
 std::shared_ptr<AsyncRPCQueue> getAsyncRPCQueue();
 
-
+//Let the wallet run the openwallet RPC to set the passphrase to load encrypted data
+void SetRPCNeedsUnlocked(const bool& newStatus);
 /**
  * Set the RPC warmup status.  When this is done, all RPC calls will error out
  * immediately with RPC_IN_WARMUP.

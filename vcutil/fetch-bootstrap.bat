@@ -7,7 +7,7 @@ IF %ERRORLEVEL%==0 EXIT 1
 TITLE %PROCESS_NAME%
 
 SETLOCAL EnableDelayedExpansion
-SET BOOTSTRAP_URL=https://bootstrap.veruscoin.io
+SET BOOTSTRAP_URL=https://bootstrap.verus.io
 SET TAR_FOUND=0
 FOR %%x in (tar.exe) DO IF NOT [%%~$PATH:x]==[] SET TAR_FOUND=1
 IF %TAR_FOUND% EQU 1 (

@@ -162,7 +162,9 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
         entry.push_back(Pair("expiryheight", (int64_t)tx.nExpiryHeight));
     }
     UniValue vin(UniValue::VARR);
-    BOOST_FOREACH(const CTxIn& txin, tx.vin) {
+    for (int i = 0; i < tx.vin.size(); i++)
+    {
+        const CTxIn &txin = tx.vin[i];
         UniValue in(UniValue::VOBJ);
         if (tx.IsCoinBase())
             in.push_back(Pair("coinbase", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
@@ -173,11 +175,56 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
             in.push_back(Pair("txid", txin.prevout.hash.GetHex()));
             in.push_back(Pair("vout", (int64_t)txin.prevout.n));
             {
-                uint256 hash; CTransaction tx; CTxDestination address;
-                if (GetTransaction(txin.prevout.hash,tx,hash,false))
+                uint256 hash; CTransaction txFrom;
+                if (GetTransaction(txin.prevout.hash,txFrom,hash,false))
                 {
-                    if (ExtractDestination(tx.vout[txin.prevout.n].scriptPubKey, address))
-                        in.push_back(Pair("address", CBitcoinAddress(address).ToString()));
+                    COptCCParams p;
+                    BlockMap::iterator blockIdxIt = mapBlockIndex.find(hash);
+                    if (!hash.IsNull() &&
+                        blockIdxIt != mapBlockIndex.end() &&
+                        LogAcceptCategory("signaturehash") &&
+                        chainActive.Contains(blockIdxIt->second) &&
+                        txFrom.vout[txin.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
+                        p.IsValid())
+                    {
+                        // TODO: POST HARDENING - it would be good to add the signature hash for every input and improve
+                        // description of signing and eval conditions, decoding the COptCCParams
+
+                        // get signature hash and verify signature
+                        auto consensusBranchID = CurrentEpochBranchId(blockIdxIt->second->GetHeight(), Params().GetConsensus());
+                        CSmartTransactionSignatures smartSigs;
+                        bool signedByDefaultKey = false;
+                        std::vector<unsigned char> ffVec = GetFulfillmentVector(tx.vin[i].scriptSig);
+                        smartSigs = CSmartTransactionSignatures(std::vector<unsigned char>(ffVec.begin(), ffVec.end()));
+
+                        UniValue signatureHashInfo(UniValue::VOBJ);
+                        SignatureHash(txFrom.vout[txin.prevout.n].scriptPubKey, 
+                                      tx, 
+                                      i, 
+                                      smartSigs.sigHashType, 
+                                      txFrom.vout[txin.prevout.n].nValue,
+                                      CurrentEpochBranchId(nHeight, Params().GetConsensus()),
+                                      nullptr,
+                                      &signatureHashInfo);
+                        if (signatureHashInfo.getKeys().size())
+                        {
+                            in.pushKV("signaturehashinfo", signatureHashInfo);
+                        }
+                    }
+
+                    txnouttype typeRet;
+                    std::vector<CTxDestination> addressRet;
+                    int nRequiredRet;
+                    if (ExtractDestinations(txFrom.vout[txin.prevout.n].scriptPubKey, typeRet, addressRet, nRequiredRet))
+                    {
+                        UniValue addrs(UniValue::VARR);
+                        for (auto &oneAddr : addressRet)
+                        {
+                            addrs.push_back(EncodeDestination(oneAddr));
+                        }
+                        in.push_back(Pair("addresses", addrs));
+                        in.push_back(Pair("minrequired", !nRequiredRet ? 1 : nRequiredRet));
+                    }
                 }
             }
             UniValue o(UniValue::VOBJ);
@@ -202,6 +249,7 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
         in.push_back(Pair("sequence", (int64_t)txin.nSequence));
         vin.push_back(in);
     }
+
     entry.push_back(Pair("vin", vin));
     BlockMap::iterator it = mapBlockIndex.find(pcoinsTip->GetBestBlock());
     CBlockIndex *tipindex,*pindex = it->second;
@@ -889,6 +937,9 @@ UniValue decoderawtransaction(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed");
 
     UniValue result(UniValue::VOBJ);
+
+    uint256 hashBlock;
+    TxToJSONExpanded(tx, hashBlock, result);
     TxToJSON(tx, uint256(), result);
 
     return result;
