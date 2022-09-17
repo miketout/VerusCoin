@@ -1453,6 +1453,7 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
                     fprintf(fp,"systemid=%s\n", EncodeDestination(CIdentityID(ConnectedChains.thisChain.systemID)).c_str());
                     fprintf(fp,"startblock=%d\n", ConnectedChains.thisChain.startBlock);
                     fprintf(fp,"endblock=%d\n", ConnectedChains.thisChain.endBlock);
+                    fprintf(fp,"blocktime=%d\n", ConnectedChains.thisChain.blockTime);
                     fprintf(fp,"gatewayconverterissuance=%s\n", (charPtr = mapArgs["-gatewayconverterissuance"].c_str())[0] == 0 ? "0" : charPtr);
                     fprintf(fp,"ac_supply=%s\n", (charPtr = mapArgs["-ac_supply"].c_str())[0] == 0 ? "0" : charPtr);
                     fprintf(fp,"ac_halving=%s\n", (charPtr = mapArgs["-ac_halving"].c_str())[0] == 0 ? "0" : charPtr);
@@ -1879,6 +1880,8 @@ void komodo_args(char *argv0)
         mapArgs["-startblock"] = to_string(PBAAS_STARTBLOCK);
         PBAAS_ENDBLOCK = mainVerusCurrency.endBlock;
         mapArgs["-endblock"] = to_string(PBAAS_ENDBLOCK);
+        PBAAS_BLOCKTIME = mainVerusCurrency.blockTime;
+        mapArgs["-blocktime"] = to_string(PBAAS_BLOCKTIME);
 
         ASSETCHAINS_SUPPLY = mainVerusCurrency.GetTotalPreallocation();
         ASSETCHAINS_ISSUANCE = mainVerusCurrency.gatewayConverterIssuance;
@@ -2054,6 +2057,7 @@ void komodo_args(char *argv0)
 
             PBAAS_STARTBLOCK = GetArg("-startblock", 0);
             PBAAS_ENDBLOCK = GetArg("-endblock", 0);
+            PBAAS_BLOCKTIME = GetArg("-blocktime", 0);
 
             // supply is the total of all pre-allocations && issuance
             ASSETCHAINS_SUPPLY = GetArg("-ac_supply", 0);
@@ -2123,10 +2127,11 @@ void komodo_args(char *argv0)
             }
 
             // if we have extended PBaaS parameters
-            if ( PBAAS_STARTBLOCK || PBAAS_ENDBLOCK )
+            if ( PBAAS_STARTBLOCK || PBAAS_ENDBLOCK || PBAAS_BLOCKTIME)
             {
                 extralen += iguana_rwnum(1,&extraptr[extralen],sizeof(PBAAS_STARTBLOCK),(void *)&PBAAS_STARTBLOCK);
                 extralen += iguana_rwnum(1,&extraptr[extralen],sizeof(PBAAS_ENDBLOCK),(void *)&PBAAS_ENDBLOCK);
+                extralen += iguana_rwnum(1,&extraptr[extralen],sizeof(PBAAS_BLOCKTIME),(void *)&PBAAS_BLOCKTIME);
             }
 
             val = ASSETCHAINS_COMMISSION | (((uint64_t)ASSETCHAINS_STAKED & 0xff) << 32) | (((uint64_t)ASSETCHAINS_CC & 0xffff) << 40) | ((ASSETCHAINS_PUBLIC != 0) << 7) | ((ASSETCHAINS_PRIVATE != 0) << 6);
@@ -2217,6 +2222,7 @@ void komodo_args(char *argv0)
 
                 obj.push_back(Pair("startblock", PBAAS_STARTBLOCK));
                 obj.push_back(Pair("endblock", PBAAS_ENDBLOCK));
+                obj.push_back(Pair("blocktime", PBAAS_BLOCKTIME));
                 obj.push_back(Pair("launchsystemid", GetArg("-launchsystemid","")));
                 obj.push_back(Pair("systemid", GetArg("-systemid","")));
                 obj.push_back(Pair("parent", GetArg("-parentid","")));

@@ -61,7 +61,7 @@ extern uint64_t ASSETCHAINS_TIMELOCKGTE, ASSETCHAINS_TIMEUNLOCKFROM, ASSETCHAINS
 extern int64_t ASSETCHAINS_SUPPLY;
 extern int64_t ASSETCHAINS_ISSUANCE;
 extern uint64_t ASSETCHAINS_REWARD[3], ASSETCHAINS_DECAY[3], ASSETCHAINS_HALVING[3], ASSETCHAINS_ENDSUBSIDY[3], ASSETCHAINS_ERAOPTIONS[3];
-extern int32_t PBAAS_STARTBLOCK, PBAAS_ENDBLOCK, ASSETCHAINS_LWMAPOS;
+extern int32_t PBAAS_STARTBLOCK, PBAAS_ENDBLOCK, PBAAS_BLOCKTIME, ASSETCHAINS_LWMAPOS;
 extern uint32_t ASSETCHAINS_ALGO, ASSETCHAINS_VERUSHASH, ASSETCHAINS_LASTERA;
 extern std::string VERUS_CHAINNAME;
 
@@ -526,6 +526,8 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
     mapArgs["-startblock"] = to_string(PBAAS_STARTBLOCK);
     PBAAS_ENDBLOCK = ConnectedChains.ThisChain().endBlock;
     mapArgs["-endblock"] = to_string(PBAAS_ENDBLOCK);
+    PBAAS_BLOCKTIME = ConnectedChains.ThisChain().blockTime;
+    mapArgs["-blocktime"] = to_string(PBAAS_BLOCKTIME);
     mapArgs["-ac_supply"] = to_string(ASSETCHAINS_SUPPLY);
     mapArgs["-gatewayconverterissuance"] = to_string(ASSETCHAINS_ISSUANCE);
     return true;
@@ -535,7 +537,8 @@ void CurrencySystemTypeQuery(const uint160 queryID,
                              std::map<CUTXORef, int> &currenciesFound,
                              std::vector<std::pair<std::pair<CUTXORef, std::vector<CNodeData>>, CCurrencyDefinition>> &curDefVec,
                              uint32_t startBlock=0,
-                             uint32_t endBlock=0)
+                             uint32_t endBlock=0,
+                             uint32_t blockTime=0) // TODO: Investigate how to handle blockTime here, if we should have default value of 60
 {
     if (startBlock || endBlock)
     {
@@ -605,7 +608,8 @@ void CurrencyNotarizationTypeQuery(CCurrencyDefinition::EQueryOptions launchStat
                                    std::map<CUTXORef, int> &currenciesFound,
                                    std::vector<std::pair<std::pair<CUTXORef, std::vector<CNodeData>>, CCurrencyDefinition>> &curDefVec,
                                    uint32_t startBlock=0,
-                                   uint32_t endBlock=0)
+                                   uint32_t endBlock=0,
+                                   uint32_t blockTime=0) //TODO: Figure out how to handle blockTime here
 {
     uint160 queryID;
     bool checkUnspent = false;
@@ -714,7 +718,8 @@ void GetCurrencyDefinitions(const uint160 &systemIDQualifier,
                             CCurrencyDefinition::EQueryOptions systemTypeQuery,
                             bool isConverter,
                             uint32_t startBlock=0,
-                            uint32_t endBlock=0)
+                            uint32_t endBlock=0,
+                            uint32_t blockTime=0)
 {
     CCcontract_info CC;
     CCcontract_info *cp;
@@ -725,22 +730,22 @@ void GetCurrencyDefinitions(const uint160 &systemIDQualifier,
     if (systemTypeQuery == CCurrencyDefinition::QUERY_SYSTEMTYPE_LOCAL)
     {
         uint160 queryID = CCrossChainRPCData::GetConditionID(systemIDQualifier, CCurrencyDefinition::CurrencySystemKey());
-        CurrencySystemTypeQuery(queryID, currenciesFound, curDefVec, startBlock, endBlock);
+        CurrencySystemTypeQuery(queryID, currenciesFound, curDefVec, startBlock, endBlock, blockTime);
     }
     else if (systemTypeQuery == CCurrencyDefinition::QUERY_SYSTEMTYPE_IMPORTED)
     {
         uint160 queryID = CCrossChainRPCData::GetConditionID(ASSETCHAINS_CHAINID, CCurrencyDefinition::ExternalCurrencyKey());
-        CurrencySystemTypeQuery(queryID, currenciesFound, curDefVec, startBlock, endBlock);
+        CurrencySystemTypeQuery(queryID, currenciesFound, curDefVec, startBlock, endBlock, blockTime);
     }
     else if (systemTypeQuery == CCurrencyDefinition::QUERY_SYSTEMTYPE_PBAAS)
     {
         uint160 queryID = CCrossChainRPCData::GetConditionID(ASSETCHAINS_CHAINID, CCurrencyDefinition::PBaaSChainKey());
-        CurrencySystemTypeQuery(queryID, currenciesFound, curDefVec, startBlock, endBlock);
+        CurrencySystemTypeQuery(queryID, currenciesFound, curDefVec, startBlock, endBlock, blockTime);
     }
     else if (systemTypeQuery == CCurrencyDefinition::QUERY_SYSTEMTYPE_GATEWAY)
     {
         uint160 queryID = CCrossChainRPCData::GetConditionID(ASSETCHAINS_CHAINID, CCurrencyDefinition::CurrencyGatewayKey());
-        CurrencySystemTypeQuery(queryID, currenciesFound, curDefVec, startBlock, endBlock);
+        CurrencySystemTypeQuery(queryID, currenciesFound, curDefVec, startBlock, endBlock, blockTime);
     }
 
     bool narrowBySystem = systemTypeQuery != CCurrencyDefinition::QUERY_NULL;
@@ -764,7 +769,7 @@ void GetCurrencyDefinitions(const uint160 &systemIDQualifier,
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid launchStateQuery");
         }
 
-        CurrencyNotarizationTypeQuery(launchStateQuery, launchStateCurrenciesFound, launchStateCurVec, startBlock, endBlock);
+        CurrencyNotarizationTypeQuery(launchStateQuery, launchStateCurrenciesFound, launchStateCurVec, startBlock, endBlock, blockTime);
 
         if (launchStateCurrenciesFound.size())
         {
@@ -822,7 +827,7 @@ void GetCurrencyDefinitions(const uint160 &systemIDQualifier,
             std::vector<std::pair<std::pair<CUTXORef, std::vector<CNodeData>>, CCurrencyDefinition>> converterCurVec;
 
             // get converters and return only those already found that are converters
-            CurrencyNotarizationTypeQuery(CCurrencyDefinition::QUERY_ISCONVERTER, converterCurrenciesFound, converterCurVec, startBlock, endBlock);
+            CurrencyNotarizationTypeQuery(CCurrencyDefinition::QUERY_ISCONVERTER, converterCurrenciesFound, converterCurVec, startBlock, endBlock, blockTime);
             std::vector<CUTXORef> toRemove;
             for (auto &oneFound : currenciesFound)
             {
@@ -848,14 +853,14 @@ void GetCurrencyDefinitions(const uint160 &systemIDQualifier,
         else
         {
             // the only query is converters
-            CurrencyNotarizationTypeQuery(CCurrencyDefinition::QUERY_ISCONVERTER, currenciesFound, curDefVec, startBlock, endBlock);
+            CurrencyNotarizationTypeQuery(CCurrencyDefinition::QUERY_ISCONVERTER, currenciesFound, curDefVec, startBlock, endBlock, blockTime);
         }
     }
     else if (!isNarrowing)
     {
         // no qualifiers, so we default to this system currencies and retrieve all currencies in the specified block range
         uint160 queryID = CCrossChainRPCData::GetConditionID(ASSETCHAINS_CHAINID, CCurrencyDefinition::CurrencySystemKey());
-        CurrencySystemTypeQuery(queryID, currenciesFound, curDefVec, startBlock, endBlock);
+        CurrencySystemTypeQuery(queryID, currenciesFound, curDefVec, startBlock, endBlock, blockTime);
     }
 
     // now, loop through the found currencies and load the currency definition if not loaded, then store all
@@ -1300,6 +1305,7 @@ UniValue getcurrency(const UniValue& params, bool fHelp)
             "    \"proofprotocol\" : n                      (int) protocol number that determines variations in cross-chain or bridged proofs\n"
             "    \"startblock\" : n,                        (int) block # on this chain, which must be notarized into block one of the chain\n"
             "    \"endblock\" : n,                          (int) block # after which, this chain's useful life is considered to be over\n"
+            "    \"blocktime\" : n,                         (int) target block time for difficulty adjustment of chain\n"
             "    \"currencies\" : \"[\"i-address\", ...]\", (stringarray) currencies that can be converted to this currency at launch or makeup a liquidity basket\n"
             "    \"weights\" : \"[n, ...]\",                (numberarray) relative currency weights (only returned for a liquidity basket)\n"
             "    \"conversions\" : \"[n, ...]\",            (numberarray) pre-launch conversion rates for non-fractional currencies\n"
@@ -2155,6 +2161,7 @@ UniValue listcurrencies(const UniValue& params, bool fHelp)
             "    \"proofprotocol\" : n                      (int) protocol number that determines variations in cross-chain or bridged proofs\n"
             "    \"startblock\" : n,                        (int) block # on this chain, which must be notarized into block one of the chain\n"
             "    \"endblock\" : n,                          (int) block # after which, this chain's useful life is considered to be over\n"
+            "    \"blocktime\" : n,                         (int) target block time for difficulty adjustment of chain\n"
             "    \"currencies\" : \"[\"i-address\", ...]\", (stringarray) currencies that can be converted to this currency at launch or makeup a liquidity basket\n"
             "    \"weights\" : \"[n, ...]\",                (numberarray) relative currency weights (only returned for a liquidity basket)\n"
             "    \"conversions\" : \"[n, ...]\",            (numberarray) pre-launch conversion rates for non-fractional currencies\n"
@@ -2220,6 +2227,7 @@ UniValue listcurrencies(const UniValue& params, bool fHelp)
     bool isConverter = false;
     uint32_t startBlock = 0;
     uint32_t endBlock = 0;
+    uint32_t blockTime = 0;
     uint160 fromSystemID = ASSETCHAINS_CHAINID;
     if (params.size())
     {
@@ -2274,7 +2282,7 @@ UniValue listcurrencies(const UniValue& params, bool fHelp)
     std::vector<std::pair<std::pair<CUTXORef, std::vector<CNodeData>>, CCurrencyDefinition>> chains;
     {
         LOCK2(cs_main, mempool.cs);
-        GetCurrencyDefinitions(fromSystemID, chains, launchStateQuery, systemTypeQuery, isConverter, startBlock, endBlock);
+        GetCurrencyDefinitions(fromSystemID, chains, launchStateQuery, systemTypeQuery, isConverter, startBlock, endBlock, blockTime);
     }
 
     for (auto oneDef : chains)
@@ -8574,6 +8582,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
 
             "         \"startblock\"    : n,            (int,    optional) VRSC block must be notarized into block 1 of PBaaS chain, default curheight + 100\n"
             "         \"endblock\"      : n,            (int,    optional) chain is considered inactive after this block height, and a new one may be started\n"
+            "         \"blocktime\"     : n,            (int,    optional) target block time for difficulty adjustment, in seconds, for the chain\n"
 
             "         \"currencies\"    : \"[\"VRSC\",..]\", (list, optional) reserve currencies backing this chain in equal amounts\n"
             "         \"conversions\"   : \"[\"xx.xx\",..]\", (list, optional) if present, must be same size as currencies. pre-launch conversion ratio overrides\n"

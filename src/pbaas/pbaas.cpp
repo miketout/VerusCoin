@@ -634,7 +634,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
         return state.Error("Multi-currency operation before PBaaS activation");
     }
 
-    // TODO: HARDENING - ensure that we have confirmed all totals and fees are correct, especially cross-chain fees
+    // TODO: HARDENING - ensure that we have confirmed all totals and fees are correct, then convert all warnings to errors
     // then convert all warnings to errors
     // ensure that this transaction has the appropriate finalization outputs, as required
 
@@ -1660,7 +1660,7 @@ std::vector<CCurrencyDefinition> CCurrencyDefinition::GetCurrencyDefinitions(con
 #define _ASSETCHAINS_TIMELOCKOFF 0xffffffffffffffff
 extern uint64_t ASSETCHAINS_TIMELOCKGTE, ASSETCHAINS_TIMEUNLOCKFROM, ASSETCHAINS_TIMEUNLOCKTO;
 extern int64_t ASSETCHAINS_SUPPLY, ASSETCHAINS_REWARD[3], ASSETCHAINS_DECAY[3], ASSETCHAINS_HALVING[3], ASSETCHAINS_ENDSUBSIDY[3], ASSETCHAINS_ERAOPTIONS[3];
-extern int32_t PBAAS_STARTBLOCK, PBAAS_ENDBLOCK, ASSETCHAINS_LWMAPOS;
+extern int32_t PBAAS_STARTBLOCK, PBAAS_ENDBLOCK, PBAAS_BLOCKTIME, ASSETCHAINS_LWMAPOS;
 extern uint32_t ASSETCHAINS_ALGO, ASSETCHAINS_VERUSHASH, ASSETCHAINS_LASTERA;
 extern std::string VERUS_CHAINNAME;
 extern uint160 VERUS_CHAINID;

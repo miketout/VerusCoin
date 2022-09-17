@@ -103,6 +103,7 @@ int32_t VERUS_NOPOS_THRESHHOLD = 150;   // if we have no POS blocks in this many
 int32_t VERUS_PBAAS_NOPOS_THRESHHOLD = 150; // extend for PBaaS to enable more variability in staking supply
 int32_t PBAAS_STARTBLOCK = 0;           // the parent blockchain must be notarized at this value in block 1 for it to be accepted
 int32_t PBAAS_ENDBLOCK = 0;             // end of life block for the PBaaS blockchain
+int32_t PBAAS_BLOCKTIME = 0;            // target block time for difficulty adjustment on PBaaS chain
 
 int32_t ASSETCHAINS_SAPLING;
 int32_t ASSETCHAINS_OVERWINTER;

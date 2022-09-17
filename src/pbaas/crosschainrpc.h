@@ -461,6 +461,7 @@ public:
         MAX_ID_REFERRAL_LEVELS = 5,
         MAX_NAME_LEN = 64,
         MAX_STARTUP_NODES = 5,
+        DEFAULT_PBAAS_BLOCKTIME = 60,
         DEFAULT_START_TARGET = 0x1e01e1e1,
         MAX_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 20,
         MAX_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 20,
@@ -537,6 +538,8 @@ public:
     int32_t startBlock;                     // block # that indicates the end of pre-launch when a chain fails or begins running and if token, becomes active for use
     int32_t endBlock;                       // block after which this is considered end-of-lifed, which applies to task-specific currencies
 
+    int32_t blockTime;                      // block time target for DAA on PBaaS chain
+
     int64_t initialFractionalSupply;        // initial supply available for all pre-launch conversions, not including pre-allocation, which will be added to this
     std::vector<std::pair<uint160, int64_t>> preAllocation; // pre-allocation recipients, from pre-allocation/premine, emitted after reserve weights are set
     int64_t gatewayConverterIssuance;       // how much native coin does the gateway converter, if there is one, start with?
@@ -595,6 +598,7 @@ public:
                             proofProtocol(PROOF_INVALID),
                             startBlock(0),
                             endBlock(0),
+                            blockTime(DEFAULT_PBAAS_BLOCKTIME),
                             initialFractionalSupply(0),
                             gatewayConverterIssuance(0),
                             preLaunchDiscount(0),
@@ -622,7 +626,7 @@ public:
 
     CCurrencyDefinition(uint32_t Options, uint160 Parent, const std::string &Name, const uint160 &LaunchSystemID, const uint160 &SystemID, 
                         ENotarizationProtocol NotarizationProtocol, EProofProtocol ProofProtocol, 
-                        int32_t StartBlock, int32_t EndBlock, int64_t InitialFractionalSupply, std::vector<std::pair<uint160, int64_t>> PreAllocation, 
+                        int32_t StartBlock, int32_t EndBlock, uint64_t BlockTime, int64_t InitialFractionalSupply, std::vector<std::pair<uint160, int64_t>> PreAllocation, 
                         int64_t ConverterIssuance, std::vector<uint160> Currencies, std::vector<int32_t> Weights, std::vector<int64_t> Conversions, 
                         std::vector<int64_t> MinPreconvert, std::vector<int64_t> MaxPreconvert, std::vector<int64_t> Contributions, 
                         std::vector<int64_t> Preconverted, int32_t PreLaunchDiscount, int32_t PreLaunchCarveOut,
@@ -647,6 +651,7 @@ public:
                         proofProtocol(ProofProtocol),
                         startBlock(StartBlock),
                         endBlock(EndBlock),
+                        blockTime(BlockTime),
                         initialFractionalSupply(InitialFractionalSupply),
                         preAllocation(PreAllocation),
                         gatewayConverterIssuance(ConverterIssuance),
@@ -707,6 +712,7 @@ public:
         READWRITE(gatewayID);
         READWRITE(VARINT(startBlock));
         READWRITE(VARINT(endBlock));
+        READWRITE(VARINT(blockTime));
         READWRITE(initialFractionalSupply);
         READWRITE(preAllocation);
         READWRITE(gatewayConverterIssuance);

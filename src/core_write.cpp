@@ -237,6 +237,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
     }
     obj.push_back(Pair("startblock", (int64_t)startBlock));
     obj.push_back(Pair("endblock", (int64_t)endBlock));
+    obj.push_back(Pair("blocktime", (int64_t)blockTime));
 
     // currencies that can be converted for pre-launch or fractional usage
     if (currencies.size())

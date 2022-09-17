@@ -667,6 +667,7 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
 
         startBlock = (uint32_t)uni_get_int64(find_value(obj, "startblock"));
         endBlock = (uint32_t)uni_get_int64(find_value(obj, "endblock"));
+        blockTime = (uint32_t)uni_get_int64(find_value(obj, "blocktime"));
 
         int32_t totalReserveWeight = IsFractional() ? SATOSHIDEN : 0;
         UniValue currencyArr = find_value(obj, "currencies");
