@@ -1585,8 +1585,8 @@ bool timestampSort(std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> a,
 }
 
 
-void CurrencyValuesAndNames(UniValue &output, bool spending, const CScript script, CAmount satoshis, bool friendlyNames=false);
-void CurrencyValuesAndNames(UniValue &output, bool spending, const CScript script, CAmount satoshis, bool friendlyNames)
+void CurrencyValuesAndNames(UniValue &output, bool spending, const CScript &script, CAmount satoshis, bool friendlyNames=false);
+void CurrencyValuesAndNames(UniValue &output, bool spending, const CScript &script, CAmount satoshis, bool friendlyNames)
 {
     if (CConstVerusSolutionVector::GetVersionByHeight(chainActive.Height()) >= CActivationHeight::ACTIVATE_PBAAS)
     {
@@ -1609,7 +1609,7 @@ void CurrencyValuesAndNames(UniValue &output, bool spending, const CScript scrip
                 currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
                 if (friendlyNames)
                 {
-                    currencyNames.push_back(make_pair(name, ConnectedChains.GetFriendlyCurrencyName(oneBalance.first)));
+                    currencyNames.pushKV(name, ConnectedChains.GetFriendlyCurrencyName(oneBalance.first));
                 }
             }
             output.pushKV("currencyvalues", currencyBal);
@@ -1628,7 +1628,7 @@ void CurrencyValuesAndNames(UniValue &output, bool spending, const CTransaction 
     if (spending) {
         CTransaction priorOutTx;
         uint256 blockHash;
-        if (myGetTransaction(tx.vin[index].prevout.hash, priorOutTx, blockHash))
+        if (tx.vin.size() > index && index >= 0 && myGetTransaction(tx.vin[index].prevout.hash, priorOutTx, blockHash))
         {
             script = priorOutTx.vout[tx.vin[index].prevout.n].scriptPubKey;
         }
@@ -1639,7 +1639,14 @@ void CurrencyValuesAndNames(UniValue &output, bool spending, const CTransaction 
     }
     else
     {
-        script = tx.vout[index].scriptPubKey;
+        if (tx.vout.size() > index && index >= 0)
+        {
+            script = tx.vout[index].scriptPubKey;
+        }
+        else
+        {
+            throw JSONRPCError(RPC_DATABASE_ERROR, "Unable to retrieve data to for currency output values");
+        }
     }
     return CurrencyValuesAndNames(output, spending, script, satoshis, friendlyNames);
 }
@@ -1672,7 +1679,10 @@ UniValue AddressMemPoolUni(const std::vector<std::pair<uint160, int>> &addresses
         delta.push_back(Pair("index", (int)it->first.index));
         delta.push_back(Pair("satoshis", it->second.amount));
         delta.push_back(Pair("spending", (bool)it->first.spending));
-        CurrencyValuesAndNames(delta, it->first.spending, curTx, it->first.index, it->second.amount, friendlyNames);
+        if (!it->first.txhash.IsNull() && it->first.txhash == curTx.GetHash() || mempool.lookup(it->first.txhash, curTx))
+        {
+            CurrencyValuesAndNames(delta, it->first.spending, curTx, it->first.index, it->second.amount, friendlyNames);
+        }
         delta.push_back(Pair("timestamp", it->second.time));
         if (it->second.amount < 0) {
             delta.push_back(Pair("prevtxid", it->second.prevhash.GetHex()));
@@ -1795,7 +1805,8 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
         
         std::string address = "";
 
-        if (it->second.script.IsPayToCryptoCondition())
+        COptCCParams p;
+        if (it->second.script.IsPayToCryptoCondition(p) && p.IsValid())
         {
             txnouttype outType;
             std::vector<CTxDestination> addresses;
@@ -1826,7 +1837,10 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
         output.push_back(Pair("txid", it->first.txhash.GetHex()));
         output.push_back(Pair("outputIndex", (int)it->first.index));
         output.push_back(Pair("script", HexStr(it->second.script.begin(), it->second.script.end())));
-        CurrencyValuesAndNames(output, false, it->second.script, it->second.satoshis, friendlyNames);
+        if (p.IsValid())
+        {
+            CurrencyValuesAndNames(output, false, it->second.script, it->second.satoshis, friendlyNames);
+        }
         output.push_back(Pair("satoshis", it->second.satoshis));
         output.push_back(Pair("height", it->second.blockHeight));
         if (chainActive.Height() >= it->second.blockHeight)
@@ -1953,7 +1967,7 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
             }
 
             uint256 blockHash;
-            if (verbosity && (it->first.txhash == curTx.GetHash() || myGetTransaction(it->first.txhash, curTx, blockHash)))
+            if (verbosity && !it->first.txhash.IsNull() && (it->first.txhash == curTx.GetHash() || myGetTransaction(it->first.txhash, curTx, blockHash)))
             {
                 CurrencyValuesAndNames(delta, it->first.spending, curTx, it->first.index, it->second, friendlyNames);
             }
@@ -2045,7 +2059,7 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
 
     for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
         uint256 blockHash;
-        if (it->first.txhash == curTx.GetHash() || myGetTransaction(it->first.txhash, curTx, blockHash))
+        if (!it->first.txhash.IsNull() && (it->first.txhash == curTx.GetHash() || myGetTransaction(it->first.txhash, curTx, blockHash)))
         {
             if (it->first.spending) {
                 CTransaction priorOutTx;

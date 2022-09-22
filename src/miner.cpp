@@ -1977,11 +1977,11 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                 mempool.removeConflicts(notarizationTx, removedTxVec);
                                 CValidationState mempoolState;
                                 relayTx = myAddtomempool(notarizationTx, &state);
-                                if (LogAcceptCategory("notarizationverbose") || LogAcceptCategory("notarization"))
+                                if (LogAcceptCategory("notarization"))
                                 {
                                     for (auto oneTx : removedTxVec)
                                     {
-                                        if (LogAcceptCategory("notarizationverbose"))
+                                        if (LogAcceptCategory("verbose"))
                                         {
                                             UniValue jsonNTx(UniValue::VOBJ);
                                             TxToUniv(oneTx, uint256(), jsonNTx);
@@ -2075,13 +2075,17 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                 CValidationState state;
                 CPBaaSNotarization earnedNotarization;
 
+                int numOuts = coinbaseTx.vout.size();
                 if (CPBaaSNotarization::CreateEarnedNotarization(ConnectedChains.FirstNotaryChain(),
                                                                  DestinationToTransferDestination(proposer),
                                                                  isStake,
                                                                  state,
                                                                  coinbaseTx.vout,
-                                                                 earnedNotarization))
+                                                                 earnedNotarization) &&
+                    numOuts != coinbaseTx.vout.size() &&
+                    LogAcceptCategory("notarization"))
                 {
+                    LogPrintf("%s: entering earned notarization into block %u, notarization: %s\n", __func__, Mining_height, earnedNotarization.ToUniValue().write(1,2).c_str());
                 }
                 CPBaaSNotarization lastImportNotarization;
                 CUTXORef lastImportNotarizationUTXO;
@@ -3745,14 +3749,6 @@ void static BitcoinMiner_noeq()
                                 }
                                 break;
                             }
-                            else if ((i + 1) < count)
-                            {
-                                // if we'll not drop through, update hashcount
-                                {
-                                    miningTimer += totalDone;
-                                    totalDone = 0;
-                                }
-                            }
                         }
                         else
                         {
@@ -3804,13 +3800,18 @@ void static BitcoinMiner_noeq()
                             SetThreadPriority(THREAD_PRIORITY_LOWEST);
                             break;
                         }
+
+                        if ((i + 1) < count)
+                        {
+                            // if we haven't broken out and will not drop through, update hashcount
+                            {
+                                miningTimer += totalDone;
+                            }
+                        }
                     }
 
-                    {
-                        miningTimer += totalDone;
-                    }
+                    miningTimer += totalDone;
                 }
-                
 
                 // Check for stop or if block needs to be rebuilt
                 boost::this_thread::interruption_point();

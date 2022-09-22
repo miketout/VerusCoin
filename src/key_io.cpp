@@ -740,6 +740,20 @@ CIdentity::CIdentity(const UniValue &uni) : CPrincipal(uni)
     }
 }
 
+CETHNFTAddress::CETHNFTAddress(const UniValue &uni)
+{
+    std::string contractAddrStr = uni_get_str(find_value(uni, "contract"));
+    std::string TokenIDStr = uni_get_str(find_value(uni, "tokenid"));
+
+    if (!(contractID = CTransferDestination::DecodeEthDestination(contractAddrStr)).IsNull() &&
+        TokenIDStr.length() == 66 &&
+        TokenIDStr.substr(0,2) == "0x" &&
+        IsHex(TokenIDStr.substr(2,64)))
+    {
+        tokenID = uint256(ParseHex(TokenIDStr.substr(2,64)));
+    }
+}
+
 CTransferDestination::CTransferDestination(const UniValue &obj) : fees(0)
 {
     type = uni_get_int(find_value(obj, "type"));
@@ -774,6 +788,13 @@ CTransferDestination::CTransferDestination(const UniValue &obj) : fees(0)
         {
             uint160 ethDestID = DecodeEthDestination(uni_get_str(find_value(obj, "address")));
             destination = ::AsVector(ethDestID);
+            break;
+        }
+
+        case CTransferDestination::DEST_ETHNFT:
+        {
+            CETHNFTAddress ethNFTAddress(find_value(obj, "address"));
+            destination = ::AsVector(ethNFTAddress);
             break;
         }
 
@@ -1212,6 +1233,7 @@ CScript CIdentity::IdentityUpdateOutputScript(uint32_t height, const std::vector
 
         if (IsRevoked())
         {
+            // TODO: HARDENING for next testnet reset and mainnet release version, remove primary when revoked
             ret = MakeMofNCCScript(1, primary, recovery, indexDests);
         }
         else

@@ -883,6 +883,14 @@ UniValue CReserveDeposit::ToUniValue() const
     return ret;
 }
 
+UniValue CETHNFTAddress::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("contract", "0x" + HexBytes(contractID.begin(), contractID.size()));
+    ret.pushKV("tokenid", "0x" + HexBytes(tokenID.begin(), tokenID.size()));
+    return ret;
+}
+
 UniValue CTransferDestination::ToUniValue() const
 {
     UniValue destVal = UniValue(UniValue::VOBJ);
@@ -917,6 +925,15 @@ UniValue CTransferDestination::ToUniValue() const
         case CTransferDestination::DEST_ETH:
             destVal.push_back(Pair("address", EncodeEthDestination(uint160(destination))));
             break;
+
+        case CTransferDestination::DEST_ETHNFT:
+        {
+            CETHNFTAddress oneAddr;
+            bool success = false;
+            ::FromVector(destination, oneAddr, &success);
+            destVal.push_back(Pair("address", success ? oneAddr.ToUniValue() : UniValue(UniValue::VOBJ)));
+            break;
+        }
 
         case CTransferDestination::DEST_FULLID:
             destVal.push_back(Pair("identity", CIdentity(destination).ToUniValue()));

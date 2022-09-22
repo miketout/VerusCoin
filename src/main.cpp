@@ -2124,7 +2124,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
             ContextualCheckInputs(tx, state, view, nextBlockHeight, true, MANDATORY_SCRIPT_VERIFY_FLAGS, true, txdata, Params().GetConsensus(), consensusBranchId);
             if ( flag != 0 )
                 KOMODO_CONNECTING = -1;
-            return error("AcceptToMemoryPool: BUG! PLEASE REPORT THIS! ConnectInputs failed against MANDATORY but not STANDARD flags %s", hash.ToString());
+            return error("AcceptToMemoryPool: ConnectInputs failed against MANDATORY but not STANDARD flags %s", hash.ToString());
         }
 
         // if this is a valid stake transaction, don't put it in the mempool
@@ -5384,7 +5384,7 @@ static bool ActivateBestChainStep(CValidationState& state, const CChainParams& c
     {
         CBlockIndex *tipindex;
         fprintf(stderr,">>>>>>>>>>> rewind start ht.%d -> KOMODO_REWIND.%d\n",chainActive.LastTip()->GetHeight(),KOMODO_REWIND);
-        while ( KOMODO_REWIND > 0 && (tipindex= chainActive.LastTip()) != 0 && tipindex->GetHeight() > KOMODO_REWIND )
+        while ( KOMODO_REWIND > 0 && (tipindex = chainActive.LastTip()) != 0 && tipindex->GetHeight() > KOMODO_REWIND )
         {
             fBlocksDisconnected = true;
             fprintf(stderr,"%d ",(int32_t)tipindex->GetHeight());
@@ -5396,7 +5396,11 @@ static bool ActivateBestChainStep(CValidationState& state, const CChainParams& c
         sleep(20);
         fprintf(stderr,"resuming normal operations\n");
         KOMODO_REWIND = 0;
-        //return(true);
+        if (pindexMostWork->GetHeight() > chainActive.Height())
+        {
+            pindexMostWork = pindexMostWork->GetAncestor(chainActive.Height());
+        }
+        pindexFork = chainActive.FindFork(pindexMostWork);
     }
     // Build list of new blocks to connect.
     std::vector<CBlockIndex*> vpindexToConnect;

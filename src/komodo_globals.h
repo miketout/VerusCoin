@@ -96,7 +96,7 @@ uint32_t ASSETCHAINS_STARTING_DIFF = 0;
 // Verus proof of stake controls
 int32_t ASSETCHAINS_LWMAPOS = 0;        // percentage of blocks should be PoS
 int32_t VERUS_BLOCK_POSUNITS = 1024;    // one block is 1000 units
-int32_t VERUS_MIN_STAKEAGE = 150;       // 1/2 this should also be a cap on the POS averaging window, or startup could be too easy
+int32_t VERUS_MIN_STAKEAGE = 150;       // 2x this should also be a cap on the POS averaging window, or startup could be too easy
 int32_t VERUS_CONSECUTIVE_POS_THRESHOLD = 7; // this gives us 9 in a row
 int32_t VERUS_PBAAS_CONSECUTIVE_POS_THRESHOLD = 3; // reduce to max 5 in a row
 int32_t VERUS_NOPOS_THRESHHOLD = 150;   // if we have no POS blocks in this many blocks, reset difficulty

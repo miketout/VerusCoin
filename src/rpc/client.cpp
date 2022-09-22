@@ -1710,6 +1710,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "makeoffer", 1},
     { "takeoffer", 1},
     { "closeoffers", 0},
+    { "getvdxfid", 1},
     // Zcash addition
     { "z_setmigration", 0},
 };

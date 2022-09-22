@@ -1265,10 +1265,10 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
 
     // get default IDs and addresses
-    auto defaultIDDest = DecodeDestination(GetArg("-defaultid", ""));
-    VERUS_DEFAULTID = defaultIDDest.which() == COptCCParams::ADDRTYPE_ID ? CIdentityID(GetDestinationID(defaultIDDest)) : CIdentityID();
     auto notaryIDDest = DecodeDestination(GetArg("-notaryid", ""));
     VERUS_NOTARYID = notaryIDDest.which() == COptCCParams::ADDRTYPE_ID ? CIdentityID(GetDestinationID(notaryIDDest)) : CIdentityID();
+    auto defaultIDDest = DecodeDestination(GetArg("-defaultid", VERUS_NOTARYID.IsNull() ? "" : EncodeDestination(notaryIDDest)));
+    VERUS_DEFAULTID = defaultIDDest.which() == COptCCParams::ADDRTYPE_ID ? CIdentityID(GetDestinationID(defaultIDDest)) : CIdentityID();
     auto nodeIDDest = DecodeDestination(GetArg("-nodeid", ""));
     VERUS_NODEID = nodeIDDest.which() == COptCCParams::ADDRTYPE_ID ? GetDestinationID(nodeIDDest) : uint160();
     VERUS_DEFAULT_ZADDR = GetArg("-cheatcatcher", "");

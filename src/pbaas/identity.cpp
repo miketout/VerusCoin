@@ -2154,7 +2154,7 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                     // consider the signature unfulfilled
                     if ((PBAAS_TESTMODE && (!(IsVerusActive() || ConnectedChains.ThisChain().name == "Gravity") || height >= TESTNET_FORK_HEIGHT)) && identity.HasTokenizedControl())
                     {
-                        if (!(oneP.m == 1 && oneP.n > 1))
+                        if (!(oneP.m == 1 && oneP.n >= oneP.m))
                         {
                             std::string errorOut = "Invalid spend condition for tokenized control in: \"" + identity.name + "\"";
                             return state.Error(errorOut.c_str());

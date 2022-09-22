@@ -729,6 +729,8 @@ UniValue CRPCTable::execute(const std::string &strMethod, const UniValue &params
         throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Method " + strMethod + " not found");
     }
 
+    LogPrint("rpcrequests", "command %s, params:\n%s\n", strMethod.c_str(), params.write(1,2).c_str());
+
     g_rpcSignals.PreCommand(*pcmd);
 
     try

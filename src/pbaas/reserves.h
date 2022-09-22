@@ -947,6 +947,9 @@ public:
     CCurrencyValueMap totalAmounts;             // total amount exported of each currency, including fees
     CCurrencyValueMap totalFees;                // total fees in all currencies to split between this export and import
     CCurrencyValueMap totalBurned;              // if this is a cross chain export, some currencies will be burned, the rest held in deposits
+
+    // TODO: HARDENING - on next testnet reset, put exporter right above the currency maps with totalFees as the first map after that
+    // also ensure that only valid destination system fee currencies can be used for destination - do this in prechecks
     CTransferDestination exporter;              // typically the exporting miner or staker's address, to accept deferred payment for the export
 
     int32_t firstInput;                         // if export is from inputs, on chain of reserveTransfers, this is first input, -1 for cross-chain

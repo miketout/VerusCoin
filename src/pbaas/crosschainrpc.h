@@ -161,6 +161,27 @@ public:
     }
 };
 
+class CETHNFTAddress
+{
+public:
+    uint160 contractID;
+    uint256 tokenID;
+
+    CETHNFTAddress() {}
+    CETHNFTAddress(const UniValue &uni);
+    CETHNFTAddress(const uint160 &contract, const uint256 &token) : contractID(contract), tokenID(token) {}
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(contractID);
+        READWRITE(tokenID);
+    }
+
+    UniValue ToUniValue() const;
+};
+
 class CTransferDestination
 {
 public:
@@ -321,22 +342,8 @@ public:
         uint256 retTokenID;
         UniValue nftJSON(UniValue::VOBJ);
         nftJSON.read(destStr);
- 
-        std::string contractAddrStr = uni_get_str(find_value(nftJSON, "contract"));
-        std::string TokenIDStr = uni_get_str(find_value(nftJSON, "tokenid"));
-
-        if (!(retContract = DecodeEthDestination(contractAddrStr)).IsNull() &&
-            TokenIDStr.length() == 66 &&
-            destStr.substr(0,2) == "0x" &&
-            IsHex(TokenIDStr.substr(2,64)))
-        {
-            retTokenID = uint256S(TokenIDStr.substr(2,64));
-            return std::make_pair(retContract, uint256S(TokenIDStr));
-        }
-        else
-        {
-            return std::make_pair(uint160(), uint256());
-        }
+        CETHNFTAddress retAddr(nftJSON);
+        return std::make_pair(retAddr.contractID, retAddr.tokenID);
     }
 
     static std::string EncodeEthNFTDestination(const uint160 &ethContractID, const uint256 &tokenID)
@@ -360,40 +367,6 @@ public:
     static uint160 CurrencyExportKeyToSystem(const uint160 &exportToSystemID);
     static uint160 GetBoundCurrencyExportKey(const uint160 &exportToSystemID, const uint160 &curToExportID);
     uint160 GetBoundCurrencyExportKey(const uint160 &exportToSystemID) const;
-
-    UniValue ToUniValue() const;
-};
-
-class CNFTAddress
-{
-public:
-    uint32_t version;
-    CTransferDestination rootContractOrID;
-    std::vector<uint160> shortHashes;
-    std::vector<uint256> longHashes;
-
-    enum EVersions {
-        VERSION_INVALID = 0,
-        VERSION_VERUSID = 1,
-        VERSION_FIRST = 1,
-        VERSION_DEFAULT = 1,
-        VERSION_LAST = 1
-    };
-
-    CNFTAddress(const UniValue &uni);
-    CNFTAddress(uint32_t ver=VERSION_DEFAULT) : version(ver) {}
-    CNFTAddress(const CTransferDestination &rootDest, const std::vector<uint160> &shorts, const std::vector<uint256> &longs, uint32_t ver=VERSION_DEFAULT) : 
-        version(ver), rootContractOrID(rootDest), shortHashes(shorts), longHashes(longs) {}
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(VARINT(version));
-        READWRITE(rootContractOrID);
-        READWRITE(shortHashes);
-        READWRITE(longHashes);
-    }
 
     UniValue ToUniValue() const;
 };

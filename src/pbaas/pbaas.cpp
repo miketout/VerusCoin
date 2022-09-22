@@ -634,7 +634,8 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
         return state.Error("Multi-currency operation before PBaaS activation");
     }
 
-    // TODO: HARDENING - ensure that we have confirmed all totals and fees are correct, then convert all warnings to errors
+    // TODO: HARDENING - ensure that we have confirmed all totals and fees are correct, especially cross-chain fees
+    // then convert all warnings to errors
     // ensure that this transaction has the appropriate finalization outputs, as required
 
     // check that all reserve transfers are matched to this export, and no others are mined in to the block that should be included
@@ -1891,36 +1892,42 @@ bool PrecheckCurrencyDefinition(const CTransaction &spendingTx, int32_t outNum, 
                     systemDef = ConnectedChains.GetCachedCurrency(newCurrency.systemID);
                 }
 
-                bool isNFTMappedCurrency = newCurrency.IsNFTToken() &&
-                                           systemDef.IsValid() &&
-                                           !(newCurrency.options &
-                                                newCurrency.OPTION_FRACTIONAL +
-                                                newCurrency.OPTION_GATEWAY +
-                                                newCurrency.OPTION_PBAAS +
-                                                newCurrency.OPTION_GATEWAY_CONVERTER) &&
-                                           newCurrency.IsToken();
-
-                if (newCurrency.nativeCurrencyID.TypeNoFlags() == newCurrency.nativeCurrencyID.DEST_ETHNFT &&
-                    !(isNFTMappedCurrency &&
-                      systemDef.proofProtocol == systemDef.PROOF_ETHNOTARIZATION &&
-                      systemDef.IsGateway() &&
-                      newCurrency.maxPreconvert.size() == 1 &&
-                      newCurrency.maxPreconvert[0] == 0 &&
-                      newCurrency.GetTotalPreallocation() == 0))
+                bool isNFTMappedCurrency = false;
+                if (newCurrency.IsNFTToken())
                 {
-                    return state.Error("NFT mapped currency must have only 0 satoshi of supply and follow all definition rules");
-                }
-                else if (newCurrency.IsNFTToken() &&
-                         !(isNFTMappedCurrency &&
-                           newCurrency.systemID == ASSETCHAINS_CHAINID &&
+                    isNFTMappedCurrency = newCurrency.IsNFTToken() &&
+                                          systemDef.IsValid() &&
+                                          !(newCurrency.options &
+                                            newCurrency.OPTION_FRACTIONAL +
+                                            newCurrency.OPTION_GATEWAY +
+                                            newCurrency.OPTION_PBAAS +
+                                            newCurrency.OPTION_GATEWAY_CONVERTER) &&
+                                          newCurrency.IsToken();
+
+                    if (!isNFTMappedCurrency ||
+                        (!(newCurrency.nativeCurrencyID.TypeNoFlags() == newCurrency.nativeCurrencyID.DEST_ETHNFT &&
+                           systemDef.proofProtocol == systemDef.PROOF_ETHNOTARIZATION &&
+                           systemDef.IsGateway() &&
+                           newCurrency.maxPreconvert.size() == 1 &&
+                           newCurrency.maxPreconvert[0] == 0 &&
+                           newCurrency.GetTotalPreallocation() == 0) &&
+                         !(newCurrency.systemID == ASSETCHAINS_CHAINID &&
                            ((newCurrency.GetTotalPreallocation() == 0 &&
                              newCurrency.maxPreconvert.size() == 1 &&
                              newCurrency.maxPreconvert[0] == 1) ||
-                            (newCurrency.GetTotalPreallocation() == 1 &&
+                           (newCurrency.GetTotalPreallocation() == 1 &&
                              newCurrency.maxPreconvert.size() == 1 &&
-                             newCurrency.maxPreconvert[0] == 0))))
-                {
-                    return state.Error("Tokenized ID currency must have only 1 satoshi of supply as preallocation or convertible and follow all definition rules");
+                             newCurrency.maxPreconvert[0] == 0)))))
+                    {
+                        if (newCurrency.nativeCurrencyID.TypeNoFlags() == newCurrency.nativeCurrencyID.DEST_ETHNFT)
+                        {
+                            return state.Error("Ethereum NFT mapped currency must have 0 satoshis of supply, maxpreconversions of [0], and follow all definition rules");
+                        }
+                        else
+                        {
+                            return state.Error("Tokenized ID control currency must have 1 satoshi of supply, and follow all definition rules");
+                        }
+                    }
                 }
 
                 // TODO: HARDENING - add hardening to ensure that no more than one satoshi at a time ever comes in from a bridge for an NFT mapped currency
@@ -3339,7 +3346,9 @@ bool CConnectedChains::CheckVerusPBaaSAvailable()
             if (!chainInfo.isNull())
             {
                 params.push_back(EncodeDestination(CIdentityID(FirstNotaryChain().chainDefinition.GetID())));
-                chainDef = find_value(RPCCallRoot("getcurrency", params), "result");
+                chainDef = FirstNotaryChain().chainDefinition.launchSystemID == ASSETCHAINS_CHAINID ?
+                            FirstNotaryChain().chainDefinition.ToUniValue() :
+                            find_value(RPCCallRoot("getcurrency", params), "result");
 
                 if (!chainDef.isNull() && CheckVerusPBaaSAvailable(chainInfo, chainDef))
                 {
@@ -3771,7 +3780,7 @@ std::string CConnectedChains::GetFriendlyCurrencyName(const uint160 &currencyID)
     std::string retName;
     uint160 curID = currencyID;
     CCurrencyDefinition curDef;
-    for (curDef = GetCachedCurrency(curID); curDef.IsValid(); curDef = GetCachedCurrency(curID))
+    for (curDef = GetCachedCurrency(curID); curDef.IsValid(); curDef = curID.IsNull() ? CCurrencyDefinition() : GetCachedCurrency(curID))
     {
         if (curDef.parent.IsNull())
         {
