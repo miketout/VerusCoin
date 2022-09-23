@@ -107,12 +107,10 @@ public:
         consensus.nEquihashN = N;
         consensus.nEquihashK = K;
         consensus.nPowAveragingWindow = 17;
-        consensus.nMaxFutureBlockTime = 7 * 60; // 7 mins
 
         assert(maxUint/UintToArith256(consensus.powLimit) >= consensus.nPowAveragingWindow);
         consensus.nPowMaxAdjustDown = 32; // 32% adjustment down
         consensus.nPowMaxAdjustUp = 16; // 16% adjustment up
-        consensus.nPowTargetSpacing = 1 * 60;
         consensus.nPreBlossomPowTargetSpacing = Consensus::PRE_BLOSSOM_POW_TARGET_SPACING;
         consensus.nPostBlossomPowTargetSpacing = Consensus::POST_BLOSSOM_POW_TARGET_SPACING;
         consensus.nPowAllowMinDifficultyBlocksAfterHeight = boost::none;
@@ -145,7 +143,6 @@ public:
         // (Zcash) vAlertPubKey = ParseHex("04b7ecf0baa90495ceb4e4090f6b2fd37eec1e9c85fac68a487f3ce11589692e4a317479316ee814e066638e1db54e37a10689b70286e6315b1087b6615d179264");
         nDefaultPort = 7770;
         nMinerThreads = 0;
-        nMaxTipAge = 24 * 60 * 60;
         nPruneAfterHeight = 100000;
 
         const char* pszTimestamp = "The Times 03/Jan/2009 Chancellor on brink of second bailout for banks";
@@ -241,13 +238,41 @@ void *chainparams_commandline(void *ptr)
         mainParams.pchMessageStart[3] = (ASSETCHAINS_MAGIC >> 24) & 0xff;
         fprintf(stderr,">>>>>>>>>> %s: p2p.%u rpc.%u magic.%08x %u %lu coins\n",ASSETCHAINS_SYMBOL,ASSETCHAINS_P2PPORT,ASSETCHAINS_RPCPORT,ASSETCHAINS_MAGIC,ASSETCHAINS_MAGIC,ASSETCHAINS_SUPPLY / COIN);
 
+        bool isVerusActive = _IsVerusActive();
+
+        int64_t nBlockTime = isVerusActive ? DEFAULT_BLOCKTIME_TARGET : GetArg("-blocktime", DEFAULT_BLOCKTIME_TARGET);
+        mainParams.SetBlockTime(nBlockTime);
+
         if (ASSETCHAINS_ALGO != ASSETCHAINS_EQUIHASH)
         {
             // this is only good for 60 second blocks with an averaging window of 45. for other parameters, use:
-            // nLwmaAjustedWeight = (N+1)/2 * (0.9989^(500/nPowAveragingWindow)) * nPowTargetSpacing 
-            mainParams.consensus.nLwmaAjustedWeight = 1350;
-            mainParams.consensus.nPowAveragingWindow = 45;
+            // nLwmaAjustedWeight = (N+1)/2 * (0.9989^(500/nPowAveragingWindow)) * nPowTargetSpacing
+            int64_t PowAveragingWindow = isVerusActive ? DEFAULT_AVERAGING_WINDOW : GetArg("-averagingwindow", DEFAULT_AVERAGING_WINDOW);
+            mainParams.consensus.nPowAveragingWindow = PowAveragingWindow;
             mainParams.consensus.powAlternate = uint256S("00000f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f");
+
+            if (!isVerusActive && mainParams.consensus.nBlockTime != DEFAULT_BLOCKTIME_TARGET)
+            {
+                cpp_dec_float_50 averagingFactor(std::to_string((mainParams.consensus.nPowAveragingWindow+1)/2));
+                cpp_dec_float_50 factorBase("0.9989");
+                cpp_dec_float_50 factorExponent = cpp_dec_float_50("500") / cpp_dec_float_50(std::to_string(mainParams.consensus.nPowAveragingWindow));
+                cpp_dec_float_50 blockTime(std::to_string(mainParams.consensus.nBlockTime));
+
+                cpp_dec_float_50 weight = averagingFactor * pow(factorBase, factorExponent) * blockTime;
+                std::stringstream ss(weight.str(0, std::ios_base::fmtflags::_S_fixed));
+                try
+                {
+                    ss >> mainParams.consensus.nLwmaAjustedWeight;
+                }
+                catch(const std::exception& e)
+                {
+                    fprintf(stderr,"%s: error calculating adjusted blocktime weight\n", __func__);
+                    assert(false);
+                }
+                LogPrint("blocktime", "nLwmaAjustedWeight = %ld\n", mainParams.consensus.nLwmaAjustedWeight);
+            } else {
+                mainParams.consensus.nLwmaAjustedWeight = 1350;
+            }
         }
 
         if (ASSETCHAINS_LWMAPOS != 0)
@@ -263,7 +288,7 @@ void *chainparams_commandline(void *ptr)
         }
 
         // this includes VRSCTEST, unlike the checkpoints and changes below
-        if (_IsVerusActive())
+        if (isVerusActive)
         {
             mainParams.consensus.fCoinbaseMustBeProtected = true;
         }
@@ -778,6 +803,14 @@ void EnableCoinbaseMustBeProtected()
 bool AreParamsInitialized()
 {
     return (pCurrentParams != NULL);
+}
+
+void CChainParams::SetBlockTime(uint64_t blockTime)
+{
+    consensus.nBlockTime = blockTime;
+    consensus.nMaxFutureBlockTime = 7 * consensus.nBlockTime;
+    consensus.nPowTargetSpacing = consensus.nBlockTime;
+    nMaxTipAge = 24 * 60 * consensus.nBlockTime;
 }
 
 CChainParams &Params(CBaseChainParams::Network network) {

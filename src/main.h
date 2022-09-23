@@ -58,6 +58,10 @@ struct CNodeStateStats;
 #define DEFAULT_MEMPOOL_EXPIRY 1
 #define _COINBASE_MATURITY 100
 
+/** Default block time target for difficulty adjustment, in seconds **/
+static const unsigned int DEFAULT_BLOCKTIME_TARGET = 60;
+/** Default target spacing (blocks) for difficulty adjustment **/
+static const unsigned int DEFAULT_AVERAGING_WINDOW = 45;
 /** Default for -blockmaxsize and -blockminsize, which control the range of sizes the mining code will create **/
 static const unsigned int DEFAULT_BLOCK_MAX_SIZE = MAX_BLOCK_SIZE;
 static const unsigned int DEFAULT_BLOCK_MIN_SIZE = 0;
