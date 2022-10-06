@@ -819,7 +819,7 @@ bool IsStandardTx(const CTransaction& tx, string& reason, const CChainParams& ch
         else if ((whichType == TX_MULTISIG) && (!fIsBareMultisigStd)) {
             reason = "bare-multisig";
             return false;
-        } else if (txout.scriptPubKey.IsPayToCryptoCondition() == 0 && !isCoinbase && txout.IsDust(::minRelayTxFee)) {
+        } else if (txout.scriptPubKey.IsPayToCryptoCondition() == 0 && !isCoinbase && txout.IsDust(ConnectedChains.ThisChain().name, ::minRelayTxFee)) {
             reason = "dust";
             return false;
         }

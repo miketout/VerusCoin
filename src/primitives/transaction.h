@@ -479,8 +479,10 @@ public:
         return 3*minRelayTxFee.GetFee(nSize);
     }
 
-    bool IsDust(const CFeeRate &minRelayTxFee) const
+    bool IsDust(const std::string &name, const CFeeRate &minRelayTxFee) const
     {
+        if (name == "chips")
+            return false;
         return (nValue < GetDustThreshold(minRelayTxFee));
     }
 

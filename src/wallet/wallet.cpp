@@ -6545,7 +6545,7 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
 
                     COptCCParams p;
 
-                    if (txout.IsDust(::minRelayTxFee) && !(txout.nValue == 0 && txout.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.evalCode != EVAL_NONE))
+                    if (txout.IsDust(ConnectedChains.ThisChain().name, ::minRelayTxFee) && !(txout.nValue == 0 && txout.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.evalCode != EVAL_NONE))
                     {
                         if (recipient.fSubtractFeeFromAmount && nFeeRet > 0)
                         {
@@ -6690,7 +6690,7 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
                     // We do not move dust-change to fees, because the sender would end up paying more than requested.
                     // This would be against the purpose of the all-inclusive feature.
                     // So instead we raise the change and deduct from the recipient.
-                    if (nSubtractFeeFromAmount > 0 && newTxOut.IsDust(::minRelayTxFee))
+                    if (nSubtractFeeFromAmount > 0 && newTxOut.IsDust(ConnectedChains.ThisChain().name, ::minRelayTxFee))
                     {
                         CAmount nDust = newTxOut.GetDustThreshold(::minRelayTxFee) - newTxOut.nValue;
                         newTxOut.nValue += nDust; // raise change until no more dust
@@ -6699,7 +6699,7 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
                             if (vecSend[i].fSubtractFeeFromAmount)
                             {
                                 txNew.vout[i].nValue -= nDust;
-                                if (txNew.vout[i].IsDust(::minRelayTxFee))
+                                if (txNew.vout[i].IsDust(ConnectedChains.ThisChain().name, ::minRelayTxFee))
                                 {
                                     strFailReason = _("The transaction amount is too small to send after the fee has been deducted");
                                     return false;
@@ -6711,7 +6711,7 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
 
                     // Never create dust outputs; if we would, just
                     // add the dust to the fee. Valid cryptoconditions with a valid eval function are allowed to create outputs of 0
-                    if (newTxOut.IsDust(::minRelayTxFee) && reserveChange.CanonicalMap() == nullCurrencyMap)
+                    if (newTxOut.IsDust(ConnectedChains.ThisChain().name, ::minRelayTxFee) && reserveChange.CanonicalMap() == nullCurrencyMap)
                     {
                         nFeeRet += nChange;
                         reservekey.ReturnKey();
