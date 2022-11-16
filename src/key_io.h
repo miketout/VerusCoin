@@ -11,7 +11,6 @@
 #include <key.h>
 #include <pubkey.h>
 #include <zcash/Address.hpp>
-#include <zcash/address/zip32.h>
 #include <pbaas/vdxf.h>
 
 #include <string>

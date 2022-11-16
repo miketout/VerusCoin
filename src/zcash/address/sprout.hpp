@@ -1,9 +1,13 @@
+// Copyright (c) 2016-2020 The Zcash developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
+
 #ifndef ZC_ADDRESS_SPROUT_H_
 #define ZC_ADDRESS_SPROUT_H_
 
-#include "uint256.h"
-#include "uint252.h"
 #include "serialize.h"
+#include "uint252.h"
+#include "uint256.h"
 
 namespace libzcash {
 

@@ -191,7 +191,7 @@ bool CBasicKeyStore::RemoveIdentity(const CIdentityMapKey &mapKey, const uint256
                 }
             }
         }
-        
+
         return true;
     }
     return false;
@@ -210,7 +210,7 @@ bool CBasicKeyStore::GetIdentity(const CIdentityID &idID, std::pair<CIdentityMap
     if (itStart == mapIdentities.end())
     {
         return false;
-    } 
+    }
     // point to the last
     auto itEnd = mapIdentities.upper_bound(CIdentityMapKey(idID, lteHeight >= INT32_MAX ? INT32_MAX : lteHeight + 1).MapKey());
     if (itEnd == mapIdentities.begin())
@@ -295,8 +295,8 @@ bool CBasicKeyStore::GetPriorIdentity(const CIdentityMapKey &idMapKey, std::pair
 }
 
 bool CBasicKeyStore::GetIdentities(const std::vector<uint160> &queryList,
-                                   std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &mine, 
-                                   std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &imsigner, 
+                                   std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &mine,
+                                   std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &imsigner,
                                    std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &notmine) const
 {
     std::set<CIdentityID> identitySet;
@@ -350,8 +350,8 @@ bool CBasicKeyStore::GetIdentities(const std::vector<uint160> &queryList,
     return (mine.size() || imsigner.size() || notmine.size());
 }
 
-bool CBasicKeyStore::GetIdentities(std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &mine, 
-                                   std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &imsigner, 
+bool CBasicKeyStore::GetIdentities(std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &mine,
+                                   std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &imsigner,
                                    std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &notmine) const
 {
     std::set<CIdentityID> identitySet;
@@ -632,15 +632,15 @@ bool CBasicKeyStore::AddSproutSpendingKey(const libzcash::SproutSpendingKey &sk)
     return true;
 }
 
-//! Sapling
+//! Sapling 
 bool CBasicKeyStore::AddSaplingSpendingKey(
     const libzcash::SaplingExtendedSpendingKey &sk)
 {
-    LOCK(cs_SpendingKeyStore);
+    LOCK(cs_KeyStore);
     auto extfvk = sk.ToXFVK();
 
-    // if SaplingFullViewingKey is not in SaplingFullViewingKeyMap, add it
-    if (!AddSaplingFullViewingKey(extfvk)) {
+    // if extfvk is not in SaplingFullViewingKeyMap, add it
+    if (!CBasicKeyStore::AddSaplingFullViewingKey(extfvk)) {
         return false;
     }
 
@@ -661,14 +661,14 @@ bool CBasicKeyStore::AddSproutViewingKey(const libzcash::SproutViewingKey &vk)
 bool CBasicKeyStore::AddSaplingFullViewingKey(
     const libzcash::SaplingExtendedFullViewingKey &extfvk)
 {
-    LOCK(cs_SpendingKeyStore);
+    LOCK(cs_KeyStore);
     auto ivk = extfvk.fvk.in_viewing_key();
     mapSaplingFullViewingKeys[ivk] = extfvk;
 
     return CBasicKeyStore::AddSaplingIncomingViewingKey(ivk, extfvk.DefaultAddress());
 }
 
-// This function updates the wallet's internal address->ivk map.
+// This function updates the wallet's internal address->ivk map. 
 // If we add an address that is already in the map, the map will
 // remain unchanged as each address only has one ivk.
 bool CBasicKeyStore::AddSaplingIncomingViewingKey(
@@ -746,12 +746,11 @@ bool CBasicKeyStore::GetSaplingIncomingViewingKey(const libzcash::SaplingPayment
     return false;
 }
 
-bool CBasicKeyStore::GetSaplingExtendedSpendingKey(const libzcash::SaplingPaymentAddress &addr,
+bool CBasicKeyStore::GetSaplingExtendedSpendingKey(const libzcash::SaplingPaymentAddress &addr, 
                                     libzcash::SaplingExtendedSpendingKey &extskOut) const {
     libzcash::SaplingIncomingViewingKey ivk;
     libzcash::SaplingExtendedFullViewingKey extfvk;
 
-    LOCK(cs_SpendingKeyStore);
     return GetSaplingIncomingViewingKey(addr, ivk) &&
             GetSaplingFullViewingKey(ivk, extfvk) &&
             GetSaplingSpendingKey(extfvk, extskOut);

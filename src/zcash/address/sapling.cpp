@@ -1,3 +1,7 @@
+// Copyright (c) 2016-2020 The Zcash developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
+
 #include "zcash/address/sapling.hpp"
 
 #include "hash.h"
@@ -10,8 +14,7 @@
 namespace libzcash {
 
 const unsigned char ZCASH_SAPLING_FVFP_PERSONALIZATION[crypto_generichash_blake2b_PERSONALBYTES] =
-      {'Z', 'c', 'a', 's', 'h', 'S', 'a', 'p', 'l', 'i', 'n', 'g', 'F', 'V', 'F', 'P'};
-
+    {'Z', 'c', 'a', 's', 'h', 'S', 'a', 'p', 'l', 'i', 'n', 'g', 'F', 'V', 'F', 'P'};
 
 //! Sapling
 uint256 SaplingPaymentAddress::GetHash() const {

@@ -8,7 +8,6 @@
 #include <boost/variant.hpp>
 
 namespace libzcash {
-
 class InvalidEncoding {
 public:
     friend bool operator==(const InvalidEncoding &a, const InvalidEncoding &b) { return true; }

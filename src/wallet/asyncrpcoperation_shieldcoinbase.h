@@ -88,8 +88,6 @@ private:
     // JoinSplit without any input notes to spend
     UniValue perform_joinsplit(ShieldCoinbaseJSInfo &);
 
-    void sign_send_raw_transaction(UniValue obj);     // throws exception if there was an error
-
     void lock_utxos();
 
     void unlock_utxos();

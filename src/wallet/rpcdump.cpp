@@ -719,6 +719,11 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
             "2. rescan               (string, optional, default=\"whenkeyisnew\") Rescan the wallet for transactions - can be \"yes\", \"no\" or \"whenkeyisnew\"\n"
             "3. startHeight          (numeric, optional, default=0) Block height to start rescan from\n"
             "\nNote: This call can take minutes to complete if rescan is true.\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"type\" : \"xxxx\",                         (string) \"sprout\" or \"sapling\"\n"
+            "  \"address\" : \"address|DefaultAddress\",    (string) The address corresponding to the spending key (for Sapling, this is the default address).\n"
+            "}\n"
             "\nExamples:\n"
             "\nExport a zkey\n"
             + HelpExampleCli("z_exportkey", "\"myaddress\"") +
@@ -780,8 +785,8 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
         }
         if (success)
         {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Hex key detected. Spending key cannot be verified. If it is valid, the correct spending key would be:\n" + 
-                                                           EncodeSpendingKey(extSk) + 
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Hex key detected. Spending key cannot be verified. If it is valid, the correct spending key would be:\n" +
+                                                           EncodeSpendingKey(extSk) +
                                                            "\n* DO NOT USE UNLESS YOU ARE CERTAIN THIS IS A VALID KEY!");
         }
         else
@@ -790,10 +795,15 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
         }
     }
 
+    auto addrInfo = boost::apply_visitor(libzcash::AddressInfoFromSpendingKey{}, spendingkey);
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("type", addrInfo.first);
+    result.pushKV("address", EncodePaymentAddress(addrInfo.second));
+
     // Sapling support
     auto addResult = boost::apply_visitor(AddSpendingKeyToWallet(pwalletMain, Params().GetConsensus()), spendingkey);
     if (addResult == KeyAlreadyExists && fIgnoreExistingKey) {
-        return NullUniValue;
+        return result;
     }
     pwalletMain->MarkDirty();
     if (addResult == KeyNotAdded) {
@@ -802,107 +812,107 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
 
     // whenever a key is imported, we need to scan the whole chain
     pwalletMain->nTimeFirstKey = 1; // 0 would be considered 'no value'
-    
+
     // We want to scan for transactions and notes
     if (fRescan) {
         pwalletMain->ScanForWalletTransactions(chainActive[nRescanHeight], true);
     }
 
-    return NullUniValue;
+    return result;
 }
 
 UniValue z_importviewingkey(const UniValue& params, bool fHelp)
 {
-  if (!EnsureWalletIsAvailable(fHelp))
-      return NullUniValue;
+    if (!EnsureWalletIsAvailable(fHelp))
+        return NullUniValue;
 
-  if (fHelp || params.size() < 1 || params.size() > 3)
-      throw runtime_error(
-          "z_importviewingkey \"vkey\" ( rescan startHeight )\n"
-          "\nAdds a viewing key (as returned by z_exportviewingkey) to your wallet.\n"
-          "\nArguments:\n"
-          "1. \"vkey\"             (string, required) The viewing key (see z_exportviewingkey)\n"
-          "2. rescan             (string, optional, default=\"whenkeyisnew\") Rescan the wallet for transactions - can be \"yes\", \"no\" or \"whenkeyisnew\"\n"
-          "3. startHeight        (numeric, optional, default=0) Block height to start rescan from\n"
-          "\nNote: This call can take minutes to complete if rescan is true.\n"
-          "\nResult:\n"
-          "{\n"
-          "  \"type\" : \"xxxx\",                         (string) \"sprout\" or \"sapling\"\n"
-          "  \"address\" : \"address|DefaultAddress\",    (string) The address corresponding to the viewing key (for Sapling, this is the default address).\n"
-          "}\n"
-          "\nExamples:\n"
-          "\nImport a viewing key\n"
-          + HelpExampleCli("z_importviewingkey", "\"vkey\"") +
-          "\nImport the viewing key without rescan\n"
-          + HelpExampleCli("z_importviewingkey", "\"vkey\", no") +
-          "\nImport the viewing key with partial rescan\n"
-          + HelpExampleCli("z_importviewingkey", "\"vkey\" whenkeyisnew 30000") +
-          "\nRe-import the viewing key with longer partial rescan\n"
-          + HelpExampleCli("z_importviewingkey", "\"vkey\" yes 20000") +
-          "\nAs a JSON-RPC call\n"
-          + HelpExampleRpc("z_importviewingkey", "\"vkey\", \"no\"")
-      );
+    if (fHelp || params.size() < 1 || params.size() > 3)
+        throw runtime_error(
+            "z_importviewingkey \"vkey\" ( rescan startHeight )\n"
+            "\nAdds a viewing key (as returned by z_exportviewingkey) to your wallet.\n"
+            "\nArguments:\n"
+            "1. \"vkey\"             (string, required) The viewing key (see z_exportviewingkey)\n"
+            "2. rescan             (string, optional, default=\"whenkeyisnew\") Rescan the wallet for transactions - can be \"yes\", \"no\" or \"whenkeyisnew\"\n"
+            "3. startHeight        (numeric, optional, default=0) Block height to start rescan from\n"
+            "\nNote: This call can take minutes to complete if rescan is true.\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"type\" : \"xxxx\",                         (string) \"sprout\" or \"sapling\"\n"
+            "  \"address\" : \"address|DefaultAddress\",    (string) The address corresponding to the viewing key (for Sapling, this is the default address).\n"
+            "}\n"
+            "\nExamples:\n"
+            "\nImport a viewing key\n"
+            + HelpExampleCli("z_importviewingkey", "\"vkey\"") +
+            "\nImport the viewing key without rescan\n"
+            + HelpExampleCli("z_importviewingkey", "\"vkey\", no") +
+            "\nImport the viewing key with partial rescan\n"
+            + HelpExampleCli("z_importviewingkey", "\"vkey\" whenkeyisnew 30000") +
+            "\nRe-import the viewing key with longer partial rescan\n"
+            + HelpExampleCli("z_importviewingkey", "\"vkey\" yes 20000") +
+            "\nAs a JSON-RPC call\n"
+            + HelpExampleRpc("z_importviewingkey", "\"vkey\", \"no\"")
+        );
 
-  LOCK2(cs_main, pwalletMain->cs_wallet);
+    LOCK2(cs_main, pwalletMain->cs_wallet);
 
-  EnsureWalletIsUnlocked();
+    EnsureWalletIsUnlocked();
 
-  // Whether to perform rescan after import
-  bool fRescan = true;
-  bool fIgnoreExistingKey = true;
-  if (params.size() > 1) {
-      auto rescan = params[1].get_str();
-      if (rescan.compare("whenkeyisnew") != 0) {
-          fIgnoreExistingKey = false;
-          if (rescan.compare("no") == 0) {
-              fRescan = false;
-          } else if (rescan.compare("yes") != 0) {
-              throw JSONRPCError(
-                  RPC_INVALID_PARAMETER,
-                  "rescan must be \"yes\", \"no\" or \"whenkeyisnew\"");
-          }
-      }
-  }
+    // Whether to perform rescan after import
+    bool fRescan = true;
+    bool fIgnoreExistingKey = true;
+    if (params.size() > 1) {
+        auto rescan = params[1].get_str();
+        if (rescan.compare("whenkeyisnew") != 0) {
+            fIgnoreExistingKey = false;
+            if (rescan.compare("no") == 0) {
+                fRescan = false;
+            } else if (rescan.compare("yes") != 0) {
+                throw JSONRPCError(
+                    RPC_INVALID_PARAMETER,
+                    "rescan must be \"yes\", \"no\" or \"whenkeyisnew\"");
+            }
+        }
+    }
 
-  // Height to rescan from
-  int nRescanHeight = 0;
-  if (params.size() > 2) {
-      nRescanHeight = params[2].get_int();
-  }
-  if (nRescanHeight < 0 || nRescanHeight > chainActive.Height()) {
-      throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
-  }
+    // Height to rescan from
+    int nRescanHeight = 0;
+    if (params.size() > 2) {
+        nRescanHeight = params[2].get_int();
+    }
+    if (nRescanHeight < 0 || nRescanHeight > chainActive.Height()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
+    }
 
-  string strVKey = params[0].get_str();
-  auto viewingkey = DecodeViewingKey(strVKey);
-  if (!IsValidViewingKey(viewingkey)) {
-      throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid viewing key");
-  }
+    string strVKey = params[0].get_str();
+    auto viewingkey = DecodeViewingKey(strVKey);
+    if (!IsValidViewingKey(viewingkey)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid viewing key");
+    }
 
-  auto addrInfo = boost::apply_visitor(libzcash::AddressInfoFromViewingKey{}, viewingkey);
-  UniValue result(UniValue::VOBJ);
-  result.pushKV("type", addrInfo.first);
-  result.pushKV("address", EncodePaymentAddress(addrInfo.second));
+    auto addrInfo = boost::apply_visitor(libzcash::AddressInfoFromViewingKey{}, viewingkey);
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("type", addrInfo.first);
+    result.pushKV("address", EncodePaymentAddress(addrInfo.second));
 
-  auto addResult = boost::apply_visitor(AddViewingKeyToWallet(pwalletMain), viewingkey);
-  if (addResult == SpendingKeyExists) {
-      throw JSONRPCError(
-          RPC_WALLET_ERROR,
-          "The wallet already contains the private key for this viewing key");
-  } else if (addResult == KeyAlreadyExists && fIgnoreExistingKey) {
-      return result;
-  }
-  pwalletMain->MarkDirty();
-  if (addResult == KeyNotAdded) {
-      throw JSONRPCError(RPC_WALLET_ERROR, "Error adding viewing key to wallet");
-  }
+    auto addResult = boost::apply_visitor(AddViewingKeyToWallet(pwalletMain), viewingkey);
+    if (addResult == SpendingKeyExists) {
+        throw JSONRPCError(
+            RPC_WALLET_ERROR,
+            "The wallet already contains the private key for this viewing key");
+    } else if (addResult == KeyAlreadyExists && fIgnoreExistingKey) {
+        return result;
+    }
+    pwalletMain->MarkDirty();
+    if (addResult == KeyNotAdded) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Error adding viewing key to wallet");
+    }
 
-  // We want to scan for transactions and notes
-  if (fRescan) {
-      pwalletMain->ScanForWalletTransactions(chainActive[nRescanHeight], true);
-  }
+    // We want to scan for transactions and notes
+    if (fRescan) {
+        pwalletMain->ScanForWalletTransactions(chainActive[nRescanHeight], true);
+    }
 
-  return result;
+    return result;
 }
 
 UniValue z_exportkey(const UniValue& params, bool fHelp)

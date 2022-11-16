@@ -1,11 +1,13 @@
+// Copyright (c) 2016-2020 The Zcash developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
+
 #ifndef ZC_ADDRESS_SAPLING_H_
 #define ZC_ADDRESS_SAPLING_H_
 
-#include "uint256.h"
 #include "serialize.h"
+#include "uint256.h"
 #include "zcash/Zcash.h"
-
-#include <boost/variant.hpp>
 
 namespace libzcash {
 
@@ -129,10 +131,10 @@ public:
     SaplingExpandedSpendingKey expanded_spending_key() const;
     SaplingFullViewingKey full_viewing_key() const;
 
-    // Can derive Sapling addr from default diversifier
+    // Can derive Sapling addr from default diversifier 
     SaplingPaymentAddress default_address() const;
 };
 
 } // namespace libzcash
 
-#endif // ZC_ADDRESS_SAPLING_H
+#endif // ZC_ADDRESS_SAPLING_H_
