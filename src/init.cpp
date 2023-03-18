@@ -546,7 +546,6 @@ std::string HelpMessage(HelpMessageMode mode)
             ));
 #endif
 
-for PBaaS chains"), PBAAS_DEFAULT_NOTIFICATION_ORACLE.c_str()));
     strUsage += HelpMessageGroup(_("PBaaS options:"));
     strUsage += HelpMessageOpt("-allowdelayednotarizations", strprintf(_("Do not notarize in order to prevent slower notarizations (default = %u, notarize to prevent slowing down)"), DEFAULT_SPENTINDEX));
     strUsage += HelpMessageOpt("-alwayssubmitnotarizations", strprintf(_("Submit notarizations to notary chain whenevever merge mining/staking and eligible (default = %u, only as needed)"), DEFAULT_SPENTINDEX));
@@ -555,7 +554,7 @@ for PBaaS chains"), PBAAS_DEFAULT_NOTIFICATION_ORACLE.c_str()));
     strUsage += HelpMessageOpt("-miningdistributionpassthrough", _("uses the same miningdistribution values and addresses/IDs as Verus when merge mining"));
     strUsage += HelpMessageOpt("-notarizationperiod=<n>", strprintf(_("Set minimum spacing consensus between cross-chain notarization, in blocks (default: %d, min 10 min)"), CCurrencyDefinition::BLOCK_NOTARIZATION_MODULO));
     strUsage += HelpMessageOpt("-notaryid=<i-address>", _("VerusID used for PBaaS and Ethereum cross-chain notarization"));
-    strUsage += HelpMessageOpt("-notificationoracle=<i-address>", strprintf(_("VerusID monitored for network alerts, triggers, and signals. Current default is \"%s\" for Verus and the chain ID 
+    strUsage += HelpMessageOpt("-notificationoracle=<i-address>", strprintf(_("VerusID monitored for network alerts, triggers, and signals. Current default is \"%s\" for Verus and the chain ID for PBaaS chains"), PBAAS_DEFAULT_NOTIFICATION_ORACLE.c_str()));
     strUsage += HelpMessageOpt("-powaveragingwindow=<n>", strprintf(_("Set averaging window for PoW difficulty adjustment, in blocks (default: %d)"), CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW));
     strUsage += HelpMessageOpt("-testnet", _("loads PBaaS network in testmode"));
 	
