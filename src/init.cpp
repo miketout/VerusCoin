@@ -535,15 +535,15 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-genproclimit=<n>", strprintf(_("Set the number of threads for coin mining if enabled (-1 = all cores, default: %d)"), 0));
     strUsage += HelpMessageOpt("-mineraddress=<addr>", _("Send mined coins to a specific single address"));
     strUsage += HelpMessageOpt("-minetolocalwallet", strprintf(_("Require that mined blocks use a coinbase address in the local wallet (default: %u)"),
-    strUsage += HelpMessageOpt("-miningdistribution={\"addressorid\":<n>,...}", _("destination addresses and relative amounts used as ratios to divide total rewards + fees"));
-    strUsage += HelpMessageOpt("-mint", strprintf(_("Mint/stake coins automatically (default: %u)"), 0));
-    strUsage += HelpMessageOpt("-pubkey=<hexpubkey>", _("If set, mining and staking rewards will go to this address by default"));
  #ifdef ENABLE_WALLET
             1
  #else
             0
  #endif
             ));
+    strUsage += HelpMessageOpt("-miningdistribution={\"addressorid\":<n>,...}", _("destination addresses and relative amounts used as ratios to divide total rewards + fees"));
+    strUsage += HelpMessageOpt("-mint", strprintf(_("Mint/stake coins automatically (default: %u)"), 0));
+    strUsage += HelpMessageOpt("-pubkey=<hexpubkey>", _("If set, mining and staking rewards will go to this address by default"));
 #endif
 
     strUsage += HelpMessageGroup(_("PBaaS options:"));
