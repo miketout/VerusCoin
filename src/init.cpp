@@ -1290,9 +1290,9 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     auto chainUpgradeOracle = DecodeDestination(GetArg("-notificationoracle", IsVerusActive() ? PBAAS_DEFAULT_NOTIFICATION_ORACLE : EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID))));
     PBAAS_NOTIFICATION_ORACLE = chainUpgradeOracle.which() == COptCCParams::ADDRTYPE_ID ? CIdentityID(GetDestinationID(chainUpgradeOracle)) : CIdentityID();
     auto upgradeContractAddress = CTransferDestination::DecodeEthDestination(GetArg("-approvecontractupgrade", ""));
-    if (upgradeContractAddress.IsValid() && upgradeContractAddress.TypeNoFlags() == CTransferDestination::DEST_ETH)
+    if (!upgradeContractAddress.IsNull())
     {
-        APPROVE_CONTRACT_UPGRADE = upgradeContractAddress;
+        APPROVE_CONTRACT_UPGRADE = CTransferDestination(CTransferDestination::DEST_ETH, ::AsVector(upgradeContractAddress));
     }
 
     auto notaryIDDest = DecodeDestination(GetArg("-notaryid", ""));
