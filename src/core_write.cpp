@@ -306,7 +306,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
         for (auto &onePreAllocation : preAllocation)
         {
             UniValue onePreAlloc(UniValue::VOBJ);
-            onePreAlloc.push_back(Pair(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)), 
+            onePreAlloc.push_back(Pair(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)),
                                        ValueFromAmount(onePreAllocation.second)));
             preAllocationArr.push_back(onePreAlloc);
         }
@@ -369,6 +369,11 @@ UniValue CCurrencyDefinition::ToUniValue() const
             arith_uint256 target;
             target.SetCompact(initialBits);
             obj.push_back(Pair("initialtarget", ArithToUint256(target).GetHex()));
+
+            obj.pushKV("blocktime", (int64_t)blockTime);
+            obj.pushKV("powaveragingwindow", (int64_t)powAveragingWindow);
+            obj.pushKV("notarizationperiod", (int)blockNotarizationModulo);
+
             UniValue eraArr(UniValue::VARR);
             for (int i = 0; i < rewards.size(); i++)
             {
@@ -552,8 +557,8 @@ CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmoun
     return nativeOut;
 }
 
-CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, 
-                                              const std::vector<uint160> &currencies, 
+CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts,
+                                              const std::vector<uint160> &currencies,
                                               const std::vector<cpp_dec_float_50> &exchangeRates)
 {
     CAmount nativeOut = 0;
@@ -568,8 +573,8 @@ CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmoun
     return nativeOut;
 }
 
-CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, 
-                                           const std::vector<uint160> &currencies, 
+CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts,
+                                           const std::vector<uint160> &currencies,
                                            const std::vector<CAmount> &exchangeRates)
 {
     CAmount nativeOut = 0;
@@ -609,6 +614,28 @@ CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, CAmount exchang
     static arith_uint256 bigSatoshi(SATOSHIDEN);
     arith_uint256 bigAmount(nativeAmount);
     arith_uint256 bigReserves = (bigAmount * exchangeRate) / bigSatoshi;
+    int64_t retVal = bigReserves.GetLow64();
+    if ((bigReserves - retVal) == 0)
+    {
+        return retVal;
+    }
+    else
+    {
+        // return -1 on overflow
+        return -1;
+    }
+}
+
+CAmount CCurrencyState::NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate)
+{
+    if (!exchangeRate)
+    {
+        return nativeAmount;
+    }
+    exchangeRate = exchangeRate / (SATOSHIDEN / 100);
+    static arith_uint256 bigSatoshiX1000(SATOSHIDEN * 1000);
+    arith_uint256 bigAmount(nativeAmount);
+    arith_uint256 bigReserves = (bigAmount * exchangeRate) / bigSatoshiX1000;
     int64_t retVal = bigReserves.GetLow64();
     if ((bigReserves - retVal) == 0)
     {
@@ -737,7 +764,7 @@ bool CPBaaSNotarization::SetMirror(bool setTrue)
         currencyStates.count(currencyID) ||
         !(proofRoots.begin()->first == ASSETCHAINS_CHAINID || (++proofRoots.begin())->first == ASSETCHAINS_CHAINID))
     {
-        LogPrintf("%s: invalid earned notarization for acceptance\n", __func__);
+        LogPrint("notarization", "%s: invalid earned notarization for acceptance\n", __func__);
         return false;
     }
 
@@ -746,7 +773,7 @@ bool CPBaaSNotarization::SetMirror(bool setTrue)
 
     if (currencyID != ASSETCHAINS_CHAINID && !currencyStates.count(ASSETCHAINS_CHAINID))
     {
-        LogPrintf("%s: notarization for acceptance must include both currency states\n", __func__);
+        LogPrint("notarization", "%s: notarization for acceptance must include both currency states\n", __func__);
         return false;
     }
 
@@ -779,6 +806,7 @@ bool CPBaaSNotarization::SetMirror(bool setTrue)
     else
     {
         flags &= ~FLAG_ACCEPTED_MIRROR;
+        proposer.ClearAuxDests();
     }
     return true;
 }
@@ -1116,14 +1144,14 @@ CUTXORef::CUTXORef(const UniValue &uni)
 UniValue CObjectFinalization::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
-    ret.push_back(Pair("finalizationtype", (FinalizationType() == FINALIZE_NOTARIZATION) ? 
-                                                "finalizenotarization" : FinalizationType() == FINALIZE_EXPORT ? 
-                                                "finalizeexport" : "invalid"));
-    ret.push_back(Pair("status", IsConfirmed() ? 
-                                    "confirmed" : 
-                                    IsRejected() ? 
-                                        "rejected" : 
-                                        "pending"));
+    ret.push_back(Pair("finalizationtype", finalizationType));
+    ret.push_back(Pair("status", IsConfirmed() ?
+                                    "confirmed" :
+                                    IsRejected() ?
+                                        "rejected" :
+                                        IsChallenge() ?
+                                            "challenge" :
+                                            "pending"));
     if (evidenceInputs.size())
     {
         UniValue inputsUni(UniValue::VARR);
@@ -1179,6 +1207,134 @@ UniValue CIdentity::ToUniValue() const
     }
     obj.push_back(Pair("contentmap", hashes));
 
+    if (nVersion >= VERSION_PBAAS)
+    {
+        hashes = UniValue(UniValue::VOBJ);
+        UniValue entryArr(UniValue::VARR);
+        uint160 lastHash;
+        for (auto &entry : contentMultiMap)
+        {
+            if (entry.first.IsNull())
+            {
+                continue;
+            }
+            else if (entry.first != lastHash && !lastHash.IsNull())
+            {
+                hashes.push_back(Pair(EncodeDestination(CIdentityID(lastHash)), entryArr));
+                entryArr = UniValue(UniValue::VARR);
+            }
+            lastHash = entry.first;
+
+            // if we have room for a known 20 byte value, check to see if it is one
+            CDataStream ss(entry.second, PROTOCOL_VERSION, SER_DISK);
+            bool objOut = false;
+            UniValue entryUni(UniValue::VOBJ);
+
+            while (ss.size() > sizeof(uint160))
+            {
+                try
+                {
+                    uint160 checkVal;
+                    uint32_t version;
+                    int64_t objSize;
+                    ss >> checkVal;
+                    UniValue objectUni(UniValue::VNULL);
+
+                    if (checkVal == CVDXF_Data::DataCurrencyMapKey())
+                    {
+                        CCurrencyValueMap oneCurrencyMap;
+                        ss >> VARINT(version);
+                        ss >> VARINT(objSize);
+                        ss >> oneCurrencyMap;
+                        if (oneCurrencyMap.IsValid())
+                        {
+                            objectUni = oneCurrencyMap.ToUniValue();
+                        }
+                    }
+                    else if (checkVal == CVDXF_Data::DataRatingsKey())
+                    {
+                        CRating oneRatingObj;
+                        ss >> VARINT(version);
+                        ss >> VARINT(objSize);
+                        ss >> oneRatingObj;
+                        if (oneRatingObj.IsValid())
+                        {
+                            objectUni = oneRatingObj.ToUniValue();
+                        }
+                    }
+                    else if (checkVal == CVDXF_Data::DataTransferDestinationKey())
+                    {
+                        CTransferDestination oneTransferDest;
+                        ss >> VARINT(version);
+                        ss >> VARINT(objSize);
+                        ss >> oneTransferDest;
+                        if (oneTransferDest.IsValid())
+                        {
+                            objectUni = oneTransferDest.ToUniValue();
+                        }
+                    }
+                    else if (checkVal == CVDXF_Data::ContentMultiMapRemoveKey())
+                    {
+                        CContentMultiMapRemove oneContentRemove;
+                        ss >> VARINT(version);
+                        ss >> VARINT(objSize);
+                        ss >> oneContentRemove;
+                        if (oneContentRemove.IsValid())
+                        {
+                            objectUni = oneContentRemove.ToUniValue();
+                        }
+                    }
+                    else if (checkVal == CVDXF_Data::DataStringKey())
+                    {
+                        std::string stringVal;
+                        ss >> VARINT(version);
+                        ss >> VARINT(objSize);
+                        ss >> stringVal;
+                        objectUni = stringVal;
+                    }
+                    else if (checkVal == CVDXF_Data::DataByteVectorKey())
+                    {
+                        std::vector<unsigned char> vecVal;
+                        ss >> VARINT(version);
+                        ss >> VARINT(objSize);
+                        ss >> vecVal;
+                        objectUni = HexBytes(&(vecVal[0]), vecVal.size());
+                    }
+
+                    // if we have an object that we recognized, encode it
+                    if (!objectUni.isNull())
+                    {
+                        objOut = true;
+                        entryUni.pushKV(EncodeDestination(CIdentityID(checkVal)), objectUni);
+                    }
+                    else
+                    {
+                        objOut = false;
+                        break;
+                    }
+                }
+                catch (...)
+                {
+                    objOut = false;
+                    break;
+                }
+            }
+            if (objOut)
+            {
+                entryArr.push_back(entryUni);
+            }
+            else
+            {
+                entryArr.push_back(HexBytes(&(entry.second[0]), entry.second.size()));
+            }
+        }
+        if (!lastHash.IsNull())
+        {
+            hashes.push_back(Pair(EncodeDestination(CIdentityID(lastHash)), entryArr));
+        }
+        obj.push_back(Pair("contentmultimap", hashes));
+    }
+
     obj.push_back(Pair("revocationauthority", EncodeDestination(CTxDestination(CIdentityID(revocationAuthority)))));
     obj.push_back(Pair("recoveryauthority", EncodeDestination(CTxDestination(CIdentityID(recoveryAuthority)))));
     if (privateAddresses.size())
@@ -1189,6 +1345,102 @@ UniValue CIdentity::ToUniValue() const
     obj.push_back(Pair("timelock", (int32_t)unlockAfter));
 
     return obj;
+}
+
+std::multimap<uint160, std::vector<std::string>> CRating::ratingsDefinitionMap;
+const std::multimap<uint160, std::vector<std::string>> &CRating::GetRatingDefinitionMap(const std::locale &locale)
+{
+    static CCriticalSection cs;
+    LOCK(cs);
+    if (!ratingsDefinitionMap.size())
+    {
+        std::vector<std::string> defaultRatingKeys;
+        defaultRatingKeys.resize(RATING_LASTDEFAULT + 1);
+        defaultRatingKeys[RATING_1] = "1";
+        defaultRatingKeys[RATING_2] = "2";
+        defaultRatingKeys[RATING_3] = "3";
+        defaultRatingKeys[RATING_4] = "4";
+        defaultRatingKeys[RATING_5] = "5";
+        defaultRatingKeys[RATING_6] = "6";
+        defaultRatingKeys[RATING_7] = "7";
+        defaultRatingKeys[RATING_8] = "8";
+        defaultRatingKeys[RATING_9] = "9";
+        defaultRatingKeys[RATING_10] = "10";
+        defaultRatingKeys[RATING_G] = "RATED G";
+        defaultRatingKeys[RATING_PG] = "RATED PG";
+        defaultRatingKeys[RATING_PG13] = "RATED PG13";
+        defaultRatingKeys[RATING_R] = "RATED R";
+        defaultRatingKeys[RATING_NC17] = "RATED NC-17";
+        defaultRatingKeys[RATING_HSEX] = "SEXUALITY";
+        defaultRatingKeys[RATING_HHEALTH] = "HEALTH";
+        defaultRatingKeys[RATING_DRUGS] = "SMOKING/DRUGS";
+        defaultRatingKeys[RATING_NUDITY] = "NUDITY";
+        defaultRatingKeys[RATING_VIOLENCE] = "VIOLENCE";
+        defaultRatingKeys[RATING_1STAR] = std::string(u8"\U00002B50");
+        defaultRatingKeys[RATING_2STAR] = std::string(u8"\U00002B50") + std::string(u8"\U00002B50");
+        defaultRatingKeys[RATING_3STAR] = std::string(u8"\U00002B50") + std::string(u8"\U00002B50") + std::string(u8"\U00002B50");
+        defaultRatingKeys[RATING_4STAR] = std::string(u8"\U00002B50") + std::string(u8"\U00002B50") + std::string(u8"\U00002B50") + std::string(u8"\U00002B50");
+        defaultRatingKeys[RATING_5STAR] = std::string(u8"\U00002B50") + std::string(u8"\U00002B50") + std::string(u8"\U00002B50") + std::string(u8"\U00002B50") + std::string(u8"\U00002B50");
+        defaultRatingKeys[RATING_BAD] = std::string(u8"\U0001F620");
+        defaultRatingKeys[RATING_POOR] = std::string(u8"\U0001F641");
+        defaultRatingKeys[RATING_OK] = std::string(u8"\U0001F610");
+        defaultRatingKeys[RATING_GOOD] = std::string(u8"\U0001F642");
+        defaultRatingKeys[RATING_EXCELLENT] = std::string(u8"\U0001F603");
+        ratingsDefinitionMap.insert(std::make_pair(DefaultRatingTypeKey(), defaultRatingKeys));
+    }
+    return ratingsDefinitionMap;
+}
+
+UniValue CRating::ToUniValue() const
+{
+    const std::multimap<uint160, std::vector<std::string>> &ratingMap = GetRatingDefinitionMap();
+
+    UniValue retVal(UniValue::VOBJ);
+    retVal.pushKV("version", (int64_t)version);
+    retVal.pushKV("trustlevel", (int)trustLevel);
+
+    UniValue ratingsMapUni(UniValue::VOBJ);
+
+    for (auto &oneMapEntry : ratings)
+    {
+        bool uniOut = false;
+        auto it = ratingMap.find(oneMapEntry.first);
+        if (it != ratingMap.end())
+        {
+            uniOut = true;
+            std::set<std::pair<int,std::string>> uniStrings;
+            for (auto &oneRating : oneMapEntry.second)
+            {
+                if (oneRating > 0 && oneRating < it->second.size())
+                {
+                    uniStrings.insert(std::make_pair(oneRating, it->second[oneRating]));
+                }
+                else
+                {
+                    uniOut = false;
+                    break;
+                }
+            }
+            if (uniOut)
+            {
+                UniValue ratingsArr(UniValue::VARR);
+                for (auto &oneRatingPair : uniStrings)
+                {
+                    ratingsArr.push_back(oneRatingPair.second);
+                }
+                ratingsMapUni.pushKV(EncodeDestination(CIdentityID(oneMapEntry.first)), ratingsArr);
+            }
+        }
+        if (!uniOut)
+        {
+            ratingsMapUni.pushKV(EncodeDestination(CIdentityID(oneMapEntry.first)), HexBytes(&(oneMapEntry.second[0]), oneMapEntry.second.size()));
+        }
+    }
+    if (ratings.size())
+    {
+        retVal.pushKV("ratingsmap", ratingsMapUni);
+    }
+    return retVal;
 }
 
 UniValue CMMRProof::ToUniValue() const

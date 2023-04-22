@@ -23,7 +23,7 @@
 #include "script/standard.h"
 
 int32_t komodo_notaries(uint8_t pubkeys[64][33],int32_t height,uint32_t timestamp);
-int32_t komodo_electednotary(int32_t *numnotariesp,uint8_t *pubkey33,int32_t height,uint32_t timestamp);
+int32_t komodo_electednotary(int32_t *numnotariesp,uint8_t *pubkey33,int32_t height, uint32_t timestamp);
 unsigned int lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::Params& params);
 
 //#define issue_curl(cmdstr) bitcoind_RPC(0,(char *)"curl",(char *)"http://127.0.0.1:7776",0,0,(char *)(cmdstr))
@@ -167,7 +167,7 @@ try_again:
     curl_handle = curl_easy_init();
     init_string(&s);
     headers = curl_slist_append(0,"Expect:");
-    
+
     curl_easy_setopt(curl_handle,CURLOPT_USERAGENT,"mozilla/4.0");//"Mozilla/4.0 (compatible; )");
     curl_easy_setopt(curl_handle,CURLOPT_HTTPHEADER,	headers);
     curl_easy_setopt(curl_handle,CURLOPT_URL,		url);
@@ -196,7 +196,7 @@ try_again:
                 bracket0 = (char *)"[";
                 bracket1 = (char *)"]";
             }
-            
+
             databuf = (char *)malloc(256 + strlen(command) + strlen(params));
             sprintf(databuf,"{\"id\":\"jl777\",\"method\":\"%s\",\"params\":%s%s%s}",command,bracket0,params,bracket1);
             //printf("url.(%s) userpass.(%s) databuf.(%s)\n",url,userpass,databuf);
@@ -236,7 +236,7 @@ try_again:
         free(s.ptr);
         sleep((1<<numretries));
         goto try_again;
-        
+
     }
     else
     {
@@ -522,7 +522,7 @@ int32_t komodo_verifynotarization(char *symbol,char *dest,int32_t height,int32_t
  }
  return(hash);
  }
- 
+
  uint256 _komodo_getblockhash(int32_t height);*/
 
 uint64_t komodo_seed(int32_t height)
@@ -1092,9 +1092,9 @@ int32_t komodo_validate_interest(const CTransaction &tx,int32_t txheight,uint32_
 
 /*
  komodo_checkPOW (fast) is called early in the process and should only refer to data immediately available. it is a filter to prevent bad blocks from going into the local DB. The more blocks we can filter out at this stage, the less junk in the local DB that will just get purged later on.
- 
+
  komodo_checkPOW (slow) is called right before connecting blocks so all prior blocks can be assumed to be there and all checks must pass
- 
+
  commission must be in coinbase.vout[1] and must be >= 10000 sats
  PoS stake must be without txfee and in the last tx in the block at vout[0]
  */
@@ -1460,397 +1460,7 @@ int32_t komodo_is_PoSblock(int32_t slowflag,int32_t height,CBlock *pblock,arith_
 bool GetStakeParams(const CTransaction &stakeTx, CStakeParams &stakeParams);
 bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTransaction &stakeTx, bool &cheating, bool slowValidation=true);
 bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakeParams, bool validateSig = true);
-
-// for now, we will ignore slowFlag in the interest of keeping success/fail simpler for security purposes
-bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
-{
-    CBlockIndex *pastBlockIndex;
-    uint256 txid, blkHash;
-    int32_t txn_count;
-    uint32_t voutNum;
-    CAmount value;
-    bool isPOS = false;
-    CTxDestination destaddress, cbaddress;
-    arith_uint256 target, hash;
-    CTransaction tx;
-
-    if (!pblock->IsVerusPOSBlock())
-    {
-        printf("%s, height %d not POS block\n", pblock->nNonce.GetHex().c_str(), height);
-        return false;
-    }
-
-    txn_count = pblock->vtx.size();
-
-    if ( txn_count > 1 )
-    {
-        target.SetCompact(pblock->GetVerusPOSTarget());
-        txid = pblock->vtx[txn_count-1].vin[0].prevout.hash;
-        voutNum = pblock->vtx[txn_count-1].vin[0].prevout.n;
-        value = pblock->vtx[txn_count-1].vout[0].nValue;
-
-        {
-            bool validHash = (value != 0);
-            bool enablePOSNonce = CPOSNonce::NewPOSActive(height);
-            bool newPOSEnforcement = enablePOSNonce && (Params().GetConsensus().vUpgrades[Consensus::UPGRADE_SAPLING].nActivationHeight <= height);
-            bool supportInstantSpend = CConstVerusSolutionVector::activationHeight.ActiveVersion(height) >= CActivationHeight::ACTIVATE_PBAAS;
-            bool extendedStake = CConstVerusSolutionVector::activationHeight.ActiveVersion(height) >= CActivationHeight::ACTIVATE_EXTENDEDSTAKE;
-            uint256 rawHash;
-            arith_uint256 posHash;
-
-            // for June 17th attack mitigation
-            int exploitMitigationStartHeight = 915055;  // the first stake transaction that fails validation, but should be accepted
-            int fullCheckHeight = 1568000;              // height at which full checks resume
-            int stakingBackOnHeight = 1576200;          // height after which staking is fully reenabled
-
-            bool fullCheckFix = true;
-            bool attackMitigation = false;
-            if (IsVerusMainnetActive())
-            {
-                if (height < fullCheckHeight)
-                {
-                    fullCheckFix = false;
-                }
-                if (height >= exploitMitigationStartHeight && height < stakingBackOnHeight)
-                {
-                    // there were no staking blocks on mainnet between 
-                    if (height >= fullCheckHeight && height < stakingBackOnHeight)
-                    {
-                        validHash = false;
-                    }
-                    attackMitigation = true;
-                }
-            }
-
-            if (validHash && newPOSEnforcement)
-            {
-                validHash = pblock->GetRawVerusPOSHash(rawHash, height);
-                posHash = UintToArith256(rawHash) / value;
-
-                if (!validHash)
-                {
-                    validHash = false;
-                    printf("%s: invalid nonce value for PoS block\nnNonce: %s\nrawHash: %s\nposHash: %s\nvalue: %lu\n",
-                            __func__, pblock->nNonce.GetHex().c_str(), rawHash.GetHex().c_str(), posHash.GetHex().c_str(), value);
-                }
-                else if (!attackMitigation)
-                {
-                    if (posHash > target)
-                    {
-                        validHash = false;
-                        printf("%s: invalid nonce value for PoS block\nnNonce: %s\nrawHash: %s\nposHash: %s\nvalue: %lu\n",
-                                __func__, pblock->nNonce.GetHex().c_str(), rawHash.GetHex().c_str(), posHash.GetHex().c_str(), value);
-                    }
-                    // make sure prev block hash and block height are correct
-                    CStakeParams p;
-                    if (validHash && (validHash = GetStakeParams(pblock->vtx[txn_count-1], p)))
-                    {
-                        for (int i = 0; validHash && i < pblock->vtx[0].vout.size(); i++)
-                        {
-                            validHash = false;
-                            if (pblock->vtx[0].vout[i].scriptPubKey.IsInstantSpendOrUnspendable() || ValidateMatchingStake(pblock->vtx[0], i, pblock->vtx[txn_count-1], validHash, slowflag) && !validHash)
-                            {
-                                if ((p.prevHash == pblock->hashPrevBlock) && (int32_t)p.blkHeight == height)
-                                {
-                                    validHash = true;
-                                }
-                                else
-                                {
-                                    printf("ERROR: invalid block data for stake tx\nblkHash:   %s\ntxBlkHash: %s\nblkHeight: %d, txBlkHeight: %d\n",
-                                            pblock->hashPrevBlock.GetHex().c_str(), p.prevHash.GetHex().c_str(), height, p.blkHeight);
-                                    validHash = false;
-                                }
-                            }
-                            else validHash = false;
-                        }
-                    }
-                }
-            }
-            if (validHash)
-            {
-                if (!slowflag || !fullCheckFix)
-                {
-                    isPOS = true;
-                }
-                else if (!(pastBlockIndex = komodo_chainactive(height - 100)))
-                {
-                    LogPrintf("block %s - no past block found\n",blkHash.ToString().c_str());
-                }
-                else 
-#ifndef KOMODO_ZCASH
-                if (!GetTransaction(txid, tx, Params().GetConsensus(), blkHash, true))
-#else
-                if (!GetTransaction(txid, tx, blkHash, true))
-#endif
-                {
-                    fprintf(stderr,"ERROR: invalid PoS block %s - no source transaction\n",blkHash.ToString().c_str());
-                }
-                else
-                {
-                    uint256 pastHash = chainActive.GetVerusEntropyHash(height);
-
-                    // if we are on a version requiring the new nonce format, we check that the new format is correct
-                    // if over when we have the new POS hash function, we validate that as well
-                    // they are 100 blocks apart
-                    CPOSNonce nonce = pblock->nNonce;
-
-                    //printf("before nNonce: %s, height: %d\n", pblock->nNonce.GetHex().c_str(), height);
-                    validHash = pblock->GetRawVerusPOSHash(rawHash, height);
-
-                    hash = UintToArith256(tx.GetVerusPOSHash(&nonce, voutNum, height, pastHash));
-
-                    if ((!newPOSEnforcement || posHash == hash) && hash <= target)
-                    {
-                        BlockMap::const_iterator it = mapBlockIndex.find(blkHash);
-                        if ((it == mapBlockIndex.end()) ||
-                            !(pastBlockIndex = it->second) || 
-                            (height - pastBlockIndex->GetHeight()) < VERUS_MIN_STAKEAGE)
-                        {
-                            fprintf(stderr,"ERROR: invalid PoS block %s - stake source too new or not found\n",blkHash.ToString().c_str());
-                        }
-                        else
-                        {
-                            // make sure we have the right target
-                            CBlockIndex *previndex;
-                            it = mapBlockIndex.find(pblock->hashPrevBlock);
-                            if (it == mapBlockIndex.end() || !(previndex = it->second))
-                            {
-                                fprintf(stderr,"ERROR: invalid PoS block %s - no prev block found\n",blkHash.ToString().c_str());
-                            }
-                            else
-                            {
-                                arith_uint256 cTarget;
-                                uint32_t nBits = lwmaGetNextPOSRequired(previndex, Params().GetConsensus());
-                                cTarget.SetCompact(nBits);
-                                bool nonceOK = true;
-
-                                // check to see how many fail
-                                //if (nonce != pblock->nNonce)
-                                //    printf("Mismatched nNonce: %s\nblkHash: %s, height: %d\n", nonce.GetHex().c_str(), pblock->GetHash().GetHex().c_str(), height);
-
-                                if (CPOSNonce::NewNonceActive(height) && !nonce.CheckPOSEntropy(pastHash, txid, voutNum, pblock->nVersion))
-                                {
-                                    fprintf(stderr,"ERROR: invalid PoS block %s - nonce entropy corrupted or forged\n",blkHash.ToString().c_str());
-                                    return false;
-                                }
-                                else
-                                {
-                                    if (cTarget != target)
-                                    {
-                                        LogPrintf("ERROR: invalid PoS block %s - invalid diff target, actual: %u, correct: %u\n", blkHash.ToString().c_str(), pblock->GetVerusPOSTarget(), nBits);
-                                        if (IsVerusMainnetActive() && height < fullCheckHeight)
-                                        {
-                                            return true;
-                                        }
-                                        return false;
-                                    }
-                                }
-                                const CTransaction &stakeTx = pblock->vtx[txn_count-1];
-                                CStakeParams sp;
-                                std::vector<CTxDestination> destinations;
-                                txnouttype outType;
-                                int nRequired;
-                                if (nonceOK && 
-                                    ExtractDestinations(stakeTx.vout[0].scriptPubKey, outType, destinations, nRequired) &&
-                                    destinations.size() &&
-                                    ValidateStakeTransaction(stakeTx, sp, true) &&
-                                    ExtractDestination(tx.vout[voutNum].scriptPubKey, destaddress))
-                                {
-                                    isPOS = true;
-
-                                    // overwrite and set delegate if it is empty as the only destination we care about below
-                                    // otherwise, use it as is
-                                    if (sp.delegate.which() == COptCCParams::ADDRTYPE_INVALID)
-                                    {
-                                        sp.delegate = destinations[0];
-                                    }
-
-                                    // normalize delegate to PKH if PK
-                                    if (sp.delegate.which() == COptCCParams::ADDRTYPE_PK)
-                                    {
-                                        sp.delegate = CKeyID(GetDestinationID(sp.delegate));
-                                    }
-
-                                    // if the source transaction is not spent to the same output as the stake transaction, error
-                                    if ((destaddress.which() == COptCCParams::ADDRTYPE_PK ? CTxDestination(CKeyID(GetDestinationID(destaddress))) : destaddress) !=
-                                        (destinations[0].which() == COptCCParams::ADDRTYPE_PK ? CTxDestination(CKeyID(GetDestinationID(destinations[0]))) : destinations[0]))
-                                    {
-                                        printf("ERROR: in staking block %s - source tx and stake have different scripts\n", blkHash.ToString().c_str());
-                                        LogPrintf("ERROR: in staking block %s - source tx and stake have different scripts\n", blkHash.ToString().c_str());
-                                        return false;
-                                    }
-
-                                    if (extendedStake)
-                                    {
-                                        std::vector<CTxDestination> prevDests;
-                                        std::map<CTxDestination, CCurrencyValueMap> cbOutputs;
-                                        txnouttype cbType;
-                                        int numRequired;
-                                        uint160 reserveDepositCurrencyID;
-                                        CCurrencyDefinition reserveDepositCurrency;
-                                        std::map<uint160, int> reserveDepositReserves;
-
-                                        COptCCParams ccp;
-                                        if (tx.vout[voutNum].scriptPubKey.IsPayToCryptoCondition(ccp) &&
-                                            ccp.IsValid() &&
-                                            ccp.evalCode == EVAL_RESERVE_DEPOSIT)
-                                        {
-                                            printf("ERROR: in staking block %s - invalid reserve deposit stake\n", blkHash.ToString().c_str());
-                                            LogPrintf("ERROR: in staking block %s - invalid reserve deposit stake\n", blkHash.ToString().c_str());
-                                            return false;
-                                        }
-
-                                        for (auto &oneOut : pblock->vtx[0].vout)
-                                        {
-                                            if (!supportInstantSpend ||
-                                                !oneOut.scriptPubKey.IsInstantSpendOrUnspendable())
-                                            {
-                                                std::vector<CTxDestination> oneOutDests;
-                                                if (!ExtractDestinations(oneOut.scriptPubKey, cbType, oneOutDests, numRequired) || 
-                                                    numRequired > 1)
-                                                {
-                                                    printf("ERROR: in staking block %s - invalid coinbase output\n", blkHash.ToString().c_str());
-                                                    LogPrintf("ERROR: in staking block %s - invalid coinbase output\n", blkHash.ToString().c_str());
-                                                    return false;
-                                                }
-
-                                                // make sure that we have no extraneous spenders and that all reward outputs
-                                                // are either reserve transfers (TODO) or stakeguard outputs
-                                                if (cbType == TX_CRYPTOCONDITION)
-                                                {
-                                                    // first validate our destinations, if the output is reserve transfer, 
-                                                    // the stake tx must be a reserve deposit to the same reserve currency, 
-                                                    // or it is not valid
-                                                    // we validate a bit differently, otherwise, it must be a spendable output
-                                                    COptCCParams p;
-                                                    CCurrencyValueMap outVal = oneOut.scriptPubKey.ReserveOutValue(p);
-                                                    if (p.version >= p.VERSION_V3 &&
-                                                        !oneOut.scriptPubKey.IsInstantSpendOrUnspendable() &&
-                                                        (oneOut.scriptPubKey.IsSpendableOutputType()))
-                                                    {
-                                                        // we need to make sure we output only to delegate or back to the currency
-                                                        // TODO: enable currency contribution, now all goes to miner/staker
-                                                        // normalize destination to ID
-                                                        if (p.vKeys[0].which() == COptCCParams::ADDRTYPE_PK)
-                                                        {
-                                                            p.vKeys[0] = CKeyID(GetDestinationID(p.vKeys[0]));
-                                                        }
-                                                        if (p.m > 1 ||
-                                                            p.n > 1 ||
-                                                            p.vKeys[0] != sp.delegate)
-                                                        {
-                                                            printf("%s: staking block %s - invalid coinbase destinations\n", __func__, blkHash.ToString().c_str());
-                                                            LogPrintf("%s: staking block %s - invalid coinbase destinations\n", __func__, blkHash.ToString().c_str());
-                                                            return false;
-                                                        }
-                                                        outVal.valueMap[ASSETCHAINS_CHAINID] += oneOut.nValue;
-                                                        cbOutputs[p.vKeys[0]] += outVal;
-                                                    }
-                                                    else if (!oneOut.scriptPubKey.IsInstantSpendOrUnspendable())
-                                                    {
-                                                        printf("%s: ERROR: in staking block %s - invalid coinbase output type\n", __func__, blkHash.ToString().c_str());
-                                                        LogPrintf("%s: ERROR: in staking block %s - invalid coinbase output type\n", __func__, blkHash.ToString().c_str());
-                                                        return false;
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    printf("ERROR: in staking block %s - invalid coinbase output type\n", blkHash.ToString().c_str());
-                                                    LogPrintf("ERROR: in staking block %s - invalid coinbase output type\n", blkHash.ToString().c_str());
-                                                    return false;
-                                                }
-                                            }
-                                        }
-                                        // now, we have all the currencies and amounts that are being sent to each destination
-
-                                        // rules for all non instant-spend coinbase outputs:
-                                        // 1) Where the stake transaction spends a normal, "spendable" output, cb output must be to:
-                                        //    a) the same destination(s) as the output of the stake transaction, or
-                                        //    b) the specified delegate in the stake transaction
-                                        // 2) Where the stake transaction spends a reserve deposit it is the same, except (TODO):
-                                        //    a) coinbase output must send all applicable reserve currency fees to currency reserve 
-                                        //       deposits, if the currency is a reserve currency. For example, if the currency for which
-                                        //       the staker is staking a block uses BTC, ETH, USD, and VRSC as reserves, the staker/miner
-                                        //       keeps all block rewards and all fees, except the fees (block reward excluded) earned in
-                                        //       those 4 currencies. Those fees are put into reserve deposits for the currency for which
-                                        //       the staker earned the block.
-                                        // 3) no other recipient than specified may be on the non-instant spend coinbase outputs
-                                    }
-                                    else if (CScriptExt::ExtractVoutDestination(pblock->vtx[0], 0, cbaddress) &&
-                                             (destaddress.which() == COptCCParams::ADDRTYPE_PK || 
-                                              destaddress.which() == COptCCParams::ADDRTYPE_PKH) &&
-                                             (destinations[0].which() == COptCCParams::ADDRTYPE_PK || 
-                                              destinations[0].which() == COptCCParams::ADDRTYPE_PKH) &&
-                                             (cbaddress.which() == COptCCParams::ADDRTYPE_PK || 
-                                              cbaddress.which() == COptCCParams::ADDRTYPE_PKH))
-                                    {
-                                        uint160 voutDestID = GetDestinationID(destinations[0]);
-                                        uint160 destID = GetDestinationID(destaddress);
-                                        uint160 cbDestID = GetDestinationID(cbaddress);
-                                        if (newPOSEnforcement)
-                                        {
-                                            if (GetDestinationID(cbaddress) != GetDestinationID(destinations[0]))
-                                            {
-                                                // allow delegation of stake, but require all ouputs to be
-                                                // crypto conditions
-                                                // loop through all outputs to make sure they are sent to the proper pubkey
-                                                isPOS = true;
-                                                for (auto vout : pblock->vtx[0].vout)
-                                                {
-                                                    txnouttype tp;
-                                                    std::vector<std::vector<unsigned char>> vvch = std::vector<std::vector<unsigned char>>();
-                                                    // solve all outputs to check that non-instantspend destinations all go only to the pk
-                                                    // specified in the stake params
-                                                    if ((!supportInstantSpend || !vout.scriptPubKey.IsInstantSpend()) &&
-                                                        (!Solver(vout.scriptPubKey, tp, vvch) || 
-                                                        tp != TX_CRYPTOCONDITION || 
-                                                        vvch.size() < 2 || 
-                                                        sp.pk != CPubKey(vvch[0])))
-                                                    {
-                                                        isPOS = false;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        else if ( voutDestID == destID && ( destID == cbDestID || (height < 17840)) )
-                                        {
-                                            isPOS = true;
-                                        }
-                                        else
-                                        {
-                                            fprintf(stderr,"ERROR: invalid PoS block %s - invalid stake or coinbase destination\n", blkHash.ToString().c_str());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // improved logging
-                        if ((newPOSEnforcement && posHash != hash))
-                        {
-                            LogPrint("pos", "%s: conflicting hash values between GetRawVerusPOSHash (%s/%s) and GetVerusPOSHash (%s)\n", 
-                                        __func__,
-                                        rawHash.GetHex().c_str(),
-                                        ArithToUint256(posHash).GetHex().c_str(),
-                                        ArithToUint256(hash).GetHex().c_str());
-                        }
-
-                        LogPrint("pos", "%s: malformed nonce value for PoS block\nnNonce: %s\nrawHash: %s\nposHash: %s\nvalue: %lu\n",
-                            __func__,
-                            pblock->nNonce.GetHex().c_str(),
-                            rawHash.GetHex().c_str(),
-                            posHash.GetHex().c_str(),
-                            value);
-                    }
-                }
-            }
-        }
-    }
-    return isPOS;
-}
+bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height);
 
 int64_t komodo_checkcommission(CBlock *pblock,int32_t height)
 {
@@ -1927,7 +1537,7 @@ int32_t komodo_checkPOW(int32_t slowflag,CBlock *pblock,int32_t height)
     {
         printf("Insufficient hash result and not PoS block\n");
     }
-    
+
     return -1;
 }
 
@@ -2146,7 +1756,7 @@ bool GetCoinSupply(int64_t &transparentSupply, int64_t *pzsupply, int64_t *pimma
                     }
                 }
             }
-            
+
             transparentSupply += pIndex->newcoins;
             zfunds += pIndex->zfunds;
         }

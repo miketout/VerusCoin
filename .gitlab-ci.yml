@@ -7,7 +7,7 @@ stages:
 ########################################################################################################################
 variables:
 
-  VERSION: 0.9.4-5
+  VERSION: 0.9.9-5
 
   VERUS_CLI_ARM64_LINUX: Verus-CLI-Linux-v${VERSION}-arm64.tar.gz
   VERUS_CLI_LINUX_X86_64: Verus-CLI-Linux-v${VERSION}-x86_64.tar.gz
@@ -67,7 +67,7 @@ build:linux:
 
 
 build:linux:arm64:
-  tags: [ "verusd" ]
+  tags: [ "verusd", "cross-compile"]
   image: asherd/verus-builders:cross-arm
   variables:
     DOCKER_DRIVER: overlay2
@@ -107,7 +107,7 @@ build:linux:arm64:
 ####START####                                           WINDOWS                                            ####START####
 ########################################################################################################################
 build:windows:
-  tags: [ "verusd" ]
+  tags: [ "verusd", "cross-compile" ]
   image: asherd/verus-builders:verus-windows
   variables:
     DOCKER_DRIVER: overlay2

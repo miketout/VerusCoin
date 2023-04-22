@@ -308,7 +308,7 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
                 {
                     if (cp.evalCode != EVAL_STAKEGUARD)
                     {
-                        LogPrintf("unrecognized smart transaction script type\n");
+                        LogPrint("precheck", "unrecognized smart transaction script type\n");
                         return false;
                     }
                     for (auto k : cp.vKeys)
@@ -317,7 +317,7 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
                     }
                 }
 
-                uint160 scrHash; 
+                uint160 scrHash;
                 scrHash = Hash160(ccSubScript);
                 vSolutionsRet.push_back(std::vector<unsigned char>(scrHash.begin(), scrHash.end()));
                 return true;
@@ -542,7 +542,7 @@ bool ExtractDestination(const CScript& _scriptPubKey, CTxDestination& addressRet
         addressRet = CScriptID(uint160(vSolutions[0]));
         return true;
     }
-    
+
     else if (IsCryptoConditionsEnabled() != 0 && whichType == TX_CRYPTOCONDITION)
     {
         COptCCParams p;
@@ -556,12 +556,12 @@ bool ExtractDestination(const CScript& _scriptPubKey, CTxDestination& addressRet
     return false;
 }
 
-bool ExtractDestinations(const CScript& scriptPubKey, 
-                         txnouttype& typeRet, 
-                         std::vector<CTxDestination>& addressRet, 
-                         int &nRequiredRet, 
-                         const CKeyStore *pKeyStore, 
-                         bool *pCanSign, 
+bool ExtractDestinations(const CScript& scriptPubKey,
+                         txnouttype& typeRet,
+                         std::vector<CTxDestination>& addressRet,
+                         int &nRequiredRet,
+                         const CKeyStore *pKeyStore,
+                         bool *pCanSign,
                          bool *pCanSpend,
                          uint32_t nHeight,
                          std::map<uint160, CKey> *pPrivKeys)
@@ -601,8 +601,8 @@ bool ExtractDestinations(const CScript& scriptPubKey,
     {
         std::set<CScriptID> idSet;
 
-        if (p.IsValid() && 
-            p.n >= 1 && 
+        if (p.IsValid(true, nHeight) &&
+            p.n >= 1 &&
             p.vKeys.size() >= p.n)
         {
             typeRet = TX_CRYPTOCONDITION;
@@ -668,6 +668,13 @@ bool ExtractDestinations(const CScript& scriptPubKey,
             }
             else if (p.vData.size() && (ccValid = (master = COptCCParams(p.vData.back())).IsValid()))
             {
+                // if we have more than master and primary params
+                int numConditionsNeeded = 1;
+                if (p.vData.size() > 2)
+                {
+                    numConditionsNeeded = master.m;
+                }
+
                 // always add the index keys to destinations, but that has nothing to do with whether or not
                 // an ID present in that index represents an address that can sign or spend. ids in this block
                 // are ignored, as all IDs in an output are always indexed in the address and unspent indexes.
@@ -770,8 +777,8 @@ bool ExtractDestinations(const CScript& scriptPubKey,
                 }
 
                 // if this is a compound cc, the master m of n is the top level as an m of n of the sub-conditions
-                nRequiredRet = p.vData.size() > 2 ? master.m : p.m;
-                if (canSpendCount >= nRequiredRet && pCanSpend)
+                nRequiredRet = numConditionsNeeded;
+                if (canSpendCount >= numConditionsNeeded && pCanSpend)
                 {
                     *pCanSpend = true;
                 }
@@ -805,7 +812,18 @@ bool ExtractDestinations(const CScript& scriptPubKey,
         }
         else
         {
-            return false;
+            // if it's a bad smart transaction output, we can't spend it, but
+            // that doesn't mean that we should return false unless we are PBaaS or later
+            // for compatibility
+            if (pCanSign)
+            {
+                *pCanSign = false;
+            }
+            if (pCanSpend)
+            {
+                *pCanSpend = false;
+            }
+            return CConstVerusSolutionVector::GetVersionByHeight(nHeight) < CActivationHeight::ACTIVATE_PBAAS;
         }
     }
     else
@@ -878,7 +896,7 @@ bool ExtractDestinations(const CScript& scriptPubKey,
             }
         }
     }
-    
+
     return true;
 }
 

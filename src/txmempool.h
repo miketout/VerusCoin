@@ -46,7 +46,7 @@ static const unsigned int MEMPOOL_HEIGHT = 0x7FFFFFFF;
 class CTxMemPoolEntry
 {
 private:
-    CTransaction tx;
+    std::shared_ptr<const CTransaction> tx;
     CAmount nFee; //! Cached to avoid expensive parent-transaction lookups
     size_t nTxSize; //! ... and avoid recomputing tx size
     size_t nModSize; //! ... and modified size for priority
@@ -58,18 +58,22 @@ private:
     bool hadNoDependencies; //! Not dependent on any other txs when it entered the mempool
     bool spendsCoinbase; //! keep track of transactions that spend a coinbase
     bool hasReserve; //! keep track of transactions that hold reserve currency
+    int64_t feeDelta;          //!< Used for determining the priority of the transaction for mining in a block
     uint32_t nBranchId; //! Branch ID this transaction is known to commit to, cached for efficiency
 
 public:
     CTxMemPoolEntry(const CTransaction& _tx, const CAmount& _nFee,
                     int64_t _nTime, double _dPriority, unsigned int _nHeight,
-                    bool poolHasNoInputsOf, bool spendsCoinbase, uint32_t nBranchId, bool hasreserve=false);
+                    bool poolHasNoInputsOf, bool spendsCoinbase, uint32_t nBranchId, bool hasreserve=false, int64_t FeeDelta=0);
     CTxMemPoolEntry();
     CTxMemPoolEntry(const CTxMemPoolEntry& other);
 
-    const CTransaction& GetTx() const { return this->tx; }
+    const CTransaction& GetTx() const { return *this->tx; }
+    std::shared_ptr<const CTransaction> GetSharedTx() const { return this->tx; }
     double GetPriority(unsigned int currentHeight) const;
     CAmount GetFee() const { return nFee; }
+    void UpdateFeeDelta(int64_t FeeDelta) { feeDelta = FeeDelta; }
+    int64_t GetModifiedFee() const { return nFee + feeDelta; }
     CFeeRate GetFeeRate() const { return feeRate; }
     size_t GetTxSize() const { return nTxSize; }
     int64_t GetTime() const { return nTime; }
@@ -79,6 +83,16 @@ public:
 
     bool GetSpendsCoinbase() const { return spendsCoinbase; }
     uint32_t GetValidatedBranchId() const { return nBranchId; }
+};
+
+struct update_fee_delta
+{
+    update_fee_delta(int64_t _feeDelta) : feeDelta(_feeDelta) { }
+
+    void operator() (CTxMemPoolEntry &e) { e.UpdateFeeDelta(feeDelta); }
+
+private:
+    int64_t feeDelta;
 };
 
 // extracts a TxMemPoolEntry's transaction hash
@@ -102,6 +116,24 @@ public:
     }
 };
 
+/** \class CompareTxMemPoolEntryByScore
+ *
+ *  Sort by score of entry ((fee+delta)/size) in descending order
+ */
+class CompareTxMemPoolEntryByScore
+{
+public:
+    bool operator()(const CTxMemPoolEntry& a, const CTxMemPoolEntry& b) const
+    {
+        double f1 = (double)a.GetModifiedFee() * b.GetTxSize();
+        double f2 = (double)b.GetModifiedFee() * a.GetTxSize();
+        if (f1 == f2) {
+            return b.GetTx().GetHash() < a.GetTx().GetHash();
+        }
+        return f1 > f2;
+    }
+};
+
 class CBlockPolicyEstimator;
 
 /** An inpoint - a combination of a transaction and an index n into its vin */
@@ -116,6 +148,21 @@ public:
     void SetNull() { ptx = NULL; n = (uint32_t) -1; }
     bool IsNull() const { return (ptx == NULL && n == (uint32_t) -1); }
     size_t DynamicMemoryUsage() const { return 0; }
+};
+
+/**
+ * Information about a mempool transaction.
+ */
+struct TxMempoolInfo
+{
+    /** The transaction itself */
+    std::shared_ptr<const CTransaction> tx;
+
+    /** Time the transaction entered the mempool. */
+    int64_t nTime;
+
+    /** Feerate of the transaction. */
+    CFeeRate feeRate;
 };
 
 /**
@@ -149,7 +196,7 @@ private:
     std::map<uint256, CReserveTransactionDescriptor> mapReserveTransactions;    // all reserve transactions in the mempool go here
 
     void checkNullifiers(ShieldedType type) const;
-    
+
 public:
     typedef boost::multi_index_container<
         CTxMemPoolEntry,
@@ -191,6 +238,11 @@ public:
     bool addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry, bool fCurrentEstimate = true);
     void addAddressIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
     bool getAddressIndex(const std::vector<std::pair<uint160, int> > &addresses, std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> > &results);
+    static std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> FilterUnspent(const std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> &memPoolOutputs,
+                                                                                               std::set<COutPoint> &spentOutputs);
+
+    static std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> FilterAddressDeltas(const std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> &memPoolOutputs,
+                                                                                                     std::map<COutPoint, uint256> &spentTxOuts);
     bool removeAddressIndex(const uint256 txhash);
 
     void addSpentIndex(const CTxMemPoolEntry &entry, const CCoinsViewCache &view);
@@ -218,10 +270,11 @@ public:
 
     /** Affect CreateNewBlock prioritisation of transactions */
     void PrioritiseTransaction(const uint256 &hash, const std::string strHash, double dPriorityDelta, const CAmount& nFeeDelta);
-    bool PrioritiseReserveTransaction(const CReserveTransactionDescriptor &txDesc, const CCurrencyState &currencyState);
+    bool PrioritiseReserveTransaction(const CReserveTransactionDescriptor &txDesc);
     bool IsKnownReserveTransaction(const uint256 &hash, CReserveTransactionDescriptor &txDesc);  // know to be reserve transaction, get descriptor, update mempool
     void ApplyDeltas(const uint256 hash, double &dPriorityDelta, CAmount &nFeeDelta);
     void ClearPrioritisation(const uint256 hash);
+    bool CompareDepthAndScore(const uint256& hasha, const uint256& hashb);
 
     bool nullifierExists(const uint256& nullifier, ShieldedType type) const;
 
@@ -240,6 +293,9 @@ public:
         return totalTxSize;
     }
 
+    std::shared_ptr<const CTransaction> get(const uint256& hash) const;
+    TxMempoolInfo info(const uint256& hash) const;
+
     bool exists(uint256 hash) const
     {
         LOCK(cs);
@@ -253,7 +309,7 @@ public:
 
     /** Estimate priority needed to get into the next nBlocks */
     double estimatePriority(int nBlocks) const;
-    
+
     /** Write/Read estimates to disk */
     bool WriteFeeEstimates(CAutoFile& fileout) const;
     bool ReadFeeEstimates(CAutoFile& filein);
@@ -266,7 +322,7 @@ public:
     }
 };
 
-/** 
+/**
  * CCoinsView that brings transactions from a memorypool into view.
  * It does not check for spendings by memory pool transactions.
  */

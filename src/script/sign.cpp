@@ -302,9 +302,10 @@ CC *MakeMofNCC(int M, TOBJ1 &condition1, TOBJ2 &condition2, TOBJ3 &condition3, T
 
 CScript _CCPubKey(const CC *cond)
 {
-    unsigned char buf[2000];
-    size_t len = cc_conditionBinary(cond, buf, 2000);
-    return CScript() << std::vector<unsigned char>(buf, buf+len) << OP_CHECKCRYPTOCONDITION;
+    std::vector<unsigned char> buffer(MAX_BINARY_CC_SIZE, 0);
+    size_t len = cc_conditionBinary(cond, &(buffer[0]), buffer.size());
+    buffer.resize(len);
+    return CScript() << buffer << OP_CHECKCRYPTOCONDITION;
 }
 
 CIdentity LookupIdentity(const BaseSignatureCreator& creator, const CIdentityID &idID)

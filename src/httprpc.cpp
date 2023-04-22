@@ -119,18 +119,39 @@ static bool HTTPReq_JSONRPC(HTTPRequest* req, const std::string &)
     try {
         // Parse request
         UniValue valRequest;
-        if (!valRequest.read(req->ReadBody()))
-            throw JSONRPCError(RPC_PARSE_ERROR, "Parse error");
+
+        if (LogAcceptCategory("rpcapi"))
+        {
+            std::string reqBody = req->ReadBody();
+            if (!valRequest.read(reqBody))
+            {
+                LogPrintf("raw request: %s\n", reqBody.c_str());
+                LogPrintf("function: %s, params: %s\n", jreq.strMethod.c_str(), jreq.params.write().c_str());
+                if (LogAcceptCategory("rpcapiconsole"))
+                {
+                    printf("raw request: %s\n", reqBody.c_str());
+                    printf("function: %s, params: %s\n", jreq.strMethod.c_str(), jreq.params.write().c_str());
+                }
+                throw JSONRPCError(RPC_PARSE_ERROR, "Parse error");
+            }
+        }
+        else
+        {
+            if (!valRequest.read(req->ReadBody()))
+            {
+                throw JSONRPCError(RPC_PARSE_ERROR, "Parse error");
+            }
+        }
 
         std::string strReply;
         // singleton request
         if (valRequest.isObject()) {
             jreq.parse(valRequest);
-            
+
             if (!RPCAuthorized(authHeader.second)) {
                 LogPrintf("ThreadRPCServer incorrect password attempt from %s\n", req->GetPeer().ToString());
                 MilliSleep(250);
-                
+
                 req->WriteHeader("WWW-Authenticate", WWW_AUTH_HEADER_DATA);
                 req->WriteReply(HTTP_UNAUTHORIZED);
                 return false;

@@ -32,7 +32,7 @@ void CChain::SetTip(CBlockIndex *pindex) {
     }
 }
 
-// returns false if unable to fast calculate the VerusPOSHash from the header. 
+// returns false if unable to fast calculate the VerusPOSHash from the header.
 // if it returns false, value is set to 0, but it can still be calculated from the full block
 // in that case. the only difference between this and the POS hash for the contest is that it is not divided by the value out
 // this is used as a source of entropy
@@ -56,24 +56,7 @@ bool CBlockIndex::GetRawVerusPOSHash(uint256 &ret) const
     //                          )
     //    hashWriter << height;
     //    return hashWriter.GetHash();
-    if (nVersion == CBlockHeader::VERUS_V2)
-    {
-        CVerusHashV2Writer hashWriter = CVerusHashV2Writer(SER_GETHASH, PROTOCOL_VERSION);
-
-        hashWriter << ASSETCHAINS_MAGIC;
-        hashWriter << nNonce;
-        hashWriter << GetHeight();
-        ret = hashWriter.GetHash();
-    }
-    else
-    {
-        CVerusHashWriter hashWriter = CVerusHashWriter(SER_GETHASH, PROTOCOL_VERSION);
-
-        hashWriter << ASSETCHAINS_MAGIC;
-        hashWriter << nNonce;
-        hashWriter << GetHeight();
-        ret = hashWriter.GetHash();
-    }
+    ret = CBlockHeader::GetRawVerusPOSHash(nVersion, CConstVerusSolutionVector::Version(nSolution), ASSETCHAINS_MAGIC, nNonce, GetHeight());
     return true;
 }
 

@@ -102,7 +102,6 @@ bool Eval::Dispatch(const CC *cond, const CTransaction &txTo, unsigned int nIn, 
         case EVAL_RESERVE_DEPOSIT:
         case EVAL_CROSSCHAIN_EXPORT:
         case EVAL_CROSSCHAIN_IMPORT:
-        case EVAL_CURRENCYSTATE:
         case EVAL_FINALIZE_EXPORT:
         case EVAL_FEE_POOL:
             if (!chainActive.LastTip() || CConstVerusSolutionVector::activationHeight.ActiveVersion(chainActive.LastTip()->GetHeight() + 1) < CActivationHeight::ACTIVATE_PBAAS)
@@ -124,16 +123,8 @@ bool Eval::Dispatch(const CC *cond, const CTransaction &txTo, unsigned int nIn, 
         case EVAL_STAKEGUARD:
             return(ProcessCC(cp,this, vparams, txTo, nIn, fulfilled));
             break;
-
-        case EVAL_IMPORTPAYOUT:
-            //return ImportPayout(vparams, txTo, nIn);
-            break;
-            
-        case EVAL_IMPORTCOIN:
-            //return ImportCoin(vparams, txTo, nIn);
-            break;
     }
-    return Invalid("invalid-code, dont forget to add EVAL_NEWCC to Eval::Dispatch");
+    return Invalid("invalid smart transaction code");
 }
 
 

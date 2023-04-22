@@ -405,7 +405,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv,DecodeSecret(NotaryEvidenceWIF).begin(),32);
             cp->validate = ValidateNotaryEvidence;
             cp->ismyvin = IsNotaryEvidenceInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->contextualprecheck = PreCheckNotaryEvidence;
             break;
 
         case EVAL_RESERVE_OUTPUT:

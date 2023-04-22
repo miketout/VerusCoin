@@ -58,10 +58,6 @@ struct CNodeStateStats;
 #define DEFAULT_MEMPOOL_EXPIRY 1
 #define _COINBASE_MATURITY 100
 
-/** Default block time target for difficulty adjustment, in seconds **/
-static const unsigned int DEFAULT_BLOCKTIME_TARGET = 60;
-/** Default target spacing (blocks) for difficulty adjustment **/
-static const unsigned int DEFAULT_AVERAGING_WINDOW = 45;
 /** Default for -blockmaxsize and -blockminsize, which control the range of sizes the mining code will create **/
 static const unsigned int DEFAULT_BLOCK_MAX_SIZE = MAX_BLOCK_SIZE;
 static const unsigned int DEFAULT_BLOCK_MIN_SIZE = 0;
@@ -115,6 +111,20 @@ static const unsigned int DATABASE_FLUSH_INTERVAL = 24 * 60 * 60;
 /** Maximum length of reject messages. */
 static const unsigned int MAX_REJECT_MESSAGE_LENGTH = 111;
 static const int64_t DEFAULT_MAX_TIP_AGE = 24 * 60 * 60;
+/** Default for DEFAULT_WHITELISTRELAY. */
+static const bool DEFAULT_WHITELISTRELAY = true;
+/** Default for DEFAULT_WHITELISTFORCERELAY. */
+static const bool DEFAULT_WHITELISTFORCERELAY = true;
+/** Average delay between local address broadcasts in seconds. */
+static const unsigned int AVG_LOCAL_ADDRESS_BROADCAST_INTERVAL = 24 * 24 * 60;
+/** Average delay between peer address broadcasts in seconds. */
+static const unsigned int AVG_ADDRESS_BROADCAST_INTERVAL = 30;
+/** Average delay between trickled inventory transmissions in seconds.
+ *  Blocks and whitelisted receivers bypass this, outbound peers get half this delay. */
+static const unsigned int INVENTORY_BROADCAST_INTERVAL = 5;
+/** Maximum number of inventory items to send per transmission.
+ *  Limits the impact of low-fee transaction floods. */
+static const unsigned int INVENTORY_BROADCAST_MAX = 7 * INVENTORY_BROADCAST_INTERVAL;
 
 //static const bool DEFAULT_ADDRESSINDEX = false;
 //static const bool DEFAULT_SPENTINDEX = false;
@@ -216,11 +226,11 @@ void RegisterNodeSignals(CNodeSignals& nodeSignals);
 /** Unregister a network node */
 void UnregisterNodeSignals(CNodeSignals& nodeSignals);
 
-/** 
+/**
  * Process an incoming block. This only returns after the best known valid
  * block is made active. Note that it does not, however, guarantee that the
  * specific block passed to it has been checked for validity!
- * 
+ *
  * @param[out]  state   This may be set to an Error state if any error occurred processing it, including during validation/connection/etc of otherwise unrelated blocks during reorganisation; or it may be set to an Invalid state if pblock is itself invalid (but this is not guaranteed even when the block is checked). If you want to *possibly* get feedback on whether pblock is valid, you must also install a CValidationInterface (see validationinterface.h) - this will have its BlockChecked method called whenever *any* block completes validation.
  * @param[in]   pfrom   The node which we are receiving the block from; it is added to mapBlockSource and may be penalised if the block is invalid.
  * @param[in]   pblock  The block we want to process.
@@ -310,7 +320,8 @@ void PruneAndFlush();
 bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
                         bool* pfMissingInputs, bool fRejectAbsurdFee=false, int dosLevel=-1);
 bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
-                           bool* pfMissingInputs, bool fRejectAbsurdFee=false, int dosLevel=-1, int32_t simHeight = 0);
+                           bool* pfMissingInputs, bool fRejectAbsurdFee=false, int dosLevel=-1, int32_t simHeight = 0,
+                           int expireThreshold=TX_EXPIRING_SOON_THRESHOLD);
 
 
 struct CNodeStateStats {
@@ -325,7 +336,7 @@ CAmount GetMinRelayFee(const CTransaction& tx, unsigned int nBytes, bool fAllowF
 /**
  * Check transaction inputs, and make sure any
  * pay-to-script-hash transactions are evaluating IsStandard scripts
- * 
+ *
  * Why bother? To avoid denial-of-service attacks; an attacker
  * can submit a standard HASH... OP_EQUAL transaction,
  * which will get accepted into blocks. The redemption
@@ -334,14 +345,14 @@ CAmount GetMinRelayFee(const CTransaction& tx, unsigned int nBytes, bool fAllowF
  *   DUP CHECKSIG DROP ... repeated 100 times... OP_1
  */
 
-/** 
+/**
  * Check for standard transaction types
  * @param[in] mapInputs    Map of previous transactions that have outputs we're spending
  * @return True if all inputs (scriptSigs) use only standard transaction forms
  */
 bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs, uint32_t consensusBranchId);
 
-/** 
+/**
  * Count ECDSA signature operations the old-fashioned (pre-0.6) way
  * @return number of sigops this transaction's outputs will produce when spent
  * @see CTransaction::FetchInputs
@@ -350,7 +361,7 @@ unsigned int GetLegacySigOpCount(const CTransaction& tx);
 
 /**
  * Count ECDSA signature operations in pay-to-script-hash inputs.
- * 
+ *
  * @param[in] mapInputs Map of previous transactions that have outputs we're spending
  * @return maximum number of sigops required to validate this transaction's inputs
  * @see CTransaction::FetchInputs
@@ -414,7 +425,7 @@ bool IsExpiredTx(const CTransaction &tx, int nBlockHeight);
  * Check if transaction is expiring soon.  If yes, not propagating the transaction
  * can help DoS mitigation.  This is not consensus critical.
  */
-bool IsExpiringSoonTx(const CTransaction &tx, int nNextBlockHeight);
+bool IsExpiringSoonTx(const CTransaction &tx, int nNextBlockHeight, int expiryThreshold=TX_EXPIRING_SOON_THRESHOLD);
 
 /**
  * Check if transaction will be final in the next block to be created.
@@ -425,9 +436,9 @@ bool IsExpiringSoonTx(const CTransaction &tx, int nNextBlockHeight);
  */
 bool CheckFinalTx(const CTransaction &tx, int flags = -1);
 
-/** 
+/**
  * Closure representing one script verification
- * Note that this stores references to the spending transaction 
+ * Note that this stores references to the spending transaction
  */
 class CScriptCheck
 {
@@ -565,7 +576,7 @@ int GetSpendHeight(const CCoinsViewCache& inputs);
 
 uint64_t CalculateCurrentUsage();
 
-/** 
+/**
  * Return a CMutableTransaction with contextual default values based on set of consensus rules at nHeight. The expiryDelta will
  * either be based on the command-line argument '-txexpirydelta' or derived from consensusParams.
  */

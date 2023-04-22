@@ -18,11 +18,17 @@
 
 extern CIdentityID VERUS_DEFAULTID;
 extern CIdentityID VERUS_NOTARYID;
+extern CIdentityID PBAAS_NOTIFICATION_ORACLE;
+extern CTransferDestination APPROVE_CONTRACT_UPGRADE;
+extern std::string PBAAS_DEFAULT_NOTIFICATION_ORACLE;
 extern uint160 VERUS_NODEID;
+extern bool ONLY_ADD_WHITELISTED_UTXOS_ID_RESCAN;
 extern int32_t MAX_UTXOS_ID_RESCAN;
 extern int32_t MAX_OUR_UTXOS_ID_RESCAN;
 extern bool VERUS_PRIVATECHANGE;
 extern std::string VERUS_DEFAULT_ZADDR;
+extern CTxDestination VERUS_DEFAULT_ARBADDRESS;
+extern std::vector<uint160> VERUS_ARBITRAGE_CURRENCIES;
 
 std::vector<std::string> ParseSubNames(const std::string &Name, std::string &ChainOut, bool displayfilter=false, bool addVerus=true);
 CKey DecodeSecret(const std::string& str);
@@ -40,6 +46,7 @@ CTxDestination DecodeDestination(const std::string& str);
 CTxDestination ValidateDestination(const std::string &destStr);
 bool IsValidDestinationString(const std::string& str);
 bool IsValidDestinationString(const std::string& str, const CChainParams& params);
+uint160 ParseVDXFKey(const std::string &keyString);
 
 std::string EncodePaymentAddress(const libzcash::PaymentAddress& zaddr);
 libzcash::PaymentAddress DecodePaymentAddress(const std::string& str);

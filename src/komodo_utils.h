@@ -1069,7 +1069,7 @@ uint64_t komodo_block_prg(uint32_t nHeight)
 
 // given a block height, this returns the unlock time for that block height, derived from
 // the ASSETCHAINS_MAGIC number as well as the block height, providing different random numbers
-// for corresponding blocks across chains, but the same sequence in each chain 
+// for corresponding blocks across chains, but the same sequence in each chain
 int64_t komodo_block_unlocktime(uint32_t nHeight)
 {
     uint64_t fromTime, toTime, unlocktime;
@@ -1462,6 +1462,23 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
                     fprintf(fp,"ac_end=%s\n", (charPtr = mapArgs["-ac_end"].c_str())[0] == 0 ? "0" : charPtr);
                     fprintf(fp,"ac_options=%s\n", (charPtr = mapArgs["-ac_options"].c_str())[0] == 0 ? "0" : charPtr);
 
+                    if (!mapArgs["-blocktime"].empty() || !mapArgs["-powaveragingwindow"].empty() || !mapArgs["-notarizationperiod"].empty())
+                    {
+                        int paramBlockTime = GetArg("-blocktime", CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
+                        int powAveragingWindow = GetArg("-powaveragingwindow", CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW);
+                        int notarizationPeriod = GetArg("-notarizationperiod",
+                                                        std::max((int)(CCurrencyDefinition::DEFAULT_BLOCK_NOTARIZATION_TIME / paramBlockTime),
+                                                                 (int)CCurrencyDefinition::MIN_BLOCK_NOTARIZATION_PERIOD));
+                        if (paramBlockTime != CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET ||
+                            powAveragingWindow != CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW ||
+                            notarizationPeriod != CCurrencyDefinition::BLOCK_NOTARIZATION_MODULO)
+                        {
+                            fprintf(fp,"blocktime=%s\n", std::to_string(paramBlockTime).c_str());
+                            fprintf(fp,"powaveragingwindow=%s\n", std::to_string(powAveragingWindow).c_str());
+                            fprintf(fp,"notarizationperiod=%s\n", std::to_string(notarizationPeriod).c_str());
+                        }
+                    }
+
                     if (GetArg("-port", 0))
                     {
                         fprintf(fp,"port=%s\n", mapArgs["-port"].c_str());
@@ -1543,6 +1560,15 @@ uint32_t komodo_assetmagic(const char *symbol,uint64_t supply,uint8_t *extraptr,
     len = iguana_rwnum(1,&buf[len],sizeof(supply),(void *)&supply);
     strcpy((char *)&buf[len], name.c_str());
     len += strlen(name.c_str());
+
+    if (LogAcceptCategory("magicnumber"))
+    {
+        std::vector<unsigned char> extraBuffer(extraptr, extraptr + extralen);
+        LogPrintf("original hashing buffer: %s\n", HexBytes(&extraBuffer[0], extraBuffer.size()).c_str());
+        std::vector<unsigned char> crcHeader(buf, buf + len);
+        LogPrintf("original crc header: %s\n", HexBytes(&crcHeader[0], crcHeader.size()).c_str());
+    }
+
     if ( extraptr != 0 && extralen != 0 )
     {
         vcalc_sha256(0,hash.bytes,extraptr,extralen);
@@ -1653,7 +1679,7 @@ uint64_t komodo_ac_block_subsidy(int nHeight)
                                 subsidyDifference = subsidy;
                             }
                             else
-                            {    
+                            {
                                 // Ex: -ac_eras=3 -ac_reward=0,384,24 -ac_end=1440,260640,0 -ac_halving=1,1440,2103840 -ac_decay 100000000,97750000,0
                                 subsidyDifference = subsidy - ASSETCHAINS_REWARD[curEra + 1];
                                 if (subsidyDifference < 0)
@@ -1707,11 +1733,11 @@ void komodo_args(char *argv0)
 {
     extern const char *Notaries_elected1[][2];
 
-    std::string name; 
-    char *dirname,fname[512],arg0str[64],magicstr[9]; 
-    uint8_t magic[4],extrabuf[384],*extraptr=0; FILE *fp; 
-    uint64_t val; 
-    uint16_t port; 
+    std::string name;
+    char *dirname,fname[512],arg0str[64],magicstr[9];
+    uint8_t magic[4],extrabuf[384],*extraptr=0; FILE *fp;
+    uint64_t val;
+    uint16_t port;
     int32_t baseid,len,n,extralen = 0;
 
     IS_KOMODO_NOTARY = GetBoolArg("-notary", false);
@@ -1765,31 +1791,31 @@ void komodo_args(char *argv0)
     }
     */
 
-    // either the testmode parameter or calling this chain VRSCTEST will put us into testmode
-    PBAAS_TESTMODE = GetBoolArg("-testnet", false);
-
-    // setting test mode also prevents the name of this chain from being set to VRSC
-
-    //printf("%s: initial name: %s\n", __func__, name.c_str());
-
     // for testnet release, default to testnet
     name = GetArg("-chain", name == "" ? "VRSC" : name);
     name = GetArg("-ac_name", name);
 
     std::string lowerName = boost::to_lower_copy(name);
 
-    // TODO: POST HARDENING - right now, all PBaaS chains assume testmode. change before mainnet
+    PBAAS_TESTMODE = false;
+
+    // TODO: POST HARDENING - right now, all PBaaS chains default testmode. remove this and change default before mainnet
     if (lowerName != "vrsc")
     {
         PBAAS_TESTMODE = true;
     }
 
+    // either the testmode parameter or calling this chain VRSCTEST will put us into testmode
+    PBAAS_TESTMODE = GetBoolArg("-testnet", PBAAS_TESTMODE);
+
     // both VRSC and VRSCTEST are names that cannot be
     // used as alternate chain names
+    // setting test mode also prevents the name of this chain from being set to VRSC
     if ((PBAAS_TESTMODE && lowerName == "vrsc") || lowerName == "vrsctest")
     {
         // upper case name
         name = "VRSCTEST";
+        PBAAS_TESTMODE = true;
     }
     else if (lowerName == "vrsc")
     {
@@ -1804,7 +1830,7 @@ void komodo_args(char *argv0)
     ASSETCHAINS_LWMAPOS = 50;
     ASSETCHAINS_STAKED = 0;
 
-    bool paramsLoaded = false;
+    PARAMS_LOADED = false;
 
     CCurrencyDefinition mainVerusCurrency;
 
@@ -1947,7 +1973,7 @@ void komodo_args(char *argv0)
                     ASSETCHAINS_ISSUANCE = thisCurrency.gatewayConverterIssuance;
                     mapArgs["-ac_supply"] = to_string(ASSETCHAINS_SUPPLY);
                     mapArgs["-gatewayconverterissuance"] = to_string(ASSETCHAINS_ISSUANCE);
-                    paramsLoaded = true;
+                    PARAMS_LOADED = true;
                 }
                 catch(const std::exception& e)
                 {
@@ -2008,15 +2034,15 @@ void komodo_args(char *argv0)
     KOMODO_CCACTIVATE = 0;
     ASSETCHAINS_PUBLIC = 0;
     ASSETCHAINS_PRIVATE = 0;
-   
+
     if ( (KOMODO_REWIND= GetArg("-rewind",0)) != 0 )
     {
-        printf("KOMODO_REWIND %d\n",KOMODO_REWIND);
+        printf("SET TO REWIND TO: %d\n",KOMODO_REWIND);
     }
 
     if ( name.size() )
     {
-        if (!paramsLoaded)
+        if (!PARAMS_LOADED)
         {
             ASSETCHAINS_ALGO = ASSETCHAINS_VERUSHASH;
 
@@ -2132,7 +2158,7 @@ void komodo_args(char *argv0)
             val = ASSETCHAINS_COMMISSION | (((uint64_t)ASSETCHAINS_STAKED & 0xff) << 32) | (((uint64_t)ASSETCHAINS_CC & 0xffff) << 40) | ((ASSETCHAINS_PUBLIC != 0) << 7) | ((ASSETCHAINS_PRIVATE != 0) << 6);
             extralen += iguana_rwnum(1,&extraptr[extralen],sizeof(val),(void *)&val);
 
-            if (ASSETCHAINS_LASTERA > 0 && ASSETCHAINS_ERAOPTIONS[0] & CCurrencyDefinition::OPTION_FRACTIONAL)
+            if (ASSETCHAINS_LASTERA > 0 && (ASSETCHAINS_ERAOPTIONS[0] & CCurrencyDefinition::OPTION_FRACTIONAL))
             {
                 uint32_t options = ASSETCHAINS_ERAOPTIONS[0];
                 extralen += iguana_rwnum(1, &extraptr[extralen], sizeof(options), (void *)&options);
@@ -2171,7 +2197,7 @@ void komodo_args(char *argv0)
             {
                 ASSETCHAINS_RPCPORT = port;
             }
-            else 
+            else
             {
                 komodo_configfile(ASSETCHAINS_SYMBOL, ASSETCHAINS_P2PPORT + 1);
                 komodo_userpass(ASSETCHAINS_USERPASS, ASSETCHAINS_SYMBOL);      // make sure we set user and password on first load
@@ -2199,7 +2225,7 @@ void komodo_args(char *argv0)
 
         ASSETCHAINS_RPCCREDENTIALS = string(ASSETCHAINS_USERPASS);
 
-        if (!paramsLoaded)
+        if (!PARAMS_LOADED)
         {
             UniValue obj(UniValue::VOBJ);
 
@@ -2220,6 +2246,12 @@ void komodo_args(char *argv0)
                 obj.push_back(Pair("launchsystemid", GetArg("-launchsystemid","")));
                 obj.push_back(Pair("systemid", GetArg("-systemid","")));
                 obj.push_back(Pair("parent", GetArg("-parentid","")));
+
+                int paramBlockTime = GetArg("-blocktime", (int64_t)CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
+                obj.pushKV("blocktime", paramBlockTime);
+                obj.pushKV("powaveragingwindow", GetArg("-powaveragingwindow", (int64_t)CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW));
+                obj.pushKV("notarizationperiod", GetArg("-notarizationperiod",
+                                                        std::max((int64_t)(CCurrencyDefinition::DEFAULT_BLOCK_NOTARIZATION_TIME / paramBlockTime), (int64_t)CCurrencyDefinition::MIN_BLOCK_NOTARIZATION_PERIOD)));
 
                 UniValue eras(UniValue::VARR);
                 for (int i = 0; i <= ASSETCHAINS_LASTERA; i++)
@@ -2260,7 +2292,7 @@ void komodo_args(char *argv0)
             }
 
             SetThisChain(obj, nullptr);
-            paramsLoaded = true;
+            PARAMS_LOADED = true;
         }
     }
     else

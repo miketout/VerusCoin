@@ -18,6 +18,8 @@
 #include "sync.h"
 #include "uint256.h"
 #include "utilstrencodings.h"
+#include "utiltime.h"
+#include "primitives/transaction.h"
 
 #include <deque>
 #include <stdint.h>
@@ -52,6 +54,15 @@ static const int TIMEOUT_INTERVAL = 20 * 60;
 static const unsigned int MAX_INV_SZ = 50000;
 /** The maximum number of new addresses to accumulate before announcing. */
 static const unsigned int MAX_ADDR_TO_SEND = 1000;
+
+/** The maximum rate of address records we're willing to process on average. Can be bypassed using
+ *  the NetPermissionFlags::Addr permission. */
+static constexpr double MAX_ADDR_RATE_PER_SECOND{0.1};
+/** The soft limit of the address processing token bucket (the regular MAX_ADDR_RATE_PER_SECOND
+ *  based increments won't go above this, but the MAX_ADDR_TO_SEND increment following GETADDR
+ *  is exempt from this limit. */
+static constexpr size_t MAX_ADDR_PROCESSING_TOKEN_BUCKET{MAX_ADDR_TO_SEND};
+
 /** Maximum length of incoming protocol messages (no message over 2 MiB is currently acceptable). */
 static const unsigned int MAX_PROTOCOL_MESSAGE_LENGTH = 2 * 1024 * 1024;
 /** Maximum length of strSubVer in `version` message */
@@ -66,6 +77,8 @@ static const size_t SETASKFOR_MAX_SZ = 2 * MAX_INV_SZ;
 static const unsigned int DEFAULT_MAX_PEER_CONNECTIONS = 384;
 /** The period before a network upgrade activates, where connections to upgrading peers are preferred (in blocks). */
 static const int NETWORK_UPGRADE_PEER_PREFERENCE_BLOCK_PERIOD = 24 * 24 * 3;
+/** Default for blocks only*/
+static const bool DEFAULT_BLOCKSONLY = false;
 
 unsigned int ReceiveFloodSize();
 unsigned int SendBufferSize();
@@ -163,8 +176,10 @@ extern int nMaxConnections;
 
 extern std::vector<CNode*> vNodes;
 extern CCriticalSection cs_vNodes;
-extern std::map<CInv, CDataStream> mapRelay;
-extern std::deque<std::pair<int64_t, CInv> > vRelayExpiration;
+/** Relay map, protected by cs_main. */
+typedef std::map<uint256, std::shared_ptr<const CTransaction>> MapRelay;
+extern MapRelay mapRelay;
+extern std::deque<std::pair<int64_t, MapRelay::iterator>> vRelayExpiration;
 extern CCriticalSection cs_mapRelay;
 extern limitedmap<CInv, int64_t> mapAlreadyAskedFor;
 
@@ -210,6 +225,8 @@ public:
     double dPingTime;
     double dPingWait;
     std::string addrLocal;
+    uint64_t m_addr_processed{0};
+    uint64_t m_addr_rate_limited{0};
 };
 
 
@@ -312,8 +329,16 @@ public:
     CCriticalSection cs_filter;
     CBloomFilter* pfilter;
 
-    int nRefCount;
+    std::atomic<int> nRefCount;
     NodeId id;
+
+    CRollingBloomFilter addrKnown;
+    mutable CCriticalSection cs_addrKnown;
+
+    // Inventory based relay
+    // This filter is protected by cs_inventory and contains both txids and wtxids.
+    CRollingBloomFilter filterInventoryKnown;
+
 protected:
 
     // Denial-of-service detection/prevention
@@ -347,28 +372,46 @@ public:
 
     // flood relay
     std::vector<CAddress> vAddrToSend;
-    CRollingBloomFilter addrKnown;
     bool fGetAddr;
     std::set<uint256> setKnown;
 
-    // inventory based relay
-    mruset<CInv> setInventoryKnown;
-    std::vector<CInv> vInventoryToSend;
+    int64_t nNextAddrSend;
+    int64_t nNextLocalAddrSend;
+
+    /** Number of addr messages that can be processed from this peer. Start at 1 to
+     *  permit self-announcement. */
+    double m_addr_token_bucket{1.0};
+    /** When m_addr_token_bucket was last updated */
+    int64_t m_addr_token_timestamp{GetTimeMicros()};
+    /** Total number of addresses that were dropped due to rate limiting. */
+    std::atomic<uint64_t> m_addr_rate_limited{0};
+    /** Total number of addresses that were processed (excludes rate limited ones). */
+    std::atomic<uint64_t> m_addr_processed{0};
+
+    // Set of transaction ids we still have to announce.
+    // They are sorted by the mempool before relay, so the order is not important.
+    std::set<uint256> setInventoryTxToSend;
+    // List of block ids we still have to announce.
+    // There is no final sorting before sending, as they are always sent immediately
+    // and in the order requested.
+    std::vector<uint256> vInventoryBlockToSend;
+
     CCriticalSection cs_inventory;
     std::set<uint256> setAskFor;
+    int64_t nNextInvSend;
     std::multimap<int64_t, CInv> mapAskFor;
 
     // Ping time measurement:
     // The pong reply we're expecting, or 0 if no pong expected.
-    uint64_t nPingNonceSent;
+    std::atomic<uint64_t> nPingNonceSent;
     // Time (in usec) the last ping was sent, or 0 if no ping was ever sent.
-    int64_t nPingUsecStart;
+    std::atomic<int64_t> nPingUsecStart;
     // Last measured round-trip time.
-    int64_t nPingUsecTime;
+    std::atomic<int64_t> nPingUsecTime;
     // Best measured round-trip time.
-    int64_t nMinPingUsecTime;
+    std::atomic<int64_t> nMinPingUsecTime;
     // Whether a ping is requested.
-    bool fPingQueued;
+    std::atomic<bool> fPingQueued;
 
     CNode(SOCKET hSocketIn, const CAddress &addrIn, const std::string &addrNameIn = "", bool fInboundIn = false, SSL *sslIn = NULL);
     ~CNode();
@@ -426,19 +469,12 @@ public:
         nRefCount--;
     }
 
-
-
-    void AddAddressKnown(const CAddress& addr)
-    {
-        addrKnown.insert(addr.GetKey());
-    }
-
     void PushAddress(const CAddress& addr)
     {
         // Known checking here is only to save space from duplicates.
         // SendMessages will filter it again for knowns that were added
         // after addresses were pushed.
-        if (addr.IsValid() && !addrKnown.contains(addr.GetKey())) {
+        if (addr.IsValid() && !IsAddressKnown(addr)) {
             if (vAddrToSend.size() >= MAX_ADDR_TO_SEND) {
                 vAddrToSend[insecure_rand() % vAddrToSend.size()] = addr;
             } else {
@@ -447,21 +483,62 @@ public:
         }
     }
 
-
-    void AddInventoryKnown(const CInv& inv)
+    void AddKnownWTxId(const WTxId& wtxid)
     {
-        {
-            LOCK(cs_inventory);
-            setInventoryKnown.insert(inv);
+        LOCK(cs_inventory);
+        if (!fDisconnect) {
+            filterInventoryKnown.insert(wtxid.ToBytes());
         }
     }
 
-    void PushInventory(const CInv& inv)
+    void AddKnownTxId(const uint256& txid)
     {
-        {
-            LOCK(cs_inventory);
-            if (!setInventoryKnown.count(inv))
-                vInventoryToSend.push_back(inv);
+        LOCK(cs_inventory);
+        if (!fDisconnect) {
+            filterInventoryKnown.insert(txid);
+        }
+    }
+
+    bool HasKnownTxId(const uint256& txid)
+    {
+        LOCK(cs_inventory);
+        return filterInventoryKnown.contains(txid);
+    }
+
+    bool AddAddressIfNotAlreadyKnown(const CAddress& addr)
+    {
+        LOCK(cs_addrKnown);
+        // Avoid adding to addrKnown after it has been reset in CloseSocketDisconnect.
+        if (fDisconnect) {
+            return false;
+        }
+        if (!addrKnown.contains(addr.GetKey())) {
+            addrKnown.insert(addr.GetKey());
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    bool IsAddressKnown(const CAddress& addr) const
+    {
+        LOCK(cs_addrKnown);
+        return addrKnown.contains(addr.GetKey());
+    }
+
+    void PushTxInventory(const WTxId& wtxid)
+    {
+        LOCK(cs_inventory);
+        if (!fDisconnect && !filterInventoryKnown.contains(wtxid.ToBytes())) {
+            setInventoryTxToSend.insert(wtxid.hash);
+        }
+    }
+
+    void PushBlockInventory(const uint256& hash)
+    {
+        LOCK(cs_inventory);
+        if (!fDisconnect) {
+            vInventoryBlockToSend.push_back(hash);
         }
     }
 
@@ -711,5 +788,8 @@ public:
     bool Write(const CAddrMan& addr);
     bool Read(CAddrMan& addr);
 };
+
+/** Return a timestamp in the future (in microseconds) for exponentially distributed events. */
+int64_t PoissonNextSend(int64_t nNow, int average_interval_seconds);
 
 #endif // BITCOIN_NET_H

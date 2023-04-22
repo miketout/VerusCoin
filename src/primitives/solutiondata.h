@@ -94,7 +94,7 @@ public:
 
     CPBaaSPreHeader() : nBits(0) {}
     CPBaaSPreHeader(const uint256 &prevBlock, const uint256 &merkleRoot, const uint256 &finalSaplingRoot,const uint256 &nonce, uint32_t compactTarget,
-                    const uint256 &PrevMMRRoot, const uint256 &TransactionMMRRoot) : 
+                    const uint256 &PrevMMRRoot, const uint256 &TransactionMMRRoot) :
                     hashPrevBlock(prevBlock), hashMerkleRoot(merkleRoot), hashFinalSaplingRoot(finalSaplingRoot), nNonce(nonce), nBits(compactTarget),
                     hashPrevMMRRoot(PrevMMRRoot), hashBlockMMRRoot(TransactionMMRRoot) {}
 
@@ -114,7 +114,7 @@ public:
     }
 
     void SetBlockData(CBlockHeader &bh);
-    
+
     bool IsValid() const
     {
         return !(hashPrevBlock.IsNull() && hashMerkleRoot.IsNull() && hashFinalSaplingRoot.IsNull() && nNonce.IsNull() && !nBits && hashBlockMMRRoot.IsNull());
@@ -140,7 +140,7 @@ public:
 
     CPBaaSBlockHeader(const uint160 &cID, const uint256 &hashPre) : chainID(cID), hashPreHeader(hashPre) { }
 
-    CPBaaSBlockHeader(const char *pbegin, const char *pend) 
+    CPBaaSBlockHeader(const char *pbegin, const char *pend)
     {
         CDataStream s = CDataStream(pbegin, pend, SER_NETWORK, PROTOCOL_VERSION);
         s >> *this;
@@ -148,12 +148,12 @@ public:
 
     CPBaaSBlockHeader(const uint160 &cID, const CPBaaSPreHeader &pbph);
 
-    CPBaaSBlockHeader(const uint160 &cID, 
-                        const uint256 &hashPrevBlock, 
-                        const uint256 &hashMerkleRoot, 
-                        const uint256 &hashFinalSaplingRoot, 
-                        const uint256 &nNonce, 
-                        uint32_t nBits, 
+    CPBaaSBlockHeader(const uint160 &cID,
+                        const uint256 &hashPrevBlock,
+                        const uint256 &hashMerkleRoot,
+                        const uint256 &hashFinalSaplingRoot,
+                        const uint256 &nNonce,
+                        uint32_t nBits,
                         const uint256 &hashPrevMMRRoot,
                         const uint256 &hashBlockMMRRoot)
     {
@@ -217,7 +217,7 @@ class CPBaaSSolutionDescriptor
 
         CPBaaSSolutionDescriptor() : version(0), descrBits(0), numPBaaSHeaders(0), extraDataSize(0) {}
 
-        CPBaaSSolutionDescriptor(uint32_t ver, uint8_t descr, uint8_t numSubHeaders, uint16_t sSize, uint256 PrevMMRRoot, uint256 TransactionMMRRoot) : 
+        CPBaaSSolutionDescriptor(uint32_t ver, uint8_t descr, uint8_t numSubHeaders, uint16_t sSize, uint256 PrevMMRRoot, uint256 TransactionMMRRoot) :
             version(ver), descrBits(descr), numPBaaSHeaders(numSubHeaders), extraDataSize(sSize), hashPrevMMRRoot(PrevMMRRoot), hashBlockMMRRoot(TransactionMMRRoot)
         {}
 
@@ -345,7 +345,7 @@ class CConstVerusSolutionVector
         }
 
         // returns 0 if not PBaaS, 1 if PBaaS PoW, -1 if PBaaS PoS
-        static int32_t IsPBaaS(const std::vector<unsigned char> &vch)
+        static int32_t IsAdvancedSolution(const std::vector<unsigned char> &vch)
         {
             if (Version(vch) >= CActivationHeight::ACTIVATE_PBAAS)
             {
@@ -444,7 +444,7 @@ class CVerusSolutionVector
         void SetDescriptor(CPBaaSSolutionDescriptor d)
         {
             solutionTools.SetDescriptor(vch, d);
-        }    
+        }
 
         uint32_t DescriptorBits()
         {
@@ -457,9 +457,9 @@ class CVerusSolutionVector
         }
 
         // returns 0 if not PBaaS, 1 if PBaaS PoW, -1 if PBaaS PoS
-        int32_t IsPBaaS()
+        int32_t IsAdvancedSolution()
         {
-            return solutionTools.IsPBaaS(vch);
+            return solutionTools.IsAdvancedSolution(vch);
         }
 
         // returns 0 if not PBaaS, 1 if PBaaS PoW, -1 if PBaaS PoS

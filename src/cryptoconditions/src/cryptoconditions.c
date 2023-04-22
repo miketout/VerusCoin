@@ -363,9 +363,11 @@ int cc_visit(CC *cond, CCVisitor visitor) {
 int cc_verify(const struct CC *cond, const unsigned char *msg, size_t msgLength, int doHashMsg,
               const unsigned char *condBin, size_t condBinLength,
               VerifyEval verifyEval, void *evalContext, int checkSig) {
-    unsigned char targetBinary[2000];
+
+    unsigned char targetBinary[MAX_BINARY_CC_SIZE];
+
     //fprintf(stderr,"in cc_verify cond.%p msg.%p[%d] dohash.%d condbin.%p[%d]\n",cond,msg,(int32_t)msgLength,doHashMsg,condBin,(int32_t)condBinLength);
-    const size_t binLength = cc_conditionBinary(cond, targetBinary, 2000);
+    const size_t binLength = cc_conditionBinary(cond, targetBinary, MAX_BINARY_CC_SIZE);
 
     if (0 != memcmp(condBin, targetBinary, binLength)) {
         fprintf(stderr,"cc_verify error A\n");

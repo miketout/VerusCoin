@@ -422,7 +422,7 @@ public:
     CIndexID(const uint160& in) : uint160(in) {}
 };
 
-/** 
+/**
  * A txout script template with a specific destination. It is either:
  *  * CNoDestination: no destination set
  *  * CKeyID: TX_PUBKEYHASH destination
@@ -463,18 +463,22 @@ public:
 
     COptCCParams() : version(0), evalCode(0), m(0), n(0) {}
 
-    COptCCParams(uint8_t ver, uint8_t code, uint8_t _m, uint8_t _n, const std::vector<CTxDestination> &vkeys, const std::vector<std::vector<unsigned char>> &vdata) : 
+    COptCCParams(uint8_t ver, uint8_t code, uint8_t _m, uint8_t _n, const std::vector<CTxDestination> &vkeys, const std::vector<std::vector<unsigned char>> &vdata) :
         version(ver), evalCode(code), m(_m), n(_n), vKeys(vkeys), vData(vdata) {}
 
     COptCCParams(const std::vector<unsigned char> &vch);
 
-    bool IsValid() const { return version == VERSION_V1 || version == VERSION_V2 || version == VERSION_V3; }
+    bool IsValid(bool strict=false, uint32_t nHeight=1) const;
 
     std::vector<unsigned char> AsVector() const;
 
     std::set<CIndexID> GetIndexKeys() const;
     std::map<uint160, uint32_t> GetIndexHeightOffsets(uint32_t height) const;
     std::vector<CTxDestination> GetDestinations() const;
+
+    bool IsInstantSpendOrUnspendable() const;
+
+    bool IsEvalPKOut() const;
 };
 
 // This is for STAKEGUARD2, which is versioned and enables staking the reserve of a reserve currency
@@ -497,12 +501,12 @@ public:
     uint256 prevHash;
 
     CStakeInfo() : version(VERSION_INVALID), height(0), sourceHeight(0) {}
-    CStakeInfo(uint32_t Height, uint32_t SourceHeight, const uint256 &UTXO, const uint256 &PrevHash, uint32_t Version=VERSION_CURRENT) : 
+    CStakeInfo(uint32_t Height, uint32_t SourceHeight, const uint256 &UTXO, const uint256 &PrevHash, uint32_t Version=VERSION_CURRENT) :
                 version(Version), height(0), sourceHeight(0), utxo(UTXO), prevHash(PrevHash) {}
     CStakeInfo(std::vector<unsigned char> vch);
 
     std::vector<unsigned char> AsVector() const;
-    
+
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
@@ -770,13 +774,12 @@ public:
     bool IsOpReturn() const { return size() > 0 && (*this)[0] == OP_RETURN; }
     bool GetOpretData(std::vector<std::vector<unsigned char>>& vData) const;
 
-    bool IsPayToCryptoCondition(COptCCParams &ccParams) const;
+    bool IsPayToCryptoCondition(COptCCParams &ccParams, bool doSizeCheck=true) const;
     bool IsPayToCryptoCondition(CScript *ccSubScript, std::vector<std::vector<unsigned char>> &vParams, COptCCParams &optParams) const;
     bool IsPayToCryptoCondition(CScript *ccSubScript, std::vector<std::vector<unsigned char>> &vParams) const;
     bool IsPayToCryptoCondition(CScript *ccSubScript) const;
     bool IsPayToCryptoCondition(uint32_t *ecode) const;
     bool IsPayToCryptoCondition() const;
-    CScript &ReplaceCCParams(const COptCCParams &params);
 
     bool IsSpendableOutputType(const COptCCParams &p) const;
     bool IsSpendableOutputType() const;

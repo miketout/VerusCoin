@@ -176,7 +176,8 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
             in.push_back(Pair("vout", (int64_t)txin.prevout.n));
             {
                 uint256 hash; CTransaction txFrom;
-                if (GetTransaction(txin.prevout.hash,txFrom,hash,false))
+                if (GetTransaction(txin.prevout.hash, txFrom, hash, false) &&
+                    txFrom.vout.size() > txin.prevout.n)
                 {
                     COptCCParams p;
                     BlockMap::iterator blockIdxIt = mapBlockIndex.find(hash);
@@ -198,10 +199,10 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
                         smartSigs = CSmartTransactionSignatures(std::vector<unsigned char>(ffVec.begin(), ffVec.end()));
 
                         UniValue signatureHashInfo(UniValue::VOBJ);
-                        SignatureHash(txFrom.vout[txin.prevout.n].scriptPubKey, 
-                                      tx, 
-                                      i, 
-                                      smartSigs.sigHashType, 
+                        SignatureHash(txFrom.vout[txin.prevout.n].scriptPubKey,
+                                      tx,
+                                      i,
+                                      smartSigs.sigHashType,
                                       txFrom.vout[txin.prevout.n].nValue,
                                       CurrentEpochBranchId(nHeight, Params().GetConsensus()),
                                       nullptr,
@@ -370,7 +371,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
             int64_t interest; int32_t txheight; uint32_t locktime;
             interest = komodo_accrued_interest(&txheight,&locktime,tx.GetHash(),i,0,txout.nValue,(int32_t)tipindex->GetHeight());
             out.push_back(Pair("interest", ValueFromAmount(interest)));
-        }        
+        }
         out.push_back(Pair("valueZat", txout.nValue));
         out.push_back(Pair("valueSat", txout.nValue));
         out.push_back(Pair("n", (int64_t)i));
@@ -748,7 +749,9 @@ UniValue createrawtransaction(const UniValue& params, bool fHelp)
             "     ]\n"
             "2. \"addresses\"           (string, required) a json object with addresses as keys and amounts as values\n"
             "    {\n"
-            "      \"address\": x.xxx   (numeric, required) The key is the Komodo address, the value is the " + CURRENCY_UNIT + " amount\n"
+            "      \"address\": x.xxx   (numeric, required) The key is the destination address or ID, the value is the " + CURRENCY_UNIT + " amount\n"
+            "      \"address\": {\"currency\": x.xxx, ...} (object, optional) The key is the destination address or ID, the value is currencies and amounts\n"
+            "      \"data\": \"hex\"    (string, optional) The key is \"data\", the value is hex encoded data\n"
             "      ,...\n"
             "    }\n"
             "3. locktime              (numeric, optional, default=0) Raw locktime. Non-0 value also locktime-activates inputs\n"
@@ -760,6 +763,7 @@ UniValue createrawtransaction(const UniValue& params, bool fHelp)
 
             "\nExamples\n"
             + HelpExampleCli("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\" \"{\\\"address\\\":0.01}\"")
+            + HelpExampleCli("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\" \"{\\\"address\\\":0.01,\\\"data\\\":\\\"00010203\\\"}\"")
             + HelpExampleRpc("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\", \"{\\\"address\\\":0.01}\"")
         );
 
@@ -781,7 +785,7 @@ UniValue createrawtransaction(const UniValue& params, bool fHelp)
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, locktime out of range");
         rawTx.nLockTime = nLockTime;
     }
-    
+
     if (params.size() > 3 && !params[3].isNull()) {
         if (Params().GetConsensus().NetworkUpgradeActive(nextBlockHeight, Consensus::UPGRADE_OVERWINTER)) {
             int64_t nExpiryHeight = params[3].get_int64();
@@ -828,20 +832,53 @@ UniValue createrawtransaction(const UniValue& params, bool fHelp)
     std::set<CTxDestination> destinations;
     vector<string> addrList = sendTo.getKeys();
     for (const std::string& name_ : addrList) {
-        CTxDestination destination = DecodeDestination(name_);
-        if (!IsValidDestination(destination)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid Komodo address: ") + name_);
+        if (name_ == "data") {
+            std::vector<unsigned char> data = ParseHexV(sendTo[name_].getValStr(), "Data");
+            CTxOut out(0, CScript() << OP_RETURN << data);
+            rawTx.vout.push_back(out);
+        } else {
+            CTxDestination destination = DecodeDestination(name_);
+            if (!IsValidDestination(destination)) {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid address: ") + name_);
+            }
+
+            if (!destinations.insert(destination).second) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("Invalid parameter, duplicated address: ") + name_);
+            }
+
+            CScript scriptPubKey;
+            CAmount nAmount = 0;
+
+            UniValue sendVal = find_value(sendTo, name_);
+            if (sendVal.isObject())
+            {
+                CCurrencyValueMap outputValue = CCurrencyValueMap(sendVal).CanonicalMap();
+                if (!(outputValue.IsValid() && outputValue.valueMap.size()))
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("Invalid output for address: ") + name_);
+                }
+                nAmount = outputValue.valueMap[ASSETCHAINS_CHAINID];
+                outputValue.valueMap.erase(ASSETCHAINS_CHAINID);
+                if (outputValue.valueMap.size())
+                {
+                    std::vector<CTxDestination> dests = std::vector<CTxDestination>({destination});
+                    CTokenOutput to(outputValue);
+                    scriptPubKey = MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, dests, 1, &to));
+                }
+                else
+                {
+                    scriptPubKey = GetScriptForDestination(destination);
+                }
+            }
+            else
+            {
+                scriptPubKey = GetScriptForDestination(destination);
+                nAmount = AmountFromValue(sendVal);
+            }
+
+            CTxOut out(nAmount, scriptPubKey);
+            rawTx.vout.push_back(out);
         }
-
-        if (!destinations.insert(destination).second) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("Invalid parameter, duplicated address: ") + name_);
-        }
-
-        CScript scriptPubKey = GetScriptForDestination(destination);
-        CAmount nAmount = AmountFromValue(sendTo[name_]);
-
-        CTxOut out(nAmount, scriptPubKey);
-        rawTx.vout.push_back(out);
     }
 
     return EncodeHexTx(rawTx);
@@ -940,8 +977,6 @@ UniValue decoderawtransaction(const UniValue& params, bool fHelp)
 
     uint256 hashBlock;
     TxToJSONExpanded(tx, hashBlock, result);
-    TxToJSON(tx, uint256(), result);
-
     return result;
 }
 
@@ -981,7 +1016,7 @@ UniValue decodescript(const UniValue& params, bool fHelp)
     } else {
         // Empty scripts are valid
     }
-    ScriptPubKeyToJSON(script, r, false);
+    ScriptPubKeyToUniv(script, r, false);
 
     r.push_back(Pair("p2sh", EncodeDestination(CScriptID(script))));
     return r;
@@ -1203,7 +1238,7 @@ UniValue signrawtransaction(const UniValue& params, bool fHelp)
     }
 
     bool fHashSingle = ((nHashType & ~SIGHASH_ANYONECANPAY) == SIGHASH_SINGLE);
-    // Use the approximate release height if it is greater so offline nodes 
+    // Use the approximate release height if it is greater so offline nodes
     // have a better estimation of the current height and will be more likely to
     // determine the correct consensus branch ID.  Regtest mode ignores release height.
     int chainHeight = chainActive.Height() + 1;
@@ -1216,8 +1251,8 @@ UniValue signrawtransaction(const UniValue& params, bool fHelp)
         if (!IsConsensusBranchId(consensusBranchId)) {
             throw runtime_error(params[4].get_str() + " is not a valid consensus branch id");
         }
-    } 
-    
+    }
+
     // Script verification errors
     UniValue vErrors(UniValue::VARR);
 
@@ -1335,7 +1370,7 @@ UniValue sendrawtransaction(const UniValue& params, bool fHelp)
         }
     } else if (fHaveChain) {
         throw JSONRPCError(RPC_TRANSACTION_ALREADY_IN_CHAIN, "transaction already in block chain");
-    }    
+    }
     RelayTransaction(tx);
 
     return hashTx.GetHex();

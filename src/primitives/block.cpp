@@ -131,12 +131,12 @@ void CBlockHeader::SetBlockMMRRoot(const uint256 &transactionMMRRoot)
 
 // checks that the solution stored data for this header matches what is expected, ensuring that the
 // values in the header match the hash of the pre-header.
-bool CBlockHeader::CheckNonCanonicalData() const
+bool CBlockHeader::CheckNonCanonicalData(const uint160 &cID) const
 {
     CPBaaSPreHeader pbph(*this);
-    CPBaaSBlockHeader pbbh1 = CPBaaSBlockHeader(ASSETCHAINS_CHAINID, pbph);
+    CPBaaSBlockHeader pbbh1 = CPBaaSBlockHeader(cID, pbph);
     CPBaaSBlockHeader pbbh2;
-    int32_t idx = GetPBaaSHeader(pbbh2, ASSETCHAINS_CHAINID);
+    int32_t idx = GetPBaaSHeader(pbbh2, cID);
     if (idx != -1)
     {
         if (pbbh1.hashPreHeader == pbbh2.hashPreHeader)
@@ -149,17 +149,36 @@ bool CBlockHeader::CheckNonCanonicalData() const
 
 // checks that the solution stored data for this header matches what is expected, ensuring that the
 // values in the header match the hash of the pre-header.
-bool CBlockHeader::CheckNonCanonicalData(uint160 &cID) const
+bool CBlockHeader::CheckNonCanonicalData() const
 {
-    CPBaaSPreHeader pbph(*this);
-    CPBaaSBlockHeader pbbh1 = CPBaaSBlockHeader(cID, pbph);
-    CPBaaSBlockHeader pbbh2;
-    int32_t idx = GetPBaaSHeader(pbbh2, cID);
-    if (idx != -1)
+    // true this chain first for speed
+    if (CheckNonCanonicalData(ASSETCHAINS_CHAINID))
     {
-        if (pbbh1.hashPreHeader == pbbh2.hashPreHeader)
+        return true;
+    }
+    else
+    {
+        CPBaaSSolutionDescriptor d = CVerusSolutionVector::solutionTools.GetDescriptor(nSolution);
+        if (CVerusSolutionVector::solutionTools.HasPBaaSHeader(nSolution) != 0)
         {
-            return true;
+            int32_t len = CVerusSolutionVector::solutionTools.ExtraDataLen(nSolution, true);
+            int32_t numHeaders = d.numPBaaSHeaders;
+            if (numHeaders * sizeof(CPBaaSBlockHeader) > len)
+            {
+                numHeaders = len / sizeof(CPBaaSBlockHeader);
+            }
+            const CPBaaSBlockHeader *ppbbh = CVerusSolutionVector::solutionTools.GetFirstPBaaSHeader(nSolution);
+            for (int32_t i = 0; i < numHeaders; i++)
+            {
+                if ((ppbbh + i)->chainID == ASSETCHAINS_CHAINID)
+                {
+                    continue;
+                }
+                if (CheckNonCanonicalData((ppbbh + i)->chainID))
+                {
+                    return true;
+                }
+            }
         }
     }
     return false;
@@ -335,7 +354,33 @@ void CBlockHeader::SetVerusV2Hash()
     CBlockHeader::hashFunction = &CBlockHeader::GetVerusV2Hash;
 }
 
-// returns false if unable to fast calculate the VerusPOSHash from the header. 
+uint256 CBlockHeader::GetRawVerusPOSHash(int32_t blockVersion, uint32_t solVersion, uint32_t magic, const uint256 &nonce, int32_t height, bool isVerusMainnet)
+{
+    if (isVerusMainnet && !CPOSNonce::NewNonceActive(height))
+    {
+        return uint256();
+    }
+    if (blockVersion == VERUS_V2)
+    {
+        CVerusHashV2Writer hashWriter = CVerusHashV2Writer(SER_GETHASH, PROTOCOL_VERSION);
+
+        hashWriter << magic;
+        hashWriter << nonce;
+        hashWriter << height;
+        return hashWriter.GetHash();
+    }
+    else
+    {
+        CVerusHashWriter hashWriter = CVerusHashWriter(SER_GETHASH, PROTOCOL_VERSION);
+
+        hashWriter << magic;
+        hashWriter << nonce;
+        hashWriter << height;
+        return hashWriter.GetHash();
+    }
+}
+
+// returns false if unable to fast calculate the VerusPOSHash from the header.
 // if it returns false, value is set to 0, but it can still be calculated from the full block
 // in that case. the only difference between this and the POS hash for the contest is that it is not divided by the value out
 // this is used as a source of entropy
@@ -349,34 +394,7 @@ bool CBlockHeader::GetRawVerusPOSHash(uint256 &ret, int32_t nHeight) const
         return false;
     }
 
-    // if we can calculate, this assumes the protocol that the POSHash calculation is:
-    //    hashWriter << ASSETCHAINS_MAGIC;
-    //    hashWriter << nNonce; (nNonce is:
-    //                           (high 128 bits == low 128 bits of verus hash of low 128 bits of nonce)
-    //                           (low 32 bits == compact PoS difficult)
-    //                           (mid 96 bits == low 96 bits of HASH(pastHash, txid, voutnum)
-    //                              pastHash is hash of height - 100, either PoW hash of block or PoS hash, if new PoS
-    //                          )
-    //    hashWriter << height;
-    //    return hashWriter.GetHash();
-    if (nVersion == VERUS_V2)
-    {
-        CVerusHashV2Writer hashWriter = CVerusHashV2Writer(SER_GETHASH, PROTOCOL_VERSION);
-
-        hashWriter << ASSETCHAINS_MAGIC;
-        hashWriter << nNonce;
-        hashWriter << nHeight;
-        ret = hashWriter.GetHash();
-    }
-    else
-    {
-        CVerusHashWriter hashWriter = CVerusHashWriter(SER_GETHASH, PROTOCOL_VERSION);
-
-        hashWriter << ASSETCHAINS_MAGIC;
-        hashWriter << nNonce;
-        hashWriter << nHeight;
-        ret = hashWriter.GetHash();
-    }
+    ret = GetRawVerusPOSHash(nVersion, CConstVerusSolutionVector::Version(nSolution), ASSETCHAINS_MAGIC, nNonce, nHeight);
     return true;
 }
 
@@ -396,7 +414,7 @@ uint256 CBlockHeader::GetVerusEntropyHashComponent(int32_t height) const
 {
     uint256 retVal;
     // if we qualify as PoW, use PoW hash, regardless of PoS state
-    if (GetRawVerusPOSHash(retVal, height))
+    if (IsVerusPOSBlock() && GetRawVerusPOSHash(retVal, height))
     {
         // POS hash
         return retVal;
@@ -518,7 +536,7 @@ BlockMMRange CBlock::BuildBlockMMRTree() const
         mmRange.Add(tx.GetDefaultMMRNode());
     }
 
-    if (IsPBaaS() != 0)
+    if (IsAdvancedHeader() != 0)
     {
         // add one additional object to the block MMR that contains
         // a hash of the entire CPBaaSPreHeader for this block, except
@@ -543,7 +561,7 @@ BlockMMRange CBlock::GetBlockMMRTree() const
 
 CPartialTransactionProof CBlock::GetPreHeaderProof() const
 {
-    if (IsPBaaS() != 0)
+    if (IsAdvancedHeader() != 0)
     {
         // make a partial transaction proof for the export opret only
         BlockMMRange blockMMR(GetBlockMMRTree());
@@ -571,7 +589,7 @@ CPartialTransactionProof CBlock::GetPartialTransactionProof(const CTransaction &
 {
     std::vector<CTransactionComponentProof> components;
 
-    if (IsPBaaS() != 0)
+    if (IsAdvancedHeader() != 0 && partIndexes.size())
     {
         // make a partial transaction proof for the export opret only
         BlockMMRange blockMMR(GetBlockMMRTree());
@@ -587,7 +605,7 @@ CPartialTransactionProof CBlock::GetPartialTransactionProof(const CTransaction &
 
         CTransactionMap txMap(tx);
         TransactionMMView txMMV(txMap.transactionMMR);
-        
+
         for (auto &partIdx : partIndexes)
         {
             components.push_back(CTransactionComponentProof(txMMV, txMap, tx, partIdx.first, partIdx.second));
@@ -598,10 +616,10 @@ CPartialTransactionProof CBlock::GetPartialTransactionProof(const CTransaction &
     else
     {
         // make a proof of the whole transaction
-        CMMRProof exportProof = CMMRProof() << CMerkleBranch<CHashWriter>(txIndex, GetMerkleBranch(txIndex));
+        CMMRProof exportProof = CMMRProof() << CBTCMerkleBranch(txIndex, GetMerkleBranch(txIndex));
         return CPartialTransactionProof(exportProof, tx);
     }
-}            
+}
 
 
 std::vector<uint256> GetMerkleBranch(int nIndex, int nLeaves, const std::vector<uint256> &vMerkleTree)
@@ -664,15 +682,108 @@ std::string CBlock::ToString() const
     return s.str();
 }
 
+// a block header proof validates the block MMR root, which is used
+// for proving down to the transaction sub-component. the first value
+// hashed against is the block hash, which enables proving the block hash as well
+uint256 CBlockHeaderProof::ValidateBlockMMRRoot(const uint256 &checkHash, int32_t blockHeight) const
+{
+    CBlockHeaderProof bhp = *this;
+    // if this proof has a blockproofbridge, replace it with an MMR proof bridge
+    if (bhp.headerProof.proofSequence.size() > 1)
+    {
+        bhp.headerProof.DeleteProofSequenceEntry(0);
+    }
+    uint256 hash = mmrBridge.SafeCheck(checkHash);
+    hash = bhp.headerProof.CheckProof(hash);
+    return blockHeight == GetBlockHeight() ? hash : uint256();
+}
+
+uint256 CBlockHeaderProof::ValidateBlockHash(const uint256 &checkHash, int blockHeight) const
+{
+    uint256 hash = headerProof.CheckProof(checkHash);
+    return blockHeight == GetBlockHeight() ? hash : uint256();
+}
+
+// a block header proof validates the block MMR root, which is used
+// for proving down to the transaction sub-component. the first value
+// hashed against is the block hash, which enables proving the block hash as well
+uint256 CBlockHeaderAndProof::ValidateBlockMMRRoot(const uint256 &checkHash, int32_t blockHeight) const
+{
+    CBlockHeaderAndProof bhp = *this;
+    // if this proof has a blockproofbridge, replace it with an MMR proof bridge
+    if (bhp.headerProof.proofSequence.size() > 1)
+    {
+        bhp.headerProof.DeleteProofSequenceEntry(0);
+    }
+    uint256 hash = blockHeader.MMRProofBridge().SafeCheck(checkHash);
+    hash = bhp.headerProof.CheckProof(hash);
+    return blockHeight == GetBlockHeight() ? hash : uint256();
+}
+
+UniValue BlockHeaderToUni(const CBlockHeader &block)
+{
+    UniValue result(UniValue::VOBJ);
+    result.push_back(Pair("hash", block.GetHash().GetHex()));
+
+    if (block.IsVerusPOSBlock())
+    {
+        result.push_back(Pair("validationtype", "stake"));
+        arith_uint256 posTarget;
+        posTarget.SetCompact(block.GetVerusPOSTarget());
+        result.push_back(Pair("postarget", ArithToUint256(posTarget).GetHex()));
+        CPOSNonce scratchNonce(block.nNonce);
+    }
+    else
+    {
+        result.push_back(Pair("validationtype", "work"));
+    }
+
+    // Only report confirmations if the block is on the main chain
+    result.push_back(Pair("version", block.nVersion));
+    result.push_back(Pair("merkleroot", block.hashMerkleRoot.GetHex()));
+    result.push_back(Pair("finalsaplingroot", block.hashFinalSaplingRoot.GetHex()));
+    result.push_back(Pair("time", (int64_t)block.nTime));
+    result.push_back(Pair("nonce", block.nNonce.GetHex()));
+    result.push_back(Pair("solution", HexStr(block.nSolution)));
+    result.push_back(Pair("bits", strprintf("%08x", block.nBits)));
+    if (block.nVersion >= block.VERUS_V2)
+    {
+        auto vch = block.nSolution;
+        CPBaaSSolutionDescriptor solDescr = CVerusSolutionVector(vch).Descriptor();
+        result.push_back(Pair("previousstateroot", solDescr.hashPrevMMRRoot.GetHex()));
+        result.push_back(Pair("blockmmrroot", solDescr.hashBlockMMRRoot.GetHex()));
+    }
+    result.push_back(Pair("previousblockhash", block.hashPrevBlock.GetHex()));
+    std::vector<unsigned char> hexBytes = ::AsVector(block);
+    result.push_back(Pair("hex", HexBytes(&(hexBytes[0]), hexBytes.size())));
+    return result;
+}
+
+uint256 CBlockHeaderAndProof::ValidateBlockHash(const uint256 &checkHash, int blockHeight) const
+{
+    uint256 hash = headerProof.CheckProof(checkHash);
+
+    if (LogAcceptCategory("notarization") && LogAcceptCategory("verbose"))
+    {
+        UniValue blockHeaderJSON = BlockHeaderToUni(blockHeader);
+        printf("%s: blockHeight: %u, GetBlockHeight(): %u, checkHash: %s, blockHeader: %s\n, blockHeader.GetHash(): %s, returning: %s\n",
+            __func__,
+            blockHeight,
+            GetBlockHeight(),
+            checkHash.GetHex().c_str(),
+            blockHeaderJSON.write(1,2).c_str(),
+            blockHeader.GetHash().GetHex().c_str(),
+            (blockHeight == GetBlockHeight() && checkHash == blockHeader.GetHash() ? hash : uint256()).GetHex().c_str());
+    }
+    return blockHeight == GetBlockHeight() && checkHash == blockHeader.GetHash() ? hash : uint256();
+}
+
 // used to span multiple outputs if a cross-chain proof becomes too big for just one
 std::vector<CNotaryEvidence> CNotaryEvidence::BreakApart(int maxChunkSize) const
 {
     std::vector<CNotaryEvidence> retVal;
 
     CNotaryEvidence scratchEvidence;
-
-    int baseOverhead = ::AsVector(scratchEvidence).size() + 4;
-    assert(maxChunkSize > baseOverhead);
 
     // we put our entire self into a multipart proof and return multiple parts that must be reconstructed
     std::vector<unsigned char> serialized = ::AsVector(*this);
@@ -682,7 +793,7 @@ std::vector<CNotaryEvidence> CNotaryEvidence::BreakApart(int maxChunkSize) const
 
     while (serialized.size())
     {
-        int curLength = std::min(maxChunkSize - baseOverhead, (int)serialized.size());
+        int curLength = std::min(maxChunkSize, (int)serialized.size());
         CEvidenceData oneDataChunk(std::vector<unsigned char>(&(serialized[0]), &(serialized[0]) + curLength), indexNum++, fullLength, startOffset, CEvidenceData::TYPE_MULTIPART_DATA);
         serialized.erase(serialized.begin(), serialized.begin() + curLength);
         startOffset += curLength;
@@ -726,3 +837,98 @@ CNotaryEvidence::CNotaryEvidence(const std::vector<CNotaryEvidence> &evidenceVec
     }
     ::FromVector(fullVec, *this);
 }
+
+CHashCommitments::CHashCommitments(const std::vector<__uint128_t> &smallCommitmentsLowBool, uint32_t nVersion) :
+    version(nVersion),
+    hashCommitments((smallCommitmentsLowBool.size() >> 1) + (smallCommitmentsLowBool.size() & 1))
+{
+    std::vector<__uint128_t> smallCommitments = smallCommitmentsLowBool;
+    if (smallCommitments.size())
+    {
+        int lastSmallIndex = (smallCommitments.size() - 1);
+        int currentIndex = lastSmallIndex >> 1;
+        int currentOffset = lastSmallIndex & 1;
+        arith_uint256 typeBitsVal(0);
+        for (; currentIndex >= 0 && smallCommitments.size(); smallCommitments.pop_back())
+        {
+            typeBitsVal = typeBitsVal << 1;
+            typeBitsVal |= (smallCommitmentsLowBool.back() & 1);
+            arith_uint256 from128 = (arith_uint256(int64_t((uint64_t)(smallCommitments.back() >> 64))) << 64) + arith_uint256(int64_t((uint64_t)smallCommitments.back()));
+            hashCommitments[currentIndex] = ArithToUint256(UintToArith256(hashCommitments[currentIndex]) | (currentOffset ? from128 << 128 : from128));
+            if (currentOffset ^= 1)
+            {
+                currentIndex--;
+            }
+        }
+        commitmentTypes = ArithToUint256(typeBitsVal);
+    }
+}
+
+// returns a vector of unsigned 32 bit values as:
+// 0 - nTime
+// 1 - nBits
+// 2 - nPoSBits
+// 3 - (block height << 1) + IsPos bit
+std::vector<uint32_t> UnpackBlockCommitment(__uint128_t oneBlockCommitment)
+{
+    std::vector<uint32_t> retVal;
+    retVal.push_back(oneBlockCommitment & UINT32_MAX);
+    oneBlockCommitment >>= 32;
+    retVal.insert(retVal.begin(), oneBlockCommitment & UINT32_MAX);
+    oneBlockCommitment >>= 32;
+    retVal.insert(retVal.begin(), oneBlockCommitment & UINT32_MAX);
+    oneBlockCommitment >>= 32;
+    retVal.insert(retVal.begin(), oneBlockCommitment & UINT32_MAX);
+    return retVal;
+}
+
+uint256 CHashCommitments::GetSmallCommitments(std::vector<__uint128_t> &smallCommitments) const
+{
+    // if have something, process it
+    if (hashCommitments.size())
+    {
+        // if the first high 128 bit word != zero, we have two in the last slot, otherwise 1
+        int currentBigOffset = ((UintToArith256(hashCommitments.back()) >> 128) != 0) ? 1 : 0;
+        smallCommitments = std::vector<__uint128_t>((hashCommitments.size() << 1) - (1 - currentBigOffset));
+        int smallIndex = smallCommitments.size() - 1;
+        int bigIndex = hashCommitments.size() - 1;
+
+        for (; smallIndex >= 0; smallIndex--)
+        {
+            arith_uint256 from256 = UintToArith256(hashCommitments[bigIndex]);
+            if (!currentBigOffset)
+            {
+                from256 = from256 << 128;
+            }
+            from256 = from256 >> 128;
+            smallCommitments[smallIndex] = ((__uint128_t)(from256 >> 64).GetLow64() << 64) + (__uint128_t)(from256.GetLow64());
+            if (currentBigOffset ^= 1)
+            {
+                bigIndex--;
+            }
+        }
+        if (LogAcceptCategory("notarization"))
+        {
+            LogPrintf("%s: RETURNING COMMITMENTS:\n", __func__);
+            for (int currentOffset = 0; currentOffset < smallCommitments.size(); currentOffset++)
+            {
+                auto commitmentVec = UnpackBlockCommitment(smallCommitments[currentOffset]);
+                arith_uint256 powTarget, posTarget;
+                powTarget.SetCompact(commitmentVec[1]);
+                posTarget.SetCompact(commitmentVec[2]);
+                LogPrintf("nHeight: %u, nTime: %u, PoW target: %s, PoS target: %s, isPoS: %u\n",
+                            commitmentVec[3] >> 1,
+                            commitmentVec[0],
+                            powTarget.GetHex().c_str(),
+                            posTarget.GetHex().c_str(),
+                            commitmentVec[3] & 1);
+                if (!commitmentVec[1])
+                {
+                    LogPrintf("INVALID ENTRY\n");
+                }
+            }
+        }
+    }
+    return commitmentTypes;
+}
+

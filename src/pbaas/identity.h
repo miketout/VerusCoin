@@ -1,17 +1,17 @@
 /********************************************************************
  * (C) 2019 Michael Toutonghi
- * 
+ *
  * Distributed under the MIT software license, see the accompanying
  * file COPYING or http://www.opensource.org/licenses/mit-license.php.
- * 
+ *
  * This provides support for PBaaS identity definition,
- * 
+ *
  * This is a decentralized identity class that provides the minimum
- * basic function needed to enable persistent DID-similar identities, 
+ * basic function needed to enable persistent DID-similar identities,
  * needed for signatories, that will eventually bridge compatibly to
  * DID identities.
- * 
- * 
+ *
+ *
  */
 
 #ifndef IDENTITY_H
@@ -34,10 +34,6 @@
 #include "addressindex.h"
 
 std::string CleanName(const std::string &Name, uint160 &Parent, bool displayapproved=false, bool addVerus=true);
-
-// TODO: HARDENING - remove and all dependencies below when 0.9.4 testnet is reset, after this height,
-// all authorities of an ID are required to create currencies
-static const uint32_t TESTNET_FORK_HEIGHT = 11600;
 
 class CCommitmentHash : public CTokenOutput
 {
@@ -91,8 +87,8 @@ public:
         std::vector<unsigned char> vch;
         vch.assign(hash.begin(), hash.begin() + 20);
         uint160 checkVal(vch);
-        // TODO: HARDENING - prepare for mainnet support of currencies after Verus Vault activates
-        if (!_IsVerusMainnetActive() && checkVal == CCommitmentHash::AdvancedCommitmentHashKey())
+
+        if (checkVal == CCommitmentHash::AdvancedCommitmentHashKey())
         {
             READWRITE(*(CTokenOutput *)this);
         }
@@ -276,7 +272,7 @@ public:
 
     CPrincipal(uint32_t Version,
                uint32_t Flags,
-               const std::vector<CTxDestination> &primary, 
+               const std::vector<CTxDestination> &primary,
                int32_t minPrimarySigs) :
                nVersion(Version),
                flags(Flags),
@@ -345,12 +341,12 @@ public:
                 }
             }
         }
-        return nVersion >= VERSION_FIRSTVALID && 
+        return nVersion >= VERSION_FIRSTVALID &&
                nVersion <= VERSION_LASTVALID &&
                primaryOK &&
-               primaryAddresses.size() && 
+               primaryAddresses.size() &&
                minSigs >= 1 &&
-               minSigs <= primaryAddresses.size() && 
+               minSigs <= primaryAddresses.size() &&
                ((nVersion < VERSION_VAULT &&
                  primaryAddresses.size() <= 10) ||
                 (primaryAddresses.size() <= 25 &&
@@ -371,8 +367,8 @@ public:
             {
                 return true;
             }
-        }       
-        return false; 
+        }
+        return false;
     }
 
     void SetVersion(uint32_t version)
@@ -390,7 +386,7 @@ public:
         FLAG_ACTIVECURRENCY = 0x1,          // flag that is set when this ID is being used as an active currency name
         FLAG_LOCKED = 0x2,                  // set when this identity is locked
         FLAG_TOKENIZED_CONTROL = 0x4,       // set when revocation/recovery over this identity can be performed by anyone who controls its token
-        MAX_UNLOCK_DELAY = 60 * 24 * 22 * 365 // 21+ year maximum unlock time for an ID
+        MAX_UNLOCK_DELAY = 60 * 24 * 22 * 365 // 21+ year maximum unlock time for an ID w/1 minute blocks, not adjusted for avg blocktime in first PBaaS
     };
 
     static const int MAX_NAME_LEN = 64;
@@ -411,11 +407,12 @@ public:
     //
     // name from another chain == name.chainname
     //      the chainID that would derive from such a name will be Hash(ChainID(chainname) + Hash(name));
-    // 
+    //
     std::string name;
 
     // content hashes, key value, where key is 20 byte ripemd160
     std::map<uint160, uint256> contentMap;
+    std::multimap<uint160, std::vector<unsigned char>> contentMultiMap;
 
     // revocation authority - can only invalidate identity or update revocation
     uint160 revocationAuthority;
@@ -437,11 +434,12 @@ public:
               const uint160 &Parent,
               const std::string &Name,
               const std::vector<std::pair<uint160, uint256>> &hashes,
+              const std::multimap<uint160, std::vector<unsigned char>> &kvContent,
               const uint160 &Revocation,
               const uint160 &Recovery,
               const std::vector<libzcash::SaplingPaymentAddress> &PrivateAddresses = std::vector<libzcash::SaplingPaymentAddress>(),
               const uint160 &SystemID=ASSETCHAINS_CHAINID,
-              int32_t unlockTime=0) : 
+              int32_t unlockTime=0) :
               CPrincipal(Version, Flags, primary, minPrimarySigs),
               parent(Parent),
               name(Name),
@@ -451,6 +449,10 @@ public:
               systemID(SystemID),
               unlockAfter(unlockTime)
     {
+        if (nVersion >= VERSION_PBAAS)
+        {
+            contentMultiMap = kvContent;
+        }
         for (auto &entry : hashes)
         {
             if (!entry.first.IsNull())
@@ -481,33 +483,88 @@ public:
         READWRITE(parent);
         READWRITE(LIMITED_STRING(name, MAX_NAME_LEN));
 
-        std::vector<std::pair<uint160, uint256>> kvContent;
-        if (ser_action.ForRead())
+        if (nVersion >= VERSION_PBAAS)
         {
-            READWRITE(kvContent);
-            for (auto &entry : kvContent)
+            std::vector<std::pair<uint160, std::vector<std::vector<unsigned char>>>> kvContent;
+            if (ser_action.ForRead())
             {
-                if (!entry.first.IsNull())
+                READWRITE(kvContent);
+                for (auto &entry : kvContent)
                 {
-                    contentMap[entry.first] = entry.second;
-                }
-                else
-                {
-                    // any recognizable error should make this invalid
-                    nVersion = VERSION_INVALID;
+                    if (!entry.first.IsNull())
+                    {
+                        for (auto &oneContent : entry.second)
+                        {
+                            contentMultiMap.insert(std::make_pair(entry.first, oneContent));
+                        }
+                    }
+                    else
+                    {
+                        // any recognizable error should make this invalid
+                        nVersion = VERSION_INVALID;
+                    }
                 }
             }
-        }
-        else
-        {
-            for (auto entry : contentMap)
+            else
             {
-                kvContent.push_back(entry);
+                std::vector<std::vector<unsigned char>> entryVec;
+                uint160 lastHash;
+                for (auto &entry : contentMultiMap)
+                {
+                    if (entry.first.IsNull())
+                    {
+                        continue;
+                    }
+                    else if (entry.first == lastHash)
+                    {
+                        entryVec.push_back(entry.second);
+                        continue;
+                    }
+                    else if (!lastHash.IsNull())
+                    {
+                        kvContent.push_back(make_pair(lastHash, entryVec));
+                        entryVec.resize(0);
+                    }
+                    lastHash = entry.first;
+                    entryVec.push_back(entry.second);
+                }
+                if (!lastHash.IsNull())
+                {
+                    kvContent.push_back(make_pair(lastHash, entryVec));
+                }
+                READWRITE(kvContent);
             }
-            READWRITE(kvContent);
         }
-
+        if (nVersion < VERSION_PBAAS)
+        {
+            std::vector<std::pair<uint160, uint256>> kvContent;
+            if (ser_action.ForRead())
+            {
+                READWRITE(kvContent);
+                for (auto &entry : kvContent)
+                {
+                    if (!entry.first.IsNull())
+                    {
+                        contentMap[entry.first] = entry.second;
+                    }
+                    else
+                    {
+                        // any recognizable error should make this invalid
+                        nVersion = VERSION_INVALID;
+                    }
+                }
+            }
+            else
+            {
+                for (auto entry : contentMap)
+                {
+                    kvContent.push_back(entry);
+                }
+                READWRITE(kvContent);
+            }
+        }
         READWRITE(contentMap);
+
         READWRITE(revocationAuthority);
         READWRITE(recoveryAuthority);
         READWRITE(privateAddresses);
@@ -681,7 +738,7 @@ public:
         }
 
         return isOK &&
-               CPrincipal::IsValid(strict) && name.size() > 0 && 
+               CPrincipal::IsValid(strict) && name.size() > 0 &&
                (name.size() <= MAX_NAME_LEN) &&
                primaryAddresses.size() &&
                (nVersion < VERSION_VAULT ||
@@ -701,7 +758,33 @@ public:
     static CIdentityID GetID(const std::string &Name, uint160 &parent);
 
     CIdentity LookupIdentity(const std::string &name, uint32_t height=0, uint32_t *pHeightOut=nullptr, CTxIn *pTxIn=nullptr);
-    static CIdentity LookupIdentity(const CIdentityID &nameID, uint32_t height=0, uint32_t *pHeightOut=nullptr, CTxIn *pTxIn=nullptr);
+    static std::vector<std::tuple<CIdentity, uint256, uint32_t, CUTXORef, CPartialTransactionProof>>
+        LookupIdentities(const CIdentityID &nameID,
+                         uint32_t gteHeight=0,
+                         uint32_t lteHeight=0,
+                         bool checkMempool=false,
+                         bool getProofs=false,
+                         uint32_t proofHeight=0,
+                         const std::vector<uint160> &indexKeys=std::vector<uint160>());
+    static std::multimap<uint160, std::tuple<std::vector<unsigned char>, uint256, uint32_t, CUTXORef, CPartialTransactionProof>>
+        GetAggregatedIdentityMultimap(const uint160 &idID,
+                                      uint32_t startHeight=0,
+                                      uint32_t endHeight=0,
+                                      bool checkMempool=false,
+                                      bool getProofs=false,
+                                      uint32_t proofHeight=0,
+                                      const uint160 &indexKey=uint160(),
+                                      bool keepDeleted=false);
+    static std::vector<std::tuple<std::vector<unsigned char>, uint256, uint32_t, CUTXORef, CPartialTransactionProof>>
+        GetIdentityContentByKey(const uint160 &idID,
+                                const uint160 &vdxfKey,
+                                uint32_t startHeight=0,
+                                uint32_t endHeight=0,
+                                bool checkMempool=false,
+                                bool getProofs=false,
+                                uint32_t proofHeight=0,
+                                bool keepDeleted=false);
+    static CIdentity LookupIdentity(const CIdentityID &nameID, uint32_t height=0, uint32_t *pHeightOut=nullptr, CTxIn *pTxIn=nullptr, bool checkMempool=false);
     static CIdentity LookupFirstIdentity(const CIdentityID &idID, uint32_t *pHeightOut=nullptr, CTxIn *idTxIn=nullptr, CTransaction *pidTx=nullptr);
 
     CIdentity RevocationAuthority() const
@@ -756,6 +839,7 @@ public:
         if (CPrincipal::IsPrimaryMutation(newIdentity, isPBaaS ? VERSION_PBAAS : VERSION_VAULT) ||
             (nSolVersion >= CActivationHeight::ACTIVATE_IDCONSENSUS2 && name != newIdentity.name && GetID() == newIdentity.GetID()) ||
             contentMap != newIdentity.contentMap ||
+            newIdentity.contentMultiMap.size() ||
             privateAddresses != newIdentity.privateAddresses ||
             (unlockAfter != newIdentity.unlockAfter && (!isRevokedExempt || newIdentity.unlockAfter != 0)) ||
             (HasActiveCurrency() != newIdentity.HasActiveCurrency()) ||
@@ -767,7 +851,7 @@ public:
         return false;
     }
 
-    bool IsRevocation(const CIdentity &newIdentity) const 
+    bool IsRevocation(const CIdentity &newIdentity) const
     {
         if (!IsRevoked() && newIdentity.IsRevoked())
         {
@@ -776,7 +860,7 @@ public:
         return false;
     }
 
-    bool IsRevocationMutation(const CIdentity &newIdentity, uint32_t height) const 
+    bool IsRevocationMutation(const CIdentity &newIdentity, uint32_t height) const
     {
         auto nSolVersion = CConstVerusSolutionVector::GetVersionByHeight(height);
         if (revocationAuthority != newIdentity.revocationAuthority &&
@@ -868,6 +952,95 @@ public:
     static bool GetActiveIdentitiesWithRecoveryID(const CIdentityID &idID, std::map<uint160, std::pair<std::pair<CAddressUnspentKey, CAddressUnspentValue>, CIdentity>> &identities);
 };
 
+class CContentMultiMapRemove
+{
+public:
+    enum {
+        VERSION_INVALID = 0,
+        VERSION_FIRST = 1,
+        VERSION_LAST = 1,
+        VERSION_CURRENT = 1,
+        ACTION_FIRST = 1,
+        ACTION_REMOVE_ONE_KEYVALUE = 1,
+        ACTION_REMOVE_ALL_KEYVALUE = 2,
+        ACTION_REMOVE_ALL_KEY = 3,
+        ACTION_CLEAR_MAP = 4,
+        ACTION_LAST = 4,
+    };
+
+    uint32_t version;
+    uint32_t action;
+    uint160 entryKey;
+    uint256 valueHash;
+
+    CContentMultiMapRemove() : version(VERSION_INVALID), action(0) {}
+
+    ADD_SERIALIZE_METHODS;
+
+    CContentMultiMapRemove(const UniValue &uni)
+    {
+        version = uni_get_int64(find_value(uni, "version"), VERSION_CURRENT);
+        action = uni_get_int64(find_value(uni, "action"));
+        if (action != ACTION_CLEAR_MAP)
+        {
+            entryKey.SetHex(uni_get_str(find_value(uni, "entrykey")));
+            if (action != ACTION_REMOVE_ALL_KEY)
+            {
+                valueHash.SetHex(uni_get_str(find_value(uni, "valuehash")));
+            }
+        }
+    }
+
+    CContentMultiMapRemove(const std::vector<unsigned char> &vch)
+    {
+        bool success = false;
+        ::FromVector(vch, *this, &success);
+        if (!success)
+        {
+            version = VERSION_INVALID;
+        }
+    }
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(VARINT(version));
+        READWRITE(VARINT(action));
+        if (action != ACTION_CLEAR_MAP)
+        {
+            READWRITE(entryKey);
+            if (action != ACTION_REMOVE_ALL_KEY)
+            {
+                READWRITE(valueHash);
+            }
+        }
+    }
+
+    UniValue ToUniValue() const
+    {
+        UniValue ret(UniValue::VOBJ);
+        ret.pushKV("version", (int64_t)version);
+        ret.pushKV("action", (int64_t)action);
+        if (action != ACTION_CLEAR_MAP)
+        {
+            ret.pushKV("entrykey", entryKey.GetHex());
+            if (action != ACTION_REMOVE_ALL_KEY)
+            {
+                ret.pushKV("valuehash", valueHash.GetHex());
+            }
+        }
+        return ret;
+    }
+
+    bool IsValid() const
+    {
+        if (version >= VERSION_FIRST && version <= VERSION_LAST && action >= ACTION_FIRST && action <= ACTION_LAST)
+        {
+            return (action == ACTION_CLEAR_MAP || (!entryKey.IsNull() && (action == ACTION_REMOVE_ALL_KEY || !valueHash.IsNull())));
+        }
+        return false;
+    }
+};
+
 class CIdentityMapKey
 {
 public:
@@ -957,6 +1130,142 @@ public:
         READWRITE(*(CIdentity *)this);
         READWRITE(txid);
     }
+};
+
+class CRating
+{
+protected:
+    static std::multimap<uint160, std::vector<std::string>> ratingsDefinitionMap;
+
+public:
+    enum ECoreRatingTypes
+    {
+        VERSION_INVALID = 0,
+        VERSION_FIRST = 1,
+        VERSION_LAST = 1,
+        VERSION_CURRENT = 1,
+
+        TRUST_UNKNOWN = 0,                  // unknown and can be included in exploration
+        TRUST_BLOCKED = 1,                  // suspected or known to be untrustworthy and should not be interacted with
+        TRUST_APPROVED = 2,                 // explicitly believed to be trustworthy enough to interact with
+        TRUST_FIRST = 0,
+        TRUST_LAST = 2,
+
+        TRUSTMODE_NORESTRICTION = 0,        // ignore whitelist and blacklist data
+        TRUSTMODE_WHITELISTONLY = 1,        // default to displaying white list only, segregate all non-white list utxos when possible
+        TRUSTMODE_BLACKLISTONLY = 2,        // default to displaying everything except the blacklist, segregate blacklist
+        TRUSTMODE_FIRST = 0,
+        TRUSTMODE_LAST = 2,
+
+        // core rating definitions
+        RATING_UNKNOWN = 0,                 // unknown rating
+        RATING_1 = 1,                       // ratings 1 - 10
+        RATING_2 = 2,
+        RATING_3 = 3,
+        RATING_4 = 4,
+        RATING_5 = 5,
+        RATING_6 = 6,
+        RATING_7 = 7,
+        RATING_8 = 8,
+        RATING_9 = 9,
+        RATING_10 = 10,
+        RATING_G = 11,                      // acceptable for all audiences
+        RATING_PG = 12,                     // MPAA equiv
+        RATING_PG13 = 13,                   // MPAA equiv
+        RATING_R = 14,                      // MPAA equiv
+        RATING_NC17 = 15,                   // MPAA equiv
+        RATING_HSEX = 16,                   // healthy sexuality (use MPAA to determine target age)
+        RATING_HHEALTH = 17,                // health related (use MPAA to determine age recommendation)
+        RATING_DRUGS = 18,                  // drug/smoking
+        RATING_NUDITY = 19,                 // nudity
+        RATING_VIOLENCE = 20,               // excessive or extreme violence as perceived by users
+        RATING_1STAR = 21,
+        RATING_2STAR = 22,
+        RATING_3STAR = 23,
+        RATING_4STAR = 24,
+        RATING_5STAR = 25,
+        RATING_BAD = 26,
+        RATING_POOR = 27,
+        RATING_OK = 28,
+        RATING_GOOD = 29,
+        RATING_EXCELLENT = 30,
+        RATING_LASTDEFAULT = 30
+    };
+
+    uint32_t version;
+    uint8_t trustLevel;
+    std::map<uint160, std::vector<unsigned char>> ratings;          // VDXF rating type and vector of ratings
+
+    CRating(uint32_t Version=VERSION_INVALID, uint8_t TrustLevel=TRUST_UNKNOWN, const std::map<uint160, std::vector<unsigned char>> &Ratings=std::map<uint160, std::vector<unsigned char>>()) :
+                version(Version), trustLevel(TrustLevel), ratings(Ratings) {}
+
+    CRating(const std::vector<unsigned char> &vch)
+    {
+        bool success;
+        ::FromVector(vch, *this, &success);
+        if (!success)
+        {
+            version = VERSION_INVALID;
+            ratings.clear();
+        }
+    }
+
+    CRating(const UniValue uni);
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(version);
+        READWRITE(trustLevel);
+        READWRITE(ratings);
+    }
+
+    bool IsValid()
+    {
+        return version >= VERSION_FIRST && version <= VERSION_LAST &&
+                trustLevel >= TRUST_FIRST && trustLevel <= TRUST_LAST;
+    }
+
+    static std::string DefaultRatingTypeKeyName()
+    {
+        return "vrsc::system.ratings.defaultratings";
+    }
+
+    static uint160 DefaultRatingTypeKey()
+    {
+        static uint160 nameSpace;
+        static uint160 ratingTypeKey = CVDXF::GetDataKey(DefaultRatingTypeKeyName(), nameSpace);
+        return ratingTypeKey;
+    }
+
+    std::map<uint160, std::vector<unsigned char>> SetRating(const uint160 &ratingKey, const std::vector<unsigned char> &ratingVec)
+    {
+        if (!ratingKey.IsNull())
+        {
+            ratings[ratingKey] = ratingVec;
+        }
+        return ratings;
+    }
+
+    std::map<uint160, std::vector<unsigned char>> GetRatings(const uint160 &ratingKey=uint160())
+    {
+        if (!ratingKey.IsNull())
+        {
+            std::map<uint160, std::vector<unsigned char>> retVal;
+            auto it = ratings.find(ratingKey);
+            if (it != ratings.end())
+            {
+                retVal[ratingKey] = it->second;
+            }
+            return retVal;
+        }
+        return ratings;
+    }
+
+    static const std::multimap<uint160, std::vector<std::string>> &GetRatingDefinitionMap(const std::locale &locale=std::locale::classic());
+
+    UniValue ToUniValue() const;
 };
 
 struct CCcontract_info;

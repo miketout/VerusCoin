@@ -780,8 +780,8 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
         }
         if (success)
         {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Hex key detected. Spending key cannot be verified. If it is valid, the correct spending key would be:\n" + 
-                                                           EncodeSpendingKey(extSk) + 
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Hex key detected. Spending key cannot be verified. If it is valid, the correct spending key would be:\n" +
+                                                           EncodeSpendingKey(extSk) +
                                                            "\n* DO NOT USE UNLESS YOU ARE CERTAIN THIS IS A VALID KEY!");
         }
         else
@@ -802,7 +802,7 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
 
     // whenever a key is imported, we need to scan the whole chain
     pwalletMain->nTimeFirstKey = 1; // 0 would be considered 'no value'
-    
+
     // We want to scan for transactions and notes
     if (fRescan) {
         pwalletMain->ScanForWalletTransactions(chainActive[nRescanHeight], true);

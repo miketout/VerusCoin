@@ -16,6 +16,7 @@
 #include "pbaas/identity.h"
 #include "cc/CCinclude.h"
 #include "boost/algorithm/string.hpp"
+#include "rpc/protocol.h"
 
 #include <assert.h>
 #include <string.h>
@@ -26,11 +27,181 @@ extern std::string VERUS_CHAINNAME;
 
 CIdentityID VERUS_DEFAULTID;
 CIdentityID VERUS_NOTARYID;
+CIdentityID PBAAS_NOTIFICATION_ORACLE;                                  // an identity that can be used to coordinate on-chain actions or upgrades
+CTransferDestination APPROVE_CONTRACT_UPGRADE;                          // approve a contract to be upgraded on the ETH bridge, enables the network to decide
+std::string PBAAS_DEFAULT_NOTIFICATION_ORACLE = "Verus Coin Foundation@";
+
 int32_t MAX_OUR_UTXOS_ID_RESCAN = 1000; // this can be set with "-maxourutxosidrescan=n"
 int32_t MAX_UTXOS_ID_RESCAN = 100;      // this can be set with "-maxutxosidrescan=n"
+bool ONLY_ADD_WHITELISTED_UTXOS_ID_RESCAN = false;
 uint160 VERUS_NODEID;
 bool VERUS_PRIVATECHANGE;
 std::string VERUS_DEFAULT_ZADDR;
+CTxDestination VERUS_DEFAULT_ARBADDRESS;
+std::vector<uint160> VERUS_ARBITRAGE_CURRENCIES;
+
+uint160 ParseVDXFIDInternal(const std::string &vdxfName)
+{
+    uint160 vdxfID;
+    uint160 parentID;
+
+    if (vdxfName.empty())
+    {
+        return uint160();
+    }
+
+    // first, try to interpret the ID as an ID, in case it is
+    CTxDestination idDest = DecodeDestination(vdxfName);
+
+    if (idDest.which() == COptCCParams::ADDRTYPE_ID)
+    {
+        return GetDestinationID(idDest);
+    }
+    else if (vdxfName.back() != '@')
+    {
+        idDest = DecodeDestination(vdxfName + "@");
+    }
+
+    if (idDest.which() == COptCCParams::ADDRTYPE_ID)
+    {
+        vdxfID = GetDestinationID(idDest);
+    }
+    else
+    {
+        vdxfID = CVDXF::GetDataKey(vdxfName, parentID);
+    }
+    return vdxfID;
+}
+
+UniValue getvdxfid_internal(const UniValue& params)
+{
+    std::string vdxfName = uni_get_str(params[0]);
+    if (!vdxfName.size())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "No message to hash");
+    }
+
+    UniValue secondObj = (params.size() > 1) ? params[1] : UniValue(UniValue::VOBJ);
+    UniValue vdxfKeyInputUni = find_value(secondObj, "vdxfkey");
+    UniValue hashUniValue = find_value(secondObj, "uint256");
+    UniValue numUniValue = find_value(secondObj, "indexnum");
+
+    uint160 vdxfKeyInput;
+    uint256 hash256KeyKeyInput;
+    if (!vdxfKeyInputUni.isNull())
+    {
+        std::string vdxfKeyInputStr = uni_get_str(vdxfKeyInputUni);
+        vdxfKeyInput = ParseVDXFIDInternal(vdxfKeyInputStr);
+        if (vdxfKeyInput.IsNull())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid additional vdxf key to combine");
+        }
+    }
+    if (!hashUniValue.isNull())
+    {
+        hash256KeyKeyInput = uint256S(uni_get_str(hashUniValue));
+        if (hash256KeyKeyInput.IsNull())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid hash value to combine");
+        }
+    }
+    int32_t hashInputNum = uni_get_int(numUniValue);
+
+    uint160 vdxfID;
+    uint160 parentID;
+    std::string cleanName;
+    std::string parentIDName = "parentid";
+
+    // first, try to interpret the ID as an ID, in case it is
+    CTxDestination idDest = DecodeDestination(vdxfName);
+
+    bool isIndexKey = false;
+
+    if (idDest.which() == COptCCParams::ADDRTYPE_ID)
+    {
+        cleanName = CleanName(vdxfName, parentID);
+        vdxfID = GetDestinationID(idDest);
+    }
+    else if (vdxfName.substr(0,2) == "0x" && !(vdxfID = CTransferDestination::DecodeEthDestination(vdxfName)).IsNull())
+    {
+        parentIDName = "currencyaddresstype";
+        parentID = CIdentity::GetID("veth", parentID);
+        cleanName = vdxfName;
+    }
+    else
+    {
+        isIndexKey = true;
+        parentIDName = "namespace";
+        vdxfID = CVDXF::GetDataKey(vdxfName, parentID);
+        cleanName = vdxfName;
+    }
+
+    if (vdxfID.IsNull())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid ID or URI format");
+    }
+
+    // now, add optional values
+    UniValue boundData(UniValue::VOBJ);
+    if (!vdxfKeyInputUni.isNull())
+    {
+        isIndexKey = true;
+
+        if (hashUniValue.isNull())
+        {
+            vdxfID = CCrossChainRPCData::GetConditionID(vdxfID, vdxfKeyInput);
+            boundData.pushKV("vdxfkey", EncodeDestination(CIdentityID(vdxfKeyInput)));
+            if (!numUniValue.isNull())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify index without hash value");
+            }
+        }
+        else
+        {
+            if (numUniValue.isNull())
+            {
+                vdxfID = CCrossChainRPCData::GetConditionID(vdxfID, vdxfKeyInput, hash256KeyKeyInput);
+                boundData.pushKV("vdxfkey", EncodeDestination(CIdentityID(vdxfKeyInput)));
+                boundData.pushKV("uint256", hash256KeyKeyInput.GetHex());
+            }
+            else
+            {
+                vdxfID = CCrossChainRPCData::GetConditionID(vdxfID, vdxfKeyInput, hash256KeyKeyInput, hashInputNum);
+                boundData.pushKV("vdxfkey", EncodeDestination(CIdentityID(vdxfKeyInput)));
+                boundData.pushKV("uint256", hash256KeyKeyInput.GetHex());
+                boundData.pushKV("indexnum", hashInputNum);
+            }
+        }
+    }
+    else if (!hashUniValue.isNull() && !numUniValue.isNull())
+    {
+        isIndexKey = true;
+        vdxfID = CCrossChainRPCData::GetConditionID(vdxfID, hash256KeyKeyInput, hashInputNum);
+        boundData.pushKV("uint256", hash256KeyKeyInput.GetHex());
+        boundData.pushKV("indexnum", hashInputNum);
+    }
+    else if (!hashUniValue.isNull() || !numUniValue.isNull())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify hash or numeric index without additional vdxf key or hash");
+    }
+
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("vdxfid", EncodeDestination(CIdentityID(vdxfID)));
+    if (isIndexKey)
+    {
+        result.pushKV("indexid", EncodeDestination(CIndexID(vdxfID)));
+    }
+    result.pushKV("hash160result", vdxfID.GetHex());
+    UniValue nameWithParent(UniValue::VOBJ);
+    nameWithParent.pushKV(parentIDName, EncodeDestination(CIdentityID(parentID)));
+    nameWithParent.pushKV("name", cleanName);
+    result.pushKV("qualifiedname", nameWithParent);
+    if (boundData.getKeys().size())
+    {
+        result.pushKV("bounddata", boundData);
+    }
+    return result;
+}
 
 namespace
 {
@@ -205,7 +376,7 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
     else if (std::count(str.begin(), str.end(), '@') == 1)
     {
         uint160 parent;
-        std::string cleanName = CleanName(str, parent);
+        std::string cleanName = CleanName(str, parent, true, true);
         if (cleanName != "")
         {
             parent.SetNull();
@@ -571,6 +742,11 @@ CProofRoot::CProofRoot(const UniValue &uni) :
     type(TYPE_PBAAS),
     rootHeight(0)
 {
+    if (uni.isNull())
+    {
+        version = VERSION_INVALID;
+        return;
+    }
     version = (uint32_t)uni_get_int(find_value(uni, "version"));
     type = (uint32_t)uni_get_int(find_value(uni, "type"));
     systemID = GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "systemid"))));
@@ -578,6 +754,10 @@ CProofRoot::CProofRoot(const UniValue &uni) :
     stateRoot = uint256S(uni_get_str(find_value(uni, "stateroot")));
     blockHash = uint256S(uni_get_str(find_value(uni, "blockhash")));
     compactPower = uint256S(uni_get_str(find_value(uni, "power")));
+    if (type == TYPE_ETHEREUM)
+    {
+        gasPrice = AmountFromValueNoErr(find_value(uni, "gasprice"));
+    }
 }
 
 UniValue CProofRoot::ToUniValue() const
@@ -590,6 +770,10 @@ UniValue CProofRoot::ToUniValue() const
     obj.push_back(Pair("stateroot", stateRoot.GetHex()));
     obj.push_back(Pair("blockhash", blockHash.GetHex()));
     obj.push_back(Pair("power", compactPower.GetHex()));
+    if (type == TYPE_ETHEREUM)
+    {
+        obj.push_back(Pair("gasprice", ValueFromAmount(gasPrice)));
+    }
     return obj;
 }
 
@@ -651,6 +835,263 @@ CPrincipal::CPrincipal(const UniValue &uni)
     }
 
     minSigs = uni_get_int(find_value(uni, "minimumsignatures"));
+}
+
+uint160 ParseVDXFKey(const std::string &keyString)
+{
+    uint160 nameSpaceID;
+
+    if (keyString.empty())
+    {
+        return uint160();
+    }
+
+    CTxDestination keyDest;
+    if ((keyDest = DecodeDestination(keyString)).which() == COptCCParams::ADDRTYPE_ID)
+    {
+        return GetDestinationID(keyDest);
+    }
+
+    UniValue jsonKey(UniValue::VOBJ);
+    if (!jsonKey.read(keyString))
+    {
+        uint160 nameSpaceID;
+        uint160 simpleVDXFKey = CVDXF::GetDataKey(keyString, nameSpaceID);
+        if (!simpleVDXFKey.IsNull())
+        {
+            return simpleVDXFKey;
+        }
+        LogPrint("contentmap", "%s: invalid key, neither i-address nor json vdxfid: %s\n", __func__, keyString.c_str());
+        return uint160();
+    }
+    UniValue parms(UniValue::VARR);
+
+    std::string vdxfUri = uni_get_str(find_value(jsonKey, "vdxfuri"));
+    if (vdxfUri.empty())
+    {
+        LogPrint("contentmap", "%s: invalid key, no vdxfuri: %s\n", __func__, jsonKey.write(1,2).c_str());
+        return uint160();
+    }
+
+    parms.push_back(vdxfUri);
+
+    auto vdxfKeyKeys = jsonKey.getKeys();
+    auto &vdxfValues = jsonKey.getValues();
+    if (vdxfKeyKeys.size() > 1)
+    {
+        UniValue vdxfObjParms(UniValue::VOBJ);
+        for (int j = 0; j < vdxfKeyKeys.size(); j++)
+        {
+            if (vdxfKeyKeys[j] != "vdxfuri")
+            {
+                vdxfObjParms.pushKV(vdxfKeyKeys[j], vdxfValues[j]);
+            }
+        }
+        parms.push_back(vdxfObjParms);
+    }
+
+    jsonKey = getvdxfid_internal(parms);
+    std::string vdxfKeyStr = uni_get_str(find_value(jsonKey, "vdxfid"));
+    return vdxfKeyStr.empty() ? uint160() : GetDestinationID(DecodeDestination(vdxfKeyStr));
+}
+
+CRating::CRating(const UniValue uni) :
+    version(VERSION_CURRENT),
+    trustLevel(TRUST_UNKNOWN)
+{
+    version = uni_get_int64(find_value(uni, "version"), version);
+    trustLevel = uni_get_int(find_value(uni, "trustlevel"), trustLevel);
+    UniValue ratingsObj = find_value(uni, "ratingsmap");
+    if (ratingsObj.isObject())
+    {
+        auto keys = ratingsObj.getKeys();
+        auto values = ratingsObj.getValues();
+
+        for (int i = 0; i < keys.size(); i++)
+        {
+            uint160 vdxfKey = ParseVDXFKey(keys[i]);
+            if (vdxfKey.IsNull())
+            {
+                LogPrint("ratings", "%s: invalid json rating key: %s\n", __func__, keys[i].c_str());
+                version = VERSION_INVALID;
+                return;
+            }
+
+            const std::multimap<uint160, std::vector<std::string>> &ratingMap = GetRatingDefinitionMap();
+            std::vector<unsigned char> oneRatingVec;
+
+            auto it = ratingMap.find(vdxfKey);
+            if (it != ratingMap.end() && !(values[i].isStr() && IsHex(uni_get_str(values[i]))))
+            {
+                std::map<std::string, int> ratingKeyMap;
+                for (int j = 0; j < it->second.size(); j++)
+                {
+                    ratingKeyMap.insert(std::make_pair(it->second[j], j));
+                }
+                // if one rating, store it in an array anyhow
+                UniValue oneValueArr = values[i].isArray() ? values[i] : UniValue(UniValue::VARR);
+                if (values[i].isStr())
+                {
+                    oneValueArr.push_back(values[i]);
+                }
+                for (int j = 0; j < oneValueArr.size(); j++)
+                {
+                    std::string oneRatingStr = uni_get_str(oneValueArr[j]);
+                    auto ratingIt = ratingKeyMap.find(oneRatingStr);
+                    if (ratingIt == ratingKeyMap.end())
+                    {
+                        LogPrint("ratings", "%s: invalid rating keyword: %s\n", __func__, oneRatingStr.c_str());
+                        version = VERSION_INVALID;
+                        return;
+                    }
+                    else
+                    {
+                        oneRatingVec.push_back((uint8_t)ratingIt->second);
+                    }
+                }
+            }
+            else if (values[i].isStr() && IsHex(uni_get_str(values[i])))
+            {
+                oneRatingVec = ParseHex(uni_get_str(values[i]));
+            }
+            else
+            {
+                LogPrint("ratings", "%s: invalid rating in key: %s\n", __func__, keys[i].c_str());
+                version = VERSION_INVALID;
+                return;
+            }
+
+            ratings[vdxfKey] = oneRatingVec;
+        }
+    }
+}
+
+std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &obj)
+{
+    CDataStream ss(PROTOCOL_VERSION, SER_DISK);
+
+    std::string serializedHex = uni_get_str(find_value(obj, "serializedhex"));
+    if (!serializedHex.empty())
+    {
+        if (!IsHex(serializedHex))
+        {
+            LogPrint("contentmap", "%s: if the \"serializedhex\" key is present, it's data must be only valid hex and complete: %s\n", __func__, serializedHex.c_str());
+            return std::vector<unsigned char>();
+        }
+        return ParseHex(serializedHex);
+    }
+    std::string serializedBase64 = uni_get_str(find_value(obj, "serializedbase64"));
+    if (!serializedBase64.empty())
+    {
+        bool isValid = false;
+        auto retVec = DecodeBase64(serializedBase64.c_str(), &isValid);
+        return isValid ? retVec : std::vector<unsigned char>();
+    }
+
+    // this should be an object with "vdxfkey" as the key and {object} as the json object to serialize
+    auto oneValKeys = obj.getKeys();
+    auto oneValValues = obj.getValues();
+
+    // TODO: change if / else to a map lookup
+
+    for (int k = 0; k < oneValKeys.size(); k++)
+    {
+        uint160 objTypeKey = ParseVDXFKey(oneValKeys[k]);
+        if (objTypeKey == CVDXF_Data::DataByteKey())
+        {
+            uint8_t oneByte = uni_get_int(oneValValues[k]);
+            ss << oneByte;
+        }
+        else if (objTypeKey == CVDXF_Data::DataInt16Key())
+        {
+            int16_t oneShort = uni_get_int(oneValValues[k]);
+            ss << oneShort;
+        }
+        else if (objTypeKey == CVDXF_Data::DataUint16Key())
+        {
+            uint16_t oneUShort = uni_get_int(oneValValues[k]);
+            ss << oneUShort;
+        }
+        else if (objTypeKey == CVDXF_Data::DataInt32Key())
+        {
+            int32_t oneInt = uni_get_int(oneValValues[k]);
+            ss << oneInt;
+        }
+        else if (objTypeKey == CVDXF_Data::DataUint32Key())
+        {
+            uint32_t oneUInt = uni_get_int64(oneValValues[k]);
+            ss << oneUInt;
+        }
+        else if (objTypeKey == CVDXF_Data::DataInt64Key())
+        {
+            int64_t oneInt64 = uni_get_int64(oneValValues[k]);
+            ss << oneInt64;
+        }
+        else if (objTypeKey == CVDXF_Data::DataUint160Key())
+        {
+            uint160 oneKey = GetDestinationID(DecodeDestination(uni_get_str(oneValValues[k])));
+            ss << oneKey;
+        }
+        else if (objTypeKey == CVDXF_Data::DataUint256Key())
+        {
+            uint256 oneHash = uint256S(uni_get_str(oneValValues[k]));
+            ss << oneHash;
+        }
+        else if (objTypeKey == CVDXF_Data::DataStringKey())
+        {
+            ss << objTypeKey;
+            ss << VARINT(1);
+            std::string stringVal = uni_get_str(oneValValues[k]);
+            ss << VARINT(GetSerializeSize(ss, stringVal));
+            ss << stringVal;
+        }
+        else if (objTypeKey == CVDXF_Data::DataByteVectorKey())
+        {
+            ss << objTypeKey;
+            ss << VARINT(1);
+            std::vector<unsigned char> byteVec = ParseHex(uni_get_str(oneValValues[k]));
+            ss << VARINT(GetSerializeSize(ss, byteVec));
+            ss << byteVec;
+        }
+        else if (objTypeKey == CVDXF_Data::DataCurrencyMapKey())
+        {
+            CCurrencyValueMap oneCurMap(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(1);
+            ss << VARINT(GetSerializeSize(ss, oneCurMap));
+            ss << oneCurMap;
+        }
+        else if (objTypeKey == CVDXF_Data::DataRatingsKey())
+        {
+            CRating oneRatingObj(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(oneRatingObj.version);
+            ss << VARINT(GetSerializeSize(ss, oneRatingObj));
+            ss << oneRatingObj;
+        }
+        else if (objTypeKey == CVDXF_Data::DataTransferDestinationKey())
+        {
+            CTransferDestination oneTransferDest(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(oneTransferDest.TypeNoFlags());
+            ss << VARINT(GetSerializeSize(ss, oneTransferDest));
+            ss << oneTransferDest;
+        }
+        else if (objTypeKey == CVDXF_Data::ContentMultiMapRemoveKey())
+        {
+            CContentMultiMapRemove contentRemove(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(contentRemove.version);
+            ss << VARINT(GetSerializeSize(ss, contentRemove));
+            ss << contentRemove;
+        }
+        else
+        {
+            LogPrint("contentmap", "%s: invalid or unrecognized vdxfkey for object type: %s\n", __func__, EncodeDestination(CIdentityID(objTypeKey)).c_str());
+            return std::vector<unsigned char>();
+        }
+    }
+    return std::vector<unsigned char>(ss.begin(), ss.end());
 }
 
 CIdentity::CIdentity(const UniValue &uni) : CPrincipal(uni)
@@ -720,6 +1161,93 @@ CIdentity::CIdentity(const UniValue &uni) : CPrincipal(uni)
             }
         }
     }
+
+    if (nVersion >= VERSION_PBAAS)
+    {
+        UniValue multiMapUni = find_value(uni, "contentmultimap");
+        if (multiMapUni.isObject())
+        {
+            std::vector<std::string> keys = multiMapUni.getKeys();
+            std::vector<UniValue> values = multiMapUni.getValues();
+            for (int i = 0; i < keys.size(); i++)
+            {
+                try
+                {
+                    uint160 key = ParseVDXFKey(keys[i]);
+
+                    if (!key.IsNull() &&
+                        i < values.size())
+                    {
+                        if (values[i].isArray())
+                        {
+                            for (int j = 0; j < values[i].size(); j++)
+                            {
+                                UniValue oneValue = values[i][j];
+                                std::string valueString;
+                                if (oneValue.isStr() && IsHex(valueString = uni_get_str(oneValue)))
+                                {
+                                    contentMultiMap.insert(std::make_pair(key, ParseHex(valueString)));
+                                }
+                                else if (oneValue.isObject())
+                                {
+                                    std::vector<unsigned char> mapBytesValue = VectorEncodeVDXFUni(oneValue);
+                                    if (!mapBytesValue.size() || nVersion == VERSION_INVALID)
+                                    {
+                                        nVersion = VERSION_INVALID;
+                                        break;
+                                    }
+                                    contentMultiMap.insert(std::make_pair(key, mapBytesValue));
+                                }
+                            }
+                        }
+                        else if (values[i].isStr())
+                        {
+                            std::string valueString;
+                            if (IsHex(valueString = uni_get_str(values[i])))
+                            {
+                                contentMultiMap.insert(std::make_pair(key, ParseHex(valueString)));
+                            }
+                            else
+                            {
+                                nVersion = VERSION_INVALID;
+                                break;
+                            }
+                        }
+                        else if (values[i].isObject())
+                        {
+                            std::vector<unsigned char> mapBytesValue = VectorEncodeVDXFUni(values[i]);
+                            if (!mapBytesValue.size() || nVersion == VERSION_INVALID)
+                            {
+                                nVersion = VERSION_INVALID;
+                                break;
+                            }
+                            contentMultiMap.insert(std::make_pair(key, mapBytesValue));
+                        }
+                        else
+                        {
+                            nVersion = VERSION_INVALID;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        nVersion = VERSION_INVALID;
+                        break;
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    nVersion = VERSION_INVALID;
+                }
+                if (nVersion == VERSION_INVALID)
+                {
+                    LogPrint("contentmap", "%s: contentmultimap entry is not valid keys: %s, values: %s\n", __func__, keys[i].c_str(), values[i].write().c_str());
+                    break;
+                }
+            }
+        }
+    }
+
     std::string revocationStr = uni_get_str(find_value(uni, "revocationauthority"));
     std::string recoveryStr = uni_get_str(find_value(uni, "recoveryauthority"));
 
@@ -1071,6 +1599,10 @@ std::vector<std::string> ParseSubNames(const std::string &Name, std::string &Cha
 // hash its parent names into a parent ID and return the parent hash and cleaned, single name
 std::string CleanName(const std::string &Name, uint160 &Parent, bool displayfilter, bool addVerus)
 {
+    // The line below should make sense, but this path should be tested in test mode until we are sure there are
+    // no edge cases
+    addVerus = addVerus && (!PBAAS_TESTMODE || Parent.IsNull());
+
     std::string chainName;
     std::vector<std::string> subNames = ParseSubNames(Name, chainName, displayfilter, addVerus);
 
@@ -1080,6 +1612,7 @@ std::string CleanName(const std::string &Name, uint160 &Parent, bool displayfilt
     }
 
     if (!Parent.IsNull() &&
+        subNames.size() > 1 &&
         boost::to_lower_copy(subNames.back()) == boost::to_lower_copy(VERUS_CHAINNAME))
     {
         subNames.pop_back();
@@ -1217,7 +1750,8 @@ CScript CIdentity::IdentityUpdateOutputScript(uint32_t height, const std::vector
     CConditionObj<CIdentity> primary(EVAL_IDENTITY_PRIMARY, dests1, 1, this);
 
     // when PBaaS activates, we no longer need redundant entries, so reduce the size a bit
-    if (CConstVerusSolutionVector::GetVersionByHeight(height) >= CActivationHeight::ACTIVATE_VERUSVAULT)
+    uint32_t consensusVersion = CConstVerusSolutionVector::GetVersionByHeight(height);
+    if (consensusVersion >= CActivationHeight::ACTIVATE_VERUSVAULT)
     {
         std::vector<CTxDestination> dests3({CTxDestination(CIdentityID(recoveryAuthority))});
         if (HasTokenizedControl())
@@ -1233,7 +1767,6 @@ CScript CIdentity::IdentityUpdateOutputScript(uint32_t height, const std::vector
 
         if (IsRevoked())
         {
-            // TODO: HARDENING for next testnet reset and mainnet release version, remove primary when revoked
             ret = MakeMofNCCScript(1, primary, recovery, indexDests);
         }
         else

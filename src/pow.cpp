@@ -179,7 +179,7 @@ unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const 
         t += solvetime * j;
 
         // Target sum divided by a factor, (k N^2).
-        // The factor is a part of the final equation. However we divide 
+        // The factor is a part of the final equation. However we divide
         // here to avoid potential overflow.
         bnTmp.SetCompact(pindexNext->nBits);
         if (targetShift && !(CConstVerusSolutionVector::activationHeight.ActiveVersion(pindexNext->GetHeight()) > CConstVerusSolutionVector::activationHeight.SOLUTION_VERUSV1))
@@ -240,6 +240,7 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
 
     int32_t maxConsecutivePos = VERUS_CONSECUTIVE_POS_THRESHOLD;
     int32_t maxConsecutiveNoPos = VERUS_NOPOS_THRESHHOLD;
+    int32_t nProofOfWorkBlockPOSUnits = VERUS_BLOCK_POSUNITS;
 
     bnLimit = UintToArith256(params.posLimit);
     uint32_t nProofOfStakeDefault = bnLimit.GetCompact();
@@ -248,6 +249,9 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
     {
         maxConsecutivePos = VERUS_PBAAS_CONSECUTIVE_POS_THRESHOLD;
         maxConsecutiveNoPos = VERUS_PBAAS_NOPOS_THRESHHOLD;
+
+        // due to constraining maximum consecutive PoS blocks, we use this bias to adjust to 50%
+        nProofOfWorkBlockPOSUnits += (VERUS_BLOCK_POSUNITS / 20);
 
         // the default staking difficulty is based on an expectation of 25% of the supply staking, which if facing 100%, will not be catastrophic
         // neither will it be impossible to adapt if only 1/64th or even less is staking, though it will take longer to get to an equilibrium.
@@ -337,15 +341,15 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
             idx[i].consecutive = false;
             if (_IsVerusMainnetActive() && nHeight < 67680)
             {
-                idx[i].solveTime = VERUS_BLOCK_POSUNITS * (x + 1);
+                idx[i].solveTime = nProofOfWorkBlockPOSUnits * (x + 1);
             }
             else
             {
                 int64_t lastSolveTime = 0;
-                idx[i].solveTime = VERUS_BLOCK_POSUNITS;
+                idx[i].solveTime = nProofOfWorkBlockPOSUnits;
                 for (int64_t j = 0; j < x; j++)
                 {
-                    lastSolveTime = VERUS_BLOCK_POSUNITS + (lastSolveTime >> 1);
+                    lastSolveTime = nProofOfWorkBlockPOSUnits + (lastSolveTime >> 1);
                     idx[i].solveTime += lastSolveTime;
                 }
             }
@@ -381,13 +385,13 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
         }
     }
 
-    for (int64_t i = N - 1; i >= 0; i--) 
+    for (int64_t i = N - 1; i >= 0; i--)
     {
         // weighted sum
         t += idx[i].solveTime * i;
 
         // Target sum divided by a factor, (k N^2).
-        // The factor is a part of the final equation. However we divide 
+        // The factor is a part of the final equation. However we divide
         // here to avoid potential overflow.
         bnTmp.SetCompact(idx[i].nBits);
         sumTarget += bnTmp / (k * N * N);

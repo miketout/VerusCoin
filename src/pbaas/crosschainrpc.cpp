@@ -1,24 +1,24 @@
 /********************************************************************
  * (C) 2019 Michael Toutonghi
- * 
+ *
  * Distributed under the MIT software license, see the accompanying
  * file COPYING or http://www.opensource.org/licenses/mit-license.php.
- * 
+ *
  * This provides support for PBaaS cross chain communication.
- * 
+ *
  * In merge mining and notarization, Verus acts as a hub that other PBaaS chains
  * call via RPC in order to get information that allows earning and submitting
  * notarizations.
- * 
+ *
  * All PBaaS chains communicate with their primary reserve chain, which is either Verus
  * or the chain that is their reserve coin. The child PBaaS chain initiates all of
  * the communication with the parent / reserve daemon.
- * 
+ *
  * Generally, the PBaaS chain will call the Verus chain to either get information needed
  * to create an earned or accepted notarization. If there is no Verus daemon available
  * staking and mining of a PBaaS chain proceeds as usual, but without notarization
  * reward opportunities.
- * 
+ *
  */
 
 #include "chainparamsbase.h"
@@ -50,7 +50,6 @@ extern string PBAAS_HOST;
 extern string PBAAS_USERPASS;
 extern int32_t PBAAS_PORT;
 extern std::string VERUS_CHAINNAME;
-
 
 //
 // Exception thrown on connection error.  This error is used to determine
@@ -224,29 +223,29 @@ UniValue RPCCallRoot(const string& strMethod, const UniValue& params, int timeou
     {
         return RPCCall(strMethod, params, PBAAS_USERPASS, PBAAS_PORT, PBAAS_HOST);
     }
-    else if (_IsVerusActive() &&
-             ReadConfigFile("veth", settings, settingsmulti))
+    else if ((_IsVerusActive() &&
+              ReadConfigFile("veth", settings, settingsmulti)) ||
+             (!_IsVerusActive() &&
+              ReadConfigFile(PBAAS_TESTMODE ? "vrsctest" : "VRSC", settings, settingsmulti)))
     {
         // the Ethereum bridge, "VETH", serves as the root currency to VRSC and for Rinkeby to VRSCTEST
-        PBAAS_USERPASS = settingsmulti.find("-rpcuser")->second[0] + ":" + settingsmulti.find("-rpcpassword")->second[0];
-        PBAAS_PORT = atoi(settingsmulti.find("-rpcport")->second[0]);
-        PBAAS_HOST = settingsmulti.find("-rpchost")->second[0];
-        if (!PBAAS_HOST.size())
+        auto userIt = settingsmulti.find("-rpcuser");
+        auto passIt = settingsmulti.find("-rpcpassword");
+        auto portIt = settingsmulti.find("-rpcport");
+        auto hostIt = settingsmulti.find("-rpchost");
+        if (userIt != settingsmulti.end() &&
+            passIt != settingsmulti.end() &&
+            portIt != settingsmulti.end())
         {
-            PBAAS_HOST = "127.0.0.1";
+            PBAAS_USERPASS = userIt->second[0] + ":" + passIt->second[0];
+            PBAAS_PORT = atoi(portIt->second[0]);
+            PBAAS_HOST = hostIt == settingsmulti.end() ? hostIt->second[0] : "127.0.0.1";
+            if (!PBAAS_HOST.size())
+            {
+                PBAAS_HOST = "127.0.0.1";
+            }
+            return RPCCall(strMethod, params, credentials, port, host, timeout);
         }
-        return RPCCall(strMethod, params, credentials, port, host, timeout);
-    }
-    else if (ReadConfigFile(PBAAS_TESTMODE ? "vrsctest" : "VRSC", settings, settingsmulti))
-    {
-        PBAAS_USERPASS = settingsmulti.find("-rpcuser")->second[0] + ":" + settingsmulti.find("-rpcpassword")->second[0];
-        PBAAS_PORT = atoi(settingsmulti.find("-rpcport")->second[0]);
-        PBAAS_HOST = settingsmulti.find("-rpchost")->second[0];
-        if (!PBAAS_HOST.size())
-        {
-            PBAAS_HOST = "127.0.0.1";
-        }
-        return RPCCall(strMethod, params, credentials, port, host, timeout);
     }
     return UniValue(UniValue::VNULL);
 }
@@ -280,12 +279,39 @@ CNodeData::CNodeData(std::string netAddr, std::string paymentAddr) :
     nodeIdentity = GetDestinationID(DecodeDestination(paymentAddr));
 }
 
+const std::map<std::string, CCurrencyDefinition::EHashTypes> &CIdentitySignature::HashTypeStringMap()
+{
+    static std::map<std::string, CCurrencyDefinition::EHashTypes> hashTypeMap;
+    if (!hashTypeMap.size())
+    {
+        hashTypeMap["sha256"] = CCurrencyDefinition::EHashTypes::HASH_SHA256;
+        hashTypeMap["blake2b"] = CCurrencyDefinition::EHashTypes::HASH_BLAKE2BMMR;
+        hashTypeMap["keccak256"] = CCurrencyDefinition::EHashTypes::HASH_KECCAK;
+        hashTypeMap["sha256D"] = CCurrencyDefinition::EHashTypes::HASH_SHA256D;
+    }
+    return hashTypeMap;
+}
+
 CIdentitySignature::CIdentitySignature(const UniValue &uni)
 {
     try
     {
         version = uni_get_int(find_value(uni, "version"));
-        hashType = uni_get_int(find_value(uni, "hashtype"), CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR);
+        std::string hashTypeStr = uni_get_str(find_value(uni, "hashtype"));
+        auto it = HashTypeStringMap().find(hashTypeStr);
+        if (it != HashTypeStringMap().end())
+        {
+            hashType = it->second;
+        }
+        else
+        {
+            hashType = uni_get_int(find_value(uni, "hashtype"), CCurrencyDefinition::EHashTypes::HASH_INVALID);
+            if (!IsValidHashType((CCurrencyDefinition::EHashTypes)hashType))
+            {
+                version = VERSION_INVALID;
+                return;
+            }
+        }
         blockHeight = uni_get_int64(find_value(uni, "blockheight"));
         UniValue sigs = find_value(uni, "signatures");
         if (sigs.isArray() && sigs.size())
@@ -302,12 +328,13 @@ CIdentitySignature::CIdentitySignature(const UniValue &uni)
     }
 }
 
-uint256 CIdentitySignature::IdentitySignatureHash(const std::vector<uint160> &vdxfCodes, 
-                                                  const std::vector<uint256> &statements, 
-                                                  const uint160 &systemID, 
-                                                  uint32_t blockHeight, 
-                                                  uint160 idID,
-                                                  const std::string &prefixString, 
+uint256 CIdentitySignature::IdentitySignatureHash(const std::vector<uint160> &vdxfCodes,
+                                                  const std::vector<std::string> &vdxfCodeNames,
+                                                  const std::vector<uint256> &statements,
+                                                  const uint160 &systemID,
+                                                  uint32_t blockHeight,
+                                                  const uint160 &idID,
+                                                  const std::string &prefixString,
                                                   const uint256 &msgHash) const
 {
     uint256 retVal;
@@ -325,29 +352,11 @@ uint256 CIdentitySignature::IdentitySignatureHash(const std::vector<uint160> &vd
     }
     else
     {
-        CNativeHashWriter ss((CCurrencyDefinition::EProofProtocol)hashType);
+        CNativeHashWriter ss((CCurrencyDefinition::EHashTypes)hashType);
 
-        bool crossChainLogging = LogAcceptCategory("notarysignatures");
+        bool crossChainLogging = LogAcceptCategory("notarysignatures") || LogAcceptCategory("identitysignatures");
         if (crossChainLogging)
         {
-            printf("%s: vdxfCodes:\n", __func__);
-            LogPrintf("%s: vdxfCodes:\n", __func__);
-            for (auto &oneCode : vdxfCodes)
-            {
-                printf("%s\n", oneCode.GetHex().c_str());
-                LogPrintf("%s\n", oneCode.GetHex().c_str());
-            }
-            printf("\n");
-            LogPrintf("\n");
-            printf("%s: statements:\n", __func__);
-            LogPrintf("%s: statements:\n", __func__);
-            for (auto &oneStatement : statements)
-            {
-                printf("%s\n", oneStatement.GetHex().c_str());
-                LogPrintf("%s\n", oneStatement.GetHex().c_str());
-            }
-            printf("\n");
-            LogPrintf("\n");
             printf("systemid: %s, blockheight: %u, identity: %s, prefix: %s\nmsghash: %s\n",
                 EncodeDestination(CIdentityID(systemID)).c_str(),
                 blockHeight,
@@ -366,12 +375,63 @@ uint256 CIdentitySignature::IdentitySignatureHash(const std::vector<uint160> &vd
 
         if (vdxfCodes.size())
         {
-            ss << vdxfCodes;
+            auto vecCopy = vdxfCodes;
+            sort(vecCopy.begin(), vecCopy.end());
+            ss << vecCopy;
+        }
+        if (vdxfCodeNames.size())
+        {
+            auto vecCopy = vdxfCodeNames;
+            sort(vecCopy.begin(), vecCopy.end());
+            ss << vecCopy;
         }
         if (statements.size())
         {
-            ss << statements;
+            auto vecCopy = statements;
+            sort(vecCopy.begin(), vecCopy.end());
+            ss << vecCopy;
         }
+
+        if (crossChainLogging)
+        {
+            if (vdxfCodes.size())
+            {
+                printf("%s: vdxfCodes:\n", __func__);
+                LogPrintf("%s: vdxfCodes:\n", __func__);
+                for (auto &oneCode : vdxfCodes)
+                {
+                    printf("%s\n", oneCode.GetHex().c_str());
+                    LogPrintf("%s\n", oneCode.GetHex().c_str());
+                }
+                printf("\n");
+                LogPrintf("\n");
+            }
+            if (vdxfCodeNames.size())
+            {
+                printf("%s: vdxfCodeNames:\n", __func__);
+                LogPrintf("%s: vdxfCodeNames:\n", __func__);
+                for (auto &oneCode : vdxfCodeNames)
+                {
+                    printf("%s\n", oneCode.c_str());
+                    LogPrintf("%s\n", oneCode.c_str());
+                }
+                printf("\n");
+                LogPrintf("\n");
+            }
+            if (statements.size())
+            {
+                printf("%s: statements:\n", __func__);
+                LogPrintf("%s: statements:\n", __func__);
+                for (auto &oneStatement : statements)
+                {
+                    printf("%s\n", oneStatement.GetHex().c_str());
+                    LogPrintf("%s\n", oneStatement.GetHex().c_str());
+                }
+                printf("\n");
+                LogPrintf("\n");
+            }
+        }
+
         ss << systemID;
         ss << blockHeight;
         ss << idID;
@@ -391,10 +451,11 @@ uint256 CIdentitySignature::IdentitySignatureHash(const std::vector<uint160> &vd
 }
 
 CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(const CIdentity &signingID,
-                                                                              const std::vector<uint160> &vdxfCodes, 
-                                                                              const std::vector<uint256> &statements, 
-                                                                              const uint160 systemID, 
-                                                                              const std::string &prefixString, 
+                                                                              const std::vector<uint160> &vdxfCodes,
+                                                                              const std::vector<std::string> &vdxfCodeNames,
+                                                                              const std::vector<uint256> &statements,
+                                                                              const uint160 systemID,
+                                                                              const std::string &prefixString,
                                                                               const uint256 &msgHash,
                                                                               std::vector<std::vector<unsigned char>> *pDupSigs) const
 {
@@ -410,7 +471,8 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
         }
         idKeys.insert(GetDestinationID(oneKey));
     }
-    uint256 signatureHash = IdentitySignatureHash(vdxfCodes, statements, systemID, blockHeight, signingID.GetID(), prefixString, msgHash);
+    uint256 signatureHash = IdentitySignatureHash(vdxfCodes, vdxfCodeNames, statements, systemID, blockHeight, signingID.GetID(), prefixString, msgHash);
+
     for (auto &oneSig : signatures)
     {
         if (oneSig.size() != ECDSA_RECOVERABLE_SIZE)
@@ -425,6 +487,45 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
 
         if (!idKeys.count(checkKeyID))
         {
+            if (LogAcceptCategory("notarysignatures"))
+            {
+                printf("Invalid signature - recovered %s\nfrom signature %s\nfor hash %s\nexpected: %s\nidentity: %s\n", EncodeDestination(CKeyID(checkKeyID)).c_str(), EncodeBase64(std::string(oneSig.begin(), oneSig.end())).c_str(), signatureHash.GetHex().c_str(), idKeys.begin() == idKeys.end() ? "empty" : EncodeDestination(CKeyID(*idKeys.begin())).c_str(), signingID.ToUniValue().write(1,2).c_str());
+                LogPrintf("Invalid signature - recovered %s\nfrom signature %s\nfor hash %s\nexpected: %s\nidentity: %s\n", EncodeDestination(CKeyID(checkKeyID)).c_str(), EncodeBase64(std::string(oneSig.begin(), oneSig.end())).c_str(), signatureHash.GetHex().c_str(), idKeys.begin() == idKeys.end() ? "empty" : EncodeDestination(CKeyID(*idKeys.begin())).c_str(), signingID.ToUniValue().write(1,2).c_str());
+
+                UniValue vdxfCodesUni(UniValue::VARR);
+                UniValue vdxfCodeNamesUni(UniValue::VARR);
+                UniValue statementsUni(UniValue::VARR);
+                for (auto &oneItem : vdxfCodes)
+                {
+                    vdxfCodesUni.push_back(EncodeDestination(CIdentityID(oneItem)));
+                }
+                for (auto &oneItem : vdxfCodeNames)
+                {
+                    vdxfCodeNamesUni.push_back(oneItem);
+                }
+                for (auto &oneItem : statements)
+                {
+                    statementsUni.push_back(oneItem.GetHex());
+                }
+                printf("Ready to check signature on system: %s\nvdxfCodes: %s\nvdxfCodeNames: %s\nstatements: %s\nblockHeight: %u\nsigningID.name: %s\nprefixString: %s\nmsgHash: %s\n",
+                        EncodeDestination(CIdentityID(systemID)).c_str(),
+                        vdxfCodesUni.write().c_str(),
+                        vdxfCodeNamesUni.write().c_str(),
+                        statementsUni.write().c_str(),
+                        blockHeight,
+                        signingID.name.c_str(),
+                        prefixString.c_str(),
+                        msgHash.GetHex().c_str());
+                LogPrintf("Ready to check signature on system: %s\nvdxfCodes: %s\nvdxfCodeNames: %s\nstatements: %s\nblockHeight: %u\nsigningID.name: %s\nprefixString: %s\nmsgHash: %s\n",
+                        EncodeDestination(CIdentityID(systemID)).c_str(),
+                        vdxfCodesUni.write().c_str(),
+                        vdxfCodeNamesUni.write().c_str(),
+                        statementsUni.write().c_str(),
+                        blockHeight,
+                        signingID.name.c_str(),
+                        prefixString.c_str(),
+                        msgHash.GetHex().c_str());
+            }
             return SIGNATURE_INVALID;
         }
 
@@ -433,6 +534,11 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
             pDupSigs->push_back(oneSig);
         }
         keys.insert(checkKeyID);
+        if (LogAcceptCategory("notarysignatures") && LogAcceptCategory("verbose"))
+        {
+            printf("Signature OK - recovered %s\nfrom signature %s\nfor hash %s\nexpected: %s\nidentity: %s\n", EncodeDestination(CKeyID(checkKeyID)).c_str(), EncodeBase64(std::string(oneSig.begin(), oneSig.end())).c_str(), signatureHash.GetHex().c_str(), idKeys.begin() == idKeys.end() ? "empty" : EncodeDestination(CKeyID(*idKeys.begin())).c_str(), signingID.ToUniValue().write(1,2).c_str());
+            LogPrintf("Signature OK - recovered %s\nfrom signature %s\nfor hash %s\nexpected: %s\nidentity: %s\n", EncodeDestination(CKeyID(checkKeyID)).c_str(), EncodeBase64(std::string(oneSig.begin(), oneSig.end())).c_str(), signatureHash.GetHex().c_str(), idKeys.begin() == idKeys.end() ? "empty" : EncodeDestination(CKeyID(*idKeys.begin())).c_str(), signingID.ToUniValue().write(1,2).c_str());
+        }
     }
     if (keys.size() >= signingID.minSigs)
     {
@@ -451,7 +557,7 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
 CTransferDestination CTransferDestination::GetAuxDest(int destNum) const
 {
     CTransferDestination retVal;
-    if (destNum < auxDests.size())
+    if (destNum >= 0 && destNum < auxDests.size())
     {
         ::FromVector(auxDests[destNum], retVal);
         if (retVal.type & FLAG_DEST_AUX || retVal.auxDests.size())
@@ -476,6 +582,11 @@ CTransferDestination CTransferDestination::GetAuxDest(int destNum) const
 
 void CTransferDestination::SetAuxDest(const CTransferDestination &auxDest, int destNum)
 {
+    if (auxDests.size() < destNum)
+    {
+        LogPrintf("%s: Invalid auxDest index %d. Cannot add more than one to auxDests at a time.\n", __func__, destNum);
+        assert(false);
+    }
     if (auxDests.size() == destNum)
     {
         auxDests.push_back(::AsVector(auxDest));
@@ -490,11 +601,25 @@ void CTransferDestination::SetAuxDest(const CTransferDestination &auxDest, int d
     }
 }
 
+bool CTransferDestination::EraseAuxDest(int destNum)
+{
+    if (auxDests.size() <= destNum)
+    {
+        LogPrint("notarization", "%s: Attempt to erase invalid auxDest index %d\n", __func__, destNum);
+        return false;
+    }
+    auxDests.erase(auxDests.begin() + destNum);
+    if (!auxDests.size())
+    {
+        type &= ~FLAG_DEST_AUX;
+    }
+    return true;
+}
 
 uint160 DecodeCurrencyName(std::string currencyStr)
 {
     uint160 retVal;
-    currencyStr = TrimSpaces(currencyStr);
+    currencyStr = TrimSpaces(currencyStr, true);
     if (!currencyStr.size())
     {
         return retVal;
@@ -541,7 +666,10 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
     currencyImportFee(CURRENCY_IMPORT_FEE),
     transactionImportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
     transactionExportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
-    initialBits(DEFAULT_START_TARGET)
+    initialBits(DEFAULT_START_TARGET),
+    blockTime(DEFAULT_BLOCKTIME_TARGET),
+    powAveragingWindow(DEFAULT_AVERAGING_WINDOW),
+    blockNotarizationModulo(BLOCK_NOTARIZATION_MODULO)
 {
     try
     {
@@ -561,7 +689,7 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             }
         }
 
-        name = CleanName(name, parent);
+        name = CleanName(name, parent, true);
 
         std::string systemIDStr = uni_get_str(find_value(obj, "systemid"));
         if (systemIDStr != "")
@@ -620,29 +748,40 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                     }
                 }
             }
+            else if (IsGateway() && conversions.size())
+            {
+                if (maxPreconvert.size() != conversions.size())
+                {
+                    LogPrintf("%s: gateways must not allow preconversions %s\n", __func__, name.c_str());
+                    nVersion = PBAAS_VERSION_INVALID;
+                    return;
+                }
+                for (int j = 0; j < conversions.size(); j++)
+                {
+                    if (maxPreconvert[j])
+                    {
+                        LogPrintf("%s: gateways must not allow preconversions %s\n", __func__, name.c_str());
+                        nVersion = PBAAS_VERSION_INVALID;
+                        return;
+                    }
+                }
+            }
         }
 
         notarizationProtocol = (ENotarizationProtocol)uni_get_int(find_value(obj, "notarizationprotocol"), (int32_t)NOTARIZATION_AUTO);
-        if (notarizationProtocol != NOTARIZATION_AUTO && notarizationProtocol != NOTARIZATION_NOTARY_CONFIRM)
+        if (notarizationProtocol != NOTARIZATION_AUTO &&
+            notarizationProtocol != NOTARIZATION_NOTARY_CONFIRM &&
+            notarizationProtocol != NOTARIZATION_NOTARY_CHAINID)
         {
-            LogPrintf("%s: notarization protocol for PBaaS chains must be %d (NOTARIZATION_AUTO) or %d (NOTARIZATION_NOTARY_CONFIRM)\n", __func__, (int)NOTARIZATION_NOTARY_CONFIRM);
+            LogPrintf("%s: notarization protocol for PBaaS chains must be %d (NOTARIZATION_AUTO), %d (NOTARIZATION_NOTARY_CONFIRM), or  %d (NOTARIZATION_NOTARY_CHAINID)\n", __func__, (int)NOTARIZATION_AUTO, (int)NOTARIZATION_NOTARY_CONFIRM, (int)NOTARIZATION_NOTARY_CHAINID);
             nVersion = PBAAS_VERSION_INVALID;
             return;
         }
+
         proofProtocol = (EProofProtocol)uni_get_int(find_value(obj, "proofprotocol"), (int32_t)PROOF_PBAASMMR);
         if (proofProtocol != PROOF_PBAASMMR && proofProtocol != PROOF_CHAINID && proofProtocol != PROOF_ETHNOTARIZATION)
         {
             LogPrintf("%s: proofprotocol must be %d, %d, or %d\n", __func__, (int)PROOF_PBAASMMR, (int)PROOF_CHAINID, (int)PROOF_ETHNOTARIZATION);
-            nVersion = PBAAS_VERSION_INVALID;
-            return;
-        }
-
-        // TODO: HARDENING - ensure that it makes sense for a chain to have PROOF_CHAINID still or disallow
-        // to enable it, we will need to ensure that all imports and notarizations are spendable to the chain ID and are
-        // considered valid by definition
-        if (proofProtocol == PROOF_CHAINID && IsPBaaSChain())
-        {
-            LogPrintf("%s: proofprotocol %d not yet implemented\n", __func__, (int)PROOF_CHAINID);
             nVersion = PBAAS_VERSION_INVALID;
             return;
         }
@@ -663,6 +802,17 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
         else
         {
             launchSystemID = parent;
+        }
+
+        // PROOF_CHAINID not supported on this version of PBaaS, but if we didn't make it,
+        // don't disallow it being imported from another chain/system
+        if ((systemID == ASSETCHAINS_CHAINID || launchSystemID == ASSETCHAINS_CHAINID) &&
+             proofProtocol == PROOF_CHAINID &&
+             IsPBaaSChain())
+        {
+            LogPrintf("%s: proofprotocol %d as a PBaaS chain is not yet implemented in this version of Verus PBaaS\n", __func__, (int)PROOF_CHAINID);
+            nVersion = PBAAS_VERSION_INVALID;
+            return;
         }
 
         startBlock = (uint32_t)uni_get_int64(find_value(obj, "startblock"));
@@ -786,7 +936,7 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                 // if we are fractional, explicit conversion values are not valid
                 // and are based on non-zero, initial contributions relative to supply
                 if ((conversionArr.isArray() && conversionArr.size() != currencyArr.size()) ||
-                    !initialContributionArr.isArray() || 
+                    !initialContributionArr.isArray() ||
                     initialContributionArr.size() != currencyArr.size() ||
                     weights.size() != currencyArr.size() ||
                     !IsFractional())
@@ -938,6 +1088,10 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
 
         UniValue notaryArr = find_value(obj, "notaries");
         minNotariesConfirm = 0;
+        if (notarizationProtocol == NOTARIZATION_NOTARY_CHAINID)
+        {
+            notaries.push_back(GetID());
+        }
         if (notaryArr.isArray())
         {
             for (int i = 0; i < notaryArr.size(); i++)
@@ -1015,7 +1169,26 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                 LogPrintf("%s: Invalid initial target, must be 256 bit hex target\n", __func__);
                 throw e;
             }
-            
+
+            blockTime = uni_get_int64(find_value(obj, "blocktime"), DEFAULT_BLOCKTIME_TARGET);
+            powAveragingWindow = uni_get_int64(find_value(obj, "powaveragingwindow"), DEFAULT_AVERAGING_WINDOW);
+            blockNotarizationModulo = uni_get_int64(find_value(obj, "notarizationperiod"),
+                                                    std::max((int64_t)(DEFAULT_BLOCK_NOTARIZATION_TIME / blockTime), (int64_t)MIN_BLOCK_NOTARIZATION_PERIOD));
+
+            if (powAveragingWindow < MIN_AVERAGING_WINDOW || powAveragingWindow > MAX_AVERAGING_WINDOW)
+            {
+                LogPrintf("%s: powaveragingwindow: %d out of range %d - %d\n", __func__, powAveragingWindow, MIN_AVERAGING_WINDOW, MAX_AVERAGING_WINDOW);
+                nVersion = PBAAS_VERSION_INVALID;
+                return;
+            }
+
+            if (blockTime < MIN_BLOCKTIME_TARGET || blockTime > MAX_BLOCKTIME_TARGET)
+            {
+                LogPrintf("%s: blocktime: %d out of range %d - %d\n", __func__, blockTime, MIN_BLOCKTIME_TARGET, MAX_BLOCKTIME_TARGET);
+                nVersion = PBAAS_VERSION_INVALID;
+                return;
+            }
+
             for (auto era : vEras)
             {
                 rewards.push_back(uni_get_int64(find_value(era, "reward")));
@@ -1052,9 +1225,12 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
     currencyImportFee(CURRENCY_IMPORT_FEE),
     transactionImportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
     transactionExportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
-    initialBits(DEFAULT_START_TARGET)
+    initialBits(DEFAULT_START_TARGET),
+    blockTime(DEFAULT_BLOCKTIME_TARGET),
+    powAveragingWindow(DEFAULT_AVERAGING_WINDOW),
+    blockNotarizationModulo(BLOCK_NOTARIZATION_MODULO)
 {
-    name = boost::to_upper_copy(CleanName(currencyName, parent));
+    name = boost::to_upper_copy(CleanName(currencyName, parent, true));
     if (parent.IsNull())
     {
         UniValue uniCurrency(UniValue::VOBJ);
@@ -1065,6 +1241,10 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
         uniCurrency.pushKV("systemid", EncodeDestination(CIdentityID(thisCurrencyID)));
         uniCurrency.pushKV("notarizationprotocol", (int32_t)NOTARIZATION_AUTO);
         uniCurrency.pushKV("proofprotocol", (int32_t)PROOF_PBAASMMR);
+
+        uniCurrency.pushKV("blocktime", (int64_t)DEFAULT_BLOCKTIME_TARGET);
+        uniCurrency.pushKV("powaveragingwindow", (int64_t)DEFAULT_AVERAGING_WINDOW);
+        uniCurrency.pushKV("notarizationperiod", (int)BLOCK_NOTARIZATION_MODULO);
 
         if (name == "VRSC" && !testMode)
         {
@@ -1106,9 +1286,9 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
 
             UniValue uniEras(UniValue::VARR);
             UniValue uniEra1(UniValue::VOBJ);
-            uniEra1.pushKV("reward", 1200000000);
+            uniEra1.pushKV("reward", 600000000);
             uniEra1.pushKV("decay", 0);
-            uniEra1.pushKV("halving", 163382);
+            uniEra1.pushKV("halving", 1051920);
             uniEra1.pushKV("eraend", 0);
             uniEras.push_back(uniEra1);
 
@@ -1247,12 +1427,6 @@ void DeleteOpRetObjects(std::vector<CBaseChainObject *> &ora)
                 break;
             }
 
-            case CHAINOBJ_COMPOSITEOBJECT:
-            {
-                delete (CChainObject<CCompositeChainObject> *)pobj;
-                break;
-            }
-
             case CHAINOBJ_NOTARYSIGNATURE:
             {
                 delete (CChainObject<CNotarySignature> *)pobj;
@@ -1263,7 +1437,7 @@ void DeleteOpRetObjects(std::vector<CBaseChainObject *> &ora)
             {
                 printf("ERROR: invalid object type (%u), likely corrupt pointer %p\n", pobj->objectType, pobj);
                 printf("generate code that won't be optimized away %s\n", CCurrencyValueMap(std::vector<uint160>({ASSETCHAINS_CHAINID}), std::vector<CAmount>({200000000})).ToUniValue().write(1,2).c_str());
-                
+
                 delete pobj;
             }
         }
@@ -1344,7 +1518,6 @@ CCrossChainProof::CCrossChainProof(const UniValue &uniObj)
                     }
 
                     case CHAINOBJ_CROSSCHAINPROOF:
-                    case CHAINOBJ_COMPOSITEOBJECT:
                     {
                         chainObjects.push_back(new CChainObject<CCrossChainProof>(CHAINOBJ_CROSSCHAINPROOF, CCrossChainProof(obj)));
                         break;
@@ -1451,7 +1624,6 @@ UniValue CCrossChainProof::ToUniValue() const
                     }
 
                     case CHAINOBJ_CROSSCHAINPROOF:
-                    case CHAINOBJ_COMPOSITEOBJECT:
                     {
                         UniValue crossChainProofUni(UniValue::VOBJ);
                         crossChainProofUni.pushKV("vdxftype", EncodeDestination(CIdentityID(CCrossChainProof::CrossChainProofKey())));

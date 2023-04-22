@@ -38,7 +38,7 @@ void CCoins::CalcMaskSize(unsigned int &nBytes, unsigned int &nNonzeroBytes) con
     nBytes += nLastUsedByte;
 }
 
-bool CCoins::Spend(uint32_t nPos) 
+bool CCoins::Spend(uint32_t nPos)
 {
     if (nPos >= vout.size() || vout[nPos].IsNull())
         return false;
@@ -623,7 +623,7 @@ CAmount CCoinsViewCache::GetValueIn(int32_t nHeight, int64_t *interestp, const C
         }
         else
         {
-            printf("%s: input #%d not available in view. returning 0\n", __func__, i);
+            printf("%s: input #%d txid:n (%s:%u) not available in view. returning 0\n", __func__, i, tx.vin[i].prevout.hash.GetHex().c_str(), tx.vin[i].prevout.n);
             return 0;
         }
 

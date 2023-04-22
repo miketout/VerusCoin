@@ -116,7 +116,27 @@ UniValue blockheaderToJSON(const CBlockIndex* blockindex)
         return(result);
     }
     result.push_back(Pair("hash", blockindex->GetBlockHash().GetHex()));
+    result.push_back(Pair("calchash", blockindex->GetBlockHeader().GetHash().GetHex()));
     int confirmations = -1;
+
+    CBlockHeader block = blockindex->GetBlockHeader();
+
+    if (block.IsVerusPOSBlock())
+    {
+        result.push_back(Pair("validationtype", "stake"));
+        arith_uint256 posTarget;
+        posTarget.SetCompact(block.GetVerusPOSTarget());
+        result.push_back(Pair("postarget", ArithToUint256(posTarget).GetHex()));
+        uint256 rawPOSHash;
+        block.GetRawVerusPOSHash(rawPOSHash, blockindex->GetHeight());
+        result.push_back(Pair("rawposhashbh", rawPOSHash.GetHex()));
+        CPOSNonce scratchNonce(block.nNonce);
+    }
+    else
+    {
+        result.push_back(Pair("validationtype", "work"));
+    }
+
     // Only report confirmations if the block is on the main chain
     if (chainActive.Contains(blockindex))
         confirmations = chainActive.Height() - blockindex->GetHeight() + 1;
@@ -131,7 +151,15 @@ UniValue blockheaderToJSON(const CBlockIndex* blockindex)
     result.push_back(Pair("bits", strprintf("%08x", blockindex->nBits)));
     result.push_back(Pair("difficulty", GetDifficulty(blockindex)));
     result.push_back(Pair("chainwork", blockindex->chainPower.chainWork.GetHex()));
+    result.push_back(Pair("chainstake", blockindex->chainPower.chainStake.GetHex()));
     result.push_back(Pair("segid", (int64_t)blockindex->segid));
+    if (block.nVersion >= block.VERUS_V2)
+    {
+        auto vch = block.nSolution;
+        CPBaaSSolutionDescriptor solDescr = CVerusSolutionVector(vch).Descriptor();
+        result.push_back(Pair("previousstateroot", solDescr.hashPrevMMRRoot.GetHex()));
+        result.push_back(Pair("blockmmrroot", solDescr.hashBlockMMRRoot.GetHex()));
+    }
 
     if (blockindex->pprev)
         result.push_back(Pair("previousblockhash", blockindex->pprev->GetBlockHash().GetHex()));
@@ -259,6 +287,13 @@ UniValue blockToDeltasJSON(const CBlock& block, const CBlockIndex* blockindex)
     CBlockIndex *pnext = chainActive.Next(blockindex);
     if (pnext)
         result.push_back(Pair("nextblockhash", pnext->GetBlockHash().GetHex()));
+    if (block.nVersion >= block.VERUS_V2)
+    {
+        auto vch = block.nSolution;
+        CPBaaSSolutionDescriptor solDescr = CVerusSolutionVector(vch).Descriptor();
+        result.push_back(Pair("previousstateroot", solDescr.hashPrevMMRRoot.GetHex()));
+        result.push_back(Pair("blockmmrroot", solDescr.hashBlockMMRRoot.GetHex()));
+    }
     return result;
 }
 

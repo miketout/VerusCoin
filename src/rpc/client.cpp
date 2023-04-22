@@ -44,10 +44,6 @@ CAmount AmountFromValueNoErr(const UniValue& value)
         {
             amount = 0;
         }
-        else if (!MoneyRange(amount))
-        {
-            amount = 0;
-        }
         return amount;
     }
     catch(const std::exception& e)
@@ -300,7 +296,7 @@ CTxDestination DecodeDestination(const std::string& str)
     else if (std::count(str.begin(), str.end(), '@') == 1)
     {
         uint160 parent;
-        std::string cleanName = CleanName(str, parent);
+        std::string cleanName = CleanName(str, parent, true);
         if (cleanName != "")
         {
             parent.SetNull();
@@ -408,7 +404,10 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
     currencyImportFee(CURRENCY_IMPORT_FEE),
     transactionImportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
     transactionExportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
-    initialBits(DEFAULT_START_TARGET)
+    initialBits(DEFAULT_START_TARGET),
+    blockTime(DEFAULT_BLOCKTIME_TARGET),
+    powAveragingWindow(DEFAULT_AVERAGING_WINDOW),
+    blockNotarizationModulo(BLOCK_NOTARIZATION_MODULO)
 {
     try
     {
@@ -428,7 +427,7 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             }
         }
 
-        name = CleanName(name, parent);
+        name = CleanName(name, parent, true);
 
         std::string systemIDStr = uni_get_str(find_value(obj, "systemid"));
         if (systemIDStr != "")
@@ -490,9 +489,6 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             return;
         }
 
-        // TODO: HARDENING - ensure that it makes sense for a chain to have PROOF_CHAINID still or disallow
-        // to enable it, we will need to ensure that all imports and notarizations are spendable to the chain ID and are
-        // considered valid by definition
         if (proofProtocol == PROOF_CHAINID && IsPBaaSChain())
         {
             LogPrintf("%s: proofprotocol %d not yet implemented\n", __func__, (int)PROOF_CHAINID);
@@ -629,7 +625,7 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                 // if we are fractional, explicit conversion values are not valid
                 // and are based on non-zero, initial contributions relative to supply
                 if ((conversionArr.isArray() && conversionArr.size() != currencyArr.size()) ||
-                    !initialContributionArr.isArray() || 
+                    !initialContributionArr.isArray() ||
                     initialContributionArr.size() != currencyArr.size() ||
                     weights.size() != currencyArr.size() ||
                     !IsFractional())
@@ -850,7 +846,12 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                 LogPrintf("%s: Invalid initial target, must be 256 bit hex target\n", __func__);
                 throw e;
             }
-            
+
+            blockTime = uni_get_int64(find_value(obj, "blocktime"), DEFAULT_BLOCKTIME_TARGET);
+            powAveragingWindow = uni_get_int64(find_value(obj, "powaveragingwindow"), DEFAULT_AVERAGING_WINDOW);
+            blockNotarizationModulo = uni_get_int64(find_value(obj, "notarizationperiod"),
+                                                    std::max((int64_t)(DEFAULT_BLOCK_NOTARIZATION_TIME / blockTime), (int64_t)MIN_BLOCK_NOTARIZATION_PERIOD));
+
             for (auto era : vEras)
             {
                 rewards.push_back(uni_get_int64(find_value(era, "reward")));
@@ -887,9 +888,12 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
     currencyImportFee(CURRENCY_IMPORT_FEE),
     transactionImportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
     transactionExportFee(TRANSACTION_CROSSCHAIN_FEE >> 1),
-    initialBits(DEFAULT_START_TARGET)
+    initialBits(DEFAULT_START_TARGET),
+    blockTime(DEFAULT_BLOCKTIME_TARGET),
+    powAveragingWindow(DEFAULT_AVERAGING_WINDOW),
+    blockNotarizationModulo(BLOCK_NOTARIZATION_MODULO)
 {
-    name = boost::to_upper_copy(CleanName(currencyName, parent));
+    name = boost::to_upper_copy(CleanName(currencyName, parent, true));
     if (parent.IsNull())
     {
         UniValue uniCurrency(UniValue::VOBJ);
@@ -900,6 +904,10 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
         uniCurrency.pushKV("systemid", EncodeDestination(CIdentityID(thisCurrencyID)));
         uniCurrency.pushKV("notarizationprotocol", (int32_t)NOTARIZATION_AUTO);
         uniCurrency.pushKV("proofprotocol", (int32_t)PROOF_PBAASMMR);
+
+        uniCurrency.pushKV("blocktime", (int64_t)DEFAULT_BLOCKTIME_TARGET);
+        uniCurrency.pushKV("powaveragingwindow", (int64_t)DEFAULT_AVERAGING_WINDOW);
+        uniCurrency.pushKV("notarizationperiod", (int)BLOCK_NOTARIZATION_MODULO);
 
         if (name == "VRSC" && !testMode)
         {
@@ -1056,7 +1064,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
         for (auto &onePreAllocation : preAllocation)
         {
             UniValue onePreAlloc(UniValue::VOBJ);
-            onePreAlloc.push_back(Pair(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)), 
+            onePreAlloc.push_back(Pair(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)),
                                        ValueFromAmount(onePreAllocation.second)));
             preAllocationArr.push_back(onePreAlloc);
         }
@@ -1119,6 +1127,11 @@ UniValue CCurrencyDefinition::ToUniValue() const
             arith_uint256 target;
             target.SetCompact(initialBits);
             obj.push_back(Pair("initialtarget", ArithToUint256(target).GetHex()));
+
+            obj.pushKV("blocktime", (int64_t)blockTime);
+            obj.pushKV("powaveragingwindow", (int64_t)powAveragingWindow);
+            obj.pushKV("notarizationperiod", (int)blockNotarizationModulo);
+
             UniValue eraArr(UniValue::VARR);
             for (int i = 0; i < rewards.size(); i++)
             {
@@ -1172,7 +1185,7 @@ int64_t CCurrencyDefinition::GetTotalPreallocation() const
     return totalPreallocatedNative;
 }
 
-bool uni_get_bool(UniValue uv, bool def)
+bool uni_get_bool(const UniValue &uv, bool def)
 {
     try
     {
@@ -1205,7 +1218,7 @@ bool uni_get_bool(UniValue uv, bool def)
     }
 }
 
-int32_t uni_get_int(UniValue uv, int32_t def)
+int32_t uni_get_int(const UniValue &uv, int32_t def)
 {
     try
     {
@@ -1221,7 +1234,7 @@ int32_t uni_get_int(UniValue uv, int32_t def)
     }
 }
 
-int64_t uni_get_int64(UniValue uv, int64_t def)
+int64_t uni_get_int64(const UniValue &uv, int64_t def)
 {
     try
     {
@@ -1237,7 +1250,7 @@ int64_t uni_get_int64(UniValue uv, int64_t def)
     }
 }
 
-std::string uni_get_str(UniValue uv, std::string def)
+std::string uni_get_str(const UniValue &uv, std::string def)
 {
     try
     {
@@ -1249,7 +1262,7 @@ std::string uni_get_str(UniValue uv, std::string def)
     }
 }
 
-std::vector<UniValue> uni_getValues(UniValue uv, std::vector<UniValue> def)
+std::vector<UniValue> uni_getValues(const UniValue &uv, std::vector<UniValue> def)
 {
     try
     {
@@ -1335,23 +1348,61 @@ std::string TrimTrailing(const std::string &Name, unsigned char ch)
     return nameCopy;
 }
 
+std::string TrimSpaces(const std::string &Name, bool removeDuals, const std::string &invalidChars)
+{
+    std::string nameCopy = Name;
+    std::string noDuals = "\u0020\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u200C\u200D\u202F\u205F\u3000";
+    std::vector<int> allDuals;
+    std::vector<int> toRemove;
+    for (int i = 0; i < nameCopy.size(); i++)
+    {
+        size_t dualCharPos = noDuals.find(nameCopy[i]);
+        if ((removeDuals ||
+                (i == allDuals.size() ||
+                i == (nameCopy.size() - 1))) &&
+                dualCharPos != std::string::npos)
+        {
+            bool wasLastDual = allDuals.size() && allDuals.back() == (i - 1);
+            if (i == allDuals.size() ||
+                i == (nameCopy.size() - 1) ||
+                (removeDuals && wasLastDual))
+            {
+                toRemove.push_back(i);
+            }
+            allDuals.push_back(i);
+            if (i &&
+                i == (nameCopy.size() - 1) &&
+                wasLastDual)
+            {
+                int toRemoveIdx = toRemove.size() - 1;
+                int nextDual = 0;
+                for (auto dualIt = allDuals.rbegin(); dualIt != allDuals.rend(); dualIt++)
+                {
+                    if (nextDual && *dualIt != (nextDual - 1))
+                    {
+                        break;
+                    }
+                    if (toRemoveIdx < 0 || toRemove[toRemoveIdx] != *dualIt)
+                    {
+                        toRemove.insert(toRemove.begin() + ++toRemoveIdx, *dualIt);
+                    }
+                    toRemoveIdx--;
+                }
+            }
+        }
+    }
+    for (auto posIt = toRemove.rbegin(); posIt != toRemove.rend(); posIt++)
+    {
+        nameCopy.erase(nameCopy.begin() + *posIt);
+    }
+    return nameCopy;
+}
+
 // this will add the current Verus chain name to subnames if it is not present
 // on both id and chain names
 std::vector<std::string> ParseSubNames(const std::string &Name, std::string &ChainOut, bool displayfilter, bool addVerus)
 {
     std::string nameCopy = Name;
-    std::string invalidChars = "\\/:*?\"<>|";
-    if (displayfilter)
-    {
-        invalidChars += "\n\t\r\b\t\v\f\x1B";
-    }
-    for (int i = 0; i < nameCopy.size(); i++)
-    {
-        if (invalidChars.find(nameCopy[i]) != std::string::npos)
-        {
-            return std::vector<std::string>();
-        }
-    }
 
     std::vector<std::string> retNames;
     boost::split(retNames, nameCopy, boost::is_any_of("@"));
@@ -1361,14 +1412,21 @@ std::vector<std::string> ParseSubNames(const std::string &Name, std::string &Cha
     }
 
     bool explicitChain = false;
-    if (retNames.size() == 2)
+    if (retNames.size() == 2 && !retNames[1].empty())
     {
         ChainOut = retNames[1];
         explicitChain = true;
-    }    
+    }
 
     nameCopy = retNames[0];
     boost::split(retNames, nameCopy, boost::is_any_of("."));
+
+    if (retNames.size() && retNames.back().empty())
+    {
+        addVerus = false;
+        retNames.pop_back();
+        nameCopy.pop_back();
+    }
 
     int numRetNames = retNames.size();
 
@@ -1381,7 +1439,7 @@ std::vector<std::string> ParseSubNames(const std::string &Name, std::string &Cha
             std::vector<std::string> chainOutNames;
             boost::split(chainOutNames, ChainOut, boost::is_any_of("."));
             std::string lastChainOut = boost::to_lower_copy(chainOutNames.back());
-            
+
             if (lastChainOut != "" && lastChainOut != verusChainName)
             {
                 chainOutNames.push_back(verusChainName);
@@ -1410,12 +1468,11 @@ std::vector<std::string> ParseSubNames(const std::string &Name, std::string &Cha
             retNames[i] = std::string(retNames[i], 0, (KOMODO_ASSETCHAIN_MAXLEN - 1));
         }
         // spaces are allowed, but no sub-name can have leading or trailing spaces
-        if (!retNames[i].size() || retNames[i] != TrimTrailing(TrimLeading(retNames[i], ' '), ' '))
+        if (!retNames[i].size() || retNames[i] != TrimSpaces(retNames[i], displayfilter))
         {
             return std::vector<std::string>();
         }
     }
-
     return retNames;
 }
 
@@ -1425,6 +1482,9 @@ std::vector<std::string> ParseSubNames(const std::string &Name, std::string &Cha
 // hash its parent names into a parent ID and return the parent hash and cleaned, single name
 std::string CleanName(const std::string &Name, uint160 &Parent, bool displayfilter, bool addVerus)
 {
+    // The line below should make sense, but this path should be tested in test mode until we are sure there are
+    // no edge cases
+    addVerus = addVerus && (!PBAAS_TESTMODE || Parent.IsNull());
     std::string chainName;
     std::vector<std::string> subNames = ParseSubNames(Name, chainName, displayfilter, addVerus);
 
@@ -1434,6 +1494,7 @@ std::string CleanName(const std::string &Name, uint160 &Parent, bool displayfilt
     }
 
     if (!Parent.IsNull() &&
+        subNames.size() > 1 &&
         boost::to_lower_copy(subNames.back()) == boost::to_lower_copy(VERUS_CHAINNAME))
     {
         subNames.pop_back();
@@ -1679,6 +1740,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "crosschainproof", 1},
     { "getbestproofroot", 0},
     { "submitacceptednotarization", 0},
+    { "submitchallenges", 0},
+    { "getnotarizationproofs", 0},
     { "submitimports", 0},
     { "height_MoM", 1},
     { "calc_MoM", 2},
@@ -1704,13 +1767,17 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "updateidentity", 0},
     { "setidentitytimelock", 1},
     { "recoveridentity", 0},
+    { "signdata", 0},
+    { "verifysignature", 0},
     { "getidentitieswithaddress", 0},
     { "getidentitieswithrevocation", 0},
     { "getidentitieswithrecovery", 0},
+    { "estimateconversion", 1},
     { "makeoffer", 1},
     { "takeoffer", 1},
     { "closeoffers", 0},
     { "getvdxfid", 1},
+    { "processupgradedata", 0},
     // Zcash addition
     { "z_setmigration", 0},
 };

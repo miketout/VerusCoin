@@ -62,7 +62,11 @@ std::string ASSETCHAINS_RPCHOST, ASSETCHAINS_RPCCREDENTIALS;
 uint160 ASSETCHAINS_CHAINID;
 uint160 VERUS_CHAINID;
 std::string VERUS_CHAINNAME = "VRSC";
-uint16_t ASSETCHAINS_P2PPORT,ASSETCHAINS_RPCPORT;
+
+const uint32_t PBAAS_PREMAINNET_ACTIVATION = 1679072400; // already activated, so harden with immutable value
+
+bool PARAMS_LOADED = false;
+uint16_t ASSETCHAINS_P2PPORT, ASSETCHAINS_RPCPORT;
 uint32_t ASSETCHAIN_INIT,ASSETCHAINS_CC,KOMODO_STOPAT;
 uint32_t ASSETCHAINS_MAGIC = 2387029918;
 int64_t ASSETCHAINS_GENESISTXVAL = 5000000000;
@@ -156,7 +160,7 @@ int64_t komodo_current_supply(uint32_t nHeight)
         for ( int j = 0; j <= ASSETCHAINS_LASTERA; j++ )
         {
             // if any condition means we have no more rewards, break
-            if (j != 0 && (nHeight <= ASSETCHAINS_ENDSUBSIDY[j - 1] || (ASSETCHAINS_ENDSUBSIDY[j - 1] == 0 && 
+            if (j != 0 && (nHeight <= ASSETCHAINS_ENDSUBSIDY[j - 1] || (ASSETCHAINS_ENDSUBSIDY[j - 1] == 0 &&
                 (ASSETCHAINS_REWARD[j] == 0 && (j == ASSETCHAINS_LASTERA || ASSETCHAINS_DECAY[j] != SATOSHIDEN)))))
                 break;
 
@@ -189,7 +193,7 @@ int64_t komodo_current_supply(uint32_t nHeight)
                         lowestSubsidy = 0;
                     }
                     else
-                    {    
+                    {
                         // Ex: -ac_eras=3 -ac_reward=0,384,24 -ac_end=1440,260640,0 -ac_halving=1,1440,2103840 -ac_decay 100000000,97750000,0
                         subsidyDifference = reward - ASSETCHAINS_REWARD[j + 1];
                         if (subsidyDifference < 0)
@@ -242,7 +246,7 @@ int64_t komodo_current_supply(uint32_t nHeight)
                         // if negative slope, the minor triangle is the full number of steps, as the highest
                         // level step is full. lowest subsidy is just the lowest so far
                         lowestSubsidy = reward - (stepDifference * nSteps);
-                        
+
                         // add the step triangles, one per step
                         cur_money += stepTriangle * nSteps;
 

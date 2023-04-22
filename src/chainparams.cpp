@@ -77,6 +77,7 @@ static CBlock CreateGenesisBlock(uint32_t nTime, const uint256& nNonce, const st
 void *chainparams_commandline(void *ptr);
 #include "komodo_defs.h"
 
+extern bool PARAMS_LOADED;
 extern char ASSETCHAINS_SYMBOL[KOMODO_ASSETCHAIN_MAXLEN];
 extern uint16_t ASSETCHAINS_P2PPORT,ASSETCHAINS_RPCPORT;
 extern uint32_t ASSETCHAIN_INIT, ASSETCHAINS_MAGIC, ASSETCHAINS_ALGO, ASSETCHAINS_EQUIHASH, ASSETCHAINS_VERUSHASH;
@@ -218,7 +219,7 @@ void CChainParams::SetCheckpointData(CChainParams::CCheckpointData checkpointDat
 void *chainparams_commandline(void *ptr)
 {
     CChainParams::CCheckpointData checkpointData;
-    while ( ASSETCHAINS_P2PPORT == 0 )
+    while ( !PARAMS_LOADED || !ASSETCHAINS_P2PPORT )
     {
         #ifdef _WIN32
         boost::this_thread::sleep(boost::posix_time::milliseconds(1000));
@@ -240,18 +241,18 @@ void *chainparams_commandline(void *ptr)
 
         bool isVerusActive = _IsVerusActive();
 
-        int64_t nBlockTime = isVerusActive ? DEFAULT_BLOCKTIME_TARGET : GetArg("-blocktime", DEFAULT_BLOCKTIME_TARGET);
+        int64_t nBlockTime = isVerusActive ? CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET : GetArg("-blocktime", CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
         mainParams.SetBlockTime(nBlockTime);
 
         if (ASSETCHAINS_ALGO != ASSETCHAINS_EQUIHASH)
         {
             // this is only good for 60 second blocks with an averaging window of 45. for other parameters, use:
             // nLwmaAjustedWeight = (N+1)/2 * (0.9989^(500/nPowAveragingWindow)) * nPowTargetSpacing
-            int64_t PowAveragingWindow = isVerusActive ? DEFAULT_AVERAGING_WINDOW : GetArg("-averagingwindow", DEFAULT_AVERAGING_WINDOW);
+            int64_t PowAveragingWindow = isVerusActive ? CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW : GetArg("-powaveragingwindow", CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW);
             mainParams.consensus.nPowAveragingWindow = PowAveragingWindow;
             mainParams.consensus.powAlternate = uint256S("00000f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f");
 
-            if (!isVerusActive && mainParams.consensus.nBlockTime != DEFAULT_BLOCKTIME_TARGET)
+            if (!isVerusActive && mainParams.consensus.nBlockTime != CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET)
             {
                 cpp_dec_float_50 averagingFactor(std::to_string((mainParams.consensus.nPowAveragingWindow+1)/2));
                 cpp_dec_float_50 factorBase("0.9989");
@@ -293,10 +294,9 @@ void *chainparams_commandline(void *ptr)
             mainParams.consensus.fCoinbaseMustBeProtected = true;
         }
 
-        // only require coinbase protection on Verus from the Komodo family of coins
         if (_IsVerusMainnetActive())
         {
-            mainParams.vSeeds.push_back(CDNSSeedData("veruscoin.io", "seeds.veruscoin.io"));
+            mainParams.vSeeds.push_back(CDNSSeedData("verus.io", "seeds.verus.io"));
             mainParams.vSeeds.push_back(CDNSSeedData("komodoplatform.com", "seeds.komodoplatform.com")); // @kolo - old static dns seeds
 
             mainParams.consensus.vUpgrades[Consensus::UPGRADE_SAPLING].nActivationHeight = 227520;
@@ -325,10 +325,6 @@ void *chainparams_commandline(void *ptr)
             if (_IsVerusActive())
             {
                 mainParams.vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_test, pnSeed6_test + ARRAYLEN(pnSeed6_test));
-                if (_IsVerusMainnetActive())
-                {
-                    mainParams.vSeeds.push_back(CDNSSeedData("veruscoin.io", "seeds.veruscoin.io"));
-                }
             }
             mainParams.consensus.nMinimumChainWork = uint256S("0x0000000000000000000000000000000000000000000000000000000000000020");
             mainParams.consensus.vUpgrades[Consensus::UPGRADE_SAPLING].nActivationHeight = ASSETCHAINS_SAPLING;
@@ -624,17 +620,17 @@ public:
         // Founders reward script expects a vector of 2-of-3 multisig addresses
         vFoundersRewardAddress = {
             "t2UNzUUx8mWBCRYPRezvA363EYXyEpHokyi", "t2N9PH9Wk9xjqYg9iin1Ua3aekJqfAtE543", "t2NGQjYMQhFndDHguvUw4wZdNdsssA6K7x2", "t2ENg7hHVqqs9JwU5cgjvSbxnT2a9USNfhy",
-            "t2BkYdVCHzvTJJUTx4yZB8qeegD8QsPx8bo", "t2J8q1xH1EuigJ52MfExyyjYtN3VgvshKDf", "t2Crq9mydTm37kZokC68HzT6yez3t2FBnFj", "t2EaMPUiQ1kthqcP5UEkF42CAFKJqXCkXC9", 
-            "t2F9dtQc63JDDyrhnfpzvVYTJcr57MkqA12", "t2LPirmnfYSZc481GgZBa6xUGcoovfytBnC", "t26xfxoSw2UV9Pe5o3C8V4YybQD4SESfxtp", "t2D3k4fNdErd66YxtvXEdft9xuLoKD7CcVo", 
-            "t2DWYBkxKNivdmsMiivNJzutaQGqmoRjRnL", "t2C3kFF9iQRxfc4B9zgbWo4dQLLqzqjpuGQ", "t2MnT5tzu9HSKcppRyUNwoTp8MUueuSGNaB", "t2AREsWdoW1F8EQYsScsjkgqobmgrkKeUkK", 
-            "t2Vf4wKcJ3ZFtLj4jezUUKkwYR92BLHn5UT", "t2K3fdViH6R5tRuXLphKyoYXyZhyWGghDNY", "t2VEn3KiKyHSGyzd3nDw6ESWtaCQHwuv9WC", "t2F8XouqdNMq6zzEvxQXHV1TjwZRHwRg8gC", 
-            "t2BS7Mrbaef3fA4xrmkvDisFVXVrRBnZ6Qj", "t2FuSwoLCdBVPwdZuYoHrEzxAb9qy4qjbnL", "t2SX3U8NtrT6gz5Db1AtQCSGjrpptr8JC6h", "t2V51gZNSoJ5kRL74bf9YTtbZuv8Fcqx2FH", 
-            "t2FyTsLjjdm4jeVwir4xzj7FAkUidbr1b4R", "t2EYbGLekmpqHyn8UBF6kqpahrYm7D6N1Le", "t2NQTrStZHtJECNFT3dUBLYA9AErxPCmkka", "t2GSWZZJzoesYxfPTWXkFn5UaxjiYxGBU2a", 
-            "t2RpffkzyLRevGM3w9aWdqMX6bd8uuAK3vn", "t2JzjoQqnuXtTGSN7k7yk5keURBGvYofh1d", "t2AEefc72ieTnsXKmgK2bZNckiwvZe3oPNL", "t2NNs3ZGZFsNj2wvmVd8BSwSfvETgiLrD8J", 
-            "t2ECCQPVcxUCSSQopdNquguEPE14HsVfcUn", "t2JabDUkG8TaqVKYfqDJ3rqkVdHKp6hwXvG", "t2FGzW5Zdc8Cy98ZKmRygsVGi6oKcmYir9n", "t2DUD8a21FtEFn42oVLp5NGbogY13uyjy9t", 
-            "t2UjVSd3zheHPgAkuX8WQW2CiC9xHQ8EvWp", "t2TBUAhELyHUn8i6SXYsXz5Lmy7kDzA1uT5", "t2Tz3uCyhP6eizUWDc3bGH7XUC9GQsEyQNc", "t2NysJSZtLwMLWEJ6MH3BsxRh6h27mNcsSy", 
-            "t2KXJVVyyrjVxxSeazbY9ksGyft4qsXUNm9", "t2J9YYtH31cveiLZzjaE4AcuwVho6qjTNzp", "t2QgvW4sP9zaGpPMH1GRzy7cpydmuRfB4AZ", "t2NDTJP9MosKpyFPHJmfjc5pGCvAU58XGa4", 
-            "t29pHDBWq7qN4EjwSEHg8wEqYe9pkmVrtRP", "t2Ez9KM8VJLuArcxuEkNRAkhNvidKkzXcjJ", "t2D5y7J5fpXajLbGrMBQkFg2mFN8fo3n8cX", "t2UV2wr1PTaUiybpkV3FdSdGxUJeZdZztyt", 
+            "t2BkYdVCHzvTJJUTx4yZB8qeegD8QsPx8bo", "t2J8q1xH1EuigJ52MfExyyjYtN3VgvshKDf", "t2Crq9mydTm37kZokC68HzT6yez3t2FBnFj", "t2EaMPUiQ1kthqcP5UEkF42CAFKJqXCkXC9",
+            "t2F9dtQc63JDDyrhnfpzvVYTJcr57MkqA12", "t2LPirmnfYSZc481GgZBa6xUGcoovfytBnC", "t26xfxoSw2UV9Pe5o3C8V4YybQD4SESfxtp", "t2D3k4fNdErd66YxtvXEdft9xuLoKD7CcVo",
+            "t2DWYBkxKNivdmsMiivNJzutaQGqmoRjRnL", "t2C3kFF9iQRxfc4B9zgbWo4dQLLqzqjpuGQ", "t2MnT5tzu9HSKcppRyUNwoTp8MUueuSGNaB", "t2AREsWdoW1F8EQYsScsjkgqobmgrkKeUkK",
+            "t2Vf4wKcJ3ZFtLj4jezUUKkwYR92BLHn5UT", "t2K3fdViH6R5tRuXLphKyoYXyZhyWGghDNY", "t2VEn3KiKyHSGyzd3nDw6ESWtaCQHwuv9WC", "t2F8XouqdNMq6zzEvxQXHV1TjwZRHwRg8gC",
+            "t2BS7Mrbaef3fA4xrmkvDisFVXVrRBnZ6Qj", "t2FuSwoLCdBVPwdZuYoHrEzxAb9qy4qjbnL", "t2SX3U8NtrT6gz5Db1AtQCSGjrpptr8JC6h", "t2V51gZNSoJ5kRL74bf9YTtbZuv8Fcqx2FH",
+            "t2FyTsLjjdm4jeVwir4xzj7FAkUidbr1b4R", "t2EYbGLekmpqHyn8UBF6kqpahrYm7D6N1Le", "t2NQTrStZHtJECNFT3dUBLYA9AErxPCmkka", "t2GSWZZJzoesYxfPTWXkFn5UaxjiYxGBU2a",
+            "t2RpffkzyLRevGM3w9aWdqMX6bd8uuAK3vn", "t2JzjoQqnuXtTGSN7k7yk5keURBGvYofh1d", "t2AEefc72ieTnsXKmgK2bZNckiwvZe3oPNL", "t2NNs3ZGZFsNj2wvmVd8BSwSfvETgiLrD8J",
+            "t2ECCQPVcxUCSSQopdNquguEPE14HsVfcUn", "t2JabDUkG8TaqVKYfqDJ3rqkVdHKp6hwXvG", "t2FGzW5Zdc8Cy98ZKmRygsVGi6oKcmYir9n", "t2DUD8a21FtEFn42oVLp5NGbogY13uyjy9t",
+            "t2UjVSd3zheHPgAkuX8WQW2CiC9xHQ8EvWp", "t2TBUAhELyHUn8i6SXYsXz5Lmy7kDzA1uT5", "t2Tz3uCyhP6eizUWDc3bGH7XUC9GQsEyQNc", "t2NysJSZtLwMLWEJ6MH3BsxRh6h27mNcsSy",
+            "t2KXJVVyyrjVxxSeazbY9ksGyft4qsXUNm9", "t2J9YYtH31cveiLZzjaE4AcuwVho6qjTNzp", "t2QgvW4sP9zaGpPMH1GRzy7cpydmuRfB4AZ", "t2NDTJP9MosKpyFPHJmfjc5pGCvAU58XGa4",
+            "t29pHDBWq7qN4EjwSEHg8wEqYe9pkmVrtRP", "t2Ez9KM8VJLuArcxuEkNRAkhNvidKkzXcjJ", "t2D5y7J5fpXajLbGrMBQkFg2mFN8fo3n8cX", "t2UV2wr1PTaUiybpkV3FdSdGxUJeZdZztyt",
             };
         assert(vFoundersRewardAddress.size() <= consensus.GetLastFoundersRewardBlockHeight(0));
         */
@@ -698,7 +694,7 @@ public:
         nMinerThreads = 1;
         nMaxTipAge = 24 * 60 * 60;
         nPruneAfterHeight = 1000;
-        
+
         genesis = CreateGenesisBlock(
             1296688602,
             uint256S("0x0000000000000000000000000000000000000000000000000000000000000009"),

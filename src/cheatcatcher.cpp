@@ -1,12 +1,12 @@
 /********************************************************************
  * (C) 2018 Michael Toutonghi
- * 
+ *
  * Distributed under the MIT software license, see the accompanying
  * file COPYING or http://www.opensource.org/licenses/mit-license.php.
- * 
+ *
  * This supports code to catch nothing at stake cheaters who stake
  * on multiple forks.
- * 
+ *
  */
 
 #include "cc/StakeGuard.h"
@@ -25,19 +25,19 @@ uint32_t CCheatList::Prune(uint32_t height)
 {
     uint32_t count = 0;
     pair<multimap<const uint32_t, CTxHolder>::iterator, multimap<const uint32_t, CTxHolder>::iterator> range;
-    vector<CTxHolder *> toPrune;
+    vector<CTxHolder> toPrune;
 
     if (height > 0 && Params().GetConsensus().NetworkUpgradeActive(height, Consensus::UPGRADE_SAPLING))
     {
         LOCK(cs_cheat);
         for (auto it = orderedCheatCandidates.begin(); it != orderedCheatCandidates.end() && it->second.height <= height; it++)
         {
-            toPrune.push_back(&it->second);
+            toPrune.push_back(it->second);
         }
         count = toPrune.size();
-        for (auto ptxHolder : toPrune)
+        for (auto &ptxHolder : toPrune)
         {
-            Remove(*ptxHolder);
+            Remove(ptxHolder);
         }
     }
     return count;   // return how many removed
@@ -139,41 +139,40 @@ void CCheatList::Add(const CTxHolder &txh)
 
 void CCheatList::Remove(const CTxHolder &txh)
 {
-    // first narrow by source tx, then compare with tx hash
     uint32_t count;
     vector<multimap<const uint256, CTxHolder *>::iterator> utxoPrune;
     vector<multimap<const int32_t, CTxHolder>::iterator> heightPrune;
-    uint256 hash = txh.tx.GetHash();
 
     {
+        // if the one found is at less than or equal to the height provided, then it is either the same one or
+        // if less than, may have been an orphan and can also be removed
+        uint32_t startHeight = txh.height;
+        uint32_t endHeight = txh.height;
+
         LOCK(cs_cheat);
         auto range = indexedCheatCandidates.equal_range(txh.utxo);
         auto it = range.first;
         for ( ; it != range.second; it++)
         {
-            if (hash == it->second->tx.GetHash())
+            if (it->second->height <= txh.height)
             {
+                if (it->second->height < startHeight)
+                {
+                    startHeight = it->second->height;
+                }
                 utxoPrune.push_back(it);
             }
-            // if we haven't yet looked at this height, look, otherwise skip
-            int dupHeight = -1;
-            for (auto iter : utxoPrune)
+        }
+
+        // remove those we removed from the height list as well
+        auto orderedIt = orderedCheatCandidates.lower_bound(startHeight);
+        auto upperIt = orderedCheatCandidates.upper_bound(endHeight);
+        for (; orderedIt != upperIt; orderedIt++)
+        {
+            if (orderedIt->second.utxo == txh.utxo)
             {
-                if (iter->second->height == it->second->height)
-                    dupHeight++;
-            }
-            // only remove matching entries by height once
-            if (!dupHeight)
-            {
-                auto hrange = orderedCheatCandidates.equal_range(it->second->height);
-                for (auto hit = hrange.first; hit != hrange.second; hit++)
-                {
-                    if (hit->second.tx.GetHash() == hash && hit->second.utxo == it->second->utxo)
-                    {
-                        // add and remove them together
-                        heightPrune.push_back(hit);
-                    }
-                }
+                // add and remove them together
+                heightPrune.push_back(orderedIt);
             }
         }
 

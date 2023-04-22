@@ -199,7 +199,9 @@ uint256 CTxOut::GetHash() const
 
 std::string CTxOut::ToString() const
 {
-    return strprintf("CTxOut(nValue=%d.%08d, scriptPubKey=%s)", nValue / COIN, nValue % COIN, HexStr(scriptPubKey).substr(0, 30));
+    UniValue scriptUni(UniValue::VOBJ);
+    ScriptPubKeyToUniv(scriptPubKey, scriptUni, true);
+    return strprintf("CTxOut(nValue=%s, scriptPubKey=%s)", ValueFromAmount(nValue).write().c_str(), scriptUni.write().c_str());
 }
 
 CMutableTransaction::CMutableTransaction() : nVersion(CTransaction::SPROUT_MIN_CURRENT_VERSION), fOverwintered(false), nVersionGroupId(0), nExpiryHeight(0), nLockTime(0), valueBalance(0) {}
@@ -409,7 +411,6 @@ CCurrencyValueMap CTransaction::GetReserveValueOut() const
             if (oneCur.second &&
                 (retVal.valueMap[oneCur.first] += oneCur.second) < 0)
             {
-                // TODO: HARDENING - confirm this is correct overflow behavior
                 printf("%s: currency value overflow total: %ld, adding: %ld - pegging to max\n", __func__, retVal.valueMap[oneCur.first], oneCur.second);
                 LogPrintf("%s: currency value overflow total: %ld, adding: %ld - pegging to max\n", __func__, retVal.valueMap[oneCur.first], oneCur.second);
                 retVal.valueMap[oneCur.first] = INT64_MAX;

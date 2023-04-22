@@ -163,8 +163,8 @@ class CBlockIndex;
 // This class provides an accumulator for both the chainwork and the chainPOS value
 // CChainPower's can be compared, and the comparison ensures that work and proof of stake power
 // are both used equally to determine which chain has the most work. This makes an attack
-// that involves mining in secret completely ineffective, even before dPOW, unless a large part 
-// of the staking supply is also controlled. It also enables a faster deterministic convergence, 
+// that involves mining in secret completely ineffective, even before dPOW, unless a large part
+// of the staking supply is also controlled. It also enables a faster deterministic convergence,
 // aided by both POS and POW.
 class CChainPower
 {
@@ -177,7 +177,7 @@ class CChainPower
         CChainPower(CBlockIndex *pblockIndex);
         CChainPower(CBlockIndex *pblockIndex, const arith_uint256 &stake, const arith_uint256 &work);
         CChainPower(int32_t height) : nHeight(height), chainStake(0), chainWork(0) {}
-        CChainPower(int32_t height, const arith_uint256 &stake, const arith_uint256 &work) : 
+        CChainPower(int32_t height, const arith_uint256 &stake, const arith_uint256 &work) :
                     nHeight(height), chainStake(stake), chainWork(work) {}
 
         CChainPower &operator=(const CChainPower &chainPower)
@@ -344,7 +344,7 @@ public:
 
     //! (memory only) Sequential id assigned to distinguish order in which blocks are received.
     uint32_t nSequenceId;
-    
+
     void SetNull()
     {
         phashBlock = NULL;
@@ -565,6 +565,18 @@ public:
         // we need to add the merkle root on the left
         return CMMRNodeBranch(CMMRNodeBranch::BRANCH_MMRBLAKE_NODE, 2, 1, std::vector<uint256>({BlockMMRRoot()}));
     }
+
+    static std::string BlockEntropyKeyName()
+    {
+        return "vrsc::random.entropy.defaultkey";
+    }
+
+    static uint160 BlockEntropyKey()
+    {
+        static uint160 nameSpace;
+        static uint160 entropyKey = CVDXF::GetDataKey(BlockEntropyKeyName(), nameSpace);
+        return entropyKey;
+    }
 };
 
 /** Used to marshal pointers into hashes for db storage. */
@@ -684,7 +696,7 @@ class CChain;
 typedef CMerkleMountainRange<ChainMMRNode, CChunkedLayer<ChainMMRNode, 9>, COverlayNodeLayer<ChainMMRNode, CChain>> ChainMerkleMountainRange;
 typedef CMerkleMountainView<ChainMMRNode, CChunkedLayer<ChainMMRNode, 9>, COverlayNodeLayer<ChainMMRNode, CChain>> ChainMerkleMountainView;
 
-/** An in-memory indexed chain of blocks. 
+/** An in-memory indexed chain of blocks.
  * With Verus and PBaaS chains, this also provides a complete Merkle Mountain Range (MMR) for the chain at all times,
  * enabling proof of any transaction that can be exported and trusted on any chain that has a trusted oracle or other lite proof of this chain.
 */
@@ -706,7 +718,7 @@ public:
     CBlockIndex *Tip() const {
         return vChain.size() > 0 ? vChain[vChain.size() - 1] : NULL;
     }
-    
+
     /** Returns the last tip of the chain, or NULL if none. */
     CBlockIndex *LastTip() const {
         return vChain.size() > 0 ? lastTip : NULL;
@@ -731,7 +743,7 @@ public:
     ChainMerkleMountainView GetMMV()
     {
         return ChainMerkleMountainView(mmr, mmr.size());
-    }    
+    }
 
     ChainMMRNode GetMMRNode(int index) const
     {

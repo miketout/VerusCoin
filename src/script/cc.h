@@ -24,8 +24,8 @@ const int CCSigningNodes = 1 << CC_Ed25519 | 1 << CC_Secp256k1;
 
 const int CCEvalNode = 1 << CC_Eval;
 
-const int CCFirstEvalOnly = 2;
-const int CCLastEvalOnly = 0x0d;
+const int CCFirstEvalOnly = 1;
+const int CCLastEvalOnly = 0x14;
 
 /*
  * Check if the server can accept the condition based on it's structure / types

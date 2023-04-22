@@ -217,6 +217,7 @@ BITCOIN_CORE_H = \
   keystore.h \
   dbwrapper.h \
   limitedmap.h \
+  lrucache.h \
   main.h \
   memusage.h \
   merkleblock.h \
@@ -470,6 +471,8 @@ crypto_libbitcoin_crypto_a_SOURCES = \
   crypto/sha256.h \
   crypto/sha512.cpp \
   crypto/sha512.h \
+  crypto/chacha20.h \
+  crypto/chacha20.cpp \
   crypto/haraka.h \
   crypto/haraka_portable.h \
   crypto/verus_hash.h \
@@ -477,7 +480,7 @@ crypto_libbitcoin_crypto_a_SOURCES = \
   crypto/sph_keccak.c \
   crypto/sph_keccak.h \
   crypto/keccak.c \
-  crypto/keccak.h 
+  crypto/keccak.h
 
 if ENABLE_MINING
 EQUIHASH_TROMP_SOURCES = \
@@ -589,6 +592,7 @@ libbitcoin_util_a_SOURCES = \
   compat/glibc_sanity.cpp \
   compat/glibcxx_sanity.cpp \
   compat/strnlen.cpp \
+  crypto/chacha20.cpp \
   random.cpp \
   rpc/protocol.cpp \
   support/cleanse.cpp \

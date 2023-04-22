@@ -495,7 +495,7 @@ bool enableVTMode()
 void ThreadShowMetricsScreen()
 {
     // Make this thread recognisable as the metrics screen thread
-    RenameThread("zcash-metrics-screen");
+    RenameThread("verus-metrics-screen");
 
     // Determine whether we should render a persistent UI or rolling metrics
     bool isTTY = isatty(STDOUT_FILENO);

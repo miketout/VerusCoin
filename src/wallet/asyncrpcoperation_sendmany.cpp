@@ -405,7 +405,7 @@ bool AsyncRPCOperation_sendmany::main_impl() {
         if (targetAllAmounts.valueMap.size() == 1 && targetNativeAmount != 0)
         {
             // only native currency matters, so use simpler functon
-            success = 
+            success =
               pwalletMain->SelectCoinsMinConf(targetNativeAmount, 0, 0, t_inputs_, setCoinsRet, nativeValueRet);
         }
         else
@@ -418,7 +418,7 @@ bool AsyncRPCOperation_sendmany::main_impl() {
             printf("target reserve:\n%s\n", targetReserveAmounts.ToUniValue().write(1,2).c_str());
             printf("target native:\n%s\n", ValueFromAmount(targetNativeAmount).write(1,2).c_str()); //*/
 
-            success = 
+            success =
               pwalletMain->SelectReserveCoinsMinConf(targetReserveAmounts, targetNativeAmount, 0, 0, t_inputs_, setCoinsRet, reserveValueRet, nativeValueRet);
 
             /* if (success)
@@ -426,10 +426,10 @@ bool AsyncRPCOperation_sendmany::main_impl() {
                 printf("value returned:\n%s, native: %s\n", reserveValueRet.ToUniValue().write(1,2).c_str(), ValueFromAmount(nativeValueRet).write(1,2).c_str());
                 for (auto &oneOutput : setCoinsRet)
                 {
-                    printf("Output %s : %d, for native: %s\n    reserve: %s\n\n", 
-                           oneOutput.first->GetHash().GetHex().c_str(), 
-                           oneOutput.second, 
-                           ValueFromAmount(oneOutput.first->vout[oneOutput.second].nValue).write().c_str(), 
+                    printf("Output %s : %d, for native: %s\n    reserve: %s\n\n",
+                           oneOutput.first->GetHash().GetHex().c_str(),
+                           oneOutput.second,
+                           ValueFromAmount(oneOutput.first->vout[oneOutput.second].nValue).write().c_str(),
                            oneOutput.first->vout[oneOutput.second].ReserveOutValue().ToUniValue().write(1,2).c_str());
                 }
             }
@@ -442,7 +442,7 @@ bool AsyncRPCOperation_sendmany::main_impl() {
         if (!success)
         {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Cannot find adequate utxos to fund transaction");
-        }        
+        }
 
         // Get dust threshold
         CKey secret;
@@ -940,9 +940,9 @@ bool AsyncRPCOperation_sendmany::main_impl() {
 
             vOutPoints.push_back(jso);
             vInputNotes.push_back(note);
-            
+
             jsInputValue += noteFunds;
-            
+
             int wtxHeight = -1;
             int wtxDepth = -1;
             {
@@ -965,14 +965,14 @@ bool AsyncRPCOperation_sendmany::main_impl() {
                     wtxDepth
                     );
         }
-                    
+
         // Add history of previous commitments to witness
         if (vInputNotes.size() > 0) {
 
             if (vInputWitnesses.size()==0) {
                 throw JSONRPCError(RPC_WALLET_ERROR, "Could not find witness for note commitment");
             }
-            
+
             for (auto & optionalWitness : vInputWitnesses) {
                 if (!optionalWitness) {
                     throw JSONRPCError(RPC_WALLET_ERROR, "Witness for note commitment is null");
@@ -1084,7 +1084,7 @@ bool AsyncRPCOperation_sendmany::main_impl() {
     return true;
 }
 
-bool AsyncRPCOperation_sendmany::find_utxos(bool fAcceptProtectedCoinbase) 
+bool AsyncRPCOperation_sendmany::find_utxos(bool fAcceptProtectedCoinbase)
 {
     assert(isfromtaddr_);
 
@@ -1136,14 +1136,15 @@ bool AsyncRPCOperation_sendmany::find_utxos(bool fAcceptProtectedCoinbase)
                                            true,
                                            wildCardPKH || wildCardID ? nullptr : &fromtaddr_,
                                            nullptr,
-                                           false);
+                                           false,
+                                           true);
     }
     else
     {
-        pwalletMain->AvailableCoins(vecOutputs, false, NULL, false, true, fAcceptProtectedCoinbase, false, false);
+        pwalletMain->AvailableCoins(vecOutputs, false, NULL, false, true, fAcceptProtectedCoinbase, false, false, true);
     }
 
-    for (COutput& out : vecOutputs) 
+    for (COutput& out : vecOutputs)
     {
         CTxDestination dest;
 
@@ -1555,7 +1556,7 @@ void AsyncRPCOperation_sendmany::add_taddr_change_output_to_tx(CReserveKey& keyC
 std::array<unsigned char, ZC_MEMO_SIZE> AsyncRPCOperation_sendmany::get_memo_from_hex_string(std::string s) {
     // initialize to default memo (no_memo), see section 5.5 of the protocol spec
     std::array<unsigned char, ZC_MEMO_SIZE> memo = {{0xF6}};
-    
+
     std::vector<unsigned char> rawMemo = ParseHex(s.c_str());
 
     // If ParseHex comes across a non-hex char, it will stop but still return results so far.

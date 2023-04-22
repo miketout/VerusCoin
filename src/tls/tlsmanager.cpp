@@ -12,6 +12,10 @@
 #include "tlsmanager.h"
 #include "utiltls.h"
 
+#ifndef _WIN32
+#include <signal.h>
+#endif
+
 using namespace std;
 namespace tls
 {
@@ -427,10 +431,6 @@ SSL_CTX* TLSManager::initCtx(
             const SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
             LogPrintf("TLS: AVAILABLE CIPHER %s\n", SSL_CIPHER_get_name(c));
         }
-
-
-
-
 
         if (ctxType == SERVER_CONTEXT)
         {

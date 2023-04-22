@@ -64,6 +64,49 @@ std::vector<CMMRProof> CMultiPartProof::BreakToChunks(int maxSize) const
     return retVal;
 }
 
+void CMMRProof::DeleteProofSequenceEntry(int index)
+{
+    if (index >= 0 && index < proofSequence.size())
+    {
+        CMerkleBranchBase *pProof = proofSequence[index];
+        switch(pProof->branchType)
+        {
+            case CMerkleBranchBase::BRANCH_BTC:
+            {
+                delete (CBTCMerkleBranch *)pProof;
+                break;
+            }
+            case CMerkleBranchBase::BRANCH_MMRBLAKE_NODE:
+            {
+                delete (CMMRNodeBranch *)pProof;
+                break;
+            }
+            case CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE:
+            {
+                delete (CMMRPowerNodeBranch *)pProof;
+                break;
+            }
+            case CMerkleBranchBase::BRANCH_ETH:
+            {
+                delete (CETHPATRICIABranch *)pProof;
+                break;
+            }
+            case CMerkleBranchBase::BRANCH_MULTIPART:
+            {
+                delete (CMultiPartProof *)pProof;
+                break;
+            }
+            default:
+            {
+                ErrorAndBP("ERROR: likely double-free or memory corruption, unrecognized object in proof sequence");
+                // this is likely a memory error
+                // delete pProof;
+            }
+        }
+        proofSequence.erase(proofSequence.begin() + index);
+    }
+}
+
 void CMMRProof::DeleteProofSequence()
 {
     // delete any objects that may be present
@@ -145,6 +188,27 @@ const CMMRProof &CMMRProof::operator<<(const CMultiPartProof &append)
     CMultiPartProof *pNewProof = new CMultiPartProof(append);
     proofSequence.push_back(pNewProof);
     return *this;
+}
+
+uint160 CMMRProof::GetNativeAddress() const
+{
+    uint160 retAddress;
+    for (auto &pProof : proofSequence)
+    {
+        switch(pProof->branchType)
+        {
+            case CMerkleBranchBase::BRANCH_ETH:
+            {
+                retAddress = ((CETHPATRICIABranch *)pProof)->address;
+                break;
+            }
+            default:
+            {
+                return uint160();
+            }
+        }
+    }
+    return retAddress;
 }
 
 uint256 CMMRProof::CheckProof(uint256 hash) const

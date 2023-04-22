@@ -26,7 +26,7 @@ using namespace std;
 
 CTxMemPoolEntry::CTxMemPoolEntry():
     nFee(0), nTxSize(0), nModSize(0), nUsageSize(0), nTime(0), dPriority(0.0),
-    hadNoDependencies(false), spendsCoinbase(false), hasReserve(false)
+    hadNoDependencies(false), spendsCoinbase(false), hasReserve(false), feeDelta(0)
 {
     nHeight = MEMPOOL_HEIGHT;
 }
@@ -34,14 +34,14 @@ CTxMemPoolEntry::CTxMemPoolEntry():
 CTxMemPoolEntry::CTxMemPoolEntry(const CTransaction& _tx, const CAmount& _nFee,
                                  int64_t _nTime, double _dPriority,
                                  unsigned int _nHeight, bool poolHasNoInputsOf,
-                                 bool _spendsCoinbase, uint32_t _nBranchId, bool hasreserve):
-    tx(_tx), nFee(_nFee), nTime(_nTime), dPriority(_dPriority), nHeight(_nHeight),
+                                 bool _spendsCoinbase, uint32_t _nBranchId, bool hasreserve, int64_t FeeDelta):
+    tx(std::make_shared<CTransaction>(_tx)), nFee(_nFee), nTime(_nTime), dPriority(_dPriority), nHeight(_nHeight),
     hadNoDependencies(poolHasNoInputsOf), hasReserve(hasreserve),
-    spendsCoinbase(_spendsCoinbase), nBranchId(_nBranchId)
+    spendsCoinbase(_spendsCoinbase), feeDelta(FeeDelta), nBranchId(_nBranchId)
 {
     nTxSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
-    nModSize = tx.CalculateModifiedSize(nTxSize);
-    nUsageSize = RecursiveDynamicUsage(tx);
+    nModSize = _tx.CalculateModifiedSize(nTxSize);
+    nUsageSize = RecursiveDynamicUsage(*tx) + memusage::DynamicUsage(tx);
     feeRate = CFeeRate(nFee, nTxSize);
 }
 
@@ -53,13 +53,13 @@ CTxMemPoolEntry::CTxMemPoolEntry(const CTxMemPoolEntry& other)
 double
 CTxMemPoolEntry::GetPriority(unsigned int currentHeight) const
 {
-    CAmount nValueIn = tx.GetValueOut()+nFee;
+    CAmount nValueIn = tx->GetValueOut()+nFee;
     CCurrencyState currencyState;
     unsigned int lastHeight = currentHeight < 1 ? 0 : currentHeight - 1;
     AssertLockHeld(cs_main);
-    if (hasReserve && (currencyState = ConnectedChains.GetCurrencyState(currentHeight - 1)).IsValid())
+    if (hasReserve && (currencyState = ConnectedChains.GetCurrencyState(currentHeight - 1, false)).IsValid())
     {
-        nValueIn += currencyState.ReserveToNative(tx.GetReserveValueOut());
+        nValueIn += currencyState.ReserveToNative(tx->GetReserveValueOut());
     }
     double deltaPriority = ((double)(currentHeight-nHeight)*nValueIn)/nModSize;
     double dResult = dPriority + deltaPriority;
@@ -80,6 +80,21 @@ CTxMemPool::CTxMemPool(const CFeeRate& _minRelayFee) :
 CTxMemPool::~CTxMemPool()
 {
     delete minerPolicyEstimator;
+}
+
+bool CTxMemPool::CompareDepthAndScore(const uint256& hasha, const uint256& hashb)
+{
+    LOCK(cs);
+    indexed_transaction_set::const_iterator i = mapTx.find(hasha);
+    if (i == mapTx.end()) return false;
+    indexed_transaction_set::const_iterator j = mapTx.find(hashb);
+    if (j == mapTx.end()) return true;
+    // We don't actually compare by depth here because we haven't backported
+    // https://github.com/bitcoin/bitcoin/pull/6654
+    //
+    // But the method name is left as-is because renaming it is not worth the
+    // merge conflicts.
+    return CompareTxMemPoolEntryByScore()(*i, *j);
 }
 
 void CTxMemPool::pruneSpent(const uint256 &hashTx, CCoins &coins)
@@ -255,6 +270,149 @@ bool CTxMemPool::getAddressIndex(const std::vector<std::pair<uint160, int> > &ad
     return true;
 }
 
+std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> CTxMemPool::FilterUnspent(const std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> &memPoolOutputs,
+                                                                                                std::set<COutPoint> &spentTxOuts)
+{
+    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> retVal;
+    std::set<COutPoint> txOuts;
+
+    for (const auto &oneOut : memPoolOutputs)
+    {
+        // get last one in spending list
+        if (oneOut.first.spending)
+        {
+            CTransaction curTx;
+
+            if (mempool.lookup(oneOut.first.txhash, curTx) &&
+                curTx.vin.size() > oneOut.first.index)
+            {
+                spentTxOuts.insert(curTx.vin[oneOut.first.index].prevout);
+            }
+            else
+            {
+                LogPrint("mempool", "Unable to retrieve data for spending mempool transaction\n");
+                return retVal;
+            }
+        }
+    }
+    for (auto &oneOut : memPoolOutputs)
+    {
+        if (!oneOut.first.spending && !spentTxOuts.count(COutPoint(oneOut.first.txhash, oneOut.first.index)))
+        {
+            retVal.push_back(oneOut);
+        }
+    }
+    return retVal;
+}
+
+std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> CTxMemPool::FilterAddressDeltas(const std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> &memPoolOutputs,
+                                                                                                      std::map<COutPoint, uint256> &spentTxOuts)
+{
+    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> retVal;
+    std::map<uint256, std::pair<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>, CTransaction>> txOuts;
+
+    for (const auto &oneOut : memPoolOutputs)
+    {
+        CTransaction curTx;
+        // get last one in spending list
+        if (oneOut.first.spending)
+        {
+            auto txOutIt = txOuts.find(oneOut.first.txhash);
+            if (txOutIt != txOuts.end())
+            {
+                curTx = txOutIt->second.second;
+            }
+            if ((txOutIt != txOuts.end() ||
+                 (mempool.lookup(oneOut.first.txhash, curTx))) &&
+                 curTx.vin.size() > oneOut.first.index)
+            {
+                spentTxOuts.insert(std::make_pair(curTx.vin[oneOut.first.index].prevout, oneOut.first.txhash));
+                if (!txOuts.count(curTx.GetHash()))
+                {
+                    std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> emptyEntry(std::make_pair(CMempoolAddressDeltaKey(0, uint160()),
+                                                                                                       CMempoolAddressDelta(0, 0)));
+                    txOuts.insert(std::make_pair(curTx.GetHash(), std::make_pair(emptyEntry,
+                                                                                 curTx)));
+                }
+            }
+            else
+            {
+                LogPrint("mempool","Unable to retrieve data for mempool transaction\n");
+                return retVal;
+            }
+        }
+        else
+        {
+            auto txOutIt = txOuts.find(oneOut.first.txhash);
+            if (txOutIt != txOuts.end())
+            {
+                txOutIt->second.first = oneOut;
+            }
+            else if (mempool.lookup(oneOut.first.txhash, curTx) &&
+                        curTx.vout.size() > oneOut.first.index)
+            {
+                txOuts.insert(std::make_pair(oneOut.first.txhash, std::make_pair(oneOut, curTx)));
+            }
+            else
+            {
+                LogPrint("mempool","Unable to retrieve data for mempool tx\n");
+                return retVal;
+            }
+        }
+    }
+
+    // go through spenttx outs
+    // the one not spending an entry in the txOuts map is the
+    // first, and once we have that, we should be able to add it to the beginning of the vector and then
+    // do the following steps to get an ordered vector:
+    // if one is spending it:
+    //   add the one spending it
+    //   remove that one from the map and add the one spending it
+    //   repeat
+    // else
+    //   there should be one left, add it
+    //
+    auto spentTxOutIt = spentTxOuts.begin();
+    for (; spentTxOutIt != spentTxOuts.end(); spentTxOutIt++)
+    {
+        auto txOutIt = txOuts.find(spentTxOutIt->first.hash);
+        if (txOutIt != txOuts.end())
+        {
+            retVal.push_back(txOutIt->second.first);
+            txOuts.erase(txOutIt);
+            break;
+        }
+    }
+
+    // now, we have the first one that spends from outside the mempool, follow those that spend until the tip
+    while (txOuts.size() && retVal.size() && spentTxOuts.size())
+    {
+        auto spentOutIt = spentTxOuts.find(COutPoint(retVal.back().first.txhash, retVal.back().first.index));
+        auto txOutIt = (spentOutIt == spentTxOuts.end()) ? txOuts.end() : txOuts.find(spentTxOutIt->first.hash);
+        if (spentOutIt == spentTxOuts.end() && txOuts.size() == 1)
+        {
+            retVal.push_back(txOuts.begin()->second.first);
+        }
+        else if (txOutIt != txOuts.end())
+        {
+            retVal.push_back(txOutIt->second.first);
+        }
+        else
+        {
+            LogPrint("mempool","Unable to correlate mempool deltas\n");
+            retVal.clear();
+            return retVal;
+        }
+        txOuts.erase(txOutIt);
+    }
+    if (txOuts.size())
+    {
+        LogPrint("mempool", "Cannot correlate mempool deltas\n");
+        retVal.clear();
+    }
+    return retVal;
+}
+
 bool CTxMemPool::removeAddressIndex(const uint256 txhash)
 {
     LOCK(cs);
@@ -407,8 +565,8 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
 		        if (nCheckFrequency != 0) assert(coins);
 
                 if (!coins || (coins->IsCoinBase() &&
-                               (((signed long)nMemPoolHeight) - coins->nHeight < COINBASE_MATURITY) || 
-                                    ((signed long)nMemPoolHeight < komodo_block_unlocktime(coins->nHeight) && 
+                               (((signed long)nMemPoolHeight) - coins->nHeight < COINBASE_MATURITY) ||
+                                    ((signed long)nMemPoolHeight < komodo_block_unlocktime(coins->nHeight) &&
                                         coins->IsAvailable(0) && coins->vout[0].nValue >= ASSETCHAINS_TIMELOCKGTE))) {
                     transactionsToRemove.push_back(tx);
                     break;
@@ -454,13 +612,13 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
                         break;
                     }
 
-
-                    // TODO: HARDENING - if we can no longer submit evidence or finalization of a notarization
-                    // due to reorganizing back past the point where a notary can sign, we must consider this transaction
-                    // on hold until it is valid again. on the other hand, if the original notarization it refers to
-                    // is no longer valid, we should purge it.
-                    // probably the easiest way to determine if we can is to do a contextual precheck on this tx at the current
-                    // mem pool height.
+                    // TODO: POST HARDENING - we need to make it so that once a transaction is proven as valid,
+                    // its proof remains valid, even when the blockchain is unwound backwards to the point
+                    // where that transaction originally exists on chain
+                    // this is an optimization, not hardening issue pre-PBaaS, and may possibly be addressed as easily
+                    // as calling ContextualCheckTransaction on the transaction without all of this.
+                    // currently, transactions rendered invalid by reorgs will end up removed at block creation and are
+                    // not accepted when relayed once invalid.
                     case EVAL_NOTARY_EVIDENCE:
                     case EVAL_FINALIZE_NOTARIZATION:
                     case EVAL_RESERVE_TRANSFER:
@@ -568,68 +726,94 @@ bool CTxMemPool::checkNameConflicts(const CTransaction &tx, std::list<CTransacti
     // in the blockchain has already taken place.
     CIdentity identity;
     CNameReservation reservation;
+    CAdvancedNameReservation advNameRes;
+    CCurrencyDefinition newCurDef;
+    std::set<uint160> newIDs;
+    std::set<uint160> newCurrencies;
     for (auto output : tx.vout)
     {
         COptCCParams p;
-        if (output.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.version >= p.VERSION_V3)
+        if (output.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.version >= p.VERSION_V3 && p.vData.size())
         {
-            if (p.evalCode == EVAL_IDENTITY_PRIMARY && p.vData.size() > 1)
+            switch (p.evalCode)
             {
-                if (identity.IsValid())
+                case EVAL_IDENTITY_ADVANCEDRESERVATION:
                 {
-                    identity = CIdentity();
+                    if ((advNameRes = CAdvancedNameReservation(p.vData[0])).IsValid())
+                    {
+                        uint160 parentID;
+                        newIDs.insert(CIdentity::GetID(advNameRes.name, advNameRes.parent));
+                    }
                     break;
                 }
-                else
+                case EVAL_IDENTITY_RESERVATION:
                 {
-                    identity = CIdentity(p.vData[0]);
-                }
-            }
-            else if (p.evalCode == EVAL_IDENTITY_RESERVATION && p.vData.size() > 1)
-            {
-                if (reservation.IsValid())
-                {
-                    reservation = CNameReservation();
+                    if ((reservation = CNameReservation(p.vData[0])).IsValid())
+                    {
+                        uint160 parentID = ASSETCHAINS_CHAINID;
+                        newIDs.insert(CIdentity::GetID(reservation.name, parentID));
+                    }
                     break;
                 }
-                else
+                case EVAL_CURRENCY_DEFINITION:
                 {
-                    reservation = CNameReservation(p.vData[0]);
+                    if ((newCurDef = CCurrencyDefinition(p.vData[0])).IsValid())
+                    {
+                        newCurrencies.insert(newCurDef.GetID());
+                    }
+                    break;
                 }
             }
         }
     }
 
-    // it can't conflict if it's not a definition
-    if (!(identity.IsValid() && reservation.IsValid()))
+    // first, look for ID conflicts, any new ID that matches should be removed
+    for (auto &oneIDID : newIDs)
     {
-        return false;
+        std::vector<std::pair<uint160, int>> addresses =
+            std::vector<std::pair<uint160, int>>({{CCrossChainRPCData::GetConditionID(oneIDID, EVAL_IDENTITY_RESERVATION), CScript::P2IDX},
+                                                  {CCrossChainRPCData::GetConditionID(oneIDID, EVAL_IDENTITY_ADVANCEDRESERVATION), CScript::P2IDX}});
+        std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> results;
+        if (mempool.getAddressIndex(addresses, results) && results.size())
+        {
+            std::map<uint256, std::pair<CTransaction, int>> txesAndSources;   // first hash is transaction of input of prior identity or commitment output in the mempool, second pair is tx and ID output num if identity
+
+            uint256 txHash = tx.GetHash();
+            CNameReservation conflictingRes;
+            for (auto r : results)
+            {
+                if (r.first.txhash == txHash)
+                {
+                    continue;
+                }
+                CTransaction mpTx;
+                if (lookup(r.first.txhash, mpTx))
+                {
+                    conflicting.push_back(mpTx);
+                }
+            }
+        }
     }
 
-    std::vector<std::pair<uint160, int>> addresses = std::vector<std::pair<uint160, int>>({{identity.GetID(), CScript::P2ID}});
-    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> results;
-    if (mempool.getAddressIndex(addresses, results) && results.size())
+    for (auto &oneCurID : newCurrencies)
     {
-        std::map<uint256, std::pair<CTransaction, int>> txesAndSources;   // first hash is transaction of input of prior identity or commitment output in the mempool, second pair is tx and ID output num if identity
-
-        uint256 txHash = tx.GetHash();
-        CNameReservation conflictingRes;
-        for (auto r : results)
+        std::vector<std::pair<uint160, int>> addresses =
+            std::vector<std::pair<uint160, int>>({{CCrossChainRPCData::GetConditionID(oneCurID, CCurrencyDefinition::CurrencyDefinitionKey()), CScript::P2IDX}});
+        std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> results;
+        if (mempool.getAddressIndex(addresses, results) && results.size())
         {
-            if (r.first.txhash == txHash)
+            std::map<uint256, std::pair<CTransaction, int>> txesAndSources;   // first hash is transaction of input of prior identity or commitment output in the mempool, second pair is tx and ID output num if identity
+
+            uint256 txHash = tx.GetHash();
+            CNameReservation conflictingRes;
+            for (auto r : results)
             {
-                continue;
-            }
-            CTransaction mpTx;
-            if (lookup(r.first.txhash, mpTx))
-            {
-                COptCCParams p;
-                if (mpTx.vout[r.first.index].scriptPubKey.IsPayToCryptoCondition(p) && 
-                    p.IsValid() && 
-                    p.evalCode == EVAL_IDENTITY_RESERVATION && 
-                    p.vData.size() > 1 && 
-                    (conflictingRes = CNameReservation(p.vData[0])).IsValid() &&
-                    CIdentity(mpTx).IsValid())
+                if (r.first.txhash == txHash)
+                {
+                    continue;
+                }
+                CTransaction mpTx;
+                if (lookup(r.first.txhash, mpTx))
                 {
                     conflicting.push_back(mpTx);
                 }
@@ -922,6 +1106,24 @@ void CTxMemPool::queryHashes(vector<uint256>& vtxid)
         vtxid.push_back(mi->GetTx().GetHash());
 }
 
+std::shared_ptr<const CTransaction> CTxMemPool::get(const uint256& hash) const
+{
+    LOCK(cs);
+    indexed_transaction_set::const_iterator i = mapTx.find(hash);
+    if (i == mapTx.end())
+        return nullptr;
+    return i->GetSharedTx();
+}
+
+TxMempoolInfo CTxMemPool::info(const uint256& hash) const
+{
+    LOCK(cs);
+    indexed_transaction_set::const_iterator i = mapTx.find(hash);
+    if (i == mapTx.end())
+        return TxMempoolInfo();
+    return TxMempoolInfo{i->GetSharedTx(), i->GetTime(), CFeeRate(i->GetFee(), i->GetTxSize())};
+}
+
 bool CTxMemPool::lookup(uint256 hash, CTransaction& result) const
 {
     LOCK(cs);
@@ -1009,7 +1211,7 @@ void CTxMemPool::ClearPrioritisation(const uint256 hash)
     mapReserveTransactions.erase(hash);
 }
 
-bool CTxMemPool::PrioritiseReserveTransaction(const CReserveTransactionDescriptor &txDesc, const CCurrencyState &currencyState)
+bool CTxMemPool::PrioritiseReserveTransaction(const CReserveTransactionDescriptor &txDesc)
 {
     LOCK(cs);
     uint256 hash = txDesc.ptx->GetHash();
@@ -1017,7 +1219,16 @@ bool CTxMemPool::PrioritiseReserveTransaction(const CReserveTransactionDescripto
     if (txDesc.IsValid())
     {
         mapReserveTransactions[hash] = txDesc;
-        CAmount feeDelta = txDesc.AllFeesAsNative(currencyState);
+        CAmount feeDelta = txDesc.NativeFees();
+        if (!IsVerusActive())
+        {
+            CCurrencyValueMap reserveFees = txDesc.ReserveFees();
+            auto it = reserveFees.valueMap.find(VERUS_CHAINID);
+            if (it != reserveFees.valueMap.end())
+            {
+                feeDelta += it->second;
+            }
+        }
         PrioritiseTransaction(hash, hash.GetHex().c_str(), (double)feeDelta * 100.0, feeDelta);
         return true;
     }

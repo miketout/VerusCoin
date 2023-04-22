@@ -245,7 +245,15 @@ void TransactionBuilder::SetReserveFee(const CCurrencyValueMap &fees)
 
 void TransactionBuilder::SendChangeTo(libzcash::SaplingPaymentAddress changeAddr, uint256 ovk)
 {
-    saplingChangeAddr = std::make_pair(ovk, changeAddr);
+    // this is how we currently clear the private change address
+    if (changeAddr.pk_d.IsNull() && ovk.IsNull())
+    {
+        saplingChangeAddr = boost::none;
+    }
+    else
+    {
+        saplingChangeAddr = std::make_pair(ovk, changeAddr);
+    }
     sproutChangeAddr = boost::none;
     // tChangeAddr = boost::none;
 }
@@ -325,10 +333,15 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
         }
         if (change < 0) {
             // it's possible this is an import transaction that is minting currency
-            //UniValue jsonTx(UniValue::VOBJ);
-            //TxToUniv(mtx, uint256(), jsonTx);
-            //printf("%s: mtx: %s\n", __func__, jsonTx.write(1,2).c_str());
-            printf("%s: Change cannot be negative, %s\n", __func__, ("native: " + std::to_string(change) + "\nreserves: " + reserveChange.ToUniValue().write()).c_str());
+            if (LogAcceptCategory("txbuilder"))
+            {
+                UniValue jsonTx(UniValue::VOBJ);
+                TxToUniv(mtx, uint256(), jsonTx);
+                printf("%s: mtx: %s\n", __func__, jsonTx.write(1,2).c_str());
+                printf("%s: Change cannot be negative, %s\n", __func__, ("native: " + std::to_string(change) + "\nreserves: " + reserveChange.ToUniValue().write()).c_str());
+                LogPrintf("%s: mtx: %s\n", __func__, jsonTx.write(1,2).c_str());
+                LogPrintf("%s: Change cannot be negative, %s\n", __func__, ("native: " + std::to_string(change) + "\nreserves: " + reserveChange.ToUniValue().write()).c_str());
+            }
             return TransactionBuilderResult("Change cannot be negative, native: " + std::to_string(change) + "\nreserves: " + reserveChange.ToUniValue().write());
         }
 
@@ -376,16 +389,28 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
                 }
                 std::vector<CTxDestination> dest(1, tChangeAddr.get());
 
+                // separate any blocked currencies from non-blocked currencies into separate change outputs
+                if (keystore && keystore->GetCurrencyTrustMode() != CRating::TRUSTMODE_NORESTRICTION)
+                {
+                    CCurrencyValueMap withoutBlockedCurrencies = keystore->RemoveBlockedCurrencies(reserveChange);
+                    CCurrencyValueMap removedCurrencies = (reserveChange - withoutBlockedCurrencies);
+                    if (removedCurrencies > CCurrencyValueMap())
+                    {
+                        CTokenOutput unwantedOut(removedCurrencies);
+                        AddTransparentOutput(MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, dest, 1, &unwantedOut)), 0);
+                        reserveChange = withoutBlockedCurrencies;
+                    }
+                }
 
                 // one output for all reserves, change gets combined
                 // we should separate, or remove any currency that is not whitelisted if specified after whitelist is supported
                 CTokenOutput to(reserveChange);
                 AddTransparentOutput(MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, dest, 1, &to)), hasNativeChange ? change : 0);
             }
-            else if (saplingChangeAddr) 
+            else if (saplingChangeAddr)
             {
                 AddSaplingOutput(saplingChangeAddr->first, saplingChangeAddr->second, change);
-            } else if (tChangeAddr) 
+            } else if (tChangeAddr)
             {
                 // tChangeAddr has already been validated.
                 AddTransparentOutput(tChangeAddr.value(), change);
@@ -395,7 +420,7 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
                 auto note = spends[0].note;
                 libzcash::SaplingPaymentAddress changeAddr(note.d, note.pk_d);
                 AddSaplingOutput(fvk.ovk, changeAddr, change);
-            } else 
+            } else
             {
                 if (hasReserveChange)
                 {
@@ -584,10 +609,13 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
             extern void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry);
             TxToUniv(txNewConst, uint256(), jsonTx);
             printf("Failed to sign for script:\n%s\n", jsonTx.write(1,2).c_str());
-            if (sigdata.scriptSig.size() && throwTxWithPartialSig)
+            if (throwTxWithPartialSig)
             {
-                UpdateTransaction(mtx, nIn, sigdata);
                 throwPartialSig = true;
+                if (sigdata.scriptSig.size())
+                {
+                    UpdateTransaction(mtx, nIn, sigdata);
+                }
             }
             else
             {

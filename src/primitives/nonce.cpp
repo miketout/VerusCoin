@@ -13,7 +13,7 @@ arith_uint256 CPOSNonce::posDiffMask = UintToArith256(uint256S("0000000000000000
 
 bool CPOSNonce::NewPOSActive(int32_t height)
 {
-    if ((strcmp(ASSETCHAINS_SYMBOL, "VRSC") == 0) && (height < (96480 + 100)))
+    if (_IsVerusMainnetActive() && (height < (96480 + 100)))
         return false;
     else
         return true;
@@ -21,7 +21,7 @@ bool CPOSNonce::NewPOSActive(int32_t height)
 
 bool CPOSNonce::NewNonceActive(int32_t height)
 {
-    if ((strcmp(ASSETCHAINS_SYMBOL, "VRSC") == 0) && (height < 96480))
+    if (_IsVerusMainnetActive() && (height < 96480))
         return false;
     else
         return true;

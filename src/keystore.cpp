@@ -441,6 +441,162 @@ std::set<CKeyID> CBasicKeyStore::GetIdentityKeyIDs()
     return ret;
 }
 
+void CBasicKeyStore::ClearCurrencyTrust()
+{
+    mapCurrencyTrust.clear();
+}
+
+bool CBasicKeyStore::RemoveCurrencyTrust(const uint160 &currencyID)
+{
+    return (bool)mapCurrencyTrust.erase(currencyID);
+}
+
+CRating CBasicKeyStore::GetCurrencyTrust(const uint160 &currencyID) const
+{
+    auto it = mapCurrencyTrust.find(currencyID);
+    if (it == mapCurrencyTrust.end())
+    {
+        return CRating();
+    }
+    else
+    {
+        return it->second;
+    }
+}
+
+bool CBasicKeyStore::SetCurrencyTrust(const uint160 &currencyID, const CRating &trust)
+{
+    mapCurrencyTrust[currencyID] = trust;
+    return true;
+}
+
+bool CBasicKeyStore::SetCurrencyTrustMode(int trustMode)
+{
+    if (trustMode >= CRating::TRUSTMODE_FIRST && trustMode <= CRating::TRUSTMODE_LAST)
+    {
+        currencyTrustMode = trustMode;
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+int CBasicKeyStore::GetCurrencyTrustMode() const
+{
+    return currencyTrustMode;
+}
+
+CCurrencyValueMap CBasicKeyStore::RemoveBlockedCurrencies(const CCurrencyValueMap inputMap) const
+{
+    CCurrencyValueMap retVal = inputMap;
+    if (currencyTrustMode != CRating::TRUSTMODE_NORESTRICTION)
+    {
+        if (currencyTrustMode == CRating::TRUSTMODE_WHITELISTONLY)
+        {
+            // remove all currencies that aren't on the white list
+            for (auto &oneCurVal : inputMap.valueMap)
+            {
+                if (GetCurrencyTrust(oneCurVal.first).trustLevel != CRating::TRUST_APPROVED)
+                {
+                    retVal.valueMap.erase(oneCurVal.first);
+                    if (!retVal.valueMap.size())
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+        else
+        {
+            // remove all currencies on the black list
+            for (auto &oneCurVal : inputMap.valueMap)
+            {
+                if (GetCurrencyTrust(oneCurVal.first).trustLevel == CRating::TRUST_BLOCKED)
+                {
+                    retVal.valueMap.erase(oneCurVal.first);
+                    if (!retVal.valueMap.size())
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    return retVal;
+}
+
+void CBasicKeyStore::ClearIdentityTrust()
+{
+    mapIdentityTrust.clear();
+    identityTrustMode = CRating::TRUSTMODE_NORESTRICTION;
+}
+
+bool CBasicKeyStore::RemoveIdentityTrust(const CIdentityID &idID)
+{
+    return (bool)mapIdentityTrust.erase(idID);
+}
+
+CRating CBasicKeyStore::GetIdentityTrust(const CIdentityID &idID) const
+{
+    auto it = mapIdentityTrust.find(idID);
+    if (it == mapIdentityTrust.end())
+    {
+        return CRating();
+    }
+    else
+    {
+        return it->second;
+    }
+}
+
+bool CBasicKeyStore::SetIdentityTrust(const CIdentityID &idID, const CRating &trust)
+{
+    mapIdentityTrust[idID] = trust;
+    return true;
+}
+
+bool CBasicKeyStore::SetIdentityTrustMode(int trustMode)
+{
+    if (trustMode >= CRating::TRUSTMODE_FIRST && trustMode <= CRating::TRUSTMODE_LAST)
+    {
+        identityTrustMode = trustMode;
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+int CBasicKeyStore::GetIdentityTrustMode() const
+{
+    return identityTrustMode;
+}
+
+bool CBasicKeyStore::IsBlockedIdentity(const CIdentityID &idID) const
+{
+    if (identityTrustMode != CRating::TRUSTMODE_NORESTRICTION)
+    {
+        if (identityTrustMode == CRating::TRUSTMODE_WHITELISTONLY)
+        {
+            if (GetIdentityTrust(idID).trustLevel != CRating::TRUST_APPROVED)
+            {
+                return true;
+            }
+        }
+        else
+        {
+            if (GetIdentityTrust(idID).trustLevel == CRating::TRUST_BLOCKED)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 bool CBasicKeyStore::AddWatchOnly(const CScript &dest)
 {
     LOCK(cs_KeyStore);

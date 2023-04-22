@@ -452,7 +452,6 @@ public:
     // extraHashes are the count of additional elements, such as work or power, to also incorporate into the hash tree
     uint256 SafeCheck(uint256 hash) const
     {
-        HASHALGOWRITER hw(SER_GETHASH, 0);
         int64_t index = nIndex;
 
         if (index == -1)
@@ -461,6 +460,7 @@ public:
         // printf("start SafeCheck branch.size(): %lu, index: %lu, hash: %s\n", branch.size(), index, HashAbbrev(hash).c_str());
         for (auto it(branch.begin()); it != branch.end(); ++it)
         {
+            HASHALGOWRITER hw(SER_GETHASH, 0);
             if (index & 1) 
             {
                 if (*it == hash) 
@@ -541,8 +541,7 @@ class CPATRICIABranch : public CMerkleBranchBase
 {
 public:
     std::vector<std::vector<unsigned char>> accountProof;
-    uint64_t balance;
-    uint256 bigBalance;
+    uint256 balance;
     uint64_t nonce;
     uint256 storageHash;
     uint256 storageProofKey;
@@ -565,8 +564,6 @@ public:
     std::vector<unsigned char> verifyProof(uint256& rootHash,std::vector<unsigned char> key,std::vector<std::vector<unsigned char>>& proof);
     uint256 verifyStorageProof(uint256 hash);
     bool verifyStorageValue(std::vector<unsigned char> testStorageValue);
-    bool testProof();
-    bool Init();
 
     ADD_SERIALIZE_METHODS;
     
@@ -575,17 +572,12 @@ public:
         READWRITE(*(CMerkleBranchBase *)this);
         READWRITE(proofdata);
         READWRITE(address);
-        READWRITE(FLATDATA(balance));
+        READWRITE(balance);
         READWRITE(codeHash);
         READWRITE(VARINT(nonce));
         READWRITE(storageHash);
         READWRITE(storageProofKey);
         READWRITE(storageProof);
-        READWRITE(storageProofValue);
-        if (balance == -1)
-        {
-            READWRITE(bigBalance);
-        }
     }
 
     uint256 SafeCheck(uint256 hash) 
@@ -597,7 +589,7 @@ public:
     {
         arith_uint256 bigValue;
         std::vector<unsigned char> vecVal;
-        for (bigValue = balance == 0xffffffffffffffff ? UintToArith256(bigBalance) : arith_uint256(balance); bigValue > 0; bigValue = bigValue >> 8)
+        for (bigValue = UintToArith256(balance); bigValue > 0; bigValue = bigValue >> 8)
         {
             vecVal.insert(vecVal.begin(), (unsigned char)(bigValue & 0xff).GetLow64());
         }
@@ -696,6 +688,7 @@ public:
     {
         CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
         s << oldProof;
+        DeleteProofSequence();
         s >> *this;
     }
     const CMMRProof &operator=(const CMMRProof &operand)
@@ -713,6 +706,7 @@ public:
     }
 
     void DeleteProofSequence();
+    void DeleteProofSequenceEntry(int index);
 
     ADD_SERIALIZE_METHODS;
     
@@ -722,6 +716,9 @@ public:
         {
             int32_t proofSize;
             READWRITE(proofSize);
+
+            // in case it is deserialized with something present
+            DeleteProofSequence();
 
             bool error = false;
             for (int i = 0; i < proofSize && !error; i++)
@@ -877,6 +874,7 @@ public:
         return proofSequence.size() == 1 && proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_MULTIPART;
     }
     uint256 CheckProof(uint256 checkHash) const;
+    uint160 GetNativeAddress() const;
     UniValue ToUniValue() const;
 };
 

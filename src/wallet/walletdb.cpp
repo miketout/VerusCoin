@@ -235,6 +235,38 @@ bool CWalletDB::EraseIdentity(const CIdentityMapKey &mapKey)
     return Erase(std::make_pair(std::string("identity"), mapKey));
 }
 
+bool CWalletDB::WriteCurrencyTrust(const uint160 &currencyID, const CRating &trust)
+{
+    nWalletDBUpdated++;
+    return Write(std::make_pair(std::string("curtrust"), currencyID), trust);
+}
+bool CWalletDB::WriteCurrencyTrustMode(int32_t trustMode)
+{
+    nWalletDBUpdated++;
+    return Write(std::string("curtrustmode"), trustMode);
+}
+bool CWalletDB::EraseCurrencyTrust(const uint160 &currencyID)
+{
+    nWalletDBUpdated++;
+    return Erase(std::make_pair(std::string("curtrust"), currencyID));
+}
+
+bool CWalletDB::WriteIdentityTrust(const uint160 &idID, const CRating &trust)
+{
+    nWalletDBUpdated++;
+    return Write(std::make_pair(std::string("idtrust"), idID), trust);
+}
+bool CWalletDB::WriteIdentityTrustMode(int32_t trustMode)
+{
+    nWalletDBUpdated++;
+    return Write(std::string("idtrustmode"), trustMode);
+}
+bool CWalletDB::EraseIdentityTrust(const uint160 &idID)
+{
+    nWalletDBUpdated++;
+    return Erase(std::make_pair(std::string("idtrust"), idID));
+}
+
 bool CWalletDB::WriteBestBlock(const CBlockLocator& locator)
 {
     nWalletDBUpdated++;
@@ -857,6 +889,54 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             ssValue >> chain;
             pwallet->SetHDChain(chain, true);
         }
+        else if (strType == "curtrust")
+        {
+            uint160 currencyID;
+            CRating trust;
+            ssValue >> currencyID;
+            ssValue >> trust;
+            if (currencyID.IsNull() || !trust.IsValid())
+            {
+                strErr = "Error reading wallet database: invalid currency trust score entry";
+                return false;
+            }
+            pwallet->LoadCurrencyTrust(currencyID, trust);
+        }
+        else if (strType == "idtrust")
+        {
+            uint160 idID;
+            CRating trust;
+            ssValue >> idID;
+            ssValue >> trust;
+            if (idID.IsNull() || !trust.IsValid())
+            {
+                strErr = "Error reading wallet database: invalid identity trust score entry";
+                return false;
+            }
+            pwallet->LoadIdentityTrust(idID, trust);
+        }
+        else if (strType == "curtrustmode")
+        {
+            int32_t trustMode;
+            ssValue >> trustMode;
+            if (trustMode < CRating::TRUSTMODE_FIRST || trustMode > CRating::TRUSTMODE_LAST)
+            {
+                strErr = "Error reading wallet database: invalid currency trust mode entry";
+                return false;
+            }
+            pwallet->LoadCurrencyTrustMode(trustMode);
+        }
+        else if (strType == "idtrustmode")
+        {
+            int32_t trustMode;
+            ssValue >> trustMode;
+            if (trustMode < CRating::TRUSTMODE_FIRST || trustMode > CRating::TRUSTMODE_LAST)
+            {
+                strErr = "Error reading wallet database: invalid identity trust mode entry";
+                return false;
+            }
+            pwallet->LoadIdentityTrustMode(trustMode);
+        }
     } catch (...)
     {
         return false;
@@ -992,6 +1072,9 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
             LogPrintf("Error getting wallet database cursor\n");
             return DB_CORRUPT;
         }
+
+        pwallet->LoadCurrencyTrustMode(CRating::TRUSTMODE_NORESTRICTION);
+        pwallet->LoadIdentityTrustMode(CRating::TRUSTMODE_NORESTRICTION);
 
         while (true)
         {
@@ -1175,7 +1258,7 @@ DBErrors CWalletDB::ZapWalletTx(CWallet* pwallet, vector<CWalletTx>& vWtx)
 void ThreadFlushWalletDB(const string& strFile)
 {
     // Make this thread recognisable as the wallet flushing thread
-    RenameThread("zcash-wallet");
+    RenameThread("verus-wallet");
 
     static bool fOneThread;
     if (fOneThread)

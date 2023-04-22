@@ -373,7 +373,7 @@ class SaplingOutPoint : public BaseOutPoint
 {
 public:
     SaplingOutPoint() : BaseOutPoint() {};
-    SaplingOutPoint(uint256 hashIn, uint32_t nIn) : BaseOutPoint(hashIn, nIn) {}; 
+    SaplingOutPoint(uint256 hashIn, uint32_t nIn) : BaseOutPoint(hashIn, nIn) {};
     std::string ToString() const;
 };
 
@@ -731,10 +731,10 @@ public:
         return a.hash != b.hash;
     }
 
-    // verus hash will be the same for a given txid, output number, block height, and blockhash of 100 blocks past
+    // verus hash will be the same for a given txid, output number, block height, and blockhash from >= 100 blocks past
     static uint256 _GetVerusPOSHash(CPOSNonce *pNonce, const uint256 &txid, int32_t voutNum, int32_t height, const uint256 &pastHash, int64_t value)
     {
-        //printf("Nonce:%s\n txid:%s\nnvout:%d\nheight:%d\npastHash:%s\nvalue:%lu\n", 
+        //printf("Nonce:%s\n txid:%s\nnvout:%d\nheight:%d\npastHash:%s\nvalue:%lu\n",
         //       pNonce->GetHex().c_str(),
         //       txid.GetHex().c_str(),
         //       voutNum,
@@ -921,7 +921,7 @@ public:
     uint32_t nExpiryHeight;
     uint64_t nValueBalance;
 
-    CTransactionHeader() : fOverwintered(0), nVersion(0), nVersionGroupId(0), nVins(0), 
+    CTransactionHeader() : fOverwintered(0), nVersion(0), nVersionGroupId(0), nVins(0),
                            nVouts(0), nShieldedSpends(0), nShieldedOutputs(0), nLockTime(0), nExpiryHeight(0), nValueBalance(0) {}
 
     CTransactionHeader(const uint256 &TxHash,
@@ -1058,11 +1058,11 @@ public:
 
     CTransactionComponentProof() : elType(0), elIdx(0) {}
     CTransactionComponentProof(const CTransactionComponentProof &obj) : elType(obj.elType), elIdx(obj.elIdx), elVchObj(obj.elVchObj), elProof(obj.elProof) {}
-    CTransactionComponentProof(int type, int subIndex, const std::vector<unsigned char> &vch, const CMMRProof &proof) : 
+    CTransactionComponentProof(int type, int subIndex, const std::vector<unsigned char> &vch, const CMMRProof &proof) :
         elType(type), elIdx(subIndex), elVchObj(vch), elProof(proof) {}
 
     template <typename TXCOMPONENTCLASS>
-    CTransactionComponentProof(const TXCOMPONENTCLASS &txPart, int index, const CMMRProof &proof) : 
+    CTransactionComponentProof(const TXCOMPONENTCLASS &txPart, int index, const CMMRProof &proof) :
         elType(ElementType(txPart)), elIdx(index), elProof(proof)
     {
         elVchObj = ::AsVector(txPart);
@@ -1108,7 +1108,7 @@ public:
     }
 
     // This class is primarily designed to replace a full tx with a sparse tx and proofs of its parts. in this case,
-    // we do have the full tx, so this just returns the tx hash of a full tx, which must be validated further through 
+    // we do have the full tx, so this just returns the tx hash of a full tx, which must be validated further through
     // a merkle proof or otherwise
     uint256 CheckFullTxProof(CTransaction &tx) const
     {
@@ -1255,19 +1255,19 @@ public:
     CMMRProof txProof;                                  // proof of the transaction in its block, either normal Merkle pre-PBaaS,MMR partial post, or PATRICIA Trie
     std::vector<CTransactionComponentProof> components; // each component (or TX for older blocks) to prove
 
-    CPartialTransactionProof() : version(VERSION_CURRENT), type(TYPE_PBAAS) {}
+    CPartialTransactionProof(int8_t Version=VERSION_CURRENT) : version(Version), type(TYPE_PBAAS) {}
 
     CPartialTransactionProof(const UniValue &uni);
 
     CPartialTransactionProof(const CPartialTransactionProof &obj) : version(obj.version), type(obj.type), txProof(obj.txProof), components(obj.components) {}
 
-    CPartialTransactionProof(const CMMRProof &proof, 
-                             const std::vector<CTransactionComponentProof> &Components, 
-                             int8_t Version=VERSION_CURRENT, 
-                             int8_t Type=TYPE_PBAAS) : 
-                             version(Version), 
+    CPartialTransactionProof(const CMMRProof &proof,
+                             const std::vector<CTransactionComponentProof> &Components,
+                             int8_t Version=VERSION_CURRENT,
+                             int8_t Type=TYPE_PBAAS) :
+                             version(Version),
                              type(Type),
-                             txProof(proof), 
+                             txProof(proof),
                              components(Components) {}
 
     CPartialTransactionProof(const CTransaction tx,
@@ -1278,12 +1278,12 @@ public:
 
     // This creates a proof for older blocks and full transactions, typically where the root proof is a standard
     // merkle proof
-    CPartialTransactionProof(const CMMRProof &txRootProof, const CTransaction &tx) : 
+    CPartialTransactionProof(const CMMRProof &txRootProof, const CTransaction &tx) :
         version(VERSION_CURRENT), type(TYPE_FULLTX), txProof(txRootProof), components({CTransactionComponentProof(tx, 0, CMMRProof())}) { }
 
     // This creates a proof for the pre-header of a block, which enables proof of sapling txes and other things in a block header
     // without requiring an implementation of VerusHash
-    CPartialTransactionProof(const CMMRProof &txRootProof, const CPBaaSPreHeader &preHeader) : 
+    CPartialTransactionProof(const CMMRProof &txRootProof, const CPBaaSPreHeader &preHeader) :
         version(VERSION_CURRENT), type(TYPE_PBAAS), txProof(txRootProof), components({CTransactionComponentProof(preHeader, 0, CMMRProof())}) { }
 
     CPartialTransactionProof(const std::vector<CPartialTransactionProof> &parts)
@@ -1356,11 +1356,11 @@ public:
                     LogPrintf("Deserialization of ETH type object failed : %s\n", e.what());
                     return uint256();
                 }
-                 
+
                 CNativeHashWriter hw2(CCurrencyDefinition::EProofProtocol::PROOF_ETHNOTARIZATION);
                 hw2 << ccx;
                 hw2 << prevtxid;
-                
+
                 return hw2.GetHash();
             }
         }
@@ -1401,8 +1401,8 @@ public:
     {
         return IsValid() &&
                ((type == TYPE_ETH) ||
-                (TYPE_PBAAS == type && 
-                 txProof.proofSequence.size() >= 3 && 
+                (TYPE_PBAAS == type &&
+                 txProof.proofSequence.size() >= 3 &&
                  txProof.proofSequence[1]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_NODE &&
                  txProof.proofSequence[2]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE));
     }
@@ -1417,7 +1417,7 @@ public:
         return IsValid() && txProof.proofSequence.size() == 1 && txProof.proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_MULTIPART;
     }
 
-    std::vector<CPartialTransactionProof> BreakApart(int maxChunkSize=CScript::MAX_SCRIPT_ELEMENT_SIZE) const
+    std::vector<CPartialTransactionProof> BreakApart(int maxChunkSize=(CScript::MAX_SCRIPT_ELEMENT_SIZE-256)) const
     {
         CDataStream ds(SER_DISK, PROTOCOL_VERSION);
         // we put our entire self into a multipart proof and return multiple parts that must be reconstructed
@@ -1712,7 +1712,44 @@ public:
         return IsValid() && hash.IsNull();
     }
 
+    // returns false if hash is null
+    bool GetOutputTransaction(CTransaction &tx, uint256 &blockHash) const;
+
     UniValue ToUniValue() const;
+};
+
+struct WTxId
+{
+    const uint256 hash;
+    const uint256 authDigest;
+
+    WTxId() :
+        authDigest(LEGACY_TX_AUTH_DIGEST) {}
+
+    WTxId(const uint256& hashIn, const uint256& authDigestIn=LEGACY_TX_AUTH_DIGEST) :
+        hash(hashIn), authDigest(authDigestIn) {}
+
+    const std::vector<unsigned char> ToBytes() const {
+        std::vector<unsigned char> vData(hash.begin(), hash.end());
+        vData.insert(vData.end(), authDigest.begin(), authDigest.end());
+        return vData;
+    }
+
+    friend bool operator<(const WTxId& a, const WTxId& b)
+    {
+        return (a.hash < b.hash ||
+            (a.hash == b.hash && a.authDigest < b.authDigest));
+    }
+
+    friend bool operator==(const WTxId& a, const WTxId& b)
+    {
+        return a.hash == b.hash && a.authDigest == b.authDigest;
+    }
+
+    friend bool operator!=(const WTxId& a, const WTxId& b)
+    {
+        return a.hash != b.hash || a.authDigest != b.authDigest;
+    }
 };
 
 #endif // BITCOIN_PRIMITIVES_TRANSACTION_H

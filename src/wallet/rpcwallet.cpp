@@ -799,11 +799,12 @@ UniValue listaddressgroupings(const UniValue& params, bool fHelp)
 }
 
 CIdentitySignature::ESignatureVerification CIdentitySignature::AddSignature(const CIdentity &signingID,
-                                                                            const std::vector<uint160> &vdxfCodes, 
-                                                                            const std::vector<uint256> &statements, 
-                                                                            const uint160 &systemID, 
+                                                                            const std::vector<uint160> &vdxfCodes,
+                                                                            const std::vector<std::string> &vdxfCodeNames,
+                                                                            const std::vector<uint256> &statements,
+                                                                            const uint160 &systemID,
                                                                             uint32_t height,
-                                                                            const std::string &prefixString, 
+                                                                            const std::string &prefixString,
                                                                             const uint256 &msgHash,
                                                                             const CKeyStore *pWallet)
 {
@@ -824,8 +825,8 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::AddSignature(cons
         idKeys.insert(GetDestinationID(oneKey));
     }
 
-    uint256 signatureHash = IdentitySignatureHash(vdxfCodes, statements, systemID, height, sID, prefixString, msgHash);
-    
+    uint256 signatureHash = IdentitySignatureHash(vdxfCodes, vdxfCodeNames, statements, systemID, height, sID, prefixString, msgHash);
+
     for (auto &oneSig : signatures)
     {
         CPubKey pubkey;
@@ -872,17 +873,18 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::AddSignature(cons
 }
 
 CIdentitySignature::ESignatureVerification CIdentitySignature::NewSignature(const CIdentity &signingID,
-                                                                            const std::vector<uint160> &vdxfCodes, 
-                                                                            const std::vector<uint256> &statements, 
-                                                                            const uint160 &systemID, 
+                                                                            const std::vector<uint160> &vdxfCodes,
+                                                                            const std::vector<std::string> &vdxfCodeNames,
+                                                                            const std::vector<uint256> &statements,
+                                                                            const uint160 &systemID,
                                                                             uint32_t height,
-                                                                            const std::string &prefixString, 
-                                                                            const uint256 &msgHash, 
+                                                                            const std::string &prefixString,
+                                                                            const uint256 &msgHash,
                                                                             const CKeyStore *pWallet)
 {
     signatures.clear();
     blockHeight = height;
-    return AddSignature(signingID, vdxfCodes, statements, systemID, height, prefixString, msgHash, pWallet);
+    return AddSignature(signingID, vdxfCodes, vdxfCodeNames, statements, systemID, height, prefixString, msgHash, pWallet);
 }
 
 std::string SignMessageHash(const CIdentity &identity, const uint256 &_msgHash, const std::string &signatureStr, uint32_t blockHeight)
@@ -941,7 +943,7 @@ std::string SignMessageHash(const CIdentity &identity, const uint256 &_msgHash, 
 
     std::set<uint160> signatureKeyIDs;
     std::map<uint160, std::vector<unsigned char>> signatureMap;
-    
+
     for (auto &oneSig : signature.signatures)
     {
         CPubKey pubkey;
@@ -1027,7 +1029,7 @@ UniValue signhash(const UniValue& params, bool fHelp)
 
     if (fHelp || params.size() < 2 || params.size() > 3)
         throw runtime_error(
-            "signhash \"address or identity\" \"hexhash\" \"curentsig\"\n"
+            "signhash \"address or identity\" \"hexhash\" \"currentsig\"\n"
             "\nSign a hexadecimal hash value with the private key of a t-addr or the authorities present in this wallet for an identity"
             + HelpRequiringPassphrase() + "\n"
             "\nNOTE: This API will only work for signing a data hash, but cannot properly sign the hash of a transaction\n"
@@ -1233,7 +1235,7 @@ UniValue signmessage(const UniValue& params, bool fHelp)
         ss.Reset();
         ss << verusDataSignaturePrefix;
         ss << msgHash;
- 
+
         vector<unsigned char> vchSig;
         if (!key.SignCompact(ss.GetHash(), vchSig))
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sign failed");
@@ -1246,7 +1248,9 @@ UniValue signmessage(const UniValue& params, bool fHelp)
     }
 }
 
-uint256 HashFile(std::string filepath);
+uint256 HashFile(const std::string &filepath, CNativeHashWriter &ss);
+uint256 HashFile(const std::string &filepath);
+uint160 ParseVDXFKey(const std::string &keyString);
 
 UniValue signfile(const UniValue& params, bool fHelp)
 {
@@ -1255,7 +1259,7 @@ UniValue signfile(const UniValue& params, bool fHelp)
 
     if (fHelp || params.size() < 2 || params.size() > 3)
         throw runtime_error(
-            "signfile \"address or identity\" \"filepath/filename\" \"curentsig\"\n"
+            "signfile \"address or identity\" \"filepath/filename\" \"currentsig\"\n"
             "\nGenerates a SHA256D hash of the file, returns the hash, and signs the hash with the private key specified"
             + HelpRequiringPassphrase() + "\n"
             "\nArguments:\n"
@@ -1352,6 +1356,404 @@ UniValue signfile(const UniValue& params, bool fHelp)
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sign failed");
 
         UniValue ret(UniValue::VOBJ);
+        std::reverse(msgHash.begin(), msgHash.end());   // return a reversed hash for compatibility with sha256sum
+        ret.push_back(Pair("hash", msgHash.GetHex()));
+        ret.push_back(Pair("signature", EncodeBase64(&vchSig[0], vchSig.size())));
+        return ret;
+    }
+}
+
+UniValue signdata(const UniValue& params, bool fHelp)
+{
+    if (!EnsureWalletIsAvailable(fHelp))
+        return NullUniValue;
+
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "signdata '{\"address\":\"i-address or friendly name (t-address will result in simple signature w/indicated hash and prefix, nothing else)\",\n"
+            "           \"prefixstring\":\"extra string that is hashed during signature and must be supplied for verification\",\n"
+            "           \"filename\":\"filepath/filename\" |\n"
+            "             \"message\":\"any message\" |\n"
+            "             \"messagehex\":\"hexdata\" |\n"
+            "             \"messagebase64\":\"base64data\" |\n"
+            "             \"datahash\":\"256bithex\",\n"
+            "           \"vdxfkeys\":[\"vdxfkey i-address\", ...],\n"
+            "           \"vdxfkeynames\":[\"vdxfkeyname, object for getvdxfid API, or friendly name ID -- no i-addresses\", ...],\n"
+            "           \"boundhashes\":[\"hexhash\", ...],\n"
+            "           \"hashtype\": \"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\"\n"
+            "           \"signature\":\"currentsig\"}'\n\n"
+
+            "\nGenerates a hash (SHA256 default if \"hashtype\" not specified) of the data, returns the hash, and signs it with parameters specified"
+            + HelpRequiringPassphrase() + "\n"
+            "\nArguments:\n"
+            "{\n"
+            "  \"address\":\"t-addr or identity\"                               (string, required) The transparent address or identity to use for signing.\n"
+            "  \"filename\" | \"message\" | \"messagehex\" | \"messagebase64\" | \"datahash\" (string, required) Data to sign\n"
+            "  \"vdxfkeys\":[\"vdxfkey\", ...],                                 (array, optional)  Array of vdxfkeys or ID i-addresses\n"
+            "  \"vdxfkeynames\":[\"vdxfkeyname\", ...],                         (array, optional)  Array of vdxfkey names or fully qualified friendly IDs\n"
+            "  \"boundhashes\":[\"hexhash\", ...],                              (array, optional)  Array of bound hash values\n"
+            "  \"hashtype\"                                                     (string, optional) one of: \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\", defaults to sha256\n"
+            "  \"signature\"                                                    (string, optional) The current signature of the message encoded in base 64 if multisig ID\n"
+            "}\n"
+
+            "\nResult:\n"
+            "{\n"
+            "  \"hash\":\"hexhash\"         (string) The hash of the message (SHA256, NOT SHA256D)\n"
+            "  \"signature\":\"base64sig\"  (string) The aggregate signature of the message encoded in base 64 if all or partial signing successful\n"
+            "}\n"
+            "\nExamples:\n"
+            "\nCreate the signature\n"
+            + HelpExampleCli("signdata", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\"}'") +
+            "\nVerify the signature\n"
+            + HelpExampleCli("verifydata", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\", \"signature\":\"base64sig\"}'") +
+            "\nAs json rpc\n"
+            + HelpExampleRpc("signdata", "'{\"identity\":\"Verus Coin Foundation.vrsc@\", \"message\":\"hello world\"}'")
+        );
+
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+
+    EnsureWalletIsUnlocked();
+
+    uint32_t nHeight = chainActive.Height();
+
+    string strAddress;
+    string strPrefix;
+    string strFileName;
+    string strMessage;
+    string strHex;
+    string strBase64;
+    string strDataHash;
+    string strSignature;
+    string hashTypeStr = "sha256";
+
+    UniValue vdxfKeys(UniValue::VNULL);
+    UniValue vdxfKeyNames(UniValue::VNULL);
+    UniValue boundHashes(UniValue::VNULL);
+    bool objectSignature = false;
+
+    CTxDestination dest;
+
+    if (!params[0].isStr() && params[0].isObject())
+    {
+        strAddress = uni_get_str(find_value(params[0], "address"));
+        strPrefix = uni_get_str(find_value(params[0], "prefixstring"), verusDataSignaturePrefix);
+        strFileName = uni_get_str(find_value(params[0], "filename"));
+        strMessage = uni_get_str(find_value(params[0], "message"));
+        strHex = uni_get_str(find_value(params[0], "messagehex"));
+        strBase64 = uni_get_str(find_value(params[0], "messagebase64"));
+        strDataHash = uni_get_str(find_value(params[0], "datahash"));
+        hashTypeStr = uni_get_str(find_value(params[0], "hashtype"), hashTypeStr);
+        vdxfKeys = find_value(params[0], "vdxfkeys");
+        vdxfKeyNames = find_value(params[0], "vdxfkeynames");
+        boundHashes = find_value(params[0], "boundhashes");
+        strSignature = uni_get_str(find_value(params[0], "signature"));
+        if (((int)strFileName.empty() +
+             (int)strMessage.empty() +
+             (int)strHex.empty() +
+             (int)strBase64.empty() +
+             (int)strDataHash.empty()) != 4)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include one and only one of \"filename\", \"message\", \"messagehex\", \"messagebase64\", and \"datahash\"");
+        }
+        if (strAddress.empty() || hashTypeStr.empty())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include a valid \"address\" and either no explicit \"hashtype\" or one that is valid");
+        }
+        dest = DecodeDestination(strAddress);
+        if (!IsValidDestination(dest)) {
+            throw JSONRPCError(RPC_TYPE_ERROR, "\"identity\" specified in object must be valid VerusID or address");
+        }
+        // if bound parameters are single strings, make them arrays of one
+        if (vdxfKeys.isStr())
+        {
+            UniValue uniArr(UniValue::VARR);
+            uniArr.push_back(vdxfKeys);
+            vdxfKeys = uniArr;
+        }
+        if (vdxfKeyNames.isStr())
+        {
+            UniValue uniArr(UniValue::VARR);
+            uniArr.push_back(vdxfKeyNames);
+            vdxfKeyNames = uniArr;
+        }
+        if (boundHashes.isStr())
+        {
+            UniValue uniArr(UniValue::VARR);
+            uniArr.push_back(boundHashes);
+            boundHashes = uniArr;
+        }
+        if (dest.which() != COptCCParams::ADDRTYPE_ID &&
+            ((vdxfKeys.isArray() && vdxfKeys.size()) ||
+             (vdxfKeyNames.isArray() && vdxfKeyNames.size()) ||
+             (boundHashes.isArray() && vdxfKeyNames.size()) ||
+             strSignature.size()))
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "When signing with public key and not identity, cannot include vdxf keys, vdxf key names, bound hashes, or multisig");
+        }
+        objectSignature = true;
+    }
+    else
+    {
+        strAddress = params[0].get_str();
+        strFileName = params[1].get_str();
+        if (params.size() > 2)
+        {
+            strSignature = uni_get_str(params[2]);
+        }
+        dest = DecodeDestination(strAddress);
+        if (!IsValidDestination(dest)) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid address or identity");
+        }
+    }
+
+    uint256 msgHash;
+    CCurrencyDefinition::EHashTypes hashType = CCurrencyDefinition::EHashTypes::HASH_SHA256;
+
+    if (hashTypeStr == "sha256")
+    {
+        hashType = CCurrencyDefinition::EHashTypes::HASH_SHA256;
+    }
+    else if (hashTypeStr == "sha256D")
+    {
+        hashType = CCurrencyDefinition::EHashTypes::HASH_SHA256D;
+    }
+    else if (hashTypeStr == "blake2b")
+    {
+        hashType = CCurrencyDefinition::EHashTypes::HASH_BLAKE2BMMR;
+    }
+    else if (hashTypeStr == "keccak256")
+    {
+        hashType = CCurrencyDefinition::EHashTypes::HASH_KECCAK;
+    }
+    else
+    {
+        throw JSONRPCError(RPC_TYPE_ERROR, "Invalid hash type" + hashTypeStr + " must be one of -- \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\"");
+    }
+
+    {
+        CNativeHashWriter hw(hashType);
+        if (!strFileName.empty())
+        {
+            msgHash = HashFile(strFileName, hw);
+        }
+        else if (!strMessage.empty())
+        {
+            hw << strMessage;
+            msgHash = hw.GetHash();
+        }
+        else if (!strHex.empty())
+        {
+            if (!IsHex(strHex))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "\"messagehex\" must be hex string with no additional characters");
+            }
+            std::vector<unsigned char> vmsg = ParseHex(strHex);
+            hw.write((const char *)vmsg.data(), vmsg.size());
+            msgHash = hw.GetHash();
+        }
+        else if (!strBase64.empty())
+        {
+            std::string vString = DecodeBase64(strBase64);
+            if (vString.empty())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "\"messagebase64\" must be a base64 string with non-empty value and no additional characters");
+            }
+            hw.write(vString.data(), vString.size());
+            msgHash = hw.GetHash();
+        }
+        else if (!strDataHash.empty() && IsHex(strDataHash))
+        {
+            msgHash.SetHex(strDataHash);
+            // sha256 is reversed for sha256sum compatibility
+            if (hashType == CCurrencyDefinition::EHashTypes::HASH_SHA256)
+            {
+                std::reverse(msgHash.begin(), msgHash.end());
+            }
+        }
+    }
+
+    if (msgHash.IsNull())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "Cannot open file " + strFileName);
+    }
+
+    if (dest.which() == COptCCParams::ADDRTYPE_ID)
+    {
+        CIdentity identity;
+
+        identity = CIdentity::LookupIdentity(GetDestinationID(dest));
+        if (identity.IsValidUnrevoked())
+        {
+            UniValue ret(UniValue::VOBJ);
+            std::string sig;
+
+            // if we should create an advanced signature from an object specification do it, otherwise,
+            // drop through
+            if (objectSignature)
+            {
+                CIdentitySignature identitySig = CIdentitySignature(nHeight, std::set<std::vector<unsigned char>>(), hashType, CIdentitySignature::VERSION_ETHBRIDGE);
+                if (!strSignature.empty())
+                {
+                    std::vector<unsigned char> sigVec;
+                    try
+                    {
+                        bool fInvalid = false;
+                        sigVec = DecodeBase64(strSignature.c_str(), &fInvalid);
+                        if (fInvalid)
+                        {
+                            sigVec.clear();
+                        }
+                        if (sigVec.size())
+                        {
+                            identitySig = CIdentitySignature(sigVec);
+                            if (!identitySig.IsValid() || identitySig.blockHeight > (nHeight + 1))
+                            {
+                                sigVec.clear();
+                            }
+                        }
+                    }
+                    catch(const std::exception& e)
+                    {
+                        sigVec.clear();
+                    }
+                    if (!sigVec.size())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid pre-existing signature");
+                    }
+                }
+
+                // go through VDXF keys, VDXF key names, and bound hashes
+                std::vector<uint160> vdxfCodes;
+                std::vector<std::string> vdxfCodeNames;
+                std::vector<uint256> statements;
+
+                for (int i = 0; i < vdxfKeys.size(); i++)
+                {
+                    uint160 oneKey = ParseVDXFKey(uni_get_str(vdxfKeys[i]));
+                    if (oneKey.IsNull())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid VDXF key");
+                    }
+                    vdxfCodes.push_back(oneKey);
+                }
+                for (int i = 0; i < vdxfKeyNames.size(); i++)
+                {
+                    std::string oneName = uni_get_str(vdxfKeyNames[i]);
+                    std::vector<unsigned char> vch;
+                    if (oneName.empty() || (DecodeBase58Check(oneName, vch) && vch.size()))
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid VDXF key name. Key names must be fully qualified, friendly names.");
+                    }
+                    UniValue jsonObj(UniValue::VOBJ);
+                    if (jsonObj.read(oneName))
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid VDXF key name. Must be simple VDXF key or fully qualified ID.");
+                    }
+                    jsonObj = UniValue(UniValue::VOBJ);
+                    jsonObj.pushKV("vdxfuri", oneName);
+                    uint160 oneKey = ParseVDXFKey(jsonObj.write());
+                    if (oneKey.IsNull())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid VDXF key name");
+                    }
+                    vdxfCodeNames.push_back(boost::to_lower_copy(oneName));
+                }
+                for (int i = 0; i < boundHashes.size(); i++)
+                {
+                    uint256 oneHash = uint256S(uni_get_str(boundHashes[i]));
+                    if (oneHash.IsNull())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid bound hash");
+                    }
+                    if (hashType == CCurrencyDefinition::EHashTypes::HASH_SHA256)
+                    {
+                        std::reverse(oneHash.begin(), oneHash.end());
+                    }
+                    statements.push_back(oneHash);
+                }
+
+                CIdentitySignature::ESignatureVerification sigResult =
+                    identitySig.AddSignature(identity, vdxfCodes, vdxfCodeNames, statements, ASSETCHAINS_CHAINID, identitySig.blockHeight, strPrefix, msgHash, pwalletMain);
+
+                if (sigResult == CIdentitySignature::ESignatureVerification::SIGNATURE_EMPTY ||
+                    sigResult == CIdentitySignature::ESignatureVerification::SIGNATURE_INVALID)
+                {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("This wallet does not contain valid signing keys for ") + ConnectedChains.GetFriendlyIdentityName(identity));
+                }
+
+                vector<unsigned char> vchSig = ::AsVector(identitySig);
+
+                // all signatures must be from valid keys, and if there are enough, it is valid
+                sig = EncodeBase64(&vchSig[0], vchSig.size());
+            }
+            else
+            {
+                sig = SignMessageHash(identity, msgHash, strSignature, nHeight);
+            }
+            if (hashType == CCurrencyDefinition::EHashTypes::HASH_SHA256)
+            {
+                std::reverse(msgHash.begin(), msgHash.end());   // return a reversed hash for compatibility with sha256sum
+            }
+            ret.push_back(Pair("system", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
+            ret.push_back(Pair("systemid", EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID))));
+            ret.push_back(Pair("hashtype", hashTypeStr));
+            ret.push_back(Pair("hash", msgHash.GetHex()));
+            std::string fullName = ConnectedChains.GetFriendlyIdentityName(identity);
+            ret.push_back(Pair("identity", fullName));
+            ret.push_back(Pair("canonicalname", boost::to_lower_copy(fullName)));
+            ret.push_back(Pair("address", EncodeDestination(identity.GetID())));
+            ret.push_back(Pair("signatureheight", (int64_t)nHeight));
+            if (objectSignature)
+            {
+                if (vdxfKeys.size())
+                {
+                    ret.push_back(Pair("vdxfkeys", vdxfKeys));
+                }
+                if (vdxfKeyNames.size())
+                {
+                    ret.push_back(Pair("vdxfkeynames", vdxfKeyNames));
+                }
+                if (boundHashes.size())
+                {
+                    ret.push_back(Pair("boundhashes", boundHashes));
+                }
+            }
+            ret.push_back(Pair("signature", sig));
+            return ret;
+        }
+        else if (!identity.IsValid())
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid identity");
+        }
+        else
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Identity is revoked and cannot sign");
+        }
+    }
+    else
+    {
+        const CKeyID *keyID = boost::get<CKeyID>(&dest);
+        if (!keyID) {
+            throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to key");
+        }
+
+        CKey key;
+        if (!pwalletMain->GetKey(*keyID, key)) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Private key not available");
+        }
+
+        CHashWriterSHA256 ss(SER_GETHASH, PROTOCOL_VERSION);
+        ss << verusDataSignaturePrefix;
+        ss << msgHash;
+
+        vector<unsigned char> vchSig;
+        if (!key.SignCompact(ss.GetHash(), vchSig))
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sign failed");
+
+        UniValue ret(UniValue::VOBJ);
+        ret.push_back(Pair("system", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
+        ret.push_back(Pair("hashtype", hashTypeStr));
+        ret.push_back(Pair("address", EncodeDestination(dest)));
         std::reverse(msgHash.begin(), msgHash.end());   // return a reversed hash for compatibility with sha256sum
         ret.push_back(Pair("hash", msgHash.GetHex()));
         ret.push_back(Pair("signature", EncodeBase64(&vchSig[0], vchSig.size())));
@@ -1505,6 +1907,110 @@ CAmount GetAccountBalance(const string& strAccount, int nMinDepth, const isminef
 {
     CWalletDB walletdb(pwalletMain->strWalletFile);
     return GetAccountBalance(walletdb, strAccount, nMinDepth, filter);
+}
+
+UniValue prunespentwallettransactions(const UniValue& params, bool fHelp)
+{
+    if (!EnsureWalletIsAvailable(fHelp))
+        return NullUniValue;
+
+    if (fHelp || params.size() > 1 )
+        throw runtime_error(
+            "prunespentwallettransactions \"txid\"\n"
+            "\nRemove all txs that are spent. You can clear all txs bar one, by specifiying a txid.\n"
+            "\nPlease backup your wallet.dat before running this command.\n"
+            "\nArguments:\n"
+            "1. \"txid\"    (string, optional) The transaction id to keep.\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"total_transactions\" : n,         (numeric) Transactions in wallet of " + strprintf("%s",komodo_chainname()) + "\n"
+            "  \"remaining_transactions\" : n,     (numeric) Transactions in wallet after clean.\n"
+            "  \"removed_transactions\" : n,       (numeric) The number of transactions removed.\n"
+            "}\n"
+            "\nExamples:\n"
+            + HelpExampleCli("prunespentwallettransactions", "")
+            + HelpExampleCli("prunespentwallettransactions","\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d\"")
+            + HelpExampleRpc("prunespentwallettransactions", "")
+            + HelpExampleRpc("prunespentwallettransactions","\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d\"")
+        );
+
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+    UniValue ret(UniValue::VOBJ);
+    uint256 exception; int32_t txs = pwalletMain->mapWallet.size();
+    std::vector<uint256> TxToRemove;
+    if (params.size() == 1)
+    {
+        exception.SetHex(params[0].get_str());
+        uint256 tmp_hash; CTransaction tmp_tx;
+        if (GetTransaction(exception,tmp_tx,tmp_hash,false))
+        {
+            if ( !pwalletMain->IsMine(tmp_tx) )
+            {
+                throw runtime_error("\nThe transaction is not yours!\n");
+            }
+            else
+            {
+                for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+                {
+                    const CWalletTx& wtx = (*it).second;
+                    if ( wtx.GetHash() != exception )
+                    {
+                        TxToRemove.push_back(wtx.GetHash());
+                    }
+                }
+            }
+        }
+        else
+        {
+            throw runtime_error("\nThe transaction could not be found!\n");
+        }
+    }
+    else
+    {
+        // get all locked utxos to relock them later.
+        vector<COutPoint> vLockedUTXO;
+        pwalletMain->ListLockedCoins(vLockedUTXO);
+        // unlock all coins so that the following call containes all utxos.
+        pwalletMain->UnlockAllCoins();
+        // listunspent call... this gets us all the txids that are unspent, we search this list for the oldest tx,
+        vector<COutput> vecOutputs;
+        assert(pwalletMain != NULL);
+        // include all coins, even immature
+        pwalletMain->AvailableCoins(vecOutputs, false, NULL, true, true, true, true, true, true);
+        int32_t oldestTxDepth = 0;
+        BOOST_FOREACH(const COutput& out, vecOutputs)
+        {
+          if ( out.nDepth > oldestTxDepth )
+              oldestTxDepth = out.nDepth;
+        }
+        oldestTxDepth = oldestTxDepth + 1; // add extra block just for safety.
+        // lock all the previouly locked coins.
+        BOOST_FOREACH(COutPoint &outpt, vLockedUTXO) {
+            pwalletMain->LockCoin(outpt);
+        }
+
+        // then add all txs in the wallet before this block to the list to remove.
+        for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+        {
+            const CWalletTx& wtx = (*it).second;
+            if (wtx.GetDepthInMainChain() > oldestTxDepth)
+                TxToRemove.push_back(wtx.GetHash());
+        }
+    }
+
+    // erase txs
+    BOOST_FOREACH (uint256& hash, TxToRemove)
+    {
+        pwalletMain->EraseFromWallet(hash);
+        LogPrintf("Erased %s from wallet.\n",hash.ToString().c_str());
+    }
+
+    // build return JSON for stats.
+    int remaining = pwalletMain->mapWallet.size();
+    ret.push_back(Pair("total_transactions", (int)txs));
+    ret.push_back(Pair("remaining_transactions", (int)remaining));
+    ret.push_back(Pair("removed_transactions", (int)(txs-remaining)));
+    return  (ret);
 }
 
 
@@ -2119,6 +2625,7 @@ static void MaybePushAddress(UniValue & entry, const CTxDestination &dest)
     }
 }
 
+bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTransaction &stakeTx, CStakeParams &stakeParams, bool slowValidation=true);
 bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakeParams, bool slowValidation=true);
 
 void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDepth, bool fLong, UniValue& ret, const isminefilter& filter)
@@ -2132,7 +2639,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
     bool bIsStake = false;
     bool bIsCoinbase = false;
     bool bIsMint = false;
-    bool isPBaaS = CConstVerusSolutionVector::GetVersionByHeight(chainActive.Height()) > CActivationHeight::ACTIVATE_PBAAS;
+    bool isPBaaS = CConstVerusSolutionVector::GetVersionByHeight(chainActive.Height()) >= CActivationHeight::ACTIVATE_PBAAS;
     CReserveTransactionDescriptor rtxd;
     CCoinsViewCache view(pcoinsTip);
     uint32_t nHeight = chainActive.Height();
@@ -2206,7 +2713,8 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
         BOOST_FOREACH(const COutputEntry& r, listReceived)
         {
             string account;
-            if (pwalletMain->mapAddressBook.count(r.destination))
+            bool isFromZ = r.vout >= wtx.vout.size();
+            if (r.destination.which() != COptCCParams::ADDRTYPE_INVALID && pwalletMain->mapAddressBook.count(r.destination))
                 account = pwalletMain->mapAddressBook[r.destination].name;
             if (fAllAccounts || (account == strAccount))
             {
@@ -2214,9 +2722,9 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                 if(involvesWatchonly || (::IsMine(*pwalletMain, r.destination) & ISMINE_WATCH_ONLY))
                     entry.push_back(Pair("involvesWatchonly", true));
                 entry.push_back(Pair("account", account));
-                
+
                 CTxDestination dest;
-                if (CScriptExt::ExtractVoutDestination(wtx, r.vout, dest))
+                if (!isFromZ && CScriptExt::ExtractVoutDestination(wtx, r.vout, dest))
                     MaybePushAddress(entry, dest);
                 else
                     MaybePushAddress(entry, r.destination);
@@ -2238,9 +2746,9 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                 {
                     entry.push_back(Pair("category", bIsStake ? "stake" : "receive"));
                 }
-                
+
                 COptCCParams p;
-                if (wtx.vout[r.vout].scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid())
+                if (!isFromZ && wtx.vout[r.vout].scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid())
                 {
                     UniValue ccUni;
                     ScriptPubKeyToJSON(wtx.vout[r.vout].scriptPubKey, ccUni, false, false);
@@ -2248,7 +2756,13 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                 }
 
                 entry.push_back(Pair("amount", ValueFromAmount(r.amount)));
-                entry.push_back(Pair("vout", r.vout));
+                if (isFromZ)
+                {
+                    entry.push_back(Pair("zoutput", true));
+                }
+                {
+                    entry.push_back(Pair("vout", r.vout));
+                }
                 if (fLong)
                     WalletTxToJSON(wtx, entry);
                 entry.push_back(Pair("size", static_cast<uint64_t>(GetSerializeSize(static_cast<CTransaction>(wtx), SER_NETWORK, PROTOCOL_VERSION))));
@@ -3229,12 +3743,25 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
 
     CAmount allBal = pwalletMain->GetBalance();
     obj.push_back(Pair("balance",       ValueFromAmount(allBal)));
+    CAmount sharedBal = pwalletMain->GetSharedBalance();
     if (checkunlockedIDs)
     {
         CAmount unlockBal = pwalletMain->GetBalance(false);
         if (unlockBal != allBal)
         {
             obj.push_back(Pair("unlocked_balance",  ValueFromAmount(unlockBal)));
+        }
+    }
+    if (sharedBal)
+    {
+        obj.push_back(Pair("sharedbalance", ValueFromAmount(sharedBal)));
+        if (checkunlockedIDs)
+        {
+            CAmount unlockSharedBal = pwalletMain->GetSharedBalance(false);
+            if (unlockSharedBal != sharedBal)
+            {
+                obj.push_back(Pair("unlocked_shared_balance",  ValueFromAmount(unlockSharedBal)));
+            }
         }
     }
     obj.push_back(Pair("unconfirmed_balance", ValueFromAmount(pwalletMain->GetUnconfirmedBalance())));
@@ -3260,9 +3787,9 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
             txout.fSpendable &&
             (txout.nDepth >= VERUS_MIN_STAKEAGE) &&
             ((txout.tx->vout[txout.i].scriptPubKey.IsPayToCryptoCondition(p) &&
-                p.IsValid() && 
+                p.IsValid() &&
                 txout.tx->vout[txout.i].scriptPubKey.IsSpendableOutputType(p)) ||
-            (!p.IsValid() && 
+            (!p.IsValid() &&
                 Solver(txout.tx->vout[txout.i].scriptPubKey, whichType, vSolutions) &&
                 (whichType == TX_PUBKEY || whichType == TX_PUBKEYHASH))))
         {
@@ -3276,7 +3803,9 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
 
     CCurrencyDefinition &chainDef = ConnectedChains.ThisChain();
     UniValue reserveBal(UniValue::VOBJ);
+    UniValue reserveSharedBal(UniValue::VOBJ);
     CCurrencyValueMap resBal = pwalletMain->GetReserveBalance();
+    CCurrencyValueMap resSharedBal = pwalletMain->GetSharedReserveBalance();
 
     for (auto &oneBalance : resBal.valueMap)
     {
@@ -3296,6 +3825,28 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
                     unlockedReserveBal.push_back(make_pair(ConnectedChains.GetFriendlyCurrencyName(oneBalance.first), ValueFromAmount(oneBalance.second)));
                 }
                 obj.push_back(Pair("unlocked_reserve_balance", unlockedReserveBal));
+            }
+        }
+    }
+
+    for (auto &oneBalance : resSharedBal.valueMap)
+    {
+        reserveSharedBal.push_back(make_pair(ConnectedChains.GetFriendlyCurrencyName(oneBalance.first), ValueFromAmount(oneBalance.second)));
+    }
+    if (reserveSharedBal.size())
+    {
+        obj.push_back(Pair("shared_reserve_balance", reserveSharedBal));
+        if (checkunlockedIDs)
+        {
+            UniValue unlockedReserveBal(UniValue::VOBJ);
+            CCurrencyValueMap unlockedResBal = pwalletMain->GetSharedReserveBalance(false);
+            if (resBal != unlockedResBal)
+            {
+                for (auto &oneBalance : unlockedResBal.valueMap)
+                {
+                    unlockedReserveBal.push_back(make_pair(ConnectedChains.GetFriendlyCurrencyName(oneBalance.first), ValueFromAmount(oneBalance.second)));
+                }
+                obj.push_back(Pair("unlocked_shared_reserve_balance", unlockedReserveBal));
             }
         }
     }
@@ -3364,9 +3915,9 @@ UniValue listunspent(const UniValue& params, bool fHelp)
     if (!EnsureWalletIsAvailable(fHelp))
         return NullUniValue;
 
-    if (fHelp || params.size() > 3)
+    if (fHelp || params.size() > 4)
         throw runtime_error(
-            "listunspent ( minconf maxconf  [\"address\",...] )\n"
+            "listunspent ( minconf maxconf  [\"address\",...] includeshared )\n"
             "\nReturns array of unspent transaction outputs\n"
             "with between minconf and maxconf (inclusive) confirmations.\n"
             "Optionally filter to only include txouts paid to specified addresses.\n"
@@ -3380,6 +3931,7 @@ UniValue listunspent(const UniValue& params, bool fHelp)
             "      \"address\"   (string) " + strprintf("%s",komodo_chainname()) + " address\n"
             "      ,...\n"
             "    ]\n"
+            "4. includeshared    (bool, optional, default=false) Include outputs that can also be spent by others\n"
             "\nResult\n"
             "[                   (array of json object)\n"
             "  {\n"
@@ -3427,6 +3979,8 @@ UniValue listunspent(const UniValue& params, bool fHelp)
             }
         }
     }
+
+    bool includeShared = params.size() > 3 ? uni_get_bool(params[3]) : false;
 
     UniValue results(UniValue::VARR);
     vector<COutput> vecOutputs;
@@ -3614,11 +4168,11 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
         // User did not provide zaddrs, so use default i.e. all addresses
         std::set<libzcash::SproutPaymentAddress> sproutzaddrs = {};
         pwalletMain->GetSproutPaymentAddresses(sproutzaddrs);
-        
+
         // Sapling support
         std::set<libzcash::SaplingPaymentAddress> saplingzaddrs = {};
         pwalletMain->GetSaplingPaymentAddresses(saplingzaddrs);
-        
+
         zaddrs.insert(sproutzaddrs.begin(), sproutzaddrs.end());
         zaddrs.insert(saplingzaddrs.begin(), saplingzaddrs.end());
     }
@@ -3630,7 +4184,7 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
         std::vector<SaplingNoteEntry> saplingEntries;
         pwalletMain->GetFilteredNotes(sproutEntries, saplingEntries, zaddrs, nMinDepth, nMaxDepth, true, !fIncludeWatchonly, false);
         std::set<std::pair<PaymentAddress, uint256>> nullifierSet = pwalletMain->GetNullifiersForAddresses(zaddrs);
-        
+
         for (auto & entry : sproutEntries) {
             UniValue obj(UniValue::VOBJ);
             obj.push_back(Pair("txid", entry.jsop.hash.ToString()));
@@ -3648,7 +4202,7 @@ UniValue z_listunspent(const UniValue& params, bool fHelp)
             }
             results.push_back(obj);
         }
-        
+
         for (auto & entry : saplingEntries) {
             UniValue obj(UniValue::VOBJ);
             obj.push_back(Pair("txid", entry.op.hash.ToString()));
@@ -4326,19 +4880,19 @@ CAmount getBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ign
 
     pwalletMain->AvailableCoins(vecOutputs, false, NULL, true);
 
-    BOOST_FOREACH(const COutput& out, vecOutputs) 
+    BOOST_FOREACH(const COutput& out, vecOutputs)
     {
-        if (out.nDepth < minDepth) 
+        if (out.nDepth < minDepth)
         {
             continue;
         }
 
-        if (ignoreUnspendable && !out.fSpendable) 
+        if (ignoreUnspendable && !out.fSpendable)
         {
             continue;
         }
 
-        if (wildCardRAddress || wildCardiAddress || IsValidDestination(destination)) 
+        if (wildCardRAddress || wildCardiAddress || IsValidDestination(destination))
         {
             std::vector<CTxDestination> addresses;
             txnouttype typeRet;
@@ -4402,11 +4956,10 @@ CAmount getBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ign
     return balance;
 }
 
-CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ignoreUnspendable=true) {
+CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int minDepth=1, bool ignoreUnspendable=true, bool includeShared=false) {
     CTxDestination destination;
     vector<COutput> vecOutputs;
     CCurrencyValueMap balance;
-
 
     bool wildCardRAddress = transparentAddress == "R*";
     bool wildCardiAddress = transparentAddress == "i*";
@@ -4425,16 +4978,16 @@ CCurrencyValueMap getCurrencyBalanceTaddr(std::string transparentAddress, int mi
 
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
-    pwalletMain->AvailableCoins(vecOutputs, false, NULL, true);
+    pwalletMain->AvailableCoins(vecOutputs, false, NULL, true, true, true, false, true, includeShared);
 
     BOOST_FOREACH(const COutput& out, vecOutputs)
     {
-        if (out.nDepth < minDepth) 
+        if (out.nDepth < minDepth)
         {
             continue;
         }
 
-        if (ignoreUnspendable && !out.fSpendable) 
+        if (ignoreUnspendable && !out.fSpendable)
         {
             continue;
         }
@@ -4731,9 +5284,9 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
     if (!EnsureWalletIsAvailable(fHelp))
         return NullUniValue;
 
-    if (fHelp || params.size()==0 || params.size() > 3)
+    if (fHelp || params.size()==0 || params.size() > 4)
         throw runtime_error(
-            "getcurrencybalance \"address\" ( minconf ) ( friendlynames )\n"
+            "getcurrencybalance \"address\" ( minconf ) ( friendlynames ) ( includeshared )\n"
             "\nReturns the balance in all currencies of a taddr or zaddr belonging to the node's wallet.\n"
             "\nCAUTION: If the wallet has only an incoming viewing key for this address, then spends cannot be"
             "\ndetected, and so the returned balance may be larger than the actual balance.\n"
@@ -4741,6 +5294,7 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
             "1. \"address\"      (string) The selected address. It may be a transparent or private address and include z*, R*, and i* wildcards.\n"
             "2. minconf          (numeric, optional, default=1) Only include transactions confirmed at least this many times.\n"
             "3. friendlynames    (boolean, optional, default=true) use friendly names instead of i-addresses.\n"
+            "4. includeshared    (bool, optional, default=false) Include outputs that can also be spent by others\n"
             "\nResult:\n"
             "amount              (numeric) The total amount in " + std::string(ASSETCHAINS_SYMBOL) + " received for this address.\n"
             "\nExamples:\n"
@@ -4765,6 +5319,8 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
     if (nMinDepth < 0) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Minimum number of confirmations cannot be less than 0");
     }
+
+    bool includeShared = params.size() > 3 ? uni_get_bool(params[3]) : false;
 
     // Check that the from address is valid.
     auto fromaddress = params[0].get_str();
@@ -4819,7 +5375,7 @@ UniValue getcurrencybalance(const UniValue& params, bool fHelp)
     }
     for (auto &oneBalance : balance.valueMap)
     {
-        std::string name = friendlyNames ? ConnectedChains.GetFriendlyCurrencyName(oneBalance.first) : 
+        std::string name = friendlyNames ? ConnectedChains.GetFriendlyCurrencyName(oneBalance.first) :
                                            EncodeDestination(CIdentityID(oneBalance.first));
         currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
     }
@@ -5437,8 +5993,8 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
     }
 
     // Fee in Zatoshis, not currency format)
-    CAmount nFee        = ASYNC_RPC_OPERATION_DEFAULT_MINERS_FEE;
-    CAmount nDefaultFee = nFee;
+    CAmount nFee        = 0;
+    CAmount nDefaultFee = ASYNC_RPC_OPERATION_DEFAULT_MINERS_FEE;
 
     if (params.size() > 3) {
         if (params[3].get_real() == 0.0) {
@@ -5460,6 +6016,26 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Fee %s is greater than the sum of outputs %s and also greater than the default fee", FormatMoney(nFee), FormatMoney(nTotalOut)));
             }
 	    }
+    }
+
+    // if fee offer was not specified, calculate
+    if (!nFee)
+    {
+        // calculate total fee required to update based on content in content maps
+        // as of PBaaS, standard contentMaps cost an extra standard fee per entry
+        // contentMultiMaps cost an extra standard fee for each 128 bytes in size
+        nFee = nDefaultFee;
+        int zSize = zaddrRecipients.size();
+        if (!fromTaddr || (VERUS_PRIVATECHANGE && !VERUS_DEFAULT_ZADDR.empty()))
+        {
+            zSize++;
+        }
+
+        // if we have more z-outputs + t-outputs than are needed for 1 z-output and change, increase fee
+        if ((zSize > 1 && taddrRecipients.size() > 3) || (zSize > 2 && taddrRecipients.size() > 2) || zSize > 3)
+        {
+            nFee += ((taddrRecipients.size() > 3 ? (zSize - 1) : (taddrRecipients.size() > 2) ? zSize - 2 : zSize - 3) * DEFAULT_TRANSACTION_FEE);
+        }
     }
 
     // Use input parameters as the optional context info to be returned by z_getoperationstatus and z_getoperationresult.
@@ -7300,7 +7876,7 @@ UniValue oraclessubscribe(const UniValue& params, bool fHelp)
 
 UniValue oraclessamples(const UniValue& params, bool fHelp)
 {
-    UniValue result(UniValue::VOBJ); uint256 txid,batontxid; int32_t num; 
+    UniValue result(UniValue::VOBJ); uint256 txid,batontxid; int32_t num;
     if ( fHelp || params.size() != 3 )
         throw runtime_error("oraclessamples oracletxid batonutxo num\n");
     if ( ensure_CCrequirements() < 0 )
@@ -8119,6 +8695,7 @@ static const CRPCCommand commands[] =
     { "wallet",             "settxfee",                 &settxfee,                 true  },
     { "identity",           "signmessage",              &signmessage,              true  },
     { "identity",           "signfile",                 &signfile,                 true  },
+    { "identity",           "signdata",                 &signdata,                 true  },
     // { "hidden",             "signhash",                 &signhash,                 true  }, // disable due to risk of signing something that doesn't contain the content
     { "wallet",             "openwallet",               &openwallet,               true  },
     { "wallet",             "walletlock",               &walletlock,               true  },

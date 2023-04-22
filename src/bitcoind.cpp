@@ -142,7 +142,7 @@ bool AppInit(int argc, char* argv[])
 
         void komodo_args(char *argv0);
         komodo_args(argv[0]);
-        fprintf(stderr,"call komodo_args.(%s) NOTARY_PUBKEY.(%s)\n",argv[0],NOTARY_PUBKEY.c_str());
+        fprintf(stderr,"(%s) NOTARY_PUBKEY.(%s)\n",argv[0],NOTARY_PUBKEY.c_str());
         while ( ASSETCHAIN_INIT == 0 )
         {
             //if ( komodo_is_issuer() != 0 )

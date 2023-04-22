@@ -96,7 +96,7 @@ bool static IsCompressedOrUncompressedPubKey(const valtype &vchPubKey) {
  * Where R and S are not negative (their first byte has its highest bit not set), and not
  * excessively padded (do not start with a 0 byte, unless an otherwise negative number follows,
  * in which case a single 0 byte is necessary and even required).
- * 
+ *
  * See https://bitcointalk.org/index.php?topic=8392.msg127623#msg127623
  *
  * This function is consensus-critical since BIP66.
@@ -136,7 +136,7 @@ bool static IsValidSignatureEncoding(const std::vector<unsigned char> &sig) {
     // Verify that the length of the signature matches the sum of the length
     // of the elements.
     if ((size_t)(lenR + lenS + 7) != sig.size()) return false;
- 
+
     // Check whether the R element is an integer.
     if (sig[2] != 0x02) return false;
 
@@ -277,10 +277,12 @@ bool EvalScript(
             //
             if (!script.GetOp(pc, opcode, vchPushValue))
                 return set_error(serror, SCRIPT_ERR_BAD_OPCODE);
-            
-            //printf("Max script element size: %u, element size: %u\n", CScript::MAX_SCRIPT_ELEMENT_SIZE, (uint32_t)vchPushValue.size());
+
             if (vchPushValue.size() > CScript::MAX_SCRIPT_ELEMENT_SIZE)
+            {
+                LogPrint("smarttransactionevalerrors", "Max script element size: %u, element size: %u\n", CScript::MAX_SCRIPT_ELEMENT_SIZE, (uint32_t)vchPushValue.size());
                 return set_error(serror, SCRIPT_ERR_PUSH_SIZE);
+            }
 
             // Note how OP_RESERVED does not count towards the opcode limit.
             if (opcode > OP_16 && ++nOpCount > 201)
@@ -846,7 +848,7 @@ bool EvalScript(
                     bool fSuccess = checker.CheckSig(vchSig, vchPubKey, script, consensusBranchId);
 
                     // comment below when not debugging
-                    //printf("OP_CHECKSIG: scriptSig.%s\nscriptPubKey.%s\nbranchid.%x, success: %s\n", 
+                    //printf("OP_CHECKSIG: scriptSig.%s\nscriptPubKey.%s\nbranchid.%x, success: %s\n",
                     //       CScript(vchSig).ToString().c_str(), CScript(vchPubKey).ToString().c_str(), consensusBranchId, (fSuccess ? "true" : "false"));
 
                     popstack(stack);
@@ -963,7 +965,7 @@ bool EvalScript(
                     if (fResult == -1) {
                         return set_error(serror, SCRIPT_ERR_CRYPTOCONDITION_INVALID_FULFILLMENT);
                     }
-                    
+
                     popstack(stack);
                     popstack(stack);
 
@@ -1376,7 +1378,7 @@ TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txT
 // uses keystore lookup
 std::map<uint160, pair<int, std::vector<std::vector<unsigned char>>>> BaseSignatureChecker::ExtractIDMap(const CScript &scriptPubKeyIn, const CKeyStore &keystore, uint32_t spendHeight, bool isStake)
 {
-    // create an ID map here, which late binds to the IDs on the blockchain as of the spend height, 
+    // create an ID map here, which late binds to the IDs on the blockchain as of the spend height,
     // and substitute the correct addresses when checking signatures
     COptCCParams p;
     std::map<uint160, pair<int, std::vector<std::vector<unsigned char>>>> idAddresses;
@@ -1668,7 +1670,7 @@ int TransactionSignatureChecker::CheckCryptoCondition(
                 for (auto pCond : ccs)
                 {
                     cc_free(pCond);
-                }            
+                }
             }
 
             if (failToTrue)
@@ -1712,15 +1714,6 @@ int TransactionSignatureChecker::CheckCryptoCondition(
             }
             if (!success || !condBinary.size())
             {
-                /*
-                char *jsonCondStr = cc_conditionToJSONString(outputCC);
-                if (jsonCondStr)
-                {
-                    printf("Signed condition: %s\n", jsonCondStr);
-                    cJSON_free(jsonCondStr);
-                }
-                */
-
                 cc_free(outputCC);
                 condBinary.clear();
             }
@@ -1754,7 +1747,7 @@ int TransactionSignatureChecker::CheckCryptoCondition(
         error = cc_readFulfillmentBinaryExt((unsigned char*)ffillBin.data(), ffillBin.size()-1, &cond);
         nHashType = ffillBin.back();
     }
-    
+
     if (error || !cond)
     {
         if (cond)
@@ -1763,45 +1756,6 @@ int TransactionSignatureChecker::CheckCryptoCondition(
         }
         return -1;
     }
-
-    /*
-    char *jsonCondStr = cc_conditionToJSONString(cond);
-    if (jsonCondStr)
-    {
-        printf("Fulfillment condition: %s\n", jsonCondStr);
-        cJSON_free(jsonCondStr);
-        uint8_t buf[2000];
-        int ccLen = cc_conditionBinary(cond, buf, 2000);
-        if (ccLen)
-        {
-            CC *transformedCC = cc_readConditionBinary(buf, ccLen);
-            if (transformedCC)
-            {
-                jsonCondStr = cc_conditionToJSONString(transformedCC);
-                if (jsonCondStr)
-                {
-                    printf("Converted fulfillment condition: %s\n", jsonCondStr);
-                    cJSON_free(jsonCondStr);
-                }
-                cc_free(transformedCC);
-            }
-        }
-    }
-    if (condBinary.size())
-    {
-        CC *transformedCC = cc_readConditionBinary(condBinary.data(), condBinary.size());
-        if (transformedCC)
-        {
-            jsonCondStr = cc_conditionToJSONString(transformedCC);
-            if (jsonCondStr)
-            {
-                printf("Binary condition reconstructed: %s\n", jsonCondStr);
-                cJSON_free(jsonCondStr);
-            }
-            cc_free(transformedCC);
-        }
-    }
-    */
 
     if (!IsSupportedCryptoCondition(cond, p.IsValid() ? p.evalCode : 0) || !IsSignedCryptoCondition(cond))
     {
@@ -1908,7 +1862,7 @@ bool EvalCryptoConditionSig(
         return set_error(serror, SCRIPT_ERR_PUSH_SIZE);
 
     stack.push_back(vchPushValue);
-    
+
     return true;
 }
 

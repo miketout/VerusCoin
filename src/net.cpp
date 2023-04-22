@@ -102,8 +102,11 @@ std::string strSubVersion;
 
 vector<CNode*> vNodes;
 CCriticalSection cs_vNodes;
-map<CInv, CDataStream> mapRelay;
-deque<pair<int64_t, CInv> > vRelayExpiration;
+
+MapRelay mapRelay;
+/** Expiration-time ordered list of (expire time, relay map entry) pairs, protected by cs_main). */
+std::deque<std::pair<int64_t, MapRelay::iterator>> vRelayExpiration;
+
 CCriticalSection cs_mapRelay;
 limitedmap<CInv, int64_t> mapAlreadyAskedFor(MAX_INV_SZ);
 
@@ -575,6 +578,15 @@ void CNode::CloseSocketDisconnect()
         }
     }
 
+    {
+        LOCK(cs_addrKnown);
+        addrKnown.reset();
+    }
+    {
+        LOCK(cs_inventory);
+        filterInventoryKnown.reset();
+    }
+
     // in case this fails, we'll empty the recv buffer when the CNode is deleted
     TRY_LOCK(cs_vRecvMsg, lockRecv);
     if (lockRecv)
@@ -600,7 +612,7 @@ void CNode::PushVersion()
     if (PROTOCOL_VERSION >= MIN_PBAAS_VERSION)
     {
         CIdentityID nodeID = VERUS_NODEID;
-        PushMessage("version", PROTOCOL_VERSION, 
+        PushMessage("version", PROTOCOL_VERSION,
                     nLocalServices, nTime, addrYou, addrMe, nLocalHostNonce, nodeID, strSubVersion, nBestHeight, true);
     }
     else
@@ -734,6 +746,9 @@ void CNode::copyStats(CNodeStats &stats)
     // Raw ping time is in microseconds, but show it to user as whole seconds (Bitcoin users should be well used to small numbers with many decimal places by now :)
     stats.dPingTime = (((double)nPingUsecTime) / 1e6);
     stats.dPingWait = (((double)nPingUsecWait) / 1e6);
+
+    stats.m_addr_processed = m_addr_processed.load();
+    stats.m_addr_rate_limited = m_addr_rate_limited.load();
 
     // Leave string empty if addrLocal invalid (not filled in yet)
     stats.addrLocal = addrLocal.IsValid() ? addrLocal.ToString() : "";
@@ -2213,32 +2228,11 @@ void RelayTransaction(const CTransaction& tx)
 
 void RelayTransaction(const CTransaction& tx, const CDataStream& ss)
 {
-    CInv inv(MSG_TX, tx.GetHash());
-    {
-        LOCK(cs_mapRelay);
-        // Expire old relay messages
-        while (!vRelayExpiration.empty() && vRelayExpiration.front().first < GetTime())
-        {
-            mapRelay.erase(vRelayExpiration.front().second);
-            vRelayExpiration.pop_front();
-        }
-
-        // Save original serialized message so newer versions are preserved
-        mapRelay.insert(std::make_pair(inv, ss));
-        vRelayExpiration.push_back(std::make_pair(GetTime() + 15 * 60, inv));
-    }
+    uint256 txHash = tx.GetHash();
     LOCK(cs_vNodes);
-    BOOST_FOREACH(CNode* pnode, vNodes)
+    for (CNode* pnode : vNodes)
     {
-        if(!pnode->fRelayTxes)
-            continue;
-        LOCK(pnode->cs_filter);
-        if (pnode->pfilter)
-        {
-            if (pnode->pfilter->IsRelevantAndUpdate(tx))
-                pnode->PushInventory(inv);
-        } else
-            pnode->PushInventory(inv);
+        pnode->PushTxInventory(WTxId(txHash));
     }
 }
 
@@ -2406,9 +2400,7 @@ unsigned int ReceiveFloodSize() { return 1000*GetArg("-maxreceivebuffer", 5*1000
 unsigned int SendBufferSize() { return 1000*GetArg("-maxsendbuffer", 1*1000); }
 
 CNode::CNode(SOCKET hSocketIn, const CAddress& addrIn, const std::string& addrNameIn, bool fInboundIn, SSL *sslIn) :
-    ssSend(SER_NETWORK, INIT_PROTO_VERSION),
-    addrKnown(5000, 0.001),
-    setInventoryKnown(SendBufferSize() / 1000)
+    addrKnown(5000, 0.001), ssSend(SER_NETWORK, INIT_PROTO_VERSION)
 {
     ssl = sslIn;
     nServices = 0;
@@ -2438,6 +2430,9 @@ CNode::CNode(SOCKET hSocketIn, const CAddress& addrIn, const std::string& addrNa
     nStartingHeight = -1;
     fGetAddr = false;
     fRelayTxes = false;
+    nNextLocalAddrSend = 0;
+    nNextAddrSend = 0;
+    nNextInvSend = 0;
     fSentAddr = false;
     pfilter = new CBloomFilter();
     nPingNonceSent = 0;
@@ -2622,4 +2617,8 @@ void CNode::EndMessage() UNLOCK_FUNCTION(cs_vSend)
         SocketSendData(this);
 
     LEAVE_CRITICAL_SECTION(cs_vSend);
+}
+
+int64_t PoissonNextSend(int64_t nNow, int average_interval_seconds) {
+    return nNow + (int64_t)(log1p(GetRand(1ULL << 48) * -0.0000000000000035527136788 /* -1/2^48 */) * average_interval_seconds * -1000000.0 + 0.5);
 }

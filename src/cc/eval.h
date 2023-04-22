@@ -83,6 +83,10 @@
         EVAL(EVAL_PAYMENTS, 0xf0) \
         EVAL(EVAL_GATEWAYS, 0xf1)
 
+// last used eval code
+enum {
+    EVAL_LAST = 0x14
+};
 
 typedef uint8_t EvalCode;
 
