@@ -1161,9 +1161,8 @@ bool BlockOneCoinbaseOutputs(std::vector<CTxOut> &outputs,
                              CPBaaSNotarization &launchNotarization,
                              CCurrencyValueMap &additionalFees,
                              const CRPCChainData &_launchChain,
-                             const CCurrencyDefinition &_newChainCurrency)
+                             CCurrencyDefinition &newChainCurrency)
 {
-    CCurrencyDefinition newChainCurrency = _newChainCurrency;
     CCoinbaseCurrencyState currencyState;
     std::map<uint160, std::vector<std::pair<std::pair<CInputDescriptor, CPartialTransactionProof>, std::vector<CReserveTransfer>>>> blockOneExportImports;
 
@@ -1330,7 +1329,7 @@ bool BlockOneCoinbaseOutputs(std::vector<CTxOut> &outputs,
                                         outputs,
                                         additionalFees,
                                         _launchChain,
-                                        _newChainCurrency);
+                                        newChainCurrency);
 
     // now, the converter
     if (success && converterCurDef.IsValid())
@@ -1346,7 +1345,7 @@ bool BlockOneCoinbaseOutputs(std::vector<CTxOut> &outputs,
                                        outputs,
                                        additionalFees,
                                        _launchChain,
-                                       _newChainCurrency);
+                                       newChainCurrency);
     }
 
     if (success)
@@ -1380,7 +1379,7 @@ bool BlockOneCoinbaseOutputs(std::vector<CTxOut> &outputs,
                                            outputs,
                                            additionalFees,
                                            _launchChain,
-                                           _newChainCurrency);
+                                           newChainCurrency);
             if (!success)
             {
                 break;
@@ -1435,7 +1434,7 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
     // if we are on the PBaaS chain itself, we can only reject a valid block 1 if it does not
     // match the one that would be created using the notary chain as a guide
     if ((newChainCurrency.GetID() != ASSETCHAINS_CHAINID && launchChainID == ASSETCHAINS_CHAINID) ||
-        (newChainCurrency.GetID() == ASSETCHAINS_CHAINID && ConnectedChains.IsNotaryAvailable()))
+        (newChainCurrency.GetID() == ASSETCHAINS_CHAINID && (ConnectedChains.IsNotaryAvailable(false) || ConnectedChains.IsNotaryAvailable(true))))
     {
         bool validOutputs = BlockOneCoinbaseOutputs(checkOutputs, launchNotarization, additionalFees, launchChain, newChainCurrency);
 
@@ -1492,7 +1491,7 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
     else
     {
         // get our initial currency definition from the outputs
-        const std::vector<CTxOut> &findCurrencyOuts = checkOutputs.size() ? checkOutputs : outputs;
+        const std::vector<CTxOut> &findCurrencyOuts = outputs;
         for (auto &oneOut : findCurrencyOuts)
         {
             if ((newChainCurrency = CCurrencyDefinition(oneOut.scriptPubKey)).IsValid() &&
@@ -1517,6 +1516,7 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
     if (!converterCurrencyID.IsNull())
     {
         blockOneCurrencies.insert(converterCurrencyID);
+        blockOneIDs.insert(converterCurrencyID);
         // find it in the outputs or checkOutputs, whichever we have, and add converter preallocation IDs
         const std::vector<CTxOut> &findConverterOuts = checkOutputs.size() ? checkOutputs : outputs;
         for (auto &oneOut : findConverterOuts)
@@ -1554,13 +1554,6 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
     // get this chain's notaries
     auto &notaryIDs = newChainCurrency.notaries;
     blockOneIDs.insert(notaryIDs.begin(), notaryIDs.end());
-
-    // add converterCurrency if appropriate & populate currency and identity imports
-    uint160 gatewayConverterID = newChainCurrency.GatewayConverterID();
-    if (!gatewayConverterID.IsNull())
-    {
-        blockOneIDs.insert(gatewayConverterID);
-    }
 
     CFeePool cbFeePool;
     bool haveFeePool = false;
@@ -1813,21 +1806,49 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
         {
             if (::AsVector(*revCheckOutputIt) != ::AsVector(*revOutputIt))
             {
+                // we forgive evidence with an alternate output, but nothing else
+                COptCCParams p1, p2;
+                CNotaryEvidence ne1, ne2;
+                if (revCheckOutputIt->scriptPubKey.IsPayToCryptoCondition(p1) &&
+                    p1.IsValid() &&
+                    p1.evalCode == EVAL_NOTARY_EVIDENCE &&
+                    p1.vData.size() &&
+                    (ne1 = CNotaryEvidence(p1.vData[0])).IsValid() &&
+                    revOutputIt->scriptPubKey.IsPayToCryptoCondition(p2) &&
+                    p2.IsValid() &&
+                    p2.evalCode == EVAL_NOTARY_EVIDENCE &&
+                    p2.vData.size() &&
+                    (ne2 = CNotaryEvidence(p2.vData[0])).IsValid() &&
+                    ne2.output.n - ne1.output.n == outputs.size() - checkOutputs.size())
+                {
+                    ne1.output.n = ne2.output.n;
+                    if (::AsVector(ne1) == ::AsVector(ne2) &&
+                        revCheckOutputIt->nValue == revOutputIt->nValue)
+                    {
+                        continue;
+                    }
+                }
                 mismatchCount++;
                 LogPrint("notarization", "%s: mismatch block one coinbase output:\nexpected: %s\nactual: %s\n", __func__, revCheckOutputIt->ToString().c_str(), revOutputIt->ToString().c_str());
             }
             LogPrint("notarization", "Matched %d/%d outputs for block 1 coinbase\n", (int)checkOutputs.size() - mismatchCount, (int)checkOutputs.size());
         }
+        if (mismatchCount)
+        {
+            LogPrintf("%s: Invalid block one coinbase for chain %s\n", __func__, newChainCurrency.name.c_str());
+            return state.Error(std::string("Invalid block 1 coinbase for chain ") + newChainCurrency.name + std::string(" (") + EncodeDestination(CIdentityID(newChainCurrency.GetID())) + std::string(")"));
+        }
     }
     else
     {
-        // TODO: HARDENING -
+        // TODO: POST HARDENING -
         // if we did not get full checkoutputs, we could still double check that we have
         // correct preallocations,
         // correct notary funds distributed
         // expected reserve deposits
         //
-        // numbers are already checked for consistency, but check that all numbers match here
+        // numbers are already checked for consistency & fully checked if we are on the
+        // launch chain or connected to it, but check that all numbers match here
     }
     return true;
 }

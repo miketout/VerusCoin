@@ -983,7 +983,7 @@ public:
         action = uni_get_int64(find_value(uni, "action"));
         if (action != ACTION_CLEAR_MAP)
         {
-            entryKey.SetHex(uni_get_str(find_value(uni, "entrykey")));
+            entryKey = ParseVDXFKey(uni_get_str(find_value(uni, "entrykey")));
             if (action != ACTION_REMOVE_ALL_KEY)
             {
                 valueHash.SetHex(uni_get_str(find_value(uni, "valuehash")));

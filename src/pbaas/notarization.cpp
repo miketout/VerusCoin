@@ -2794,6 +2794,7 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
 
     CBlockHeaderAndProof posBlockHeaderAndProof;
     CPartialTransactionProof posSourceProof;
+    CTransaction lastStakeTx, lastSourceTx;
     uint32_t provingBlockHeight;
     CStakeParams stakeParams;
     std::vector<CBlockHeaderProof> posEntropyHeaders;
@@ -3509,7 +3510,6 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                         }
                         else
                         {
-                            // TODO: HARDENING - verify that we match commitments
                             numHeaderProofs++;
                             proofState = EXPECT_HEADER_PROOFS;
                         }
@@ -3538,7 +3538,6 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                     // validity of the PoS win from that source transaction, as well as the input script signature
                     // ensuring that it is truly a potentially valid proof of stake, assuming we can trust
                     // the blockchain >100 blocks behind us.
-
                     CTransaction outTx;
                     bool isPartial = false;
                     uint256 txMerkleRoot = ((CChainObject<CPartialTransactionProof> *)proofComponent)->object.CheckPartialTransaction(outTx, &isPartial);
@@ -3547,6 +3546,12 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                                          stakeParams.prevHash == posBlockHeaderAndProof.blockHeader.hashPrevBlock &&
                                          stakeParams.srcHeight == posSourceProof.GetBlockHeight() &&
                                          stakeParams.blkHeight == provingBlockHeight;
+
+                    if (posBlockHeaderAndProof.blockHeader.GetPrevMMRRoot() != posSourceProof.CheckPartialTransaction(lastSourceTx, &isPartial))
+                    {
+                        proofState = EXPECT_NOTHING;
+                        break;
+                    }
 
                     // Below, after we have gotten the stakeguard output and when we have any ID keys we may need, we can
                     // verify the spend signature.
@@ -3578,7 +3583,7 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                             provingBlockHeight,
                             (!PBAAS_TESTMODE && evidence.systemID == VERUS_CHAINID));
 
-                        if (externalCurrency.IsValid() && (UintToArith256(rawPosHash) / outTx.vout[0].nValue) > posTarget)
+                        if (externalCurrency.IsValid() && outTx.vout[0].nValue && (UintToArith256(rawPosHash) / outTx.vout[0].nValue) > posTarget)
                         {
                             if (LogAcceptCategory("notarization"))
                             {
@@ -3597,6 +3602,7 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                         }
                         else
                         {
+                            lastStakeTx = outTx;
                             proofState = EXPECT_ID_PROOF_OR_STAKEGUARD;
                         }
                     }
@@ -3663,8 +3669,29 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                             }
                         }
 
+                        // now verify the stake tx signature, even if it spends an ID
+                        auto consensusBranchId = CurrentEpochBranchId(stakeParams.blkHeight, Params().GetConsensus());
 
-                        // TODO: HARDENING - now verify the stake tx signature, even if it spends an ID
+                        std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> idAddressMap;
+                        for (auto &oneId : stakeSpendingIDs)
+                        {
+                            std::vector<std::vector<unsigned char>> idAddrBytes;
+                            for (auto &oneAddr : oneId.primaryAddresses)
+                            {
+                                idAddrBytes.push_back(GetDestinationBytes(oneAddr));
+                            }
+                            idAddressMap.insert(std::make_pair(oneId.GetID(), std::make_pair(oneId.minSigs, idAddrBytes)));
+                        }
+
+                        if (!VerifyScript(lastStakeTx.vin[0].scriptSig,
+                                          lastSourceTx.vout[lastStakeTx.vin[0].prevout.n].scriptPubKey,
+                                          MANDATORY_SCRIPT_VERIFY_FLAGS,
+                                          TransactionSignatureChecker(&lastStakeTx, (uint32_t)0, lastSourceTx.vout[lastStakeTx.vin[0].prevout.n].nValue, &idAddressMap),
+                                          consensusBranchId))
+                        {
+                            proofState = EXPECT_NOTHING;
+                            break;
+                        }
 
                         // after confirming stakeguard, we either have another header proof, or we're done
                         validChallengeEvidence = (++numHeaderProofs >= numHeaders ||
@@ -7954,7 +7981,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                     // if this has already been confirmed, the bridge to this chain cannot be easily repaired, so we fail
                     if (confirmingIdx == 0)
                     {
-                        // TODO: HARDENING - Unless this is discrepancy from an attack, which is the only other option
+                        // Unless this is discrepancy from an attack, which is the only other option
                         // besides we are on a non-main fork, we should use the node information from the other chain
                         // to connect to new nodes, set the confirmed root from the other chain, and
                         // stop accepting blocks that disagree.
@@ -7963,6 +7990,10 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                         // is a high chance it is due to a sophisticated chain attack in progress and should not be
                         // possible in any reasonably anticipated circumstance.
                         //
+                        for (auto &oneNode : oneNotarization.second.nodes)
+                        {
+                            AddOneShot(oneNode.networkAddress);
+                        }
                         LogPrintf("CROSS-CHAIN ERROR: Confirmed notarization on %s does not match this chain\n", EncodeDestination(CIdentityID(systemID)).c_str());
                         printf("CROSS-CHAIN ERROR: Confirmed notarization on %s does not match this chain\n", EncodeDestination(CIdentityID(systemID)).c_str());
                         return retVal;
@@ -8566,7 +8597,6 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
     {
         return state.Error("Notarizations not supported before PBaaS activation");
     }
-    // TODO: HARDENING - check that all is in place here, especially state transitions of notarizations local and otherwise
 
     COptCCParams p;
     CPBaaSNotarization currentNotarization;
@@ -8929,9 +8959,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                                 if (oneOutput.scriptPubKey.IsPayToCryptoCondition(stakeP) &&
                                     stakeP.IsValid() &&
                                     stakeP.evalCode == EVAL_STAKEGUARD &&
-                                    oneOutput.nValue &&
-                                    RawPrecheckStakeGuardOutput(tx, oneOutnum, state) &&
-                                    oneOutput.nValue)
+                                    RawPrecheckStakeGuardOutput(tx, oneOutnum, state))
                                 {
                                     isStake = true;
                                     break;
@@ -8940,6 +8968,12 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
 
                             if (pLastIndex->IsVerusPOSBlock() == isStake)
                             {
+                                if (LogAcceptCategory("staking"))
+                                {
+                                    UniValue jsonTx(UniValue::VOBJ);
+                                    TxToUniv(tx, uint256(), jsonTx);
+                                    LogPrintf("%s: failed stakeguard transaction:\n%s\n", __func__, jsonTx.write(1,2).c_str());
+                                }
                                 return state.Error("earned notarizations must alternate between work and stake blocks - ineligible");
                             }
                         }

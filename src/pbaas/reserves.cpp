@@ -2524,6 +2524,8 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
     std::vector<CPBaaSNotarization> notarizations;
     CCurrencyValueMap importGeneratedCurrency;
 
+    int32_t outAfterImport = INT32_MAX;
+
     flags |= IS_VALID;
 
     for (int i = 0; i < tx.vout.size(); i++)
@@ -2571,8 +2573,13 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
 
                 case EVAL_IDENTITY_PRIMARY:
                 {
-                    // one identity per transaction, unless we are first block coinbase on a PBaaS chain
-                    // or import
+                    if (IsImport() && outAfterImport <= i)
+                    {
+                        flags &= ~IS_VALID;
+                        flags |= IS_REJECT;
+                        return;
+                    }
+
                     if (p.version < p.VERSION_V3 ||
                         !p.vData.size() ||
                         (solutionVersion < CActivationHeight::ACTIVATE_VERUSVAULT && identity.IsValid()) ||
@@ -2886,6 +2893,7 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                                     return;
                                 }
                             }
+                            outAfterImport = startingOutput + checkOutputs.size();
                         }
 
                         importGeneratedCurrency += importedCurrency;

@@ -62,11 +62,12 @@ isminetype IsMine(const CKeyStore &keystore, const CScript& _scriptPubKey, uint3
 
         if (ExtractDestinations(scriptPubKey, whichType, dests, minSigs, &keystore, &canSign, &canSpend, height))
         {
+            bool isAdvancedIdentity = CConstVerusSolutionVector::GetVersionByHeight(height) >= CActivationHeight::ACTIVATE_VERUSVAULT;
             if (canSpend)
             {
                 std::set<CTxDestination> unknownRecipients;
                 // check for multiple recipients, possibly not in this keystore, and if not, it is shared
-                if (dests.size() > 1)
+                if (isAdvancedIdentity && dests.size() > 1)
                 {
                     for (auto &oneDest : dests)
                     {

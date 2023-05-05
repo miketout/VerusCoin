@@ -29,6 +29,7 @@ static const uint32_t PBAAS_VERSION = 1;
 static const uint32_t PBAAS_VERSION_INVALID = 0;
 
 extern const uint32_t PBAAS_PREMAINNET_ACTIVATION;
+extern const uint32_t PBAAS_TESTFORK_TIME;
 
 class CTransaction;
 class CScript;
@@ -500,7 +501,8 @@ public:
         OPTION_GATEWAY_CONVERTER = 0x200,   // this means that for a specific PBaaS gateway, this is the default converter and will publish prices
         OPTION_GATEWAY_NAMECONTROLLER = 0x400, // when not set on a gateway, top level ID and currency registration happen on launch chain
         OPTION_NFT_TOKEN = 0x800,           // single satoshi NFT token, tokenizes control over the root ID
-        OPTIONS_FLAG_MASK = 0xfff
+        OPTION_NO_IDS = 0x1000,             // this currency cannot issue IDs
+        OPTIONS_FLAG_MASK = 0x1fff
     };
 
     // these should be pluggable in function
@@ -1105,6 +1107,7 @@ public:
         return (nVersion != PBAAS_VERSION_INVALID) &&
                 (!notaries.size() || minNotariesConfirm > (notaries.size() >> 1)) &&
                 !(options & ~OPTIONS_FLAG_MASK) &&
+                !(IsPBaaSChain() && (NoIDs() || IsToken() || IsFractional())) &&
                 idReferralLevels <= MAX_ID_REFERRAL_LEVELS &&
                 name.size() > 0 &&
                 name.size() <= (KOMODO_ASSETCHAIN_MAXLEN - 1) &&
@@ -1133,6 +1136,11 @@ public:
     bool IsNFTToken() const
     {
         return ChainOptions() & OPTION_NFT_TOKEN;
+    }
+
+    bool NoIDs() const
+    {
+        return IsNFTToken() || ChainOptions() & OPTION_NO_IDS;
     }
 
     bool IsGateway() const
@@ -1182,6 +1190,18 @@ public:
         else
         {
             options &= ~OPTION_NFT_TOKEN;
+        }
+    }
+
+    void SetNoIDs(bool noIDs)
+    {
+        if (noIDs)
+        {
+            options |= OPTION_NO_IDS;
+        }
+        else
+        {
+            options &= ~OPTION_NO_IDS;
         }
     }
 

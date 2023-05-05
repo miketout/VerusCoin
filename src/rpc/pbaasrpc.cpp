@@ -1777,6 +1777,13 @@ bool SelectArbitrageFromOffers(const std::vector<
 
                     // if we have anything in mostProfitablePairs, select the best priced in native currency
                     // we should be able to add multiple conversions that do not have common currencies
+                    //
+                    // pick the one or combination of multiple orthogonal currencies that results in the equivalent
+                    // of the most amount of native currency from the basket
+                    //
+                    // then put them in the arbitrageInputs and add to export transfers
+                    // arbitrageInputs.push_back(std::make_pair());
+                    //
                     printf("%s: preview state:\n%s\n", __func__, previewState.ToUniValue().write(1,2).c_str());
                     for (auto oneConversion : mostProfitablePairs)
                     {
@@ -9036,6 +9043,18 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             // and may imply an export off-chain. before creating an off-chain export, we need an explicit "exportto" command that matches.
             // we may also have an "exportafter" command, which enables funding a second leg to up to one more system
 
+            if ((burnWeight &&
+                 !convertToCurrencyDef.IsValid() ||
+                 (convertToCurrencyDef.endBlock > 0 &&
+                  convertToCurrencyDef.endBlock <= height)) ||
+                (mintNew &&
+                 !sourceCurrencyDef.IsValid() ||
+                 (sourceCurrencyDef.endBlock > 0 &&
+                  sourceCurrencyDef.endBlock <= height)))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, std::string(burnWeight ? "burnchangeweight" : "minting") + " is disallowed, even by currency ID after the currency endblock");
+            }
+
             // ensure that any initial export is explicit
             if (sendOffChain && !exportToCurrencyID.IsNull() &&
                 !exportToCurrencyDef.IsGateway() &&
@@ -9134,6 +9153,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
 
             if (mintNew &&
                 (!(sourceCurrencyDef.IsToken() &&
+                   !sourceCurrencyDef.NoIDs() &&
                    GetDestinationID(sourceDest) == sourceCurrencyID &&
                    sourceCurrencyDef.proofProtocol == sourceCurrencyDef.PROOF_CHAINID &&
                    destSystemID == thisChainID &&
@@ -9141,7 +9161,15 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                    convertToCurrencyID.IsNull())))
             {
                 // attempt to mint currency that isn't under the source ID's control
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Only the ID of a mintable currency can mint such a currency. Minting cannot be combined with conversion.");
+                if (!sourceCurrencyDef.IsToken() || sourceCurrencyDef.NoIDs())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid currency for minting");
+                }
+                if (preConvert || !convertToCurrencyID.IsNull())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Minting cannot be combined with conversion.");
+                }
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Only the ID of a mintable currency can mint such a currency on its system chain.");
             }
 
             if (hasZDest)
@@ -10776,10 +10804,6 @@ CCurrencyDefinition ValidateNewUnivalueCurrencyDefinition(const UniValue &uniObj
                 {
                     throw JSONRPCError(RPC_INVALID_PARAMETER, "All reserve currencies of a fractional currency must be valid and past the start block " + EncodeDestination(CIdentityID(currency)));
                 }
-                if (reserveCurrencies.back().endBlock && (!newCurrency.endBlock || reserveCurrencies.back().endBlock < newCurrency.endBlock))
-                {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Reserve currency " + EncodeDestination(CIdentityID(currency)) + " ends its life before the fractional currency's endblock");
-                }
             }
         }
         if (!hasCoreReserve)
@@ -11296,7 +11320,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
     tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CCrossChainImport>(EVAL_CROSSCHAIN_IMPORT, dests, 1, &cci)), 0);
 
     // get initial currency state at this height
-    newCurrencyState = ConnectedChains.GetCurrencyState(newChain, height);
+    newCurrencyState = ConnectedChains.GetCurrencyState(newChain, height + 1);
 
     newCurrencyState.SetPrelaunch();
 
@@ -11450,7 +11474,7 @@ UniValue definecurrency(const UniValue& params, bool fHelp)
                                                 CCurrencyDefinition::DEFAULT_OUTPUT_VALUE);
 
             // get initial currency state at this height
-            CCoinbaseCurrencyState gatewayCurrencyState = ConnectedChains.GetCurrencyState(newGatewayConverter, chainActive.Height());
+            CCoinbaseCurrencyState gatewayCurrencyState = ConnectedChains.GetCurrencyState(newGatewayConverter, chainActive.Height() + 1);
             int currencyIndex = gatewayCurrencyState.GetReserveMap()[newChainID];
 
             gatewayCurrencyState.reserveIn[currencyIndex] += newChain.gatewayConverterIssuance;
@@ -11836,6 +11860,11 @@ UniValue registernamecommitment(const UniValue& params, bool fHelp)
     else if (parentCurrency.systemID != ASSETCHAINS_CHAINID)
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parent currency for this network");
+    }
+
+    if (issuingCurrency.NoIDs())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, ConnectedChains.GetFriendlyCurrencyName(issuingCurrency.GetID()) + " is unable to issue currencies");
     }
 
     std::string rawName = uni_get_str(params[0]);
@@ -12258,16 +12287,20 @@ UniValue registeridentity(const UniValue& params, bool fHelp)
 
     // set currency and price, as well as burn requirement
     // determine if we may use a gateway converter to issue
-
     if (isPBaaS)
     {
+        if (issuingCurrency.NoIDs() || issuingCurrency.IsNFTToken())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Currency parent cannot register identities");
+        }
+
         if (!issuingCurrency.IsNameController() && !issuingCurrency.GatewayConverterID().IsNull())
         {
             issuingCurrency = ConnectedChains.GetCachedCurrency(issuingCurrency.GatewayConverterID());
             if (!(issuingCurrency.IsValid() &&
-                 issuingCurrency.IsFractional() &&
-                 issuingCurrency.IsGatewayConverter() &&
-                 issuingCurrency.gatewayID == parentID))
+                  issuingCurrency.IsFractional() &&
+                  issuingCurrency.IsGatewayConverter() &&
+                  issuingCurrency.gatewayID == parentID))
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid converter for gateway to register identity");
             }
@@ -12306,8 +12339,8 @@ UniValue registeridentity(const UniValue& params, bool fHelp)
                 idReferredRegistrationFee = pricingState.ReserveToNative(idReferredRegistrationFee, reserveIndex);
             }
         }
-        // aside from fractional currencies, centralized or native currencies can issue IDs
-        else if (!(issuingCurrency.GetID() == ASSETCHAINS_CHAINID || issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID))
+        // aside from fractional currencies, tokens on this system or native currencies can issue IDs
+        else if (!(issuingCurrency.GetID() == ASSETCHAINS_CHAINID || (issuingCurrency.systemID == ASSETCHAINS_CHAINID)))
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parent currency for identity registration on this chain");
         }
@@ -12551,7 +12584,9 @@ UniValue registeridentity(const UniValue& params, bool fHelp)
 
     int64_t expectedFee = referralID.IsNull() ? feeOffer : feeOffer - idReferralFee;
 
-    if (issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID)
+    if (issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID &&
+        (issuingCurrency.endBlock == 0 ||
+         issuingCurrency.endBlock < height))
     {
         if (issuerID == ASSETCHAINS_CHAINID)
         {
@@ -12567,7 +12602,7 @@ UniValue registeridentity(const UniValue& params, bool fHelp)
             outputs.push_back({MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, std::vector<CTxDestination>({CIdentityID(issuerID)}), 1, &to)), 0, false});
         }
     }
-    else if (issuingCurrency.IsFractional())
+    else if (issuingCurrency.IsToken())
     {
         // make a burn output of this currency for the amount
         CReserveTransfer rt(CReserveTransfer::VALID + CReserveTransfer::BURN_CHANGE_PRICE,
@@ -12587,6 +12622,10 @@ UniValue registeridentity(const UniValue& params, bool fHelp)
         std::vector<CTxDestination> dests = std::vector<CTxDestination>({pk.GetID()});
 
         outputs.push_back({MakeMofNCCScript(CConditionObj<CReserveTransfer>(EVAL_RESERVE_TRANSFER, dests, 1, &rt)), ConnectedChains.ThisChain().GetTransactionTransferFee(), false});
+    }
+    else if (issuingCurrency.GetID() != ASSETCHAINS_CHAINID)
+    {
+        throw JSONRPCError(RPC_VERIFY_ALREADY_IN_CHAIN, "Invalid issuing/parent currency for this network");
     }
 
     // wrong referral refers to the source identity instead of specified referral address
@@ -12702,7 +12741,9 @@ UniValue registeridentity(const UniValue& params, bool fHelp)
     // if we have registration payments, fixup the output amount based on referrals adjustment
     if (registrationPaymentOut >= 0)
     {
-        if (issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID)
+        if (issuingCurrency.proofProtocol == issuingCurrency.PROOF_CHAINID &&
+            (issuingCurrency.endBlock == 0 ||
+             issuingCurrency.endBlock < height))
         {
             if (issuerID == ASSETCHAINS_CHAINID)
             {
@@ -12719,7 +12760,7 @@ UniValue registeridentity(const UniValue& params, bool fHelp)
                                                                                                             &to));
             }
         }
-        else
+        else if (issuingCurrency.IsToken())
         {
             // make a burn output of this currency for the amount
             CReserveTransfer rt(CReserveTransfer::VALID + CReserveTransfer::BURN_CHANGE_PRICE,

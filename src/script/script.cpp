@@ -1422,6 +1422,15 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                 for (auto defIT = identity.contentMultiMap.begin(); defIT != identity.contentMultiMap.end(); defIT++)
                 {
                     destinations.insert(CCrossChainRPCData::GetConditionID(CVDXF_Data::MultiMapKey(), CCrossChainRPCData::GetConditionID(defIT->first, identity.GetID())));
+
+                    if (LogAcceptCategory("oracleupgrades"))
+                    {
+                        LogPrintf("%s: defIT->first: %s, identity.GetID(): %s, lookupKey: %s\n", __func__,
+                                    EncodeDestination(CIdentityID(defIT->first)).c_str(),
+                                    EncodeDestination(identity.GetID()).c_str(),
+                                    EncodeDestination(CIdentityID(CCrossChainRPCData::GetConditionID(CVDXF_Data::MultiMapKey(), CCrossChainRPCData::GetConditionID(defIT->first, identity.GetID())))).c_str());
+                    }
+
                     if (defIT->first == CVDXF_Data::TypeDefinitionKey())
                     {
                         CDataStream ss(defIT->second, SER_DISK, PROTOCOL_VERSION);

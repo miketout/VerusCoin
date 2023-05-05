@@ -251,7 +251,14 @@ uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::
         maxConsecutiveNoPos = VERUS_PBAAS_NOPOS_THRESHHOLD;
 
         // due to constraining maximum consecutive PoS blocks, we use this bias to adjust to 50%
-        nProofOfWorkBlockPOSUnits += (VERUS_BLOCK_POSUNITS / 20);
+        if (PBAAS_TESTMODE && pindexLast->nTime < PBAAS_TESTFORK_TIME)
+        {
+            nProofOfWorkBlockPOSUnits += (VERUS_BLOCK_POSUNITS / 20);
+        }
+        else
+        {
+            nProofOfWorkBlockPOSUnits += (VERUS_BLOCK_POSUNITS / 10);
+        }
 
         // the default staking difficulty is based on an expectation of 25% of the supply staking, which if facing 100%, will not be catastrophic
         // neither will it be impossible to adapt if only 1/64th or even less is staking, though it will take longer to get to an equilibrium.

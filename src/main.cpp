@@ -2639,7 +2639,7 @@ void CheckForkWarningConditions(const CChainParams& chainParams)
         }
         if (pindexBestForkTip && pindexBestForkBase)
         {
-            LogPrintf("%s: Warning: Large valid fork found\n  forking the chain at height %d (%s)\n  lasting to height %d (%s).\nChain state database corruption likely.\n", __func__,
+            LogPrintf("%s: Warning: Large valid fork found\n  forking the chain at height %d (%s)\n  lasting to height %d (%s).\n", __func__,
                       pindexBestForkBase->GetHeight(), pindexBestForkBase->phashBlock->ToString(),
                       pindexBestForkTip->GetHeight(), pindexBestForkTip->phashBlock->ToString());
             fLargeWorkForkFound = true;
@@ -3656,8 +3656,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     SetMaxScriptElementSize(nHeight);
 
-    ConnectedChains.CheckOracleUpgrades();
-
     if (CConstVerusSolutionVector::GetVersionByHeight(nHeight) >= CActivationHeight::ACTIVATE_PBAAS)
     {
         ConnectedChains.ConfigureEthBridge();
@@ -3711,6 +3709,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     int64_t nTimeStart = 0;
 
     uint32_t solutionVersion = CConstVerusSolutionVector::GetVersionByHeight(nHeight);
+    bool isPBaaS = solutionVersion > CActivationHeight::ACTIVATE_PBAAS;
     bool isVerusActive = IsVerusActive();
     CAmount nFees = 0;
     int nInputs = 0;
@@ -3731,11 +3730,30 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     {
         LOCK2(smartTransactionCS, mempool.cs);
 
-        if (block.IsVerusPOSBlock() && !verusCheckPOSBlock(true, &block, nHeight))
+        if (block.IsVerusPOSBlock())
         {
-            LogPrint("pos", "%s: Invalid POS block at height %u\n", __func__, nHeight);
-            return state.DoS(100, error("%s: invalid PoS block in connectblock futureblock.%d\n", __func__, futureblock),
-                            REJECT_INVALID, "invalid-pos-block");
+            if (!verusCheckPOSBlock(true, &block, nHeight))
+            {
+                LogPrint("pos", "%s: Invalid POS block at height %u\n", __func__, nHeight);
+                return state.DoS(100, error("%s: invalid PoS block in connectblock futureblock.%d\n", __func__, futureblock),
+                                REJECT_INVALID, "invalid-pos-block");
+            }
+        }
+        else if (isPBaaS)
+        {
+            for (int oneOutnum = 0; oneOutnum < block.vtx[0].vout.size(); oneOutnum++)
+            {
+                auto &oneOutput = block.vtx[0].vout[oneOutnum];
+                COptCCParams stakeP;
+                if (oneOutput.scriptPubKey.IsPayToCryptoCondition(stakeP) &&
+                    stakeP.IsValid() &&
+                    stakeP.evalCode == EVAL_STAKEGUARD)
+                {
+                    LogPrint("pos", "%s: Invalid POW block with stakeguard output at height %u\n", __func__, nHeight);
+                    return state.DoS(100, error("%s: Invalid POW block with stakeguard output in connectblock futureblock.%d\n", __func__, futureblock),
+                                    REJECT_INVALID, "invalid-pow-block-stakeguard");
+                }
+            }
         }
 
         // verify that the view's current state corresponds to the previous block
@@ -4927,6 +4945,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     }
 
     SetMaxScriptElementSize(nHeight + 1);
+    ConnectedChains.CheckOracleUpgrades();
 
     // add this block to the view's block chain
     view.SetBestBlock(pindex->GetBlockHash());
