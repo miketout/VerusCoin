@@ -35,7 +35,7 @@ darwin_STRIP=$(shell command -v llvm-strip || command -v strip)
 #         differential summary there for more details.
 #
 darwin_CC=clang -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) --sysroot $(OSX_SDK) -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin
-darwin_CXX=clang++ -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) --sysroot $(OSX_SDK) -stdlib=libc++ -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin -nostdinc++ -isystem $(OSX_SDK)/usr/include/c++/v1
+darwin_CXX=clang++ -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) --sysroot $(OSX_SDK) -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin -nostdinc++ -isystem $(OSX_SDK)/usr/include/c++/v1
 
 darwin_CFLAGS=-pipe
 darwin_CXXFLAGS=$(darwin_CFLAGS)
