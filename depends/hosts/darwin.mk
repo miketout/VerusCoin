@@ -24,18 +24,18 @@ darwin_STRIP=$(shell command -v llvm-strip || command -v strip)
 #         Explicitly point to our binaries (e.g. cctools) so that they are
 #         ensured to be found and preferred over other possibilities.
 #
-#     -nostdinc++ -isystem $(OSX_SDK)/usr/include/c++/v1
+#     -isysroot$(OSX_SDK) -nostdlibinc
 #
-#         Forces clang to use the libc++ headers from our SDK and completely
-#         forget about the libc++ headers from the standard directories
+#         Disable default include paths built into the compiler as well as
+#         those normally included for libc and libc++. The only path that
+#         remains implicitly is the clang resource dir.
 #
-#         TODO: Once we start requiring a clang version that has the
-#         -stdlib++-isystem<directory> flag first introduced here:
-#         https://reviews.llvm.org/D64089, we should use that instead. Read the
-#         differential summary there for more details.
+#     -iwithsysroot / -iframeworkwithsysroot
 #
-darwin_CC=clang -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) --sysroot $(OSX_SDK) -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin
-darwin_CXX=clang++ -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) --sysroot $(OSX_SDK) -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin -nostdinc++ -isystem $(OSX_SDK)/usr/include/c++/v1
+#         Adds the desired paths from the SDK
+#
+darwin_CC=clang -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) -isysroot$(OSX_SDK) -nostdlibinc -iwithsysroot/usr/include -iframeworkwithsysroot/System/Library/Frameworks -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin
+darwin_CXX=clang++ -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) -isysroot$(OSX_SDK) -nostdlibinc -iwithsysroot/usr/include/c++/v1 -iwithsysroot/usr/include -iframeworkwithsysroot/System/Library/Frameworks -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin
 
 darwin_CFLAGS=-pipe
 darwin_CXXFLAGS=$(darwin_CFLAGS)
