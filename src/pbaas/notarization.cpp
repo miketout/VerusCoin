@@ -9581,6 +9581,8 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                    (newConfirmedNotarization.proofRoots[systemID].rootHeight - crosschainCND.vtx[crosschainCND.lastConfirmed].second.proofRoots[systemID].rootHeight) >
                     (blocksBeforeModuloExtension - (blocksBeforeModuloExtension >> 2)));
 
+    bool amWitness = externalSystem.chainDefinition.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION && notarySet.count(VERUS_NOTARYID);
+
     if (!submit)
     {
         CPBaaSNotarization unMirrored = crosschainCND.vtx[crosschainCND.lastConfirmed].second;
@@ -9690,6 +9692,11 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
             {
                 submit = true;
             }
+            if (amWitness)
+            {
+                LogPrintf("Witness %s pending exports the external chain\n", submit ? "found" : "did not find");
+                printf("Witness %s pending exports the external chain\n", submit ? "found" : "did not find");
+            }
         }
     }
 
@@ -9702,8 +9709,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
 
     // if this is an ETH protocol, we could get reverted and still have to pay, so if we are a notary,
     // to prevent funds loss, sort notaries and make sure we are in the top 2 before we try to submit
-    if (externalSystem.chainDefinition.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION &&
-        notarySet.count(VERUS_NOTARYID))
+    if (amWitness)
     {
         CNativeHashWriter hw;
         hw << nHeight;
@@ -9713,7 +9719,8 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
         shuffle(notaryVec.begin(), notaryVec.end(), prandom);
         if (notaryVec[0] != VERUS_NOTARYID)
         {
-            LogPrint("notarization", "skipping notarization submission - was not selected for submission lottery\n");
+            LogPrintf("skipping notarization submission - was not selected for submission lottery\n");
+            printf("skipping notarization submission - was not selected for submission lottery\n");
             return retVal;
         }
     }
