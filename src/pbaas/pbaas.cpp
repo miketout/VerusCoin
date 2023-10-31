@@ -11206,8 +11206,7 @@ void CConnectedChains::SubmissionThread()
                                 shuffle(notaryVec.begin(), notaryVec.end(), prandom);
                                 if (notaryVec[0] != VERUS_NOTARYID)
                                 {
-                                    LogPrintf("skipping import submission - was not selected for submission lottery\n");
-                                    printf("skipping import submission - was not selected for submission lottery\n");
+                                    LogPrint("notarization", "skipping import submission - was not selected for submission lottery\n");
                                     submitImports = false;
                                 }
                             }
