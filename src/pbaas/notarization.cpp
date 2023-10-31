@@ -9694,14 +9694,12 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
             }
             if (amWitness && submit)
             {
-                LogPrintf("Witness found %ld pending exports on %s\n", result.size(),
-                                                                        externalSystem.chainDefinition.parent == ASSETCHAINS_CHAINID ?
-                                                                            externalSystem.chainDefinition.name.c_str() :
-                                                                            (externalSystem.chainDefinition.name + "." + ConnectedChains.ThisChain().name).c_str());
-                printf("Witness found %ls pending exports on %s\n", result.size(),
-                                                                    externalSystem.chainDefinition.parent == ASSETCHAINS_CHAINID ?
+                LogPrintf("Witness found pending exports on %s\n", externalSystem.chainDefinition.parent == ASSETCHAINS_CHAINID ?
                                                                         externalSystem.chainDefinition.name.c_str() :
                                                                         (externalSystem.chainDefinition.name + "." + ConnectedChains.ThisChain().name).c_str());
+                printf("Witness found pending exports on %s\n", externalSystem.chainDefinition.parent == ASSETCHAINS_CHAINID ?
+                                                                    externalSystem.chainDefinition.name.c_str() :
+                                                                    (externalSystem.chainDefinition.name + "." + ConnectedChains.ThisChain().name).c_str());
             }
         }
     }
