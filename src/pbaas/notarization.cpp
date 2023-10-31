@@ -9574,10 +9574,11 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
 
     uint32_t blocksBeforeModuloExtension = CPBaaSNotarization::GetBlocksBeforeModuloExtension(externalSystem.chainDefinition.blockNotarizationModulo);
     bool submit = GetBoolArg("-alwayssubmitnotarizations", false) ||
+                  !GetBoolArg("-allowdelayednotarizations", true) ||
                   (!crosschainCND.IsConfirmed() ||
                    (crosschainCND.vtx[crosschainCND.lastConfirmed].second.IsDefinitionNotarization() &&
                     crosschainCND.vtx[crosschainCND.lastConfirmed].second.IsSameChain())) ||
-                  (!GetBoolArg("-allowdelayednotarizations", false) &&
+                  (externalSystem.chainDefinition.proofProtocol != CCurrencyDefinition::PROOF_ETHNOTARIZATION &&
                    (newConfirmedNotarization.proofRoots[systemID].rootHeight - crosschainCND.vtx[crosschainCND.lastConfirmed].second.proofRoots[systemID].rootHeight) >
                     (blocksBeforeModuloExtension - (blocksBeforeModuloExtension >> 2)));
 
@@ -9662,6 +9663,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                 }
             }
         }
+
         if (!submit && lastConfirmedNotarization.proofRoots.count(ASSETCHAINS_CHAINID))
         {
             // check exports in our range
