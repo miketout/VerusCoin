@@ -554,7 +554,7 @@ bool AsyncRPCOperation_sendmany::main_impl() {
         // use fromtaddr_ if this is coming from a specified identity
         // otherwise, generate a change address
         CReserveKey keyChange(pwalletMain);
-        if (isfromtaddr_ && builder_.TransparentChangeAddress().which() == COptCCParams::ADDRTYPE_INVALID) {
+        if (isfromtaddr_ && builder_.TransparentChangeAddress().which() != COptCCParams::ADDRTYPE_INVALID) {
             LOCK2(cs_main, pwalletMain->cs_wallet);
 
             EnsureWalletIsUnlocked();

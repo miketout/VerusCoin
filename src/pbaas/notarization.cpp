@@ -9646,7 +9646,6 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                         break;
                     }
 
-                    /*
                     if (externalSystem.chainDefinition.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION &&
                         unMirrored.proofRoots.count(externID) &&
                         lastConfirmedNotarization.proofRoots.count(externID))
@@ -9658,7 +9657,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                             submit = true;
                             break;
                         }
-                    }*/
+                    }
                 }
             }
         }
