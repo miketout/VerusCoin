@@ -29,11 +29,17 @@ darwin_STRIP=$(shell command -v llvm-strip || command -v strip)
 #
 #         Adds the desired paths from the SDK
 #
+#     -platform_version
+#
+#         Indicate to the linker the platform, the oldest supported version,
+#         and the SDK used.
+#
 darwin_CC=clang -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) -isysroot$(OSX_SDK) -nostdlibinc -iwithsysroot/usr/include -iframeworkwithsysroot/System/Library/Frameworks -mlinker-version=$(LLD_VERSION)
 darwin_CXX=clang++ -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) -isysroot$(OSX_SDK) -nostdlibinc -iwithsysroot/usr/include/c++/v1 -iwithsysroot/usr/include -iframeworkwithsysroot/System/Library/Frameworks -mlinker-version=$(LLD_VERSION)
 
 darwin_CFLAGS=-pipe
 darwin_CXXFLAGS=$(darwin_CFLAGS)
+darwin_LDFLAGS=-Wl,-platform_version,macos,$(OSX_MIN_VERSION),$(OSX_SDK_VERSION)
 
 darwin_release_CFLAGS=-O2
 darwin_release_CXXFLAGS=$(darwin_release_CFLAGS)
