@@ -1,10 +1,10 @@
 rust_packages := rust librustzcash
 
 ifeq ($(build_os),darwin)
-	zcash_packages :=  libgmp libsodium
+	zcash_packages := libsodium
 else
 	proton_packages := proton
-	zcash_packages := libgmp libsodium
+	zcash_packages := libsodium
 endif
 
 rust_crates := \

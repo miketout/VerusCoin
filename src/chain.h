@@ -731,7 +731,8 @@ public:
         return vChain[nHeight];
     }
 
-    uint256 GetVerusEntropyHash(int forHeight, int *pPOSheight=nullptr, int *pPOWheight=nullptr, int *pALTheight=nullptr) const;
+    uint256 GetVerusEntropyHash(int forHeight, int *pPOSheight=nullptr, int *pPOWheight=nullptr, int *pALTheight=nullptr, int *pFirstBlockHeight=nullptr, int *pSecondBlockHeight=nullptr) const;
+    static uint256 CombineForPastHash(const uint256 &firstComponent, const uint256 &secondComponent);
 
     /** Get the Merkle Mountain Range for this chain. */
     const ChainMerkleMountainRange &GetMMR()
@@ -740,7 +741,7 @@ public:
     }
 
     /** Get a Merkle Mountain Range view for this chain. */
-    ChainMerkleMountainView GetMMV()
+    ChainMerkleMountainView GetMMV() const
     {
         return ChainMerkleMountainView(mmr, mmr.size());
     }
@@ -790,6 +791,8 @@ public:
 
     /** Find the last common block between this chain and a block index entry. */
     const CBlockIndex *FindFork(const CBlockIndex *pindex) const;
+
+    CPartialTransactionProof GetPreHeaderProof(const CBlock &block, uint32_t blockHeight, uint32_t proofAtHeight) const;
 };
 
 #endif // BITCOIN_CHAIN_H

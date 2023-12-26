@@ -46,6 +46,8 @@ using namespace std;
 
 using namespace libzcash;
 
+CAmount GetMinRelayFeeForOutputs(const std::vector<SendManyRecipient> &tOutputs, const std::vector<SendManyRecipient> &zOutputs, CAmount identityFeeFactor, bool isIdentity);
+
 extern char ASSETCHAINS_SYMBOL[KOMODO_ASSETCHAIN_MAXLEN];
 extern int32_t VERUS_MIN_STAKEAGE;
 const std::string ADDR_TYPE_SPROUT = "sprout";
@@ -1699,6 +1701,10 @@ UniValue signdata(const UniValue& params, bool fHelp)
             ret.push_back(Pair("hashtype", hashTypeStr));
             ret.push_back(Pair("hash", msgHash.GetHex()));
             std::string fullName = ConnectedChains.GetFriendlyIdentityName(identity);
+            if (fullName.empty())
+            {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Cannot get friendly name for or sign with identity that does not have its parent currency defined on signing system ") + EncodeDestination(CIdentityID(identity.GetID())));
+            }
             ret.push_back(Pair("identity", fullName));
             ret.push_back(Pair("canonicalname", boost::to_lower_copy(fullName)));
             ret.push_back(Pair("address", EncodeDestination(identity.GetID())));
@@ -3736,7 +3742,9 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
     LOCK2(cs_main, pwalletMain->cs_wallet);
 
     uint32_t nHeight = chainActive.Height();
-    bool checkunlockedIDs = CConstVerusSolutionVector::GetVersionByHeight(nHeight) >= CActivationHeight::ACTIVATE_VERUSVAULT;
+    uint32_t solutionVer = CConstVerusSolutionVector::GetVersionByHeight(nHeight);
+    bool checkunlockedIDs = solutionVer >= CActivationHeight::ACTIVATE_VERUSVAULT;
+    bool extendedStake = solutionVer >= CActivationHeight::ACTIVATE_EXTENDEDSTAKE;
 
     UniValue obj(UniValue::VOBJ);
     obj.push_back(Pair("walletversion", pwalletMain->GetVersion()));
@@ -3770,35 +3778,14 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
     std::vector<COutput> vecOutputs;
     CAmount totalStakingAmount = 0;
 
-    pwalletMain->AvailableCoins(vecOutputs, true, NULL, false, true, false);
-
     int numTransactions = 0;
     txnouttype whichType;
     std::vector<std::vector<unsigned char>> vSolutions;
+    std::vector<CWalletTx> vwtx;
 
-    for (int i = 0; i < vecOutputs.size(); i++)
-    {
-        auto &txout = vecOutputs[i];
-        COptCCParams p;
+    totalStakingAmount = pwalletMain->EligibleStakeOutputs(vecOutputs, vwtx, extendedStake);
 
-        if (txout.tx &&
-            txout.i < txout.tx->vout.size() &&
-            txout.tx->vout[txout.i].nValue > 0 &&
-            txout.fSpendable &&
-            (txout.nDepth >= VERUS_MIN_STAKEAGE) &&
-            ((txout.tx->vout[txout.i].scriptPubKey.IsPayToCryptoCondition(p) &&
-                p.IsValid() &&
-                txout.tx->vout[txout.i].scriptPubKey.IsSpendableOutputType(p)) ||
-            (!p.IsValid() &&
-                Solver(txout.tx->vout[txout.i].scriptPubKey, whichType, vSolutions) &&
-                (whichType == TX_PUBKEY || whichType == TX_PUBKEYHASH))))
-        {
-            totalStakingAmount += txout.tx->vout[txout.i].nValue;
-            numTransactions++;
-        }
-    }
-
-    obj.push_back(Pair("eligible_staking_outputs", numTransactions));
+    obj.push_back(Pair("eligible_staking_outputs", (int64_t)vecOutputs.size()));
     obj.push_back(Pair("eligible_staking_balance", ValueFromAmount(totalStakingAmount)));
 
     CCurrencyDefinition &chainDef = ConnectedChains.ThisChain();
@@ -3910,6 +3897,7 @@ UniValue resendwallettransactions(const UniValue& params, bool fHelp)
     return result;
 }
 
+void CurrencyValuesAndNames(UniValue &output, bool spending, const CTransaction &tx, int index, CAmount satoshis, bool friendlyNames=false);
 UniValue listunspent(const UniValue& params, bool fHelp)
 {
     if (!EnsureWalletIsAvailable(fHelp))
@@ -4018,6 +4006,13 @@ UniValue listunspent(const UniValue& params, bool fHelp)
         }
         CAmount nValue = out.tx->vout[out.i].nValue;
         entry.push_back(Pair("amount", ValueFromAmount(out.tx->vout[out.i].nValue)));
+
+        COptCCParams p;
+        if (out.tx->vout[out.i].scriptPubKey.IsPayToCryptoCondition(p) &&
+            p.IsValid())
+        {
+            CurrencyValuesAndNames(entry, false, *(CTransaction *)out.tx, out.i, out.tx->vout[out.i].nValue, false);
+        }
 
         CCurrencyValueMap reserveOut;
         if (ConnectedChains.ThisChain().IsFractional() && (reserveOut = out.tx->vout[out.i].scriptPubKey.ReserveOutValue()).valueMap.size())
@@ -4233,15 +4228,18 @@ UniValue fundrawtransaction(const UniValue& params, bool fHelp)
     if (!EnsureWalletIsAvailable(fHelp))
         return NullUniValue;
 
-    if (fHelp || params.size() != 1)
+    if (fHelp || params.size() < 1 || params.size() > 4)
         throw runtime_error(
-                            "fundrawtransaction \"hexstring\"\n"
+                            "fundrawtransaction \"hexstring\" '[{\"txid\":\"8892b6c090b51a4eed7a61b72e9c8dbf5ed5bcd5aca6c6819b630acf2cb3fc87\",\"voutnum\":1},...]' (changeaddress) (explicitfee)\n"
                             "\nAdd inputs to a transaction until it has enough in value to meet its out value.\n"
                             "This will not modify existing inputs, and will add one change output to the outputs.\n"
                             "Note that inputs which were signed may need to be resigned after completion since in/outputs have been added.\n"
                             "The inputs added will not be signed, use signrawtransaction for that.\n"
                             "\nArguments:\n"
-                            "1. \"hexstring\"    (string, required) The hex string of the raw transaction\n"
+                            "1. \"hexstring\"       (string, required)     The hex string of the raw transaction\n"
+                            "2. \"objectarray\"     (UTXO list, optional)  UTXOs to select from for funding\n"
+                            "3. \"changeaddress\"   (string, optional)     Address to send change to if there is any\n"
+                            "4. \"explicitfee\"     (number, optional)     Offer this instead of the default fee only when using UTXO list\n"
                             "\nResult:\n"
                             "{\n"
                             "  \"hex\":       \"value\", (string)  The resulting raw transaction (hex-encoded string)\n"
@@ -4271,8 +4269,143 @@ UniValue fundrawtransaction(const UniValue& params, bool fHelp)
     CAmount nFee;
     string strFailReason;
     int nChangePos = -1;
-    if(!pwalletMain->FundTransaction(tx, nFee, nChangePos, strFailReason))
-        throw JSONRPCError(RPC_INTERNAL_ERROR, strFailReason);
+
+    if (params.size() > 1)
+    {
+        if (!params[1].isArray())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "If present, UTXO list must be a JSON array of UTXO references. Please see help.");
+        }
+
+        CTxDestination changeDest;
+
+        if (params.size() < 3 ||
+            (changeDest = DecodeDestination(uni_get_str(params[2]))).which() == COptCCParams::ADDRTYPE_INVALID ||
+            (changeDest.which() != COptCCParams::ADDRTYPE_ID &&
+             changeDest.which() != COptCCParams::ADDRTYPE_PK &&
+             changeDest.which() != COptCCParams::ADDRTYPE_PKH &&
+             changeDest.which() != COptCCParams::ADDRTYPE_SH))
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "If UTXO list is present, transparent change address must be provided. Please see help.");
+        }
+
+        std::map<CUTXORef, CCurrencyValueMap> utxos;
+        std::vector<std::pair<CUTXORef, CCurrencyValueMap>> utxoVec;
+        LOCK(cs_main);
+        LOCK2(smartTransactionCS, mempool.cs);
+
+        CCoinsView dummy;
+        CCoinsViewCache view(&dummy);
+        int64_t interest;
+        CAmount nValueIn = 0;
+        CCoinsViewMemPool viewMemPool(pcoinsTip, mempool);
+
+        view.SetBackend(viewMemPool);
+
+        for (int i = 0; i < params[1].size(); i++)
+        {
+            CUTXORef oneRef(params[1][i]);
+            if (!oneRef.IsValid())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid UTXO in UTXO list. Please see help.");
+            }
+            const CCoins *coins = view.AccessCoins(oneRef.hash);
+            if (!coins ||
+                (coins->fCoinBase && coins->nHeight != 1 && (coins->nHeight < COINBASE_MATURITY)) ||
+                coins->vout.size() <= oneRef.n ||
+                !(coins->vout[oneRef.n].nValue > 0 ||
+                  (coins->vout[oneRef.n].scriptPubKey.size() &&
+                   coins->vout[oneRef.n].scriptPubKey.ReserveOutValue() > CCurrencyValueMap())))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid or spent UTXO in UTXO list. Please see help.");
+            }
+            utxos[oneRef] = coins->vout[oneRef.n].scriptPubKey.ReserveOutValue();
+            if (coins->vout[oneRef.n].nValue)
+            {
+                utxos[oneRef].valueMap[ASSETCHAINS_CHAINID] = coins->vout[oneRef.n].nValue;
+            }
+        }
+        for (auto &oneUTXO : utxos)
+        {
+            utxoVec.push_back(oneUTXO);
+        }
+
+        CReserveTransactionDescriptor rtxd(tx, view, chainActive.Height() + 1);
+        nFee = DEFAULT_TRANSACTION_FEE;
+        std::map<CUTXORef, CCurrencyValueMap> mapCoinsRet;
+        CCurrencyValueMap fundWithAmount, valueRet;
+        CAmount nativeRet, nativeTarget;
+
+        if (rtxd.ReserveFees().HasNegative())
+        {
+            fundWithAmount = fundWithAmount.SubtractToZero(rtxd.ReserveFees());
+        }
+        if (rtxd.NativeFees() < 0)
+        {
+            fundWithAmount.valueMap[ASSETCHAINS_CHAINID] -= rtxd.NativeFees();
+        }
+
+        if (params.size() > 3)
+        {
+            nFee = AmountFromValue(params[3]);
+        }
+        if (nFee)
+        {
+            fundWithAmount.valueMap[ASSETCHAINS_CHAINID] += nFee;
+        }
+
+        CValidationState state;
+        if (!CWallet::SelectReserveUTXOs(fundWithAmount, utxoVec, mapCoinsRet, valueRet, nativeRet, state))
+        {
+            throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, state.GetRejectReason());
+        }
+
+        // fund the transaction and make change outputs
+        nativeTarget = fundWithAmount.valueMap[ASSETCHAINS_CHAINID];
+        fundWithAmount.valueMap.erase(ASSETCHAINS_CHAINID);
+
+        CCurrencyValueMap reserveChange = (valueRet - fundWithAmount).CanonicalMap();
+        reserveChange.valueMap.erase(ASSETCHAINS_CHAINID);
+
+        CAmount nativeChange = nativeRet - nativeTarget;
+        if (reserveChange.HasNegative() || nativeChange < 0)
+        {
+            throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, "Unable to fund transaction with UTXOs provided");
+        }
+
+        if (reserveChange.valueMap.size() &&
+            changeDest.which() == COptCCParams::ADDRTYPE_SH)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMS, "Pay to script hash address may not be used when non-native change is present");
+        }
+
+        for (auto &oneOut : mapCoinsRet)
+        {
+            tx.vin.push_back(CTxIn(oneOut.first));
+        }
+
+        if (nativeChange || reserveChange.valueMap.size())
+        {
+            nChangePos = tx.vout.size() ? tx.vout.size() - 1 : 0;
+            // separate native change from reserve
+            if (nativeChange && !reserveChange.valueMap.size())
+            {
+                tx.vout.insert(tx.vout.begin() + nChangePos, CTxOut(nativeChange, GetScriptForDestination(changeDest)));
+            }
+            else if (reserveChange.valueMap.size())
+            {
+                CTokenOutput to(reserveChange);
+                tx.vout.insert(tx.vout.begin() + nChangePos,
+                               CTxOut(nativeChange,
+                                      MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, std::vector<CTxDestination>({changeDest}), 1, &to))));
+            }
+        }
+    }
+    else
+    {
+        if(!pwalletMain->FundTransaction(tx, nFee, nChangePos, strFailReason))
+            throw JSONRPCError(RPC_INTERNAL_ERROR, strFailReason);
+    }
 
     UniValue result(UniValue::VOBJ);
     result.push_back(Pair("hex", EncodeHexTx(tx)));
@@ -4296,8 +4429,7 @@ UniValue zc_sample_joinsplit(const UniValue& params, bool fHelp)
 
     uint256 joinSplitPubKey;
     uint256 anchor = SproutMerkleTree().root();
-    JSDescription samplejoinsplit(true,
-                                  *pzcashParams,
+    JSDescription samplejoinsplit(*pzcashParams,
                                   joinSplitPubKey,
                                   anchor,
                                   {JSInput(), JSInput()},
@@ -4358,7 +4490,7 @@ UniValue zc_benchmark(const UniValue& params, bool fHelp)
         if (benchmarktype == "sleep") {
             sample_times.push_back(benchmark_sleep());
         } else if (benchmarktype == "parameterloading") {
-            sample_times.push_back(benchmark_parameter_loading());
+            throw JSONRPCError(RPC_TYPE_ERROR, "Pre-Sapling Sprout parameters have been removed");
         } else if (benchmarktype == "createjoinsplit") {
             if (params.size() < 3) {
                 sample_times.push_back(benchmark_create_joinsplit());
@@ -4659,11 +4791,11 @@ UniValue zc_raw_joinsplit(const UniValue& params, bool fHelp)
     crypto_sign_keypair(joinSplitPubKey.begin(), joinSplitPrivKey);
 
     CMutableTransaction mtx(tx);
-    mtx.nVersion = 2;
+    mtx.nVersion = 4;
+    mtx.nVersionGroupId = SAPLING_VERSION_GROUP_ID;
     mtx.joinSplitPubKey = joinSplitPubKey;
 
-    JSDescription jsdesc(false,
-                         *pzcashParams,
+    JSDescription jsdesc(*pzcashParams,
                          joinSplitPubKey,
                          anchor,
                          {vjsin[0], vjsin[1]},
@@ -6021,21 +6153,7 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
     // if fee offer was not specified, calculate
     if (!nFee)
     {
-        // calculate total fee required to update based on content in content maps
-        // as of PBaaS, standard contentMaps cost an extra standard fee per entry
-        // contentMultiMaps cost an extra standard fee for each 128 bytes in size
-        nFee = nDefaultFee;
-        int zSize = zaddrRecipients.size();
-        if (!fromTaddr || (VERUS_PRIVATECHANGE && !VERUS_DEFAULT_ZADDR.empty()))
-        {
-            zSize++;
-        }
-
-        // if we have more z-outputs + t-outputs than are needed for 1 z-output and change, increase fee
-        if ((zSize > 1 && taddrRecipients.size() > 3) || (zSize > 2 && taddrRecipients.size() > 2) || zSize > 3)
-        {
-            nFee += ((taddrRecipients.size() > 3 ? (zSize - 1) : (taddrRecipients.size() > 2) ? zSize - 2 : zSize - 3) * DEFAULT_TRANSACTION_FEE);
-        }
+        nFee = GetMinRelayFeeForOutputs(taddrRecipients, zaddrRecipients, 0, false);
     }
 
     // Use input parameters as the optional context info to be returned by z_getoperationstatus and z_getoperationresult.
@@ -6045,6 +6163,15 @@ UniValue z_sendmany(const UniValue& params, bool fHelp)
     o.push_back(Pair("minconf", nMinDepth));
     o.push_back(Pair("fee", std::stod(FormatMoney(nFee))));
     UniValue contextInfo = o;
+
+    if (!fromTaddr || !zaddrRecipients.empty()) {
+        // We have shielded inputs or outputs, and therefore cannot create
+        // transactions before Sapling activates.
+        if (!Params().GetConsensus().NetworkUpgradeActive(nextBlockHeight, Consensus::UPGRADE_SAPLING)) {
+            throw JSONRPCError(
+                RPC_INVALID_PARAMETER, "Cannot create shielded transactions before Sapling has activated");
+        }
+    }
 
     // Builder (used if Sapling addresses are involved)
     boost::optional<TransactionBuilder> builder;
@@ -6161,7 +6288,16 @@ UniValue z_shieldcoinbase(const UniValue& params, bool fHelp)
     }
 
     int nextBlockHeight = chainActive.Height() + 1;
+    const bool saplingActive =  Params().GetConsensus().NetworkUpgradeActive(nextBlockHeight, Consensus::UPGRADE_SAPLING);
+
+    // We cannot create shielded transactions before Sapling activates.
+    if (!saplingActive) {
+        throw JSONRPCError(
+            RPC_INVALID_PARAMETER, "Cannot create shielded transactions before Sapling has activated");
+    }
+
     bool overwinterActive = Params().GetConsensus().NetworkUpgradeActive(nextBlockHeight, Consensus::UPGRADE_OVERWINTER);
+    assert(overwinterActive);
     unsigned int max_tx_size = MAX_TX_SIZE_AFTER_SAPLING;
 
     // Prepare to get coinbase utxos
@@ -6691,6 +6827,15 @@ UniValue z_mergetoaddress(const UniValue& params, bool fHelp)
     contextInfo.push_back(Pair("fromaddresses", params[0]));
     contextInfo.push_back(Pair("toaddress", params[1]));
     contextInfo.push_back(Pair("fee", ValueFromAmount(nFee)));
+
+    if (!sproutNoteInputs.empty() || !saplingNoteInputs.empty() || !IsValidDestination(taddr)) {
+        // We have shielded inputs or the recipient is a shielded address, and
+        // therefore we cannot create transactions before Sapling activates.
+        if (!saplingActive) {
+            throw JSONRPCError(
+                RPC_INVALID_PARAMETER, "Cannot create shielded transactions before Sapling has activated");
+        }
+    }
 
     // Contextual transaction we will build on
     CMutableTransaction contextualTx = CreateNewContextualCMutableTransaction(

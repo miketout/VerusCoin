@@ -32,7 +32,7 @@
 #if defined(__i386__) || defined(__X86_64__)
 #include <x86intrin.h>
 #elif defined(__arm__) || defined(__aarch64__)
-#include "crypto/SSE2NEON.h"
+#include "crypto/sse2neon.h"
 #endif 
 
 #elif _WIN32

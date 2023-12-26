@@ -73,10 +73,25 @@ uint256 CBlockIndex::GetVerusEntropyHashComponent() const
     return GetBlockHash();
 }
 
+uint256 CChain::CombineForPastHash(const uint256 &firstComponent, const uint256 &secondComponent)
+{
+    CVerusHashV2Writer hashWriter = CVerusHashV2Writer(SER_GETHASH, 0);
+    if (firstComponent.IsNull())
+    {
+        return firstComponent;
+    }
+    hashWriter << firstComponent;
+    if (!secondComponent.IsNull())
+    {
+        hashWriter << secondComponent;
+    }
+    return hashWriter.GetHash();
+}
+
 // if pointers are passed for the int output values, two of them will indicate the height that provides one of two
 // entropy values. the other will be -1. if pALTheight is not -1, its block type is the same as the other, which is
 // not -1.
-uint256 CChain::GetVerusEntropyHash(int forHeight, int *pPOSheight, int *pPOWheight, int *pALTheight) const
+uint256 CChain::GetVerusEntropyHash(int forHeight, int *pPOSheight, int *pPOWheight, int *pALTheight, int *pProveHeight, int *pSecondHeight) const
 {
     uint256 retVal;
     int height = forHeight - 100;
@@ -91,7 +106,7 @@ uint256 CChain::GetVerusEntropyHash(int forHeight, int *pPOSheight, int *pPOWhei
 
     if (!(height >= 0 && height < vChain.size()))
     {
-        LogPrintf("%s: invalid height for entropy hash %d, chain height is %d\n", __func__, height, vChain.size() - 1);
+        LogPrint("notarization", "%s: invalid height for entropy hash %d, chain height is %d\n", __func__, height, vChain.size() - 1);
         return retVal;
     }
     if (CConstVerusSolutionVector::GetVersionByHeight(forHeight) < CActivationHeight::ACTIVATE_EXTENDEDSTAKE || height < 11)
@@ -143,6 +158,30 @@ uint256 CChain::GetVerusEntropyHash(int forHeight, int *pPOSheight, int *pPOWhei
     {
         hashWriter << vChain[alth]->GetVerusEntropyHashComponent();
     }
+
+    // secondBlockHeight is either less than first or -1 if there isn't one
+    if (pProveHeight || pSecondHeight)
+    {
+        int secondBlockHeight = alth != -1 ?
+                                    alth :
+                                    posh == -1 ?
+                                        posh :
+                                        powh == -1 ?
+                                            powh :
+                                            (posh > powh ?
+                                                powh :
+                                                posh);
+
+        if (pSecondHeight)
+        {
+            *pSecondHeight = secondBlockHeight;
+        }
+        if (pProveHeight)
+        {
+            *pProveHeight = posh > secondBlockHeight ? posh : ((powh == -1) ? posh : powh);
+        }
+    }
+
     return hashWriter.GetHash();
 }
 
@@ -209,6 +248,57 @@ bool CChain::GetMerkleProof(ChainMerkleMountainView &view, CMMRProof &retProof, 
     else
     {
         return false;
+    }
+}
+
+CPartialTransactionProof CChain::GetPreHeaderProof(const CBlock &block, uint32_t blockHeight, uint32_t proofAtHeight) const
+{
+    CMMRProof txProof;
+    uint256 entropyHash;
+    if (block.IsAdvancedHeader() != 0)
+    {
+        bool posEntropyInfo = CVerusSolutionVector((*this)[blockHeight]->nSolution).Version() >= CActivationHeight::ACTIVATE_PBAAS &&
+                                (!PBAAS_TESTMODE || block.nTime >= PBAAS_TESTFORK2_TIME);
+
+        if (posEntropyInfo)
+        {
+            entropyHash = (*this)[blockHeight]->GetVerusEntropyHashComponent();
+        }
+        BlockMMRange blockMMR(block.GetBlockMMRTree(entropyHash));
+        BlockMMView blockMMV(blockMMR);
+
+        if (!blockMMV.GetProof(txProof, block.vtx.size()))
+        {
+            LogPrintf("%s: Cannot make pre header proof in block\n", __func__);
+            printf("%s: Cannot make pre header in block\n", __func__);
+            CPartialTransactionProof errorProof;
+            errorProof.version = errorProof.VERSION_INVALID;
+            return errorProof;
+        }
+    }
+    else
+    {
+        // invalid proof
+        CPartialTransactionProof errorProof;
+        errorProof.version = errorProof.VERSION_INVALID;
+        return errorProof;
+    }
+
+    ChainMerkleMountainView mmv = GetMMV();
+    mmv.resize(proofAtHeight + 1);
+    GetMerkleProof(mmv, txProof, blockHeight);
+    if (LogAcceptCategory("notarization"))
+    {
+        auto substitutedPreHeader = block.GetSubstitutedPreHeader(entropyHash);
+        if (LogAcceptCategory("notarization"))
+        {
+            LogPrintf("substitutedPreHeader: %s\n", substitutedPreHeader.ToUniValue().write(1,2).c_str());
+        }
+        return CPartialTransactionProof(txProof, substitutedPreHeader);
+    }
+    else
+    {
+        return CPartialTransactionProof(txProof, block.GetSubstitutedPreHeader(entropyHash));
     }
 }
 

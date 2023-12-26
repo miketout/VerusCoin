@@ -2,7 +2,7 @@
 #define SPX_HARAKA_H
 
 #if defined(__arm__) || defined(__aarch64__)
-#include "crypto/SSE2NEON.h"
+#include "crypto/sse2neon.h"
 #else
 #include "immintrin.h"
 #endif

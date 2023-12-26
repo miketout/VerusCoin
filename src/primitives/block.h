@@ -85,7 +85,7 @@ public:
         return (nBits == 0);
     }
 
-    // returns 0 if not PBaaS, 1 if PBaaS PoW, -1 if PBaaS PoS
+    // returns 0 if pre-advanced header, 1 if post & PoW, -1 if post & PoS
     int32_t IsAdvancedHeader() const
     {
         if (nVersion == VERUS_V2)
@@ -260,10 +260,14 @@ public:
     static void SetVerusV2Hash();
 
     static uint256 GetRawVerusPOSHash(int32_t blockVersion, uint32_t solVersion, uint32_t magic, const uint256 &nonce, int32_t height, bool isVerusMainnet=true);
+
+    // returns the preheader for this block with another hash substituted for hashBlockMMRRoot, since this goes in the block MMR
+    CPBaaSPreHeader GetSubstitutedPreHeader(const uint256 &pastHash) const;
+
     bool GetRawVerusPOSHash(uint256 &ret, int32_t nHeight) const;
     bool GetVerusPOSHash(arith_uint256 &ret, int32_t nHeight, CAmount value) const; // value is amount of stake tx
+    uint256 GetVerusEntropyHashComponent(uint32_t magic, int32_t height, bool isVerusMainnet) const;
     uint256 GetVerusEntropyHashComponent(int32_t nHeight) const;
-
     int64_t GetBlockTime() const
     {
         return (int64_t)nTime;
@@ -458,18 +462,15 @@ public:
     // If non-NULL, *mutated is set to whether mutation was detected in the merkle
     // tree (a duplication of transactions in the block leading to an identical
     // merkle root).
+    uint32_t GetHeight() const;
     uint256 BuildMerkleTree(bool* mutated = NULL) const;
-    BlockMMRange BuildBlockMMRTree() const;
-    BlockMMRange GetBlockMMRTree() const;
-
-    // returns the preheader for this block with nTime substituted for hashBlockMMRRoot
-    CPBaaSPreHeader GetSubstitutedPreHeader() const;
+    BlockMMRange BuildBlockMMRTree(const uint256 &entropyHash) const;
+    BlockMMRange GetBlockMMRTree(const uint256 &entropyHash) const;
 
     // get transaction node from the block
     CDefaultMMRNode GetMMRNode(int index) const;
 
-    CPartialTransactionProof GetPartialTransactionProof(const CTransaction &tx, int txIndex, const std::vector<std::pair<int16_t, int16_t>> &partIndexes=std::vector<std::pair<int16_t, int16_t>>()) const;
-    CPartialTransactionProof GetPreHeaderProof() const;
+    CPartialTransactionProof GetPartialTransactionProof(const CTransaction &tx, int txIndex, const std::vector<std::pair<int16_t, int16_t>> &partIndexes=std::vector<std::pair<int16_t, int16_t>>(), const uint256 &pastHash=uint256()) const;
 
     std::vector<uint256> GetMerkleBranch(int nIndex) const;
     static uint256 CheckMerkleBranch(uint256 hash, const std::vector<uint256>& vMerkleBranch, int nIndex);

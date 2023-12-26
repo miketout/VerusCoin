@@ -1085,6 +1085,12 @@ public:
                                     std::set<std::pair<const CWalletTx*, unsigned int>> &setCoinsRet,
                                     CCurrencyValueMap& valueRet,
                                     CAmount &nativeValueRet) const;
+    static bool SelectReserveUTXOs(const CCurrencyValueMap &targetValues,
+                                   std::vector<std::pair<CUTXORef, CCurrencyValueMap>> &vCoins,
+                                   std::map<CUTXORef, CCurrencyValueMap> &mapCoinsRet,
+                                   CCurrencyValueMap& valueRet,
+                                   CAmount &nativeValueRet,
+                                   CValidationState &state);
 
     bool IsSpent(const uint256& hash, unsigned int n) const;
     bool IsSproutSpent(const uint256& nullifier) const;
@@ -1474,6 +1480,7 @@ public:
 
     // staking functions
     bool VerusSelectStakeOutput(CBlock *pBlock, arith_uint256 &hashResult, CTransaction &stakeSource, int32_t &voutNum, int32_t nHeight, uint32_t &bnTarget) const;
+    CAmount EligibleStakeOutputs(std::vector<COutput> &vecOutputs, std::vector<CWalletTx> &vwtx, bool extendedStake) const;
 
     int32_t VerusStakeTransaction(CBlock *pBlock, CMutableTransaction &txNew, uint32_t &bnTarget, arith_uint256 &hashResult, std::vector<unsigned char> &utxosig, CTxDestination &rewardDest) const;
     static bool GetAndValidateSaplingZAddress(const std::string &addressStr, libzcash::PaymentAddress &zaddress);

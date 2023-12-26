@@ -398,7 +398,9 @@ static bool SignStepCC(const BaseSignatureCreator& creator, const CScript& scrip
                                 id = identity;
                             }
 
-                            if ((!id.IsValid() && !(id = LookupIdentity(creator, CIdentityID(destId))).IsValid()) || id.IsRevoked() || id.IsLocked())
+                            if ((!id.IsValid() && !(id = LookupIdentity(creator, CIdentityID(destId))).IsValid()) ||
+                                id.IsRevoked() ||
+                                (!idID.IsNull() && destId != idID && id.IsLocked()))
                             {
                                 destMap[destId] = dest;
                                 vCC.push_back(MakeCCcondOneSig(CKeyID(GetDestinationID(dest))));

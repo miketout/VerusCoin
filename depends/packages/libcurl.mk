@@ -1,18 +1,18 @@
 package=libcurl
-$(package)_version=7.84.0
+$(package)_version=8.4.0
 $(package)_dependencies=openssl
 $(package)_download_path=https://curl.haxx.se/download
-$(package)_file_name=curl-$($(package)_version).tar.xz
-$(package)_sha256_hash=2d118b43f547bfe5bae806d8d47b4e596ea5b25a6c1f080aef49fbcd817c5db8
-$(package)_config_opts_linux=--disable-shared --enable-static --prefix=$(host_prefix) --host=$(HOST) --with-openssl
-$(package)_config_opts_mingw32=--enable-mingw --disable-shared --enable-static --prefix=$(host_prefix) --host=x86_64-w64-mingw32  --with-openssl
-$(package)_config_opts_darwin=--disable-shared --enable-static --prefix=$(host_prefix)  --with-openssl
-$(package)_cflags_darwin=-mmacosx-version-min=10.9
+$(package)_file_name=curl-$($(package)_version).tar.gz
+$(package)_sha256_hash=816e41809c043ff285e8c0f06a75a1fa250211bbfb2dc0a037eeef39f1a9e427
+$(package)_config_opts=--with-openssl --disable-shared --enable-static --prefix=$(host_prefix)
+$(package)_config_opts_linux=--host=$(HOST)
+$(package)_config_opts_mingw32=--enable-mingw --host=x86_64-w64-mingw32
+$(package)_cflags_darwin=-mmacosx-version-min=$(OSX_MIN_VERSION)
 $(package)_conf_tool=./configure
 
 ifeq ($(build_os),darwin)
 define $(package)_set_vars
-  $(package)_build_env=MACOSX_DEPLOYMENT_TARGET="10.9"
+  $(package)_build_env=MACOSX_DEPLOYMENT_TARGET="$(OSX_MIN_VERSION)"
 endef
 endif
 
@@ -27,12 +27,12 @@ define $(package)_config_cmds
   echo '=== config for $(package):' && \
   echo '$($(package)_config_env) $($(package)_conf_tool) $($(package)_config_opts)' && \
   echo '=== ' && \
-  $($(package)_config_env) $($(package)_conf_tool) $($(package)_config_opts)
+  $($(package)_config_env) $($(package)_conf_tool) $($(package)_config_opts) 
 endef
 
 ifeq ($(build_os),darwin)
 define $(package)_build_cmds
-  $(MAKE) CPPFLAGS="-I$(host_prefix)/include -fPIC" CFLAGS='-mmacosx-version-min=10.9'
+  $(MAKE) CPPFLAGS="-I$(host_prefix)/include -fPIC" CFLAGS="-mmacosx-version-min=$(OSX_MIN_VERSION)"
 endef
 else
 define $(package)_build_cmds

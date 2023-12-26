@@ -1,20 +1,20 @@
 
-## VerusCoin version 1.0.0
+## VerusCoin version 1.2.0
 
-Arguably the world's most advanced technology, zero knowledge privacy-centric blockchain, Verus Coin brings Sapling performance and zero knowledge features to an intelligent system with interchain smart contracts and a completely original, combined proof of stake/proof of work consensus algorithm that solves the nothing at stake problem. With this and its approach towards CPU mining and ASICs, Verus Coin strives to be one of the most naturally decentralizing and attack resistant blockchains in existence.
+Arguably the world's most advanced technology, zero knowledge privacy enabled, multi-chain blockchain protocol, Verus Public Blockchains as a Service (PBaaS) combines Sapling zero knowledge technology with an intelligent, multi-chain, provable protocol, using interchain smart transactions. Verus PBaaS also enables merge mining and cross-chain staking with a completely original, combined proof of stake/proof of work consensus algorithm, Proof of Power, that can be mined on CPUs and mobile phones, and also solves the nothing at stake problem. With this and its approach towards CPU mining and ASICs, Verus Coin strives to be one of the most naturally decentralizing and attack resistant blockchain networks in existence.
 
-We have added a variation of a zawy12, lwma difficulty algorithm, a new CPU-optimized hash algorithm and a new algorithm for fair proof of stake. We describe these changes and vision going forward in a [our Phase I white paper](https://verus.io/docs/VerusPhaseI.pdf) and [our Vision](https://verus.io/downloads/VerusVision.pdf).
+[VerusCoin web site](https://verus.io/) and [VerusCoin Explorer](https://explorer.verus.io/).
 
-Also see our [VerusCoin web site](https://verus.io/) and [VerusCoin Explorer](https://explorer.verus.io/).
+[Our Vision](https://verus.io/downloads/VerusVision.pdf).
 
 ## VerusCoin
-This software is the VerusCoin client. Generally, you will use this if you want to mine VRSC or setup a full node. When you run the wallet it launches komodod automatically. On first launch it downloads Zcash parameters, roughly 1GB, which is mildly slow.
+This software is the VerusCoin p2p node and client. Generally, you will use this if you want to mine VRSC or setup a full node. When you run the wallet it launches verusd automatically. On first launch it downloads Zcash parameters, roughly 1GB, which is relatively slow.
 
-The wallet downloads and stores the block chain or asset chain of the coin you select. It downloads and stores the entire history of the coins transactions; depending on the speed of your computer and network connection, the synchronization process could take a day or more once the blockchain has reached a significant size.
+The daemon downloads and stores the block chain of the PBaaS chain you select on load, using the -chain=<name> parameter. It downloads and stores the entire history of the coins transactions; depending on the speed of your computer and network connection, the synchronization process could take a day or more once the blockchain has reached a significant size.
 
 ## Development Resources
-- VerusCoin:[https://verus.io/](https://veruscoin.io/) Wallets and CLI tools
-- Discord: [https://discord.gg/VRKMP2S](https://discord.gg/VRKMP2S)
+- VerusCoin:[https://verus.io/](https://verus.io/) Wallets and CLI tools
+- Discord: [https://verus.io/discord](https://verus.io/discord)
 - Mail: [development@verus.io](development@verus.io)
 - FAQs & How-to: [https://wiki.verus.io/#!index.md](https://wiki.veruscoin.io/#!index.md)
 - API references: [https://wiki.verus.io/#!faq-cli/clifaq-02_verus_commands.md](https://wiki.verus.io/#!faq-cli/clifaq-02_verus_commands.md)
@@ -85,7 +85,7 @@ zcutil/build-win.sh
 ```
 VerusCoin
 ------
-We develop on dev and some other branches and produce releases of of the master branch, using pull requests to manage what goes into master. The dev branch is considered the bleeding edge codebase, and may even be oncompatible from time to time, while the master-branch is considered tested (unit tests, runtime tests, functionality). At no point of time do the Komodo Platform developers or Verus Developers take any responsibility for any damage out of the usage of this software. 
+We develop on dev and some other branches and produce releases of of the master branch, using pull requests to manage what goes into master. The dev branch is considered the bleeding edge codebase, and may even be incompatible from time to time, while the master-branch is considered tested (unit tests, runtime tests, functionality). At no point of time do the Komodo Platform developers or Verus Developers take any responsibility for any damage out of the usage of this software. 
 
 Verus builds for all operating systems out of the same codebase. Follow the OS specific instructions from below.
 

@@ -211,7 +211,26 @@ uint160 CMMRProof::GetNativeAddress() const
     return retAddress;
 }
 
-uint256 CMMRProof::CheckProof(uint256 hash) const
+bool CMMRProof::CheckStorageKey(uint32_t height) const
+{
+    for (auto &pProof : proofSequence)
+    {
+        switch(pProof->branchType)
+        {
+            case CMerkleBranchBase::BRANCH_ETH:
+            {
+                return ((CETHPATRICIABranch *)pProof)->CheckStorageKeyHash(height);
+            }
+            default:
+            {
+                return false;
+            }
+        }
+    }
+    return false;
+}
+
+uint256 CMMRProof::CheckProof(uint256 hash, bool optimized) const
 {
     for (auto &pProof : proofSequence)
     {
@@ -236,7 +255,7 @@ uint256 CMMRProof::CheckProof(uint256 hash) const
             }
             case CMerkleBranchBase::BRANCH_ETH:
             {
-                hash = ((CETHPATRICIABranch *)pProof)->SafeCheck(hash);
+                hash = ((CETHPATRICIABranch *)pProof)->SafeCheck(hash, optimized);
                 LogPrint("crosschain", "Result from ETHBranch check: %s\n", hash.GetHex().c_str());
                 break;
             }

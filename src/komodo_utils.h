@@ -1561,13 +1561,12 @@ uint32_t komodo_assetmagic(const char *symbol,uint64_t supply,uint8_t *extraptr,
     strcpy((char *)&buf[len], name.c_str());
     len += strlen(name.c_str());
 
-    if (LogAcceptCategory("magicnumber"))
-    {
-        std::vector<unsigned char> extraBuffer(extraptr, extraptr + extralen);
-        LogPrintf("original hashing buffer: %s\n", HexBytes(&extraBuffer[0], extraBuffer.size()).c_str());
-        std::vector<unsigned char> crcHeader(buf, buf + len);
-        LogPrintf("original crc header: %s\n", HexBytes(&crcHeader[0], crcHeader.size()).c_str());
-    }
+    /*
+    std::vector<unsigned char> extraBuffer(extraptr, extraptr + extralen);
+    LogPrintf("original hashing buffer: %s\n", HexBytes(&extraBuffer[0], extraBuffer.size()).c_str());
+    std::vector<unsigned char> crcHeader(buf, buf + len);
+    LogPrintf("original crc header: %s\n", HexBytes(&crcHeader[0], crcHeader.size()).c_str());
+    */
 
     if ( extraptr != 0 && extralen != 0 )
     {
@@ -1740,13 +1739,13 @@ void komodo_args(char *argv0)
     uint16_t port;
     int32_t baseid,len,n,extralen = 0;
 
+    memset(extrabuf, 0, sizeof(extrabuf));
+
     IS_KOMODO_NOTARY = GetBoolArg("-notary", false);
 
     if ( GetBoolArg("-gen", false) != 0 )
     {
         KOMODO_MININGTHREADS = GetArg("-genproclimit",-1);
-        if (KOMODO_MININGTHREADS == 0)
-            mapArgs["-gen"] = "0";
     }
     else KOMODO_MININGTHREADS = 0;
 
@@ -1797,13 +1796,7 @@ void komodo_args(char *argv0)
 
     std::string lowerName = boost::to_lower_copy(name);
 
-    PBAAS_TESTMODE = false;
-
-    // TODO: POST HARDENING - right now, all PBaaS chains default testmode. remove this and change default before mainnet
-    if (lowerName != "vrsc")
-    {
-        PBAAS_TESTMODE = true;
-    }
+    PBAAS_TESTMODE = lowerName == "vrsctest";
 
     // either the testmode parameter or calling this chain VRSCTEST will put us into testmode
     PBAAS_TESTMODE = GetBoolArg("-testnet", PBAAS_TESTMODE);
@@ -2089,6 +2082,7 @@ void komodo_args(char *argv0)
 
         MAX_BLOCK_SIGOPS = 60000;
         ASSETCHAINS_COMMISSION = GetArg("-ac_perc",0);
+        memset(ASSETCHAINS_OVERRIDE_PUBKEY33, 0, sizeof(ASSETCHAINS_OVERRIDE_PUBKEY33));
         ASSETCHAINS_OVERRIDE_PUBKEY = GetArg("-ac_pubkey","");
         ASSETCHAINS_SAPLING = 1;
         ASSETCHAINS_OVERWINTER = 1;
@@ -2203,8 +2197,14 @@ void komodo_args(char *argv0)
                 komodo_userpass(ASSETCHAINS_USERPASS, ASSETCHAINS_SYMBOL);      // make sure we set user and password on first load
             }
 
-            if (ASSETCHAINS_LASTERA == 0 && ASSETCHAINS_REWARD[0] == 0)
+            // TODO: REMOVE THE SPECIAL CASE FOR ANDROMEDA ON ANY TESTNET RESET
+            if (ASSETCHAINS_LASTERA == 0 &&
+                ASSETCHAINS_REWARD[0] == 0 &&
+                (PBAAS_TESTMODE && boost::to_lower_copy(std::string(ASSETCHAINS_SYMBOL)) == "andromeda"))
+            {
                 COINBASE_MATURITY = 1;
+            }
+
             //fprintf(stderr,"ASSETCHAINS_RPCPORT (%s) %u\n",ASSETCHAINS_SYMBOL,ASSETCHAINS_RPCPORT);
             ASSETCHAINS_RPCHOST = GetArg("-rpchost", "127.0.0.1");
         }

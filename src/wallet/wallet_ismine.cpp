@@ -53,93 +53,88 @@ isminetype IsMine(const CKeyStore &keystore, const CScript& _scriptPubKey, uint3
     }
 
     COptCCParams p;
-    if (scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid())
-    {
-        std::vector<CTxDestination> dests;
-        int minSigs;
-        bool canSign = false;
-        bool canSpend = false;
+    std::vector<CTxDestination> dests;
+    int minSigs;
+    bool canSign = false;
+    bool canSpend = false;
 
-        if (ExtractDestinations(scriptPubKey, whichType, dests, minSigs, &keystore, &canSign, &canSpend, height))
+    if (scriptPubKey.IsPayToCryptoCondition(p) &&
+        p.IsValid() &&
+        ExtractDestinations(scriptPubKey, whichType, dests, minSigs, &keystore, &canSign, &canSpend, height))
+    {
+        bool isAdvancedIdentity = CConstVerusSolutionVector::GetVersionByHeight(height) >= CActivationHeight::ACTIVATE_VERUSVAULT;
+        if (canSpend)
         {
-            bool isAdvancedIdentity = CConstVerusSolutionVector::GetVersionByHeight(height) >= CActivationHeight::ACTIVATE_VERUSVAULT;
-            if (canSpend)
+            std::set<CTxDestination> unknownRecipients;
+            // check for multiple recipients, possibly not in this keystore, and if not, it is shared
+            if (isAdvancedIdentity && dests.size() > 1)
             {
-                std::set<CTxDestination> unknownRecipients;
-                // check for multiple recipients, possibly not in this keystore, and if not, it is shared
-                if (isAdvancedIdentity && dests.size() > 1)
+                for (auto &oneDest : dests)
                 {
-                    for (auto &oneDest : dests)
+                    switch (oneDest.which())
                     {
-                        switch (oneDest.which())
+                        case COptCCParams::ADDRTYPE_PK:
                         {
-                            case COptCCParams::ADDRTYPE_PK:
+                            if (keystore.HaveKey(GetDestinationID(oneDest)))
                             {
-                                if (keystore.HaveKey(GetDestinationID(oneDest)))
-                                {
-                                    continue;
-                                }
-                                CCcontract_info *cp, C;
-                                cp = CCinit(&C, p.evalCode);
-                                if (GetDestinationID(DecodeDestination(std::string(cp->unspendableCCaddr))) == GetDestinationID(oneDest))
-                                {
-                                    continue;
-                                }
-                                unknownRecipients.insert(oneDest);
-                                break;
+                                continue;
                             }
-                            case COptCCParams::ADDRTYPE_PKH:
+                            CCcontract_info *cp, C;
+                            cp = CCinit(&C, p.evalCode);
+                            if (GetDestinationID(DecodeDestination(std::string(cp->unspendableCCaddr))) == GetDestinationID(oneDest))
                             {
-                                if (keystore.HaveKey(GetDestinationID(oneDest)))
-                                {
-                                    continue;
-                                }
-                                CCcontract_info *cp, C;
-                                cp = CCinit(&C, p.evalCode);
-                                if (DecodeDestination(std::string(cp->unspendableCCaddr)) == oneDest)
-                                {
-                                    continue;
-                                }
-                                unknownRecipients.insert(oneDest);
-                                break;
+                                continue;
                             }
-                            case COptCCParams::ADDRTYPE_ID:
+                            unknownRecipients.insert(oneDest);
+                            break;
+                        }
+                        case COptCCParams::ADDRTYPE_PKH:
+                        {
+                            if (keystore.HaveKey(GetDestinationID(oneDest)))
                             {
-                                std::pair<CIdentityMapKey, CIdentityMapValue> retVal;
-                                if (keystore.GetIdentity(GetDestinationID(oneDest), retVal) &&
-                                    retVal.first.CanSpend())
-                                {
-                                    continue;
-                                }
-                                unknownRecipients.insert(oneDest);
-                                break;
+                                continue;
                             }
-                            case COptCCParams::ADDRTYPE_SH:
+                            CCcontract_info *cp, C;
+                            cp = CCinit(&C, p.evalCode);
+                            if (DecodeDestination(std::string(cp->unspendableCCaddr)) == oneDest)
                             {
-                                if (keystore.HaveCScript(GetDestinationID(oneDest)))
-                                {
-                                    continue;
-                                }
-                                unknownRecipients.insert(oneDest);
-                                break;
+                                continue;
                             }
+                            unknownRecipients.insert(oneDest);
+                            break;
+                        }
+                        case COptCCParams::ADDRTYPE_ID:
+                        {
+                            std::pair<CIdentityMapKey, CIdentityMapValue> retVal;
+                            if (keystore.GetIdentity(GetDestinationID(oneDest), retVal) &&
+                                retVal.first.CanSpend())
+                            {
+                                continue;
+                            }
+                            unknownRecipients.insert(oneDest);
+                            break;
+                        }
+                        case COptCCParams::ADDRTYPE_SH:
+                        {
+                            if (keystore.HaveCScript(GetDestinationID(oneDest)))
+                            {
+                                continue;
+                            }
+                            unknownRecipients.insert(oneDest);
+                            break;
                         }
                     }
-                    if (unknownRecipients.size())
-                    {
-                        return ISMINE_SHARED;
-                    }
                 }
-                return ISMINE_SPENDABLE;
+                if (unknownRecipients.size())
+                {
+                    return ISMINE_SHARED;
+                }
             }
-            else if (canSign)
-            {
-                return ISMINE_WATCH_ONLY;
-            }
-            else
-            {
-                return ISMINE_NO;
-            }
+            return ISMINE_SPENDABLE;
+        }
+        else if (canSign)
+        {
+            return ISMINE_WATCH_ONLY;
         }
         else
         {

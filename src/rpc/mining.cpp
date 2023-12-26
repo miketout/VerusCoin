@@ -159,7 +159,7 @@ UniValue getgenerate(const UniValue& params, bool fHelp)
         throw runtime_error(
             "getgenerate\n"
             "\nReturn if the server is set to mine and/or mint coins or not. The default is false.\n"
-            "It is set with the command line argument -gen (or komodo.conf setting gen) and -mint\n"
+            "It is set with the command line argument -gen and -mint (or conf file settings gen and mint)\n"
             "It can also be set with the setgenerate call.\n"
             "\nResult\n"
             "{\n"
@@ -248,10 +248,6 @@ UniValue generate(const UniValue& params, bool fHelp)
         if (!pblocktemplate.get())
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
         CBlock *pblock = &pblocktemplate->block;
-        {
-            LOCK(cs_main);
-            IncrementExtraNonce(pblock, chainActive.LastTip(), nExtraNonce);
-        }
 
         // Hash state
         crypto_generichash_blake2b_state eh_state;
@@ -485,6 +481,10 @@ UniValue getmininginfo(const UniValue& params, bool fHelp)
         {
             totalChainStake = ((totalChainStake * arith_uint256(posCount)) / arith_uint256(blockCount * blockCount));
         }
+        else
+        {
+            totalChainStake = 0;
+        }
 
         if (totalChainStake > arith_uint256(INT64_MAX))
         {
@@ -523,7 +523,7 @@ UniValue getmininginfo(const UniValue& params, bool fHelp)
     }
     obj.push_back(Pair("networkhashps",    getnetworksolps(params, false)));
     obj.push_back(Pair("pooledtx",         (uint64_t)mempool.size()));
-    obj.push_back(Pair("testnet",          Params().TestnetToBeDeprecatedFieldRPC()));
+    obj.push_back(Pair("testnet",          PBAAS_TESTMODE));
     obj.push_back(Pair("chain",            Params().NetworkIDString()));
 #ifdef ENABLE_MINING
     bool mining = GetBoolArg("-gen", false);
@@ -674,43 +674,6 @@ UniValue getminingdistribution(const UniValue& params, bool fHelp)
     return distributionObj;
 }
 
-UniValue getlastminingdistribution(const UniValue& params, bool fHelp)
-{
-    if (fHelp || params.size() != 0)
-        throw runtime_error(
-            "getlastminingdistribution\n"
-            "\nRetrieves the last used mining distribution when making a block\n"
-
-            "\nArguments: NONE\n"
-            "\n"
-
-            "\nResult:\n"
-            "     NULL object if not set\n"
-            "     If set:\n"
-            "     {\n"
-            "       \"uniquedestination1\":value    (key/number) valid destination address and relative value output to it\n"
-            "       \"uniquedestination2\":value    (key/number) destination address and relative value output\n"
-            "       ...\n"
-            "     }\n"
-
-            "\nExamples:\n"
-            + HelpExampleCli("getlastminingdistribution", "")
-            + HelpExampleRpc("getlastminingdistribution", "")
-        );
-
-
-    UniValue distributionObj(UniValue::VOBJ);
-    for (auto &oneRecipient : ConnectedChains.latestMiningOutputs)
-    {
-        CTxDestination recipient;
-        if (ExtractDestination(oneRecipient.scriptPubKey, recipient) && recipient.which() != COptCCParams::ADDRTYPE_INVALID)
-        {
-            distributionObj.pushKV(EncodeDestination(recipient), oneRecipient.nValue);
-        }
-    }
-    return distributionObj;
-}
-
 UniValue getblocktemplate(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() > 1)
@@ -779,17 +742,17 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
             + HelpExampleRpc("getblocktemplate", "")
          );
 
+#ifndef ENABLE_WALLET
+    throw JSONRPCError(RPC_METHOD_NOT_FOUND, "verusd must be compiled with wallet, even if wallet isn't used");
+#endif
+
     LOCK(cs_main);
 
     // Wallet or miner address is required because we support coinbasetxn
     if (GetArg("-mineraddress", "").empty()) {
-#ifdef ENABLE_WALLET
         if (!pwalletMain) {
             throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Wallet disabled and -mineraddress not set");
         }
-#else
-        throw JSONRPCError(RPC_METHOD_NOT_FOUND, "verusd compiled without wallet and -mineraddress not set");
-#endif
     }
 
     std::string strMode = "template";
@@ -933,6 +896,12 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
             pblocktemplate = NULL;
         }
 
+        uint256 useNonce;
+        if (params.size() > 0)
+        {
+            useNonce = uint256S(uni_get_str(find_value(params[0], "nonce")));
+        }
+
         UniValue recipientWeights;
         if (params.size() > 0 &&
             ((recipientWeights = find_value(params[0], "miningdistribution")).isObject() ||
@@ -952,16 +921,12 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
                 }
                 minerOutputs.push_back(CTxOut(relVal, GetScriptForDestination(oneDest)));
             }
-            pblocktemplate = CreateNewBlock(Params(), minerOutputs, false);
+            pblocktemplate = CreateNewBlock(Params(), minerOutputs, false, useNonce);
         }
         else
         {
-#ifdef ENABLE_WALLET
             CReserveKey reservekey(pwalletMain);
-            pblocktemplate = CreateNewBlockWithKey(reservekey, chainActive.LastTip()->GetHeight()+1);
-#else
-            pblocktemplate = CreateNewBlockWithKey();
-#endif
+            pblocktemplate = CreateNewBlockWithKey(reservekey, chainActive.LastTip()->GetHeight()+1, false, useNonce);
         }
 
         /* keep Zcash script-based approach for reference
@@ -986,9 +951,20 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
     }
     CBlock* pblock = &pblocktemplate->block; // pointer for convenience
 
-    // Update nTime
-    UpdateTime(pblock, Params().GetConsensus(), pindexPrev);
-    pblock->nNonce = uint256();
+    int64_t Mining_height = (int64_t)(pindexPrev->GetHeight()+1);
+
+    // pickup/remove any new/deleted headers
+    if (ConnectedChains.dirtygbt || (pblock->NumPBaaSHeaders() < ConnectedChains.mergeMinedChains.size() + 1))
+    {
+        ConnectedChains.dirtygbt = false;
+
+        uint32_t tmpsavebits; // unused
+        uint32_t tmpnonce = 0;
+        IncrementExtraNonce(pblock, pindexPrev, tmpnonce, true, &tmpsavebits);
+    }
+
+    // cache the last block or copy of last
+    ConnectedChains.SetLastBlock(*pblock, Mining_height);
 
     UniValue aCaps(UniValue::VARR); aCaps.push_back("proposal");
 
@@ -1083,6 +1059,8 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
     result.push_back(Pair("sizelimit", (int64_t)MAX_BLOCK_SIZE));
     result.push_back(Pair("curtime", pblock->GetBlockTime()));
     result.push_back(Pair("bits", strprintf("%08x", pblock->nBits)));
+    result.push_back(Pair("mergeminebits", strprintf("%08x", ConnectedChains.saveBits)));
+    result.push_back(Pair("nonce", pblock->nNonce.GetHex().c_str()));
     result.push_back(Pair("height", (int64_t)(pindexPrev->GetHeight()+1)));
 
     //fprintf(stderr,"return complete template\n");
@@ -1301,7 +1279,6 @@ static const CRPCCommand commands[] =
     { "mining",             "prioritisetransaction",  &prioritisetransaction,  true  },
     { "mining",             "setminingdistribution",  &setminingdistribution,  true  },
     { "mining",             "getminingdistribution",  &getminingdistribution,  true  },
-    { "mining",             "getlastminingdistribution",  &getlastminingdistribution,  true  },
     { "mining",             "getblocktemplate",       &getblocktemplate,       true  },
     { "mining",             "submitblock",            &submitblock,            true  },
     { "mining",             "getblocksubsidy",        &getblocksubsidy,        true  },

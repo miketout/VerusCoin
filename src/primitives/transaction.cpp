@@ -15,7 +15,6 @@
 #include "cc/CCinclude.h"
 
 JSDescription::JSDescription(
-    bool makeGrothProof,
     ZCJoinSplit& params,
     const uint256& joinSplitPubKey,
     const uint256& anchor,
@@ -30,7 +29,6 @@ JSDescription::JSDescription(
     std::array<libzcash::SproutNote, ZC_NUM_JS_OUTPUTS> notes;
 
     proof = params.prove(
-        makeGrothProof,
         inputs,
         outputs,
         notes,
@@ -50,7 +48,6 @@ JSDescription::JSDescription(
 }
 
 JSDescription JSDescription::Randomized(
-    bool makeGrothProof,
     ZCJoinSplit& params,
     const uint256& joinSplitPubKey,
     const uint256& anchor,
@@ -75,7 +72,6 @@ JSDescription JSDescription::Randomized(
     MappedShuffle(outputs.begin(), outputMap.begin(), ZC_NUM_JS_OUTPUTS, gen);
 
     return JSDescription(
-        makeGrothProof,
         params, joinSplitPubKey, anchor, inputs, outputs,
         vpub_old, vpub_new, computeProof,
         esk // payment disclosure
@@ -99,18 +95,9 @@ public:
 
     bool operator()(const libzcash::PHGRProof& proof) const
     {
-        return params.verify(
-            proof,
-            verifier,
-            joinSplitPubKey,
-            jsdesc.randomSeed,
-            jsdesc.macs,
-            jsdesc.nullifiers,
-            jsdesc.commitments,
-            jsdesc.vpub_old,
-            jsdesc.vpub_new,
-            jsdesc.anchor
-        );
+        // We checkpoint after Sapling activation, so we can skip verification
+        // for all Sprout proofs.
+        return true;
     }
 
     bool operator()(const libzcash::GrothProof& proof) const
@@ -408,12 +395,11 @@ CCurrencyValueMap CTransaction::GetReserveValueOut() const
 
         for (auto &oneCur : oneOut.valueMap)
         {
-            if (oneCur.second &&
-                (retVal.valueMap[oneCur.first] += oneCur.second) < 0)
+            if (!MoneyRange(oneCur.second) ||
+                !MoneyRange(retVal.valueMap[oneCur.first] += oneCur.second))
             {
-                printf("%s: currency value overflow total: %ld, adding: %ld - pegging to max\n", __func__, retVal.valueMap[oneCur.first], oneCur.second);
-                LogPrintf("%s: currency value overflow total: %ld, adding: %ld - pegging to max\n", __func__, retVal.valueMap[oneCur.first], oneCur.second);
-                retVal.valueMap[oneCur.first] = INT64_MAX;
+                LogPrint("defi", "%s: currency value overflow -- total: %ld, adding: %ld\n", __func__, retVal.valueMap[oneCur.first], oneCur.second);
+                throw std::runtime_error("CTransaction::GetReserveValueOut(): value out of range");
             }
         }
     }
@@ -799,18 +785,22 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
 
 // this validates that all parts of a transaction match and also whether or not it
 // matches the block MMR root, which should be the return value
-uint256 CPartialTransactionProof::CheckPartialTransaction(CTransaction &outTx, bool *pIsPartial) const
+uint256 CPartialTransactionProof::CheckPartialTransaction(CTransaction &outTx, bool *pIsPartial, bool optimizedETH) const
 {
-    return txProof.CheckProof(GetPartialTransaction(outTx, pIsPartial));
+    return txProof.CheckProof(GetPartialTransaction(outTx, pIsPartial), optimizedETH);
 }
 
-uint256 CPartialTransactionProof::CheckBlockPreHeader(CPBaaSPreHeader &outPreHeader) const
+uint256 CPartialTransactionProof::CheckBlockPreHeader(CPBaaSPreHeader &outPreHeader, bool newPosFormat) const
 {
-    CPBaaSPreHeader preHeader = GetBlockPreHeader();
-    if (preHeader.IsValid())
+    outPreHeader = GetBlockPreHeader();
+    if (LogAcceptCategory("notarization"))
+    {
+        printf("%s: preHeader: %s\n", __func__, outPreHeader.ToUniValue().write(1,2).c_str());
+    }
+    if (outPreHeader.IsValid())
     {
         auto hw = CDefaultMMRNode::GetHashWriter();
-        return txProof.CheckProof((hw << preHeader).GetHash());
+        return txProof.CheckProof(newPosFormat ? (hw << outPreHeader).GetHash() : uint256());
     }
     return uint256();
 }

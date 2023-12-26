@@ -519,7 +519,7 @@ CAmount CCurrencyState::ReserveToNativeRaw(CAmount reserveAmount, const cpp_dec_
     {
         return retVal;
     }
-    return 0;
+    return -1;
 }
 
 CAmount CCurrencyState::ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate)
@@ -604,7 +604,7 @@ CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, const cpp_dec_f
     {
         return retVal;
     }
-    return 0;
+    return -1;
 }
 
 CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate)
@@ -686,7 +686,8 @@ CAmount CCurrencyState::ReserveToNative(const CCurrencyValueMap &reserveAmounts)
             nativeOut += ReserveToNative(it->second, i);
         }
     }
-    return nativeOut;
+    auto selfIt = reserveAmounts.valueMap.find(currencyID);
+    return selfIt == reserveAmounts.valueMap.end() ? nativeOut : nativeOut + selfIt->second;
 }
 
 template <typename INNERVECTOR>
@@ -759,7 +760,7 @@ bool CPBaaSNotarization::SetMirror(bool setTrue)
     }
 
     // we can only reverse notarizations with two proof roots
-    // one must be the current chain, and the other is to reverse
+        // one must be the current chain, and the other is to reverse
     if (proofRoots.size() != 2 ||
         currencyStates.count(currencyID) ||
         !(proofRoots.begin()->first == ASSETCHAINS_CHAINID || (++proofRoots.begin())->first == ASSETCHAINS_CHAINID))
@@ -848,6 +849,11 @@ UniValue CPBaaSNotarization::ToUniValue() const
     if (IsLaunchComplete())
     {
         obj.push_back(Pair("launchcomplete", true));
+    }
+
+    if (IsContractUpgrade())
+    {
+        obj.push_back(Pair("contractupgrade", true));
     }
 
     if (IsMirror())
@@ -1543,6 +1549,123 @@ UniValue CAdvancedNameReservation::ToUniValue() const
     return ret;
 }
 
+bool IsData(opcodetype opcode)
+{
+    return (opcode >= 0 && opcode <= OP_PUSHDATA4) || (opcode >= OP_1 && opcode <= OP_16);
+}
+
+bool UnpackStakeOpRet(const CTransaction &stakeTx, std::vector<std::vector<unsigned char>> &vData)
+{
+    bool isValid = stakeTx.vout[stakeTx.vout.size() - 1].scriptPubKey.GetOpretData(vData);
+
+    if (isValid && vData.size() == 1)
+    {
+        CScript data = CScript(vData[0].begin(), vData[0].end());
+        vData.clear();
+
+        uint32_t bytesTotal;
+        CScript::const_iterator pc = data.begin();
+        std::vector<unsigned char> vch = std::vector<unsigned char>();
+        opcodetype op;
+        bool moreData = true;
+
+        for (bytesTotal = vch.size();
+             bytesTotal <= nMaxDatacarrierBytes && !(isValid = (pc == data.end())) && (moreData = data.GetOp(pc, op, vch)) && IsData(op);
+             bytesTotal += vch.size())
+        {
+            if (op >= OP_1 && op <= OP_16)
+            {
+                vch.resize(1);
+                vch[0] = (op - OP_1) + 1;
+            }
+            vData.push_back(vch);
+        }
+
+        // if we ran out of data, we're ok
+        if (isValid && (vData.size() >= CStakeParams::STAKE_MINPARAMS) && (vData.size() <= CStakeParams::STAKE_MAXPARAMS))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+CStakeParams::CStakeParams(const std::vector<std::vector<unsigned char>> &vData)
+{
+    // An original format stake OP_RETURN contains:
+    // 1. source block height in little endian 32 bit
+    // 2. target block height in little endian 32 bit
+    // 3. 32 byte prev block hash
+    // 4. 33 byte pubkey, or not present to use same as stake destination
+    // New format serialization and deserialization is handled by normal stream serialization.
+    version = VERSION_INVALID;
+    srcHeight = 0;
+    blkHeight = 0;
+    if (vData[0].size() == 1 &&
+        vData[0][0] == OPRETTYPE_STAKEPARAMS2 &&
+        vData.size() == 2)
+    {
+        ::FromVector(vData[1], *this);
+    }
+    else if (vData[0].size() == 1 &&
+        vData[0][0] == OPRETTYPE_STAKEPARAMS && vData[1].size() <= 4 &&
+        vData[2].size() <= 4 &&
+        vData[3].size() == sizeof(prevHash) &&
+        (vData.size() == STAKE_MINPARAMS || (vData.size() == STAKE_MAXPARAMS && vData[4].size() == 33)))
+    {
+        version = VERSION_ORIGINAL;
+        for (int i = 0, size = vData[1].size(); i < size; i++)
+        {
+            srcHeight = srcHeight | vData[1][i] << (8 * i);
+        }
+        for (int i = 0, size = vData[2].size(); i < size; i++)
+        {
+            blkHeight = blkHeight | vData[2][i] << (8 * i);
+        }
+
+        prevHash = uint256(vData[3]);
+
+        if (vData.size() == 4)
+        {
+            pk = CPubKey();
+        }
+        else if (vData[4].size() == 33)
+        {
+            pk = CPubKey(vData[4]);
+            if (!pk.IsValid())
+            {
+                // invalidate
+                srcHeight = 0;
+                version = VERSION_INVALID;
+            }
+        }
+        else
+        {
+            // invalidate
+            srcHeight = 0;
+            version = VERSION_INVALID;
+        }
+    }
+}
+
+bool GetStakeParams(const CTransaction &stakeTx, CStakeParams &stakeParams)
+{
+    std::vector<std::vector<unsigned char>> vData = std::vector<std::vector<unsigned char>>();
+
+    //printf("opret stake script: %s\nvalue at scriptPubKey[0]: %x\n", stakeTx.vout[1].scriptPubKey.ToString().c_str(), stakeTx.vout[1].scriptPubKey[0]);
+
+    if (stakeTx.vin.size() == 1 &&
+        stakeTx.vout.size() == 2 &&
+        stakeTx.vout[0].nValue > 0 &&
+        stakeTx.vout[1].scriptPubKey.IsOpReturn() &&
+        UnpackStakeOpRet(stakeTx, vData))
+    {
+        stakeParams = CStakeParams(vData);
+        return stakeParams.IsValid();
+    }
+    return false;
+}
+
 void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fIncludeHex, bool fIncludeAsm)
 {
     txnouttype type;
@@ -1604,7 +1727,7 @@ void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fInclud
 
                 if (p.vData.size() && (notarization = CPBaaSNotarization(p.vData[0])).IsValid())
                 {
-                    out.push_back(Pair("pbaasnotarization", notarization.ToUniValue()));
+                    out.push_back(Pair(p.evalCode == EVAL_EARNEDNOTARIZATION ? "earnednotarization" : "acceptednotarization", notarization.ToUniValue()));
                 }
                 else
                 {
@@ -1785,8 +1908,10 @@ void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fInclud
             }
 
             case EVAL_STAKEGUARD:
+            {
                 out.push_back(Pair("stakeguard", ""));
                 break;
+            }
 
             case EVAL_FINALIZE_EXPORT:
             {
@@ -1854,6 +1979,20 @@ void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fInclud
     }
 }
 
+UniValue CStakeParams::ToUniValue() const
+{
+    UniValue out(UniValue::VOBJ);
+    out.pushKV("version", (int64_t)version);
+    out.pushKV("sourceheight", (int64_t)srcHeight);
+    out.pushKV("height", (int64_t)blkHeight);
+    out.pushKV("prevhash", prevHash.GetHex());
+    if (delegate.which() != COptCCParams::ADDRTYPE_INVALID)
+    {
+        out.pushKV("delegate", EncodeDestination(delegate));
+    }
+    return out;
+}
+
 void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry)
 {
     entry.pushKV("txid", tx.GetHash().GetHex());
@@ -1894,6 +2033,12 @@ void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry)
         vout.push_back(out);
     }
     entry.pushKV("vout", vout);
+
+    CStakeParams sp;
+    if (tx.IsCoinBase() && GetStakeParams(tx, sp))
+    {
+        entry.pushKV("stakeparams", sp.ToUniValue());
+    }
 
     if (!hashBlock.IsNull())
         entry.pushKV("blockhash", hashBlock.GetHex());

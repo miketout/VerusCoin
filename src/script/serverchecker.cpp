@@ -93,7 +93,7 @@ std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> Serve
     COptCCParams p;
     std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> idAddresses;
 
-    bool isPBaaS = CConstVerusSolutionVector::GetVersionByHeight(spendHeight) > CActivationHeight::ACTIVATE_PBAAS;
+    bool isPBaaS = CConstVerusSolutionVector::GetVersionByHeight(spendHeight) >= CActivationHeight::ACTIVATE_PBAAS;
 
     uint32_t checkHeight = chainActive.Height() < spendHeight ? chainActive.Height() : spendHeight - 1;
     bool enforceIDStakeHeightLimit = isPBaaS;

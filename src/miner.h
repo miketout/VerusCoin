@@ -28,11 +28,11 @@ struct CBlockTemplate
 #define KOMODO_MAXGPUCOUNT 65
 
 /** Generate a new block, without valid proof-of-work */
-CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const CScript& scriptPubKeyIn, bool isStake=false);
-CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vector<CTxOut> &minerOutputs, bool isStake=false);
+CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const CScript& scriptPubKeyIn, bool isStake=false, uint256 useNonce=uint256());
+CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vector<CTxOut> &minerOutputs, bool isStake=false, uint256 useNonce=uint256());
 #ifdef ENABLE_WALLET
 boost::optional<CScript> GetMinerScriptPubKey(CReserveKey& reservekey);
-CBlockTemplate* CreateNewBlockWithKey(CReserveKey& reservekey, int32_t nHeight, bool isStake=false);
+CBlockTemplate* CreateNewBlockWithKey(CReserveKey& reservekey, int32_t nHeight, bool isStake=false, uint256 useNonce=uint256());
 #else
 boost::optional<CScript> GetMinerScriptPubKey();
 CBlockTemplate* CreateNewBlockWithKey();

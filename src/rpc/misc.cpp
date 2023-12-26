@@ -28,6 +28,7 @@
 
 #include "zcash/Address.hpp"
 #include "pbaas/pbaas.h"
+#include <fstream>
 #include <ostream>
 #include <algorithm>
 
@@ -145,6 +146,7 @@ UniValue getinfo(const UniValue& params, bool fHelp)
     obj.push_back(Pair("timeoffset",    GetTimeOffset()));
     if ( chainActive.LastTip() != 0 )
         obj.push_back(Pair("tiptime", (int)chainActive.LastTip()->nTime));
+    obj.push_back(Pair("nextblocktime", (int64_t)ConnectedChains.GetNextBlockTime(chainActive.LastTip())));
     obj.push_back(Pair("connections",   (int)vNodes.size()));
     obj.push_back(Pair("proxy",         (proxy.IsValid() ? proxy.proxy.ToStringIPPort() : string())));
     obj.push_back(Pair("difficulty",    (double)GetDifficulty()));
@@ -462,10 +464,10 @@ UniValue validateaddress(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
         throw runtime_error(
-            "validateaddress \"komodoaddress\"\n"
-            "\nReturn information about the given Komodo address.\n"
+            "validateaddress \"address\"\n"
+            "\nReturn information about the given transparent address.\n"
             "\nArguments:\n"
-            "1. \"komodoaddress\"     (string, required) The Komodo address to validate\n"
+            "1. \"address\"     (string, required) The transparent address to validate\n"
             "\nResult:\n"
             "{\n"
             "  \"isvalid\" : true|false,         (boolean) If the address is valid or not. If not, this is the only property returned.\n"
@@ -726,10 +728,7 @@ uint256 HashFile(const std::string &filepath, CNativeHashWriter &ss)
 
         return ss.GetHash();
     }
-    else
-    {
-        return uint256();
-    }
+    return uint256();
 }
 
 uint256 HashFile(const std::string &filepath)

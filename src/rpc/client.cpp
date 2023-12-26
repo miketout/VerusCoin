@@ -1180,7 +1180,12 @@ int64_t CCurrencyDefinition::GetTotalPreallocation() const
     CAmount totalPreallocatedNative = 0;
     for (auto &onePreallocation : preAllocation)
     {
-        totalPreallocatedNative += onePreallocation.second;
+        if (!MoneyRange(onePreallocation.second) ||
+            !MoneyRange(totalPreallocatedNative += onePreallocation.second))
+        {
+            totalPreallocatedNative = INT64_MAX;
+            break;
+        }
     }
     return totalPreallocatedNative;
 }
@@ -1631,6 +1636,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "getbalance", 2 },
     { "getcurrencybalance", 1},
     { "getcurrencybalance", 2},
+    //{ "getcurrencyconverters", 0},
     { "getblockhash", 0 },
     { "move", 2 },
     { "move", 3 },
@@ -1668,6 +1674,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "signrawtransaction", 2 },
     { "sendrawtransaction", 1 },
     { "fundrawtransaction", 1 },
+    { "estimateconversion", 0 },
     { "gettxout", 1 },
     { "gettxout", 2 },
     { "gettxoutproof", 0 },

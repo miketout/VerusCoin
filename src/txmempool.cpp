@@ -53,14 +53,9 @@ CTxMemPoolEntry::CTxMemPoolEntry(const CTxMemPoolEntry& other)
 double
 CTxMemPoolEntry::GetPriority(unsigned int currentHeight) const
 {
-    CAmount nValueIn = tx->GetValueOut()+nFee;
-    CCurrencyState currencyState;
+    CAmount nValueIn = tx->GetValueOut() + nFee;
     unsigned int lastHeight = currentHeight < 1 ? 0 : currentHeight - 1;
     AssertLockHeld(cs_main);
-    if (hasReserve && (currencyState = ConnectedChains.GetCurrencyState(currentHeight - 1, false)).IsValid())
-    {
-        nValueIn += currencyState.ReserveToNative(tx->GetReserveValueOut());
-    }
     double deltaPriority = ((double)(currentHeight-nHeight)*nValueIn)/nModSize;
     double dResult = dPriority + deltaPriority;
     return dResult;
@@ -458,103 +453,113 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
 
                 if (!coins || (coins->IsCoinBase() &&
                                (((signed long)nMemPoolHeight) - coins->nHeight < COINBASE_MATURITY) ||
-                                    ((signed long)nMemPoolHeight < komodo_block_unlocktime(coins->nHeight) &&
+                                    (_IsVerusMainnetActive() &&
+                                        (signed long)nMemPoolHeight < komodo_block_unlocktime(coins->nHeight) &&
                                         coins->IsAvailable(0) && coins->vout[0].nValue >= ASSETCHAINS_TIMELOCKGTE))) {
                     transactionsToRemove.push_back(tx);
                     break;
                 }
             }
         }
-        bool oneRemoved = false;
-        for (auto &oneOut : tx.vout)
+
+        CValidationState state;
+        if (!ContextualCheckTransaction(tx, state, Params(), nMemPoolHeight, 0))
         {
-            COptCCParams p;
-
-            if (oneOut.scriptPubKey.IsPayToCryptoCondition(p))
+            transactionsToRemove.push_back(tx);
+        }
+        else
+        {
+            bool oneRemoved = false;
+            for (auto &oneOut : tx.vout)
             {
-                switch(p.evalCode)
-                {
-                    case EVAL_EARNEDNOTARIZATION:
-                    case EVAL_ACCEPTEDNOTARIZATION:
-                    {
-                        CPBaaSNotarization notarization;
+                COptCCParams p;
 
-                        if (p.vData.size() && (notarization = CPBaaSNotarization(p.vData[0])).IsValid())
+                if (oneOut.scriptPubKey.IsPayToCryptoCondition(p))
+                {
+                    switch(p.evalCode)
+                    {
+                        case EVAL_EARNEDNOTARIZATION:
+                        case EVAL_ACCEPTEDNOTARIZATION:
                         {
-                            uint32_t rootHeight;
-                            auto mmv = chainActive.GetMMV();
-                            if ((!notarization.IsMirror() &&
-                                 notarization.IsSameChain() &&
-                                 notarization.notarizationHeight >= nMemPoolHeight) ||
-                                (notarization.proofRoots.count(ASSETCHAINS_CHAINID) &&
-                                 ((rootHeight = notarization.proofRoots[ASSETCHAINS_CHAINID].rootHeight) > (nMemPoolHeight - 1) ||
-                                   (mmv.resize(rootHeight + 1), rootHeight != (mmv.size() - 1)) ||
-                                   notarization.proofRoots[ASSETCHAINS_CHAINID].blockHash != chainActive[rootHeight]->GetBlockHash() ||
-                                   notarization.proofRoots[ASSETCHAINS_CHAINID].stateRoot != mmv.GetRoot())))
+                            CPBaaSNotarization notarization;
+
+                            if (p.vData.size() && (notarization = CPBaaSNotarization(p.vData[0])).IsValid())
+                            {
+                                uint32_t rootHeight;
+                                auto mmv = chainActive.GetMMV();
+                                if ((!notarization.IsMirror() &&
+                                    notarization.IsSameChain() &&
+                                    notarization.notarizationHeight >= nMemPoolHeight) ||
+                                    (notarization.proofRoots.count(ASSETCHAINS_CHAINID) &&
+                                    ((rootHeight = notarization.proofRoots[ASSETCHAINS_CHAINID].rootHeight) > (nMemPoolHeight - 1) ||
+                                    (mmv.resize(rootHeight + 1), rootHeight != (mmv.size() - 1)) ||
+                                    notarization.proofRoots[ASSETCHAINS_CHAINID].blockHash != chainActive[rootHeight]->GetBlockHash() ||
+                                    notarization.proofRoots[ASSETCHAINS_CHAINID].stateRoot != mmv.GetRoot())))
+                                {
+                                    transactionsToRemove.push_back(tx);
+                                    oneRemoved = true;
+                                }
+                            }
+                            else
                             {
                                 transactionsToRemove.push_back(tx);
                                 oneRemoved = true;
                             }
+                            break;
                         }
-                        else
-                        {
-                            transactionsToRemove.push_back(tx);
-                            oneRemoved = true;
-                        }
-                        break;
-                    }
 
-                    // TODO: POST HARDENING - we need to make it so that once a transaction is proven as valid,
-                    // its proof remains valid, even when the blockchain is unwound backwards to the point
-                    // where that transaction originally exists on chain
-                    // this is an optimization, not hardening issue pre-PBaaS, and may possibly be addressed as easily
-                    // as calling ContextualCheckTransaction on the transaction without all of this.
-                    // currently, transactions rendered invalid by reorgs will end up removed at block creation and are
-                    // not accepted when relayed once invalid.
-                    case EVAL_NOTARY_EVIDENCE:
-                    case EVAL_FINALIZE_NOTARIZATION:
-                    case EVAL_RESERVE_TRANSFER:
-                    case EVAL_IDENTITY_PRIMARY:
-                    case EVAL_IDENTITY_RESERVATION:
-                    case EVAL_IDENTITY_ADVANCEDRESERVATION:
-                    case EVAL_FINALIZE_EXPORT:
+                        // TODO: POST HARDENING - we need to make it so that once a transaction is proven as valid,
+                        // its proof remains valid, even when the blockchain is unwound backwards to the point
+                        // where that transaction originally exists on chain
+                        // this is an optimization, not hardening issue pre-PBaaS, and may possibly be addressed as easily
+                        // as calling ContextualCheckTransaction on the transaction without all of this.
+                        // currently, transactions rendered invalid by reorgs will end up removed at block creation and are
+                        // not accepted when relayed once invalid.
+                        case EVAL_NOTARY_EVIDENCE:
+                        case EVAL_FINALIZE_NOTARIZATION:
+                        case EVAL_RESERVE_TRANSFER:
+                        case EVAL_IDENTITY_PRIMARY:
+                        case EVAL_IDENTITY_RESERVATION:
+                        case EVAL_IDENTITY_ADVANCEDRESERVATION:
+                        case EVAL_FINALIZE_EXPORT:
+                        {
+                            break;
+                        }
+
+                        case EVAL_CROSSCHAIN_EXPORT:
+                        {
+                            CCrossChainExport ccx;
+
+                            if (!(p.vData.size() &&
+                                (ccx = CCrossChainExport(p.vData[0])).IsValid() &&
+                                (ccx.sourceSystemID != ASSETCHAINS_CHAINID ||
+                                ccx.sourceHeightEnd < nMemPoolHeight)))
+                            {
+                                transactionsToRemove.push_back(tx);
+                                oneRemoved = true;
+                            }
+                            break;
+                        }
+
+                        case EVAL_CROSSCHAIN_IMPORT:
+                        {
+                            CCrossChainImport cci;
+
+                            if (!(p.vData.size() &&
+                                (cci = CCrossChainImport(p.vData[0])).IsValid() &&
+                                (cci.sourceSystemID != ASSETCHAINS_CHAINID ||
+                                cci.sourceSystemHeight < nMemPoolHeight)))
+                            {
+                                transactionsToRemove.push_back(tx);
+                                oneRemoved = true;
+                            }
+                            break;
+                        }
+                    }
+                    if (oneRemoved)
                     {
                         break;
                     }
-
-                    case EVAL_CROSSCHAIN_EXPORT:
-                    {
-                        CCrossChainExport ccx;
-
-                        if (!(p.vData.size() &&
-                             (ccx = CCrossChainExport(p.vData[0])).IsValid() &&
-                             (ccx.sourceSystemID != ASSETCHAINS_CHAINID ||
-                              ccx.sourceHeightEnd < nMemPoolHeight)))
-                        {
-                            transactionsToRemove.push_back(tx);
-                            oneRemoved = true;
-                        }
-                        break;
-                    }
-
-                    case EVAL_CROSSCHAIN_IMPORT:
-                    {
-                        CCrossChainImport cci;
-
-                        if (!(p.vData.size() &&
-                             (cci = CCrossChainImport(p.vData[0])).IsValid() &&
-                             (cci.sourceSystemID != ASSETCHAINS_CHAINID ||
-                              cci.sourceSystemHeight < nMemPoolHeight)))
-                        {
-                            transactionsToRemove.push_back(tx);
-                            oneRemoved = true;
-                        }
-                        break;
-                    }
-                }
-                if (oneRemoved)
-                {
-                    break;
                 }
             }
         }

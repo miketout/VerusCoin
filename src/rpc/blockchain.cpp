@@ -343,7 +343,7 @@ UniValue blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool tx
     {
         result.push_back(Pair("validationtype", "work"));
     }
-    
+
     int confirmations = -1;
     // Only report confirmations if the block is on the main chain
     if (chainActive.Contains(blockindex))
@@ -949,22 +949,6 @@ UniValue getblockhash(const UniValue& params, bool fHelp)
     return pblockindex->GetBlockHash().GetHex();
 }
 
-/*uint256 _komodo_getblockhash(int32_t nHeight)
-{
-    uint256 hash;
-    LOCK(cs_main);
-    if ( nHeight >= 0 && nHeight <= chainActive.Height() )
-    {
-        CBlockIndex* pblockindex = chainActive[nHeight];
-        hash = pblockindex->GetBlockHash();
-        int32_t i;
-        for (i=0; i<32; i++)
-            printf("%02x",((uint8_t *)&hash)[i]);
-        printf(" blockhash.%d\n",nHeight);
-    } else memset(&hash,0,sizeof(hash));
-    return(hash);
-}*/
-
 UniValue getblockheader(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)
@@ -1134,6 +1118,10 @@ UniValue getblock(const UniValue& params, bool fHelp)
     if (pblockindex)
     {
         blockUni.pushKV("proofroot", CProofRoot::GetProofRoot(pblockindex->GetHeight()).ToUniValue());
+        if (CConstVerusSolutionVector::GetVersionByHeight(pblockindex->GetHeight()) >= CActivationHeight::ACTIVATE_PBAAS_HEADER)
+        {
+            blockUni.pushKV("prevmmrroot", block.GetPrevMMRRoot().GetHex());
+        }
     }
     return blockUni;
 }
@@ -1206,7 +1194,7 @@ UniValue kvsearch(const UniValue& params, bool fHelp)
             "  \"currentheight\": xxxxx,     (numeric) current height of the chain\n"
             "  \"key\": \"xxxxx\",           (string) key\n"
             "  \"keylen\": xxxxx,            (string) length of the key \n"
-            "  \"owner\": \"xxxxx\"          (string) hex string representing the owner of the key \n" 
+            "  \"owner\": \"xxxxx\"          (string) hex string representing the owner of the key \n"
             "  \"height\": xxxxx,            (numeric) height the key was stored at\n"
             "  \"expiration\": xxxxx,        (numeric) height the key will expire\n"
             "  \"flags\": x                  (numeric) 1 if the key was created with a password; 0 otherwise.\n"
@@ -1492,8 +1480,8 @@ UniValue gettxout(const UniValue& params, bool fHelp)
             "     \"hex\" : \"hex\",        (string) \n"
             "     \"reqSigs\" : n,          (numeric) Number of required signatures\n"
             "     \"type\" : \"pubkeyhash\", (string) The type, eg pubkeyhash\n"
-            "     \"addresses\" : [          (array of string) array of Komodo addresses\n"
-            "        \"komodoaddress\"        (string) Komodo address\n"
+            "     \"addresses\" : [          (array of string) array of Verus addresses\n"
+            "        \"verusaddress\"        (string) Verus address\n"
             "        ,...\n"
             "     ]\n"
             "  },\n"
@@ -2002,7 +1990,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "verifychain",            &verifychain,            true  },
 
     // insightexplorer
-    { "blockchain",         "getblockdeltas",         &getblockdeltas,         false },    
+    { "blockchain",         "getblockdeltas",         &getblockdeltas,         false },
     { "blockchain",         "getblockhashes",         &getblockhashes,         true  },
 
     /* Not shown in help */

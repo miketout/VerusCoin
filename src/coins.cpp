@@ -759,7 +759,7 @@ double CCoinsViewCache::GetPriority(const CTransaction &tx, int nHeight, const C
         if (coins->nHeight < nHeight) {
             if (currencyState && desc)
             {
-                dResult += (coins->vout[txin.prevout.n].nValue + currencyState->ReserveToNative(coins->vout[txin.prevout.n].ReserveOutValue())) *
+                dResult += (coins->vout[txin.prevout.n].nValue + currencyState->NativeToReserve(currencyState->ReserveToNative(coins->vout[txin.prevout.n].ReserveOutValue()), currencyState->GetReserveMap()[ASSETCHAINS_CHAINID])) *
                            (nHeight-coins->nHeight);
             }
             else

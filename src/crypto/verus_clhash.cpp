@@ -29,7 +29,7 @@
 int __cpuverusoptimized = 0x80;
 
 #if defined(__arm__)  || defined(__aarch64__)
-#include "crypto/SSE2NEON.h"
+#include "crypto/sse2neon.h"
 #else
 #include <x86intrin.h>
 #endif
@@ -56,95 +56,6 @@ thread_specific_ptr::~thread_specific_ptr() {
     }
 }
 #endif // defined(__APPLE__) || defined(_WIN32)
-#if defined(__arm__)  || defined(__aarch64__) //intrinsics not defined in SSE2NEON.h
-
-static inline __attribute__((always_inline)) __m128i _mm_set_epi64x(uint64_t hi, uint64_t lo)
-	{
-	__m128i result;
-	((uint64_t *)&result)[0] = lo;
-	((uint64_t *)&result)[1] = hi;
-	return result;
-	}
-
-static inline __attribute__((always_inline))  __m128i _mm_mulhrs_epi16(__m128i _a, __m128i _b)
-{
-	int16_t result[8];
-	int16_t *a = (int16_t*)&_a, *b = (int16_t*)&_b;
-	for (int i = 0; i < 8; i++)
-	{
-		result[i] = (int16_t)((((int32_t)(a[i]) * (int32_t)(b[i])) + 0x4000) >> 15);
-	}
-
-	return *(__m128i *)result;
-}
-
-__m128i _mm_cvtsi64_si128(uint64_t lo)
-{
-	__m128i result;
-	((uint64_t *)&result)[0] = lo;
-	((uint64_t *)&result)[1] = 0;
-	return result;
-}
-
- static inline __attribute__((always_inline)) uint8x16_t _mm_aesenc_si128 (uint8x16_t a, uint8x16_t RoundKey)
-{
-    return vaesmcq_u8(vaeseq_u8(a, (uint8x16_t){})) ^ RoundKey;
-}
-
-
- static inline __attribute__((always_inline))  __m128i _mm_clmulepi64_si128(const __m128i a, const __m128i &b, int imm)
-{
- return  (__m128i)vmull_p64(vgetq_lane_u64(a, 1), vgetq_lane_u64(b,0)); 
-
-}
-
-__m128i _mm_setr_epi8(u_char c0, u_char c1, u_char c2, u_char c3, u_char c4, u_char c5, u_char c6, u_char c7, u_char c8, u_char c9, u_char c10, u_char c11, u_char c12, u_char c13, u_char c14, u_char c15)
-{
-	__m128i result;
-	((uint8_t *)&result)[0] = c0;
-	((uint8_t *)&result)[1] = c1;
-	((uint8_t *)&result)[2] = c2;
-	((uint8_t *)&result)[3] = c3;
-	((uint8_t *)&result)[4] = c4;
-	((uint8_t *)&result)[5] = c5;
-	((uint8_t *)&result)[6] = c6;
-	((uint8_t *)&result)[7] = c7;
-	((uint8_t *)&result)[8] = c8;
-	((uint8_t *)&result)[9] = c9;
-	((uint8_t *)&result)[10] = c10;
-	((uint8_t *)&result)[11] = c11;
-	((uint8_t *)&result)[12] = c12;
-	((uint8_t *)&result)[13] = c13;
-	((uint8_t *)&result)[14] = c14;
-	((uint8_t *)&result)[15] = c15;
-		return result;
-}
-__m128i _mm_shuffle_epi8(__m128i a, __m128i b)
-{
-	__m128i result;
-	for (int i = 0; i < 16; i++)
-	{
-		if (((uint8_t *)&b)[i] & 0x80)
-		{
-			((uint8_t *)&result)[i] = 0;
-		}
-		else
-		{
-			((uint8_t *)&result)[i] = ((uint8_t *)&a)[((uint8_t *)&b)[i] & 0xf];
-		}
-	}
-	return result;
-}
- int64_t _mm_cvtsi128_si64(__m128i a)
-{
-	return ((int64_t *)&a)[0];
-}
-__m128i _mm_loadl_epi64(__m128i *a)
-{
-	__m128i b = {0}; ((uint64_t*)&b)[0] = ((uint64_t*)a)[0];
-	return b;
-}
-#endif 
 
 // multiply the length and the some key, no modulo
     static inline __attribute__((always_inline)) __m128i lazyLengthHash(uint64_t keylength, uint64_t length) {

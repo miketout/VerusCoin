@@ -241,7 +241,7 @@ public:
         return ::AsVector(*this);
     }
 
-    bool GetOutputTransaction(const CTransaction &initialTx, CTransaction &tx, uint256 &blockHash) const;
+    bool GetOutputTransaction(const CTransaction &initialTx, CTransaction &tx, uint256 &blockHash, bool checkMempool=true) const;
     std::vector<std::pair<CObjectFinalization, CNotaryEvidence>>
         GetFinalizationEvidence(const CTransaction &thisTx, int32_t outputNum, CValidationState &state, CTransaction *pOutputTx=nullptr) const;
 

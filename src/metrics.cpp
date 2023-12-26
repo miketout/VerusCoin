@@ -268,7 +268,7 @@ int printStats(bool mining)
     auto localsolps = GetLocalSolPS();
 
     if (IsInitialBlockDownload(Params())) {
-        int netheight = currentHeadersHeight == -1 || currentHeadersTime == 0 ? 
+        int netheight = currentHeadersHeight == -1 || currentHeadersTime == 0 ?
             0 : EstimateNetHeight(Params().GetConsensus(), currentHeadersHeight, currentHeadersTime);
         int downloadPercent = height * 100 / netheight;
         std::cout << "     " << _("Downloading blocks") << " | " << height << " / ~" << netheight << " (" << downloadPercent << "%)" << std::endl;
@@ -388,7 +388,7 @@ int printMetrics(size_t cols, bool mining)
                     }
 
                     if ((std::max(0, COINBASE_MATURITY - (tipHeight - height)) > 0) ||
-                        (tipHeight < komodo_block_unlocktime(height) && subsidy >= ASSETCHAINS_TIMELOCKGTE)) {
+                        (_IsVerusMainnetActive() && tipHeight < komodo_block_unlocktime(height) && subsidy >= ASSETCHAINS_TIMELOCKGTE)) {
                         immature += subsidy;
                     } else {
                         mature += subsidy;

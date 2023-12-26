@@ -27,7 +27,7 @@ Optimized Implementations for Haraka256 and Haraka512
 #define HARAKA_H_
 
 #if defined(__arm__)  || defined(__aarch64__)
-#include "crypto/SSE2NEON.h"
+#include "crypto/sse2neon.h"
 #else // !WIN32
 #include "immintrin.h"
 #endif

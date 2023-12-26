@@ -40,6 +40,22 @@ class CValidationState;
 class CPBaaSNotarization;
 extern uint160 ASSETCHAINS_CHAINID;
 
+
+extern uint32_t PBAAS_TESTFORK2_TIME;
+extern uint32_t PBAAS_ENFORCE_CORRECT_EVIDENCE_TIME;
+extern uint32_t PBAAS_TESTFORK3_TIME;
+extern uint32_t PBAAS_TESTFORK4_TIME;
+extern uint32_t PBAAS_TESTFORK5_TIME;
+extern uint32_t PBAAS_TESTFORK6_TIME;
+extern uint32_t PBAAS_TESTFORK7_TIME;
+extern uint32_t PBAAS_TESTFORK8_TIME;
+extern uint32_t PBAAS_TESTFORK9_TIME;
+extern uint32_t PBAAS_TESTFORK10_TIME;
+extern uint32_t PBAAS_MAINDEFI3_HEIGHT;
+extern uint32_t PBAAS_CLEARCONVERT_HEIGHT;
+extern uint32_t PBAAS_LASTKNOWNCLEARORACLE_HEIGHT;
+extern uint32_t PBAAS_OPTIMIZE_ETH_HEIGHT;
+
 // reserve output is a special kind of token output that does not have to carry it's identifier, as it
 // is always assumed to be the reserve currency of the current chain.
 class CTokenOutput
@@ -154,7 +170,7 @@ public:
         CONVERT = 2,
         PRECONVERT = 4,
         FEE_OUTPUT = 8,                     // one per import, amount must match total percentage of fees for exporter, no pre-convert allowed
-        DOUBLE_SEND = 0x10,                 // this is used along with increasing the fee to send one transaction on two hops
+        RESERVED = 0x10,                    // reserved
         MINT_CURRENCY = 0x20,               // set when this output is being minted on import
         CROSS_SYSTEM = 0x40,                // if this is set, there is a systemID serialized and deserialized as well for destination
         BURN_CHANGE_PRICE = 0x80,           // this output is being burned on import and will change the price
@@ -171,7 +187,10 @@ public:
     {
         DESTINATION_BYTE_DIVISOR = 128,     // destination vector is divided by this and result is multiplied by normal fee and added to transfer fee
         SUCCESS_FEE = 25000,
-        MIN_SUCCESS_FEE = 20000
+        MIN_SUCCESS_FEE = 20000,
+        MAX_NORMAL_TRANSFER_SIZE = 256,
+        MAX_CURRENCYEXPORT_SIZE = 2048,
+        MAX_IDENTITYEXPORT_SIZE = 1024,
     };
 
     static const CAmount DEFAULT_PER_STEP_FEE = 10000; // default fee for each step of each transfer (initial mining, transfer, mining on new chain)
@@ -187,6 +206,7 @@ public:
     CReserveTransfer() : CTokenOutput(), flags(0), nFees(0) { }
 
     CReserveTransfer(const UniValue &uni);
+    CReserveTransfer(const CScript &script);
 
     CReserveTransfer(const std::vector<unsigned char> &asVector)
     {
@@ -382,7 +402,7 @@ public:
 
     bool IsIdentityExport() const
     {
-        return flags & IDENTITY_EXPORT;
+        return flags & IDENTITY_EXPORT || (destination.TypeNoFlags() == destination.DEST_FULLID);
     }
 
     void SetCurrencyExport(bool isExport=true)
@@ -399,7 +419,7 @@ public:
 
     bool IsCurrencyExport() const
     {
-        return flags & CURRENCY_EXPORT;
+        return flags & CURRENCY_EXPORT || (destination.TypeNoFlags() == destination.DEST_REGISTERCURRENCY);
     }
 
     void SetArbitrageOnly(bool isArbitrage=true)
@@ -419,7 +439,7 @@ public:
         return flags & ARBITRAGE_ONLY;
     }
 
-    CReserveTransfer GetRefundTransfer(bool clearCrossSystem=true) const;
+    CReserveTransfer GetRefundTransfer(bool clearCrossSystem=true, bool recoverFees=false) const;
 
     static std::string ReserveTransferKeyName()
     {
@@ -809,6 +829,7 @@ public:
 
     std::vector<CReserveTransfer> GetArbitrageTransfers(const CTransaction &tx,
                                                         CValidationState &state,
+                                                        uint32_t nHeight,
                                                         std::vector<CTransaction> *pArbTxes=nullptr,
                                                         std::vector<CUTXORef> *pArbOuts=nullptr,
                                                         std::vector<uint256> *pArbTxBlockHash=nullptr) const;
@@ -1331,15 +1352,13 @@ public:
 
     std::vector<CAmount> PricesInReserve(bool roundUp=false) const;
 
-    // This considers one currency at a time
-    CAmount ConvertAmounts(CAmount inputReserve, CAmount inputFractional, CCurrencyState &newState, int32_t reserveIndex=0) const;
-
     // convert amounts for multi-reserve fractional reserve currencies
     // one entry in the vector for each currency in and one fractional input for each
     // currency expected as output
     std::vector<CAmount> ConvertAmounts(const std::vector<CAmount> &inputReserve,    // reserves to convert to fractional
                                         const std::vector<CAmount> &inputFractional,    // fractional to convert to each reserve
                                         CCurrencyState &newState,
+                                        CValidationState &validationState,
                                         const std::vector<std::vector<CAmount>> *pCrossConversions=nullptr,
                                         std::vector<CAmount> *pViaPrices=nullptr) const;
 
@@ -1362,6 +1381,8 @@ public:
     static CAmount NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate);
     CCurrencyValueMap NativeToReserveRaw(const std::vector<CAmount> &, const std::vector<CAmount> &exchangeRates) const;
     CCurrencyValueMap NativeToReserveRaw(const std::vector<CAmount> &, const std::vector<cpp_dec_float_50> &exchangeRates) const;
+
+    CAmount AddToSupply(CAmount nValue) const;
 
     UniValue ToUniValue() const;
 
@@ -1491,6 +1512,13 @@ public:
     std::vector<CAmount> conversionFees;    // total of only conversion fees, which will accrue to the conversion transaction
     std::vector<int32_t> priorWeights;      // previous weights to enable reversal of state
 
+    enum ReversionUpdate {
+        PBAAS_1_0_0 = 0,
+        PBAAS_1_0_8 = 1,
+        PBAAS_1_0_10 = 2,
+        PBAAS_1_0_12 = 3
+    };
+
     CCoinbaseCurrencyState() : primaryCurrencyOut(0), preConvertedOut(0), primaryCurrencyFees(0), primaryCurrencyConversionFees(0) {}
 
     CCoinbaseCurrencyState(const CCurrencyState &CurrencyState,
@@ -1535,7 +1563,7 @@ public:
 
     CCoinbaseCurrencyState(const CTransaction &tx, int *pOutIdx=NULL);
 
-    bool ValidateConversionLimits() const;
+    bool ValidateConversionLimits(bool checkZeroViaOnlyPostLaunch=false) const;
 
     ADD_SERIALIZE_METHODS;
 
@@ -1597,7 +1625,11 @@ public:
                                              CCurrencyValueMap &liquidityFees,
                                              CCurrencyValueMap &convertedFees) const;
 
-    void RevertReservesAndSupply(const uint160 &systemID=ASSETCHAINS_CHAINID, bool pbaasInitialChainCurrency=false);
+    static ReversionUpdate ReversionUpdateForHeight(uint32_t height);
+    void RevertReservesAndSupply(const CCurrencyDefinition &revertCur,
+                                 const uint160 &systemID=ASSETCHAINS_CHAINID,
+                                 bool pbaasInitialChainCurrency=false,
+                                 ReversionUpdate reversionUpdate=PBAAS_1_0_0);
 
     template <typename NUMBERVECTOR>
     static NUMBERVECTOR AddVectors(const NUMBERVECTOR &a, const NUMBERVECTOR &b)
@@ -1677,8 +1709,10 @@ public:
 
     int64_t TargetConversionPrice(const uint160 &sourceCurrencyID, const uint160 &targetCurrencyID) const;
     CCurrencyValueMap TargetConversionPrices(const uint160 &targetCurrencyID) const;
+    CCurrencyValueMap TargetConversionPrices(const uint160 &targetCurrencyID, const CCurrencyValueMap &prices, const CCurrencyValueMap &viaPrices) const;
     CCurrencyValueMap TargetLastConversionPrices(const uint160 &targetCurrencyID) const;
     CCurrencyValueMap TargetConversionPricesReverse(const uint160 &targetCurrencyID, bool addFeePct=false) const;
+    CCurrencyValueMap TargetConversionPricesReverse(const uint160 &targetCurrencyID, const CCurrencyValueMap &prices, const CCurrencyValueMap &viaPrices, bool addFeePct=false) const;
 };
 
 class CReserveInOuts
@@ -1765,6 +1799,7 @@ public:
     static CAmount CalculateConversionFee(CAmount inputAmount);
     static CAmount CalculateConversionFeeNoMin(CAmount inputAmount);
     static CAmount CalculateAdditionalConversionFee(CAmount inputAmount);
+    static CAmount CalculateAdditionalConversionFeeNoMin(CAmount inputAmount);
 
     CAmount TotalNativeOutConverted() const
     {

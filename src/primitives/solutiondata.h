@@ -11,6 +11,7 @@
 #include "hash.h"
 #include "nonce.h"
 #include "streams.h"
+#include <univalue.h>
 
 class CPBaaSBlockHeader;
 
@@ -115,9 +116,22 @@ public:
 
     void SetBlockData(CBlockHeader &bh);
 
+    UniValue ToUniValue() const
+    {
+        UniValue obj(UniValue::VOBJ);
+        obj.pushKV("hashprevblock", hashPrevBlock.GetHex());
+        obj.pushKV("hashmerkleroot", hashMerkleRoot.GetHex());
+        obj.pushKV("hashfinalsaplingroot", hashFinalSaplingRoot.GetHex());
+        obj.pushKV("nNonce", nNonce.GetHex());
+        obj.pushKV("nbits", (int64_t)nBits);
+        obj.pushKV("hashprevmmrroot", hashPrevMMRRoot.GetHex());
+        obj.pushKV("hashblockmmrroot", hashBlockMMRRoot.GetHex());
+        return obj;
+    }
+
     bool IsValid() const
     {
-        return !(hashPrevBlock.IsNull() && hashMerkleRoot.IsNull() && hashFinalSaplingRoot.IsNull() && nNonce.IsNull() && !nBits && hashBlockMMRRoot.IsNull());
+        return !(hashPrevBlock.IsNull() || hashMerkleRoot.IsNull() || hashFinalSaplingRoot.IsNull() || nNonce.IsNull() || !nBits || hashBlockMMRRoot.IsNull());
     }
 };
 

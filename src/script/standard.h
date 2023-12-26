@@ -72,14 +72,14 @@ class CStakeParams
             VERSION_EXTENDED_STAKE = 2,
             VERSION_LAST = 2
         };
-        
+
         uint32_t version;           // used to determine the format as it evolves
         uint32_t srcHeight;
         uint32_t blkHeight;
         uint256 prevHash;
         CPubKey pk;                 // this was from an older version, and is only saved and restored during custom serialization
         CTxDestination delegate;    // this identifies an alternate valid recipient of the stake reward
-    
+
         CStakeParams() : srcHeight(0), blkHeight(0), prevHash(), pk() {}
 
         CStakeParams(const std::vector<std::vector<unsigned char>> &vData);
@@ -127,15 +127,17 @@ class CStakeParams
                 scr << srcHeight;
                 scr << blkHeight;
                 scr << std::vector<unsigned char>(prevHash.begin(), prevHash.end());
-                
+
                 if (pk.IsValid())
                 {
                     scr << std::vector<unsigned char>(pk.begin(), pk.end());
-                }                    
+                }
                 ret = std::vector<unsigned char>(scr.begin(), scr.end());
             }
             return ret;
         }
+
+        UniValue ToUniValue() const;
 
         bool IsValid() const { return version >= VERSION_FIRST && version <= VERSION_LAST && srcHeight != 0; }
 
@@ -152,12 +154,12 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::v
 int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned char> >& vSolutions);
 bool IsStandard(const CScript& scriptPubKey, txnouttype& whichType);
 bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet, bool returnPubKey=false);
-bool ExtractDestinations(const CScript& scriptPubKey, 
-                         txnouttype& typeRet, 
-                         std::vector<CTxDestination>& addressRet, 
-                         int &nRequiredRet, 
-                         const CKeyStore *pKeyStore=nullptr, 
-                         bool *canSign=nullptr, 
+bool ExtractDestinations(const CScript& scriptPubKey,
+                         txnouttype& typeRet,
+                         std::vector<CTxDestination>& addressRet,
+                         int &nRequiredRet,
+                         const CKeyStore *pKeyStore=nullptr,
+                         bool *canSign=nullptr,
                          bool *canSpend=nullptr,
                          uint32_t lastIdHeight=INT_MAX,
                          std::map<uint160, CKey> *pPrivKeys=nullptr);

@@ -29,6 +29,7 @@ static const uint32_t PBAAS_VERSION = 1;
 static const uint32_t PBAAS_VERSION_INVALID = 0;
 
 extern const uint32_t PBAAS_PREMAINNET_ACTIVATION;
+extern const uint32_t PBAAS_LARGE_ETH_PROOF_ACTIVATION;
 extern const uint32_t PBAAS_TESTFORK_TIME;
 
 class CTransaction;
@@ -153,7 +154,7 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(networkAddress);
+        READWRITE(LIMITED_STRING(networkAddress, 512));
         READWRITE(nodeIdentity);
     }
 
@@ -203,9 +204,11 @@ public:
         DEST_ETHNFT = 10,                   // used when defining a mapped NFT to gateway that uses an ETH compatible model
         DEST_RAW = 11,
         LAST_VALID_TYPE_NO_FLAGS = DEST_RAW,
+        FLAG_RESERVED1 = 16,
+        FLAG_RESERVED2 = 32,
         FLAG_DEST_AUX = 64,
         FLAG_DEST_GATEWAY = 128,
-        FLAG_MASK = FLAG_DEST_AUX + FLAG_DEST_GATEWAY
+        FLAG_MASK = FLAG_DEST_AUX + FLAG_DEST_GATEWAY + FLAG_RESERVED1 + FLAG_RESERVED2
     };
     uint8_t type;
     std::vector<unsigned char> destination;
@@ -395,6 +398,7 @@ public:
     }
 
     friend bool operator<(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
+    friend bool LegacyLT(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
     friend bool operator>(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
     friend bool operator==(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
     friend bool operator!=(const CCurrencyValueMap& a, const CCurrencyValueMap& b);
@@ -463,10 +467,12 @@ public:
         MAX_RESERVE_CURRENCIES = 10,
         MIN_RESERVE_RATIO = 5000000,
         MAX_STARTUP_NODES = 5,
+        MAX_NATIVE_IDENTITY_SIZE = 512,
         DEFAULT_START_TARGET = 0x1e01e1e1,
         MAX_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 20,
         MAX_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 100,
         MAX_TRANSFER_EXPORTS_PER_BLOCK = 500,       // this is per block, and up to two of these limits go into an export
+        MAX_EXPORT_INPUT_OVERHEAD_PER_BLOCK = 10,   // in addition to transfer inputs, we may have up to 10 inputs extra for an export transaction
         MAX_TRANSFER_EXPORTS_SIZE_PER_BLOCK = 100000, // same as above, but regarding space
         MAX_ETH_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 1,
         MAX_ETH_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 0,
@@ -1282,6 +1288,7 @@ public:
     }
 
     static int64_t CalculateRatioOfValue(int64_t value, int64_t ratio);
+    static int64_t CalculateRatioOfTwoValues(int64_t value1, int64_t value2);
     int64_t GetTotalPreallocation() const;
     int32_t GetTotalCarveOut() const;
 };

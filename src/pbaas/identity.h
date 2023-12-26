@@ -32,6 +32,7 @@
 #include "primitives/transaction.h"
 #include "arith_uint256.h"
 #include "addressindex.h"
+#include "lrucache.h"
 
 std::string CleanName(const std::string &Name, uint160 &Parent, bool displayapproved=false, bool addVerus=true);
 
@@ -390,6 +391,7 @@ public:
     };
 
     static const int MAX_NAME_LEN = 64;
+    static LRUCache<std::pair<uint256, CIdentityID>, std::tuple<CIdentity, uint32_t, CTxIn>> IdentityLookupCache;
 
     uint160 parent;                         // parent in the sense of name. this could be a currency or chain.
     uint160 systemID;                       // system that this ID is homed to, enabling separate parent and system
@@ -765,7 +767,8 @@ public:
                          bool checkMempool=false,
                          bool getProofs=false,
                          uint32_t proofHeight=0,
-                         const std::vector<uint160> &indexKeys=std::vector<uint160>());
+                         const std::vector<uint160> &indexKeys=std::vector<uint160>(),
+                         bool sorted=true);
     static std::multimap<uint160, std::tuple<std::vector<unsigned char>, uint256, uint32_t, CUTXORef, CPartialTransactionProof>>
         GetAggregatedIdentityMultimap(const uint160 &idID,
                                       uint32_t startHeight=0,
@@ -774,7 +777,8 @@ public:
                                       bool getProofs=false,
                                       uint32_t proofHeight=0,
                                       const uint160 &indexKey=uint160(),
-                                      bool keepDeleted=false);
+                                      bool keepDeleted=false,
+                                      bool sorted=true);
     static std::vector<std::tuple<std::vector<unsigned char>, uint256, uint32_t, CUTXORef, CPartialTransactionProof>>
         GetIdentityContentByKey(const uint160 &idID,
                                 const uint160 &vdxfKey,
@@ -783,7 +787,8 @@ public:
                                 bool checkMempool=false,
                                 bool getProofs=false,
                                 uint32_t proofHeight=0,
-                                bool keepDeleted=false);
+                                bool keepDeleted=false,
+                                bool sorted=false);
     static CIdentity LookupIdentity(const CIdentityID &nameID, uint32_t height=0, uint32_t *pHeightOut=nullptr, CTxIn *pTxIn=nullptr, bool checkMempool=false);
     static CIdentity LookupFirstIdentity(const CIdentityID &idID, uint32_t *pHeightOut=nullptr, CTxIn *idTxIn=nullptr, CTransaction *pidTx=nullptr);
 
@@ -891,6 +896,40 @@ public:
             return true;
         }
         return false;
+    }
+
+    static std::string IdentityParentKeyName()
+    {
+        return "vrsc::system.identity.parentkey";
+    }
+
+    uint160 IdentityParentKey() const
+    {
+        uint160 nameSpace;
+        return CCrossChainRPCData::GetConditionID(CVDXF::GetDataKey(IdentityParentKeyName(), nameSpace), GetID());
+    }
+
+    static uint160 IdentityParentKey(const CIdentityID &parentIdentityID)
+    {
+        uint160 nameSpace;
+        return CCrossChainRPCData::GetConditionID(CVDXF::GetDataKey(IdentityParentKeyName(), nameSpace), parentIdentityID);
+    }
+
+    static std::string IdentitySystemKeyName()
+    {
+        return "vrsc::system.identity.systemkey";
+    }
+
+    uint160 IdentitySystemKey() const
+    {
+        uint160 nameSpace;
+        return CCrossChainRPCData::GetConditionID(CVDXF::GetDataKey(IdentitySystemKeyName(), nameSpace), GetID());
+    }
+
+    static uint160 IdentitySystemKey(const CIdentityID &systemIdentityID)
+    {
+        uint160 nameSpace;
+        return CCrossChainRPCData::GetConditionID(CVDXF::GetDataKey(IdentitySystemKeyName(), nameSpace), systemIdentityID);
     }
 
     static std::string IdentityRevocationKeyName()

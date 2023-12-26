@@ -29,7 +29,10 @@ CIdentityID VERUS_DEFAULTID;
 CIdentityID VERUS_NOTARYID;
 CIdentityID PBAAS_NOTIFICATION_ORACLE;                                  // an identity that can be used to coordinate on-chain actions or upgrades
 CTransferDestination APPROVE_CONTRACT_UPGRADE;                          // approve a contract to be upgraded on the ETH bridge, enables the network to decide
-std::string PBAAS_DEFAULT_NOTIFICATION_ORACLE = "Verus Coin Foundation@";
+std::string PBAAS_DEFAULT_NOTIFICATION_ORACLE = "";                     // please see "-notificationoracle" and coordinate with ALL network validators to change this default,
+                                                                        // if empty, it's the current chain
+
+std::set<uint160> FREE_CURRENCY_IMPORTS;
 
 int32_t MAX_OUR_UTXOS_ID_RESCAN = 1000; // this can be set with "-maxourutxosidrescan=n"
 int32_t MAX_UTXOS_ID_RESCAN = 100;      // this can be set with "-maxutxosidrescan=n"
@@ -809,6 +812,18 @@ CReserveTransfer::CReserveTransfer(const UniValue &uni) : CTokenOutput(uni), nFe
     destination = CTransferDestination(find_value(uni, "destination"));
 }
 
+CReserveTransfer::CReserveTransfer(const CScript &script) : flags(0)
+{
+    COptCCParams p;
+    if (script.IsPayToCryptoCondition(p) && p.IsValid())
+    {
+        if (p.evalCode == EVAL_RESERVE_TRANSFER && p.vData.size())
+        {
+            FromVector(p.vData[0], *this);
+        }
+    }
+}
+
 CPrincipal::CPrincipal(const UniValue &uni)
 {
     nVersion = uni_get_int(find_value(uni, "version"), VERSION_VAULT);
@@ -1100,8 +1115,9 @@ CIdentity::CIdentity(const UniValue &uni) : CPrincipal(uni)
     std::string parentStr = uni_get_str(parentUni);
     if (!parentStr.empty())
     {
-        parent = GetDestinationID(DecodeDestination(parentStr));
-        if (parent.IsNull() && parentStr.back() != '@')
+        CTxDestination parentDest = DecodeDestination(parentStr);
+        parent = GetDestinationID(parentDest);
+        if (parent.IsNull() && parentStr.back() != '@' && parentDest.which() != COptCCParams::ADDRTYPE_ID)
         {
             parent = GetDestinationID(DecodeDestination(parentStr + "@"));
         }
@@ -1119,7 +1135,7 @@ CIdentity::CIdentity(const UniValue &uni) : CPrincipal(uni)
 
     if (nVersion >= VERSION_VAULT)
     {
-        systemID = uint160(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "systemid")))));
+        systemID = DecodeCurrencyName(uni_get_str(find_value(uni, "systemid")));
         if (systemID.IsNull())
         {
             systemID = parent.IsNull() ? GetID() : parent;
@@ -1599,9 +1615,7 @@ std::vector<std::string> ParseSubNames(const std::string &Name, std::string &Cha
 // hash its parent names into a parent ID and return the parent hash and cleaned, single name
 std::string CleanName(const std::string &Name, uint160 &Parent, bool displayfilter, bool addVerus)
 {
-    // The line below should make sense, but this path should be tested in test mode until we are sure there are
-    // no edge cases
-    addVerus = addVerus && (!PBAAS_TESTMODE || Parent.IsNull());
+    addVerus = addVerus && Parent.IsNull();
 
     std::string chainName;
     std::vector<std::string> subNames = ParseSubNames(Name, chainName, displayfilter, addVerus);

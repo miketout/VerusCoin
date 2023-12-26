@@ -923,10 +923,12 @@ asn_long2INTEGER(INTEGER_t *st, long value) {
 		}
 		break;
 	}
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
 	/* Copy the integer body */
 	for(pstart = p, bp = buf, pend1 += add; p != pend1; p += add)
 		*bp++ = *p;
-
+#pragma GCC diagnostic pop
 	if(st->buf) FREEMEM(st->buf);
 	st->buf = buf;
 	st->size = bp - buf;

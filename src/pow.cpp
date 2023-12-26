@@ -214,18 +214,6 @@ unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const 
     return nextTarget.GetCompact();
 }
 
-bool DoesHashQualify(const CBlockIndex *pbindex)
-{
-    // if it fails hash test and PoW validation, consider it POS. it could also be invalid
-    arith_uint256 hash = UintToArith256(pbindex->GetBlockHash());
-    // to be considered POS in Komodo POS, non VerusPoS, we first can't qualify as POW
-    if (hash > hash.SetCompact(pbindex->nBits))
-    {
-        return false;
-    }
-    return true;
-}
-
 // the goal is to keep POS at a solve time that is a ratio of block time units. the low resolution makes a stable solution more challenging
 // and requires that the averaging window be quite long.
 uint32_t lwmaGetNextPOSRequired(const CBlockIndex* pindexLast, const Consensus::Params& params)

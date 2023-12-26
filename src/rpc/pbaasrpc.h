@@ -36,6 +36,7 @@ bool GetChainTransfersUnspentBy(std::multimap<std::pair<uint32_t, uint160>, std:
 bool GetChainTransfersBetween(std::multimap<std::pair<uint32_t, uint160>, std::pair<CInputDescriptor, CReserveTransfer>> &inputDescriptors,
                             uint160 chainFilter, uint32_t start, uint32_t end, uint32_t flags=CReserveTransfer::VALID);
 bool GetUnspentChainTransfers(std::multimap<uint160, ChainTransferData> &inputDescriptors, uint160 chainFilter = uint160());
+bool GetUnspentChainTransfers(std::vector<ChainTransferData> &inputDescriptors, uint160 chainID);
 
 std::multimap<std::tuple<int, uint160, uint160, int64_t, int64_t>, std::pair<std::pair<int, CCurrencyValueMap>, std::pair<CInputDescriptor, CTransaction>>>
 GetOfferMap(const uint160 &currencyOrId, bool isCurrency, bool acceptOnlyCurrency, bool acceptOnlyId, const std::set<uint160> &currencyOrIdFilter);
@@ -48,7 +49,7 @@ bool SelectArbitrageFromOffers(const std::vector<
                                                         const CCurrencyDefinition &destCurrency,
                                                         uint32_t startHeight,
                                                         uint32_t nextHeight,
-                                                        std::vector<CReserveTransfer> exportTransfers,
+                                                        std::vector<CReserveTransfer> &exportTransfers,
                                                         uint256 &transferHash,
                                                         CPBaaSNotarization &newNotarization,
                                                         std::vector<CTxOut> &newOutputs,
@@ -57,7 +58,7 @@ bool SelectArbitrageFromOffers(const std::vector<
                                                         CCurrencyValueMap &spentCurrencyOut,
                                                         const CTransferDestination &rewardDest,
                                                         const CCurrencyValueMap &arbitrageCurrencies,
-                                                        std::vector<std::pair<CInputDescriptor, CReserveTransfer>> &arbitrageInputs);
+                                                        std::vector<std::tuple<CInputDescriptor, CReserveTransfer, CTransaction>> &arbitrageInputs);
 
 UniValue getcurrency(const UniValue& params, bool fHelp);
 UniValue getnotarizationdata(const UniValue& params, bool fHelp);

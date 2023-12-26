@@ -54,14 +54,12 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/function.hpp>
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
-
-#include <libsnark/common/profiling.hpp>
 
 #if ENABLE_ZMQ
 #include "zmq/zmqnotificationinterface.h"
@@ -177,7 +175,6 @@ public:
 static CCoinsViewDB *pcoinsdbview = NULL;
 static CCoinsViewErrorCatcher *pcoinscatcher = NULL;
 static boost::scoped_ptr<ECCVerifyHandle> globalVerifyHandle;
-uint160 ValidateCurrencyName(std::string currencyStr, bool ensureCurrencyValid=false, CCurrencyDefinition *pCurrencyDef=NULL);
 
 void Interrupt(boost::thread_group& threadGroup)
 {
@@ -354,6 +351,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-alerts", strprintf(_("Receive and display P2P network alerts (default: %u)"), DEFAULT_ALERTS));
     strUsage += HelpMessageOpt("-alertnotify=<cmd>", _("Execute command when a relevant alert is received or we see a really long fork (%s in cmd is replaced by message)"));
     strUsage += HelpMessageOpt("-blocknotify=<cmd>", _("Execute command when the best block changes (%s in cmd is replaced by block hash)"));
+    strUsage += HelpMessageOpt("-bootstrap", _("Removes previous chain data (if present), downloads and extracts the bootstrap archive."));
     strUsage += HelpMessageOpt("-checkblocks=<n>", strprintf(_("How many blocks to check at startup (default: %u, 0 = all)"), 288));
     strUsage += HelpMessageOpt("-checklevel=<n>", strprintf(_("How thorough the block verification of -checkblocks is (0-4, default: %u)"), 3));
     strUsage += HelpMessageOpt("-conf=<file>", strprintf(_("Specify configuration file (default: %s)"), "komodo.conf"));
@@ -364,8 +362,8 @@ std::string HelpMessage(HelpMessageMode mode)
 #endif
     }
     strUsage += HelpMessageOpt("-datadir=<dir>", _("Specify data directory"));
-    strUsage += HelpMessageOpt("-exportdir=<dir>", _("Specify directory to be used when exporting data"));
     strUsage += HelpMessageOpt("-dbcache=<n>", strprintf(_("Set database cache size in megabytes (%d to %d, default: %d)"), nMinDbCache, nMaxDbCache, nDefaultDbCache));
+    strUsage += HelpMessageOpt("-exportdir=<dir>", _("Specify directory to be used when exporting data"));
     strUsage += HelpMessageOpt("-loadblock=<file>", _("Imports blocks from external blk000??.dat file") + " " + _("on startup"));
     strUsage += HelpMessageOpt("-maxorphantx=<n>", strprintf(_("Keep at most <n> unconnectable transactions in memory (default: %u)"), DEFAULT_MAX_ORPHAN_TRANSACTIONS));
     strUsage += HelpMessageOpt("-mempooltxinputlimit=<n>", _("[DEPRECATED FROM OVERWINTER] Set the maximum number of transparent inputs in a transaction that the mempool will accept (default: 0 = no limit applied)"));
@@ -381,13 +379,13 @@ std::string HelpMessage(HelpMessageMode mode)
 #if !defined(WIN32)
     strUsage += HelpMessageOpt("-sysperms", _("Create new files with system default permissions, instead of umask 077 (only effective with disabled wallet functionality)"));
 #endif
-    strUsage += HelpMessageOpt("-txindex", strprintf(_("Maintain a full transaction index, used by the getrawtransaction rpc call (default: %u)"), 0));
-    strUsage += HelpMessageOpt("-idindex", strprintf(_("Maintain a full identity index, enabling queries to select IDs with addresses, revocation or recovery IDs (default: %u)"), 0));
+    strUsage += HelpMessageGroup(_("Index options:"));
     strUsage += HelpMessageOpt("-addressindex", strprintf(_("Maintain a full address index, used to query for the balance, txids and unspent outputs for addresses (default: %u)"), DEFAULT_ADDRESSINDEX));
+    strUsage += HelpMessageOpt("-idindex", strprintf(_("Maintain a full identity index, enabling queries to select IDs with addresses, revocation or recovery IDs (default: %u)"), 0));
     strUsage += HelpMessageOpt("-timestampindex", strprintf(_("Maintain a timestamp index for block hashes, used to query blocks hashes by a range of timestamps (default: %u)"), DEFAULT_TIMESTAMPINDEX));
+    if (showDebug)  
+        strUsage += HelpMessageOpt("-txindex", strprintf(_("Maintain a full transaction index, used by the getrawtransaction rpc call (default: %u)"), 0));
     strUsage += HelpMessageOpt("-spentindex", strprintf(_("Maintain a full spent index, used to query the spending txid and input index for an outpoint (default: %u)"), DEFAULT_SPENTINDEX));
-    strUsage += HelpMessageOpt("-alwayssubmitnotarizations", strprintf(_("Submit notarizations to notary chain whenevever merge mining/staking and eligible (default = %u, only as needed)"), DEFAULT_SPENTINDEX));
-    strUsage += HelpMessageOpt("-allowdelayednotarizations", strprintf(_("Do not notarize in order to prevent slower notarizations (default = %u, notarize to prevent slowing down)"), DEFAULT_SPENTINDEX));
     strUsage += HelpMessageGroup(_("Connection options:"));
     strUsage += HelpMessageOpt("-addnode=<ip>", _("Add a node to connect to and attempt to keep the connection open"));
     strUsage += HelpMessageOpt("-banscore=<n>", strprintf(_("Threshold for disconnecting misbehaving peers (default: %u)"), 100));
@@ -431,8 +429,13 @@ std::string HelpMessage(HelpMessageMode mode)
 
 #ifdef ENABLE_WALLET
     strUsage += HelpMessageGroup(_("Wallet options:"));
+    strUsage += HelpMessageOpt("-cheatcatcher=<sapling-address>", _("same as \"-defaultzaddr\""));
+    strUsage += HelpMessageOpt("-defaultid=<i-address>", _("VerusID used for default change out and staking reward recipient"));
+    strUsage += HelpMessageOpt("-defaultzaddr=<sapling-address>", _("sapling address to receive fraud proof rewards and if used with \"-privatechange=1\", z-change address for the sendcurrency command"));
     strUsage += HelpMessageOpt("-disablewallet", _("Do not load the wallet and disable wallet RPC calls"));
     strUsage += HelpMessageOpt("-keypool=<n>", strprintf(_("Set key pool size to <n> (default: %u)"), 100));
+    strUsage += HelpMessageOpt("-maxtxfee=<amt>", strprintf(_("Maximum total fees (in %s) to use in a single wallet transaction; setting this too low may abort large transactions (default: %s)"),
+        CURRENCY_UNIT, FormatMoney(maxTxFee)));
     strUsage += HelpMessageOpt("-migration", _("Enable the Sprout to Sapling migration"));
     strUsage += HelpMessageOpt("-migrationdestaddress=<zaddr>", _("Set the Sapling migration address"));
     if (showDebug)
@@ -440,14 +443,13 @@ std::string HelpMessage(HelpMessageMode mode)
             CURRENCY_UNIT, FormatMoney(CWallet::minTxFee.GetFeePerK())));
     strUsage += HelpMessageOpt("-paytxfee=<amt>", strprintf(_("Fee (in %s/kB) to add to transactions you send (default: %s)"),
         CURRENCY_UNIT, FormatMoney(payTxFee.GetFeePerK())));
+    strUsage += HelpMessageOpt("-privatechange", _("directs all change from sendcurency or z_sendmany APIs to the defaultzaddr set, if it is a valid sapling address"));
     strUsage += HelpMessageOpt("-rescan", _("Rescan the block chain for missing wallet transactions") + " " + _("on startup"));
     strUsage += HelpMessageOpt("-salvagewallet", _("Attempt to recover private keys from a corrupt wallet.dat") + " " + _("on startup"));
     strUsage += HelpMessageOpt("-sendfreetransactions", strprintf(_("Send transactions as zero-fee transactions if possible (default: %u)"), 0));
     strUsage += HelpMessageOpt("-spendzeroconfchange", strprintf(_("Spend unconfirmed change when sending transactions (default: %u)"), 1));
     strUsage += HelpMessageOpt("-txconfirmtarget=<n>", strprintf(_("If paytxfee is not set, include enough fee so transactions begin confirmation on average within n blocks (default: %u)"), DEFAULT_TX_CONFIRM_TARGET));
     strUsage += HelpMessageOpt("-txexpirydelta", strprintf(_("Set the number of blocks after which a transaction that has not been mined will become invalid (min: %u, default: %u (pre-Blossom) or %u (post-Blossom))"), TX_EXPIRING_SOON_THRESHOLD + 1, DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA, DEFAULT_POST_BLOSSOM_TX_EXPIRY_DELTA));
-    strUsage += HelpMessageOpt("-maxtxfee=<amt>", strprintf(_("Maximum total fees (in %s) to use in a single wallet transaction; setting this too low may abort large transactions (default: %s)"),
-        CURRENCY_UNIT, FormatMoney(maxTxFee)));
     strUsage += HelpMessageOpt("-upgradewallet", _("Upgrade wallet to latest format") + " " + _("on startup"));
     strUsage += HelpMessageOpt("-wallet=<file>", _("Specify wallet file (within data directory)") + " " + strprintf(_("(default: %s)"), "wallet.dat"));
     strUsage += HelpMessageOpt("-walletbroadcast", _("Make the wallet broadcast transactions") + " " + strprintf(_("(default: %u)"), true));
@@ -512,24 +514,8 @@ std::string HelpMessage(HelpMessageMode mode)
     }
 
     // strUsage += HelpMessageOpt("-shrinkdebugfile", _("Shrink debug.log file on client startup (default: 1 when no -debug)"));
-    strUsage += HelpMessageOpt("-mineraddress=<address>", _("Mining rewards will go to this address"));
-    strUsage += HelpMessageOpt("-pubkey=<hexpubkey>", _("If set, mining and staking rewards will go to this address by default"));
-    strUsage += HelpMessageOpt("-defaultid=<i-address>", _("VerusID used for default change out and staking reward recipient"));
-    strUsage += HelpMessageOpt("-notaryid=<i-address>", _("VerusID used for PBaaS and Ethereum cross-chain notarization"));
-    strUsage += HelpMessageOpt("-notificationoracle=<i-address>", strprintf(_("VerusID monitored for network alerts, triggers, and signals. Current default is \"%s\" for Verus and the chain ID for PBaaS chains"), PBAAS_DEFAULT_NOTIFICATION_ORACLE.c_str()));
-    strUsage += HelpMessageOpt("-approvecontractupgrade=<0xf09...>", strprintf(_("When validating blocks, vote to agree to upgrade to the specific contract. Default is no upgrade.")));
-    strUsage += HelpMessageOpt("-defaultzaddr=<sapling-address>", _("sapling address to receive fraud proof rewards and if used with \"-privatechange=1\", z-change address for the sendcurrency command"));
-    strUsage += HelpMessageOpt("-cheatcatcher=<sapling-address>", _("same as \"-defaultzaddr\""));
-    strUsage += HelpMessageOpt("-privatechange", _("directs all change from sendcurency or z_sendmany APIs to the defaultzaddr set, if it is a valid sapling address"));
-    strUsage += HelpMessageOpt("-miningdistribution={\"addressorid\":<n>,...}", _("destination addresses and relative amounts used as ratios to divide total rewards + fees"));
-    strUsage += HelpMessageOpt("-miningdistributionpassthrough", _("uses the same miningdistribution values and addresses/IDs as Verus when merge mining"));
-    strUsage += HelpMessageOpt("-chain=pbaaschainname", _("loads either mainnet or resolves and loads a PBaaS chain if not vrsc or vrsctest"));
-    strUsage += HelpMessageOpt("-blocktime=<n>", strprintf(_("Set target block time (in seconds) for difficulty adjustment (default: %d)"), CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET));
-    strUsage += HelpMessageOpt("-powaveragingwindow=<n>", strprintf(_("Set averaging window for PoW difficulty adjustment, in blocks (default: %d)"), CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW));
-    strUsage += HelpMessageOpt("-notarizationperiod=<n>", strprintf(_("Set minimum spacing consensus between cross-chain notarization, in blocks (default: %d, min 10 min)"), CCurrencyDefinition::BLOCK_NOTARIZATION_MODULO));
-    strUsage += HelpMessageOpt("-testnet", _("loads PBaaS network in testmode"));
 
-    strUsage += HelpMessageGroup(_("Node relay options:"));
+  strUsage += HelpMessageGroup(_("Node relay options:"));
     strUsage += HelpMessageOpt("-datacarrier", strprintf(_("Relay and mine data carrier transactions (default: %u)"), 1));
     strUsage += HelpMessageOpt("-datacarriersize", strprintf(_("Maximum size of data in data carrier transactions we relay and mine (default: %u)"), MAX_OP_RETURN_RELAY));
 
@@ -542,21 +528,37 @@ std::string HelpMessage(HelpMessageMode mode)
 
 #ifdef ENABLE_MINING
     strUsage += HelpMessageGroup(_("Mining options:"));
-    strUsage += HelpMessageOpt("-mint", strprintf(_("Mint/stake coins automatically (default: %u)"), 0));
+    strUsage += HelpMessageOpt("-defaultid=<i-address>", _("VerusID used for default change out and staking reward recipient"));
+    strUsage += HelpMessageOpt("-equihashsolver=<name>", _("Specify the Equihash solver to be used if enabled (default: \"default\")"));
     strUsage += HelpMessageOpt("-gen", strprintf(_("Mine/generate coins (default: %u)"), 0));
     strUsage += HelpMessageOpt("-genproclimit=<n>", strprintf(_("Set the number of threads for coin mining if enabled (-1 = all cores, default: %d)"), 0));
-    strUsage += HelpMessageOpt("-equihashsolver=<name>", _("Specify the Equihash solver to be used if enabled (default: \"default\")"));
     strUsage += HelpMessageOpt("-mineraddress=<addr>", _("Send mined coins to a specific single address"));
-    strUsage += HelpMessageOpt("-minetolocalwallet", strprintf(
-            _("Require that mined blocks use a coinbase address in the local wallet (default: %u)"),
+    strUsage += HelpMessageOpt("-minetolocalwallet", strprintf(_("Require that mined blocks use a coinbase address in the local wallet (default: %u)"),
  #ifdef ENABLE_WALLET
             1
  #else
             0
  #endif
             ));
+    strUsage += HelpMessageOpt("-miningdistribution={\"addressorid\":<n>,...}", _("destination addresses and relative amounts used as ratios to divide total rewards + fees"));
+    strUsage += HelpMessageOpt("-mint", strprintf(_("Mint/stake coins automatically (default: %u)"), 0));
+    strUsage += HelpMessageOpt("-pubkey=<hexpubkey>", _("If set, mining and staking rewards will go to this address by default"));
 #endif
 
+    strUsage += HelpMessageGroup(_("PBaaS options:"));
+    strUsage += HelpMessageOpt("-acceptfreeimportsfrom=<i-address>,<i-address>,...", _(" \"%s\" no spaces - accept underpaid imports from these PBaaS chains or networks - default is empty"));
+    strUsage += HelpMessageOpt("-allowdelayednotarizations", strprintf(_("Do not notarize in order to prevent slower notarizations (default = %u, notarize to prevent slowing down)"), DEFAULT_SPENTINDEX));
+    strUsage += HelpMessageOpt("-alwayssubmitnotarizations", strprintf(_("Submit notarizations to notary chain whenevever merge mining/staking and eligible (default = %u, only as needed)"), DEFAULT_SPENTINDEX));
+    strUsage += HelpMessageOpt("-approvecontractupgrade=<0xf09...>", strprintf(_("When validating blocks, vote to agree to upgrade to the specific contract. Default is no upgrade.")));
+    strUsage += HelpMessageOpt("-blocktime=<n>", strprintf(_("Set target block time (in seconds) for difficulty adjustment (default: %d)"), CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET));
+    strUsage += HelpMessageOpt("-chain=pbaaschainname", _("loads either mainnet or resolves and loads a PBaaS chain if not vrsc or vrsctest"));
+    strUsage += HelpMessageOpt("-miningdistributionpassthrough", _("uses the same miningdistribution values and addresses/IDs as Verus when merge mining"));
+    strUsage += HelpMessageOpt("-notarizationperiod=<n>", strprintf(_("Set minimum spacing consensus between cross-chain notarization, in blocks (default: %d, min 10 min)"), CCurrencyDefinition::BLOCK_NOTARIZATION_MODULO));
+    strUsage += HelpMessageOpt("-notaryid=<i-address>", _("VerusID used for PBaaS and Ethereum cross-chain notarization"));
+    strUsage += HelpMessageOpt("-notificationoracle=<i-address>", strprintf(_("VerusID monitored for network alerts, triggers, and signals. Current default is \"%s\" for Verus and the chain ID for PBaaS chains"), PBAAS_DEFAULT_NOTIFICATION_ORACLE.c_str()));
+    strUsage += HelpMessageOpt("-powaveragingwindow=<n>", strprintf(_("Set averaging window for PoW difficulty adjustment, in blocks (default: %d)"), CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW));
+    strUsage += HelpMessageOpt("-testnet", _("loads PBaaS network in testmode"));
+	
     strUsage += HelpMessageGroup(_("RPC server options:"));
     strUsage += HelpMessageOpt("-server", _("Accept command line and JSON-RPC commands"));
     strUsage += HelpMessageOpt("-rest", strprintf(_("Accept public REST requests (default: %u)"), 0));
@@ -571,7 +573,7 @@ std::string HelpMessage(HelpMessageMode mode)
         strUsage += HelpMessageOpt("-rpcservertimeout=<n>", strprintf("Timeout during HTTP requests (default: %d)", DEFAULT_HTTP_SERVER_TIMEOUT));
     }
 
-    // Disabled until we can lock notes and also tune performance of libsnark which by default uses multiple threads
+    // Disabled until we can lock notes and also tune performance of the prover which by default uses multiple threads
     //strUsage += HelpMessageOpt("-rpcasyncthreads=<n>", strprintf(_("Set the number of threads to service Async RPC calls (default: %d)"), 1));
 
     if (mode == HMM_BITCOIND) {
@@ -751,15 +753,11 @@ static void ZC_LoadParams(
     struct timeval tv_start, tv_end;
     float elapsed;
 
-    boost::filesystem::path pk_path = ZC_GetParamsDir() / "sprout-proving.key";
-    boost::filesystem::path vk_path = ZC_GetParamsDir() / "sprout-verifying.key";
     boost::filesystem::path sapling_spend = ZC_GetParamsDir() / "sapling-spend.params";
     boost::filesystem::path sapling_output = ZC_GetParamsDir() / "sapling-output.params";
     boost::filesystem::path sprout_groth16 = ZC_GetParamsDir() / "sprout-groth16.params";
 
     if (!(
-        boost::filesystem::exists(pk_path) &&
-        boost::filesystem::exists(vk_path) &&
         boost::filesystem::exists(sapling_spend) &&
         boost::filesystem::exists(sapling_output) &&
         boost::filesystem::exists(sprout_groth16)
@@ -774,14 +772,7 @@ static void ZC_LoadParams(
         return;
     }
 
-    LogPrintf("Loading verifying key from %s\n", vk_path.string().c_str());
-    gettimeofday(&tv_start, 0);
-
-    pzcashParams = ZCJoinSplit::Prepared(vk_path.string(), pk_path.string());
-
-    gettimeofday(&tv_end, 0);
-    elapsed = float(tv_end.tv_sec-tv_start.tv_sec) + (tv_end.tv_usec-tv_start.tv_usec)/float(1000000);
-    LogPrintf("Loaded verifying key in %fs seconds.\n", elapsed);
+    pzcashParams = ZCJoinSplit::Prepared();
 
     static_assert(
         sizeof(boost::filesystem::path::value_type) == sizeof(codeunit),
@@ -915,8 +906,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             return InitError(_("Payment disclosure requires -experimentalfeatures."));
         } else if (mapArgs.count("-zmergetoaddress")) {
             return InitError(_("RPC method z_mergetoaddress requires -experimentalfeatures."));
-        } else if (mapArgs.count("-savesproutr1cs")) {
-            return InitError(_("Saving the Sprout R1CS requires -experimentalfeatures."));
         }
     }
 
@@ -1253,7 +1242,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV5, 1053660);
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV5_1, 1053660);
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV6, 1796400);
-            CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV7, 2546600);
+            CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV7, 2549420);
         }
         else if (IsVerusActive())
         {
@@ -1287,7 +1276,11 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
 
     // get default IDs and addresses
-    auto chainUpgradeOracle = DecodeDestination(GetArg("-notificationoracle", IsVerusActive() ? PBAAS_DEFAULT_NOTIFICATION_ORACLE : EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID))));
+    if (PBAAS_DEFAULT_NOTIFICATION_ORACLE.empty())
+    {
+        PBAAS_DEFAULT_NOTIFICATION_ORACLE = EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID));
+    }
+    auto chainUpgradeOracle = DecodeDestination(GetArg("-notificationoracle", PBAAS_DEFAULT_NOTIFICATION_ORACLE));
     PBAAS_NOTIFICATION_ORACLE = chainUpgradeOracle.which() == COptCCParams::ADDRTYPE_ID ? CIdentityID(GetDestinationID(chainUpgradeOracle)) : CIdentityID();
     auto upgradeContractAddress = CTransferDestination::DecodeEthDestination(GetArg("-approvecontractupgrade", ""));
     if (!upgradeContractAddress.IsNull())
@@ -1295,15 +1288,39 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         APPROVE_CONTRACT_UPGRADE = CTransferDestination(CTransferDestination::DEST_ETH, ::AsVector(upgradeContractAddress));
     }
 
+    // free imports
+    auto freeImportsFrom = GetArg("-acceptfreeimportsfrom", "");
+    if (!freeImportsFrom.empty())
+    {
+        std::vector<std::string> freeImportCurrencies;
+        boost::split(freeImportCurrencies, freeImportsFrom, boost::is_any_of(","));
+        for (auto &oneFreeCur : freeImportCurrencies)
+        {
+            auto oneCurDest = DecodeDestination(oneFreeCur);
+            if (oneCurDest.which() == COptCCParams::ADDRTYPE_ID)
+            {
+                FREE_CURRENCY_IMPORTS.insert(GetDestinationID(oneCurDest));
+                LogPrintf("Enabling free imports from system: %s\n", oneFreeCur.c_str());
+                printf("Enabling free imports from system: %s\n", oneFreeCur.c_str());
+            }
+            else
+            {
+                LogPrintf("Invalid parameter for free imports, should be valid identity name of system root currency: %s\n", oneFreeCur.c_str());
+                printf("Invalid parameter for free imports, should be valid identity name of system root currency: %s\n", oneFreeCur.c_str());
+            }
+        }
+    }
+
     auto notaryIDDest = DecodeDestination(GetArg("-notaryid", ""));
     VERUS_NOTARYID = notaryIDDest.which() == COptCCParams::ADDRTYPE_ID ? CIdentityID(GetDestinationID(notaryIDDest)) : CIdentityID();
-    auto defaultIDDest = DecodeDestination(GetArg("-defaultid", VERUS_NOTARYID.IsNull() ? "" : EncodeDestination(notaryIDDest)));
+    auto defaultIDDest = DecodeDestination(GetArg("-defaultid", ""));
     VERUS_DEFAULTID = defaultIDDest.which() == COptCCParams::ADDRTYPE_ID ? CIdentityID(GetDestinationID(defaultIDDest)) : CIdentityID();
     auto nodeIDDest = DecodeDestination(GetArg("-nodeid", ""));
     VERUS_NODEID = nodeIDDest.which() == COptCCParams::ADDRTYPE_ID ? GetDestinationID(nodeIDDest) : uint160();
 
     UniValue arbitrageArr(UniValue::VARR);
-    if (arbitrageArr.read(GetArg("-arbitragecurrencies", "")) && arbitrageArr.isArray() && arbitrageArr.size())
+    std::string arbString = GetArg("-arbitragecurrencies", "");
+    if (arbitrageArr.read(arbString) && arbitrageArr.isArray() && arbitrageArr.size())
     {
         for (int i = 0; i < arbitrageArr.size(); i++)
         {
@@ -1402,11 +1419,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         threadGroup.create_thread(&ThreadShowMetricsScreen);
     }
 
-    // These must be disabled for now, they are buggy and we probably don't
-    // want any of libsnark's profiling in production anyway.
-    libsnark::inhibit_profiling_info = true;
-    libsnark::inhibit_profiling_counters = true;
-
     // Initialize Zcash circuit parameters
     uiInterface.InitMessage(_("Verifying Params..."));
     initalizeMapParam();
@@ -1422,14 +1434,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     // Initialize Zcash circuit parameters
     ZC_LoadParams(chainparams, paramsVerified);
-
-    if (GetBoolArg("-savesproutr1cs", false)) {
-        boost::filesystem::path r1cs_path = ZC_GetParamsDir() / "r1cs";
-
-        LogPrintf("Saving Sprout R1CS to %s\n", r1cs_path.string());
-
-        pzcashParams->saveR1CS(r1cs_path.string());
-    }
 
     /* Start the RPC server already.  It will be started in "warmup" mode
      * and not really process calls already (but it will signify connections
@@ -2133,6 +2137,17 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 #else // ENABLE_WALLET
     LogPrintf("No wallet support compiled in!\n");
 #endif // !ENABLE_WALLET
+
+    if (IsVerusActive())
+    {
+        LogPrintf("Initialized chain: %s, ID %s\n", ConnectedChains.ThisChain().name.c_str(), EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID())).c_str());
+        printf("Initialized chain: %s, ID %s\n", ConnectedChains.ThisChain().name.c_str(), EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID())).c_str());
+    }
+    else
+    {
+        LogPrintf("Initialized chain: %s, hex: %s, ID %s\n", ConnectedChains.ThisChain().name.c_str(), ConnectedChains.ThisChain().GetID().GetHex().c_str(), EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID())).c_str());
+        printf("Initialized chain: %s, hex: %s, ID %s\n", ConnectedChains.ThisChain().name.c_str(), ConnectedChains.ThisChain().GetID().GetHex().c_str(), EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID())).c_str());
+    }
 
 #ifdef ENABLE_MINING
  #ifndef ENABLE_WALLET

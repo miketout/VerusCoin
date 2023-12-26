@@ -240,7 +240,6 @@ public:
     JSDescription(): vpub_old(0), vpub_new(0) { }
 
     JSDescription(
-            bool makeGrothProof,
             ZCJoinSplit& params,
             const uint256& joinSplitPubKey,
             const uint256& rt,
@@ -253,7 +252,6 @@ public:
     );
 
     static JSDescription Randomized(
-            bool makeGrothProof,
             ZCJoinSplit& params,
             const uint256& joinSplitPubKey,
             const uint256& rt,
@@ -1373,7 +1371,7 @@ public:
 
     // this validates that all parts of a transaction match and either returns a full transaction
     // and its hash, a partially filled transaction and its MMR root, or NULL
-    uint256 CheckPartialTransaction(CTransaction &outTx, bool *pIsPartial=nullptr) const;
+    uint256 CheckPartialTransaction(CTransaction &outTx, bool *pIsPartial=nullptr, bool optimizedETH=true) const;
 
     bool IsBlockPreHeader() const
     {
@@ -1390,8 +1388,10 @@ public:
         return CPBaaSPreHeader();
     }
 
-    // this validates that a preheader is correct
-    uint256 CheckBlockPreHeader(CPBaaSPreHeader &outPreHeader) const;
+    // this validates that a preheader is correct according to the block MMR
+    // this only validates on the new PoS format, otherwise, the hash of the preheader
+    // is fixed and not dependent on the pre-header
+    uint256 CheckBlockPreHeader(CPBaaSPreHeader &outPreHeader, bool newPoSFormat=true) const;
 
     // for PBaaS chain proofs, we can determine the hash, block height, and power, depending on if we are block specific or
     // proven at the blockchain level
@@ -1458,6 +1458,19 @@ public:
             if (branch.size() >= 1)
             {
                 return branch[0];
+            }
+        }
+        return uint256();
+    }
+
+    uint256 GetRootPower() const
+    {
+        if (type == TYPE_PBAAS && IsChainProof())
+        {
+            std::vector<uint256> &branch = ((CMMRPowerNodeBranch *)(txProof.proofSequence[2]))->branch;
+            if (branch.size() >= 1)
+            {
+                return branch.back();
             }
         }
         return uint256();
@@ -1713,7 +1726,7 @@ public:
     }
 
     // returns false if hash is null
-    bool GetOutputTransaction(CTransaction &tx, uint256 &blockHash) const;
+    bool GetOutputTransaction(CTransaction &tx, uint256 &blockHash, bool checkMemPool=true) const;
 
     UniValue ToUniValue() const;
 };

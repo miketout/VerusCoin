@@ -18,6 +18,7 @@
 
 extern CIdentityID VERUS_DEFAULTID;
 extern CIdentityID VERUS_NOTARYID;
+extern std::set<uint160> FREE_CURRENCY_IMPORTS;
 extern CIdentityID PBAAS_NOTIFICATION_ORACLE;
 extern CTransferDestination APPROVE_CONTRACT_UPGRADE;
 extern std::string PBAAS_DEFAULT_NOTIFICATION_ORACLE;

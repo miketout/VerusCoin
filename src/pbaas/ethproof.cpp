@@ -37,42 +37,15 @@ std::string bytes_to_hex(const std::vector<unsigned char> &in)
     return oss.str();
 }
 
-std::string int_to_hex(int input){
-    std::stringstream sstream;
-    if(input < 10) sstream << std::hex << 0;
-    sstream << std::hex << input;
-    std::string result = sstream.str();
-    return result;
-}
+std::vector<unsigned char> uint64_to_vec_BE(uint64_t input){
 
-std::string uint64_to_hex(uint64_t input){
-    if(input < 10){
-        std::stringstream sstream;
-        if(input < 10) sstream << std::hex << 0;
-        sstream << std::hex << input;
-        std::string result = sstream.str();
-        return result;
+    std::vector<unsigned char> bytes;
+    while (input) {
+        bytes.push_back(input & 0xFF);
+        input >>= 8;
     }
-    char buffer[64] = {0};
-    sprintf(buffer,"%lx",input);
-    return std::string(buffer);
-}
-
-//converts uint to vector and trims off leading 00 bytes
-std::vector<unsigned char> uint64_to_vec(uint64_t input){
-
-    std::vector<unsigned char> temp(8);
-    for (int i = 0; i < 8; i++)
-         temp[7 - i] = (input >> (i * 8));
-
-    for (int i=0; i<8; i++){
-        if(temp[0] == 0)
-            temp.erase(temp.begin());
-        else
-            break;
-    }
-
-    return temp;
+    std::reverse(bytes.begin(), bytes.end());
+    return bytes;
 }
 /**
  * Returns the number of in order matching nibbles between the 2 arrays
@@ -129,16 +102,55 @@ void TrieNode::setValue(){
     }
 }
 
+std::string int_to_hex_deprecated(int input){
+    std::stringstream sstream;
+    if(input < 10) sstream << std::hex << 0;
+    sstream << std::hex << input;
+    std::string result = sstream.str();
+    return result;
+}
 
+std::string uint64_to_hex_deprecated(uint64_t input){
+    if(input < 10){
+        std::stringstream sstream;
+        if(input < 10) sstream << std::hex << 0;
+        sstream << std::hex << input;
+        std::string result = sstream.str();
+        return result;
+    }
+    char buffer[64] = {0};
+    sprintf(buffer,"%lx",input);
+    return std::string(buffer);
+}
 
 std::vector<unsigned char> RLP::encodeLength(int length,int offset){
     std::vector<unsigned char> output;
     if(length < 56){
         output.push_back(length+offset);
     } else {
-        std::string hexLength = int_to_hex(length);
+        std::vector<unsigned char> lengthBytes;
+        while (length > 0) {
+            lengthBytes.insert(lengthBytes.begin(), static_cast<unsigned char>(length & 0xFF));
+            length >>= 8;
+        }
+
+        // The first byte indicates the start of the data payload.
+        output.push_back(static_cast<unsigned char>(offset + 55 + lengthBytes.size()));
+
+        // Append the binary length bytes.
+        output.insert(output.end(), lengthBytes.begin(), lengthBytes.end());
+    }
+    return output;
+}
+
+std::vector<unsigned char> RLP::encodeLength_deprecated(int length,int offset){
+    std::vector<unsigned char> output;
+    if(length < 56){
+        output.push_back(length+offset);
+    } else {
+        std::string hexLength = int_to_hex_deprecated(length);
         int dataLength = hexLength.size() / 2;
-        std::string firstByte = int_to_hex((offset + 55 + dataLength));
+        std::string firstByte = int_to_hex_deprecated((offset + 55 + dataLength));
         std::string outputString = firstByte + hexLength;
         output = ParseHex(outputString);
     }
@@ -150,7 +162,7 @@ std::vector<unsigned char> RLP::encode(std::vector<unsigned char> input){
     std::vector<unsigned char> output;
     if(input.size() == 1 && input[0] < 128 ) return input;
     else {
-        output = encodeLength(input.size(),128);
+        output = optimized ? encodeLength(input.size(),128) : encodeLength_deprecated(input.size(),128);
         output.insert(output.end(),input.begin(),input.end());
         return output;
         }
@@ -163,12 +175,10 @@ std::vector<unsigned char> RLP::encode(std::vector<std::vector<unsigned char>> i
         inProgress = encode(input[i]);
         encoded.insert(encoded.end(),inProgress.begin(),inProgress.end());
     }
-    std::vector<unsigned char> output = encodeLength(encoded.size(),192);
+    std::vector<unsigned char> output = optimized ?  encodeLength(encoded.size(),192) : encodeLength_deprecated(encoded.size(),192);
     output.insert(output.end(),encoded.begin(),encoded.end());
     return output;
 }
-
-
 
 RLP::rlpDecoded RLP::decode(std::vector<unsigned char> inputBytes){
 
@@ -280,8 +290,6 @@ RLP::rlpDecoded RLP::decode(std::string inputString){
     return decode(inputBytes);
 }
 
-
-
 template<>
 std::vector<unsigned char> CETHPATRICIABranch::verifyProof(uint256& rootHash,std::vector<unsigned char> key,std::vector<std::vector<unsigned char>>& proof){
 
@@ -377,7 +385,7 @@ std::vector<unsigned char> CETHPATRICIABranch::verifyProof(uint256& rootHash,std
 
 
 template<>
-std::vector<unsigned char> CPATRICIABranch<CHashWriter>::verifyAccountProof()
+std::vector<unsigned char> CETHPATRICIABranch::verifyAccountProof()
 {
     CKeccack256Writer key_hasher;
     key_hasher.write((const char *)(&address), address.size());
@@ -402,13 +410,13 @@ std::vector<unsigned char> CPATRICIABranch<CHashWriter>::verifyAccountProof()
 }
 
 template<>
-uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
-
+uint256 CETHPATRICIABranch::verifyStorageProof(uint256 ccExporthash, bool optimizedProof)
+{
     //Check the storage value hash, which is the hash of the crosschain export transaction
     //matches the the RLP decoded information from the bridge keeper
 
     std::vector<unsigned char> ccExporthash_vec(ccExporthash.begin(),ccExporthash.end());
-    RLP rlp;
+    RLP rlp(optimizedProof);
     try{
         CKeccack256Writer key_hasher;
         key_hasher.write((const char *)(&storageProofKey), storageProofKey.size());
@@ -455,7 +463,7 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
     try
     {
         std::vector<std::vector<unsigned char>> toEncode;
-        toEncode.push_back(ParseHex(uint64_to_hex(nonce)));
+        toEncode.push_back(optimizedProof ? uint64_to_vec_BE(nonce) : ParseHex(uint64_to_hex_deprecated(nonce)));
         toEncode.push_back(GetBalanceAsBEVector());
         toEncode.push_back(storage);
         std::vector<unsigned char> codeHash_vec(codeHash.begin(),codeHash.end());
@@ -486,4 +494,24 @@ uint256 CPATRICIABranch<CHashWriter>::verifyStorageProof(uint256 ccExporthash){
     //run the storage proof
 
     return stateRoot;
+}
+
+template<>
+bool CETHPATRICIABranch::CheckStorageKeyHash(uint32_t mapIndex) const{
+
+    CKeccack256Writer keyhw;
+    arith_uint256 num256(mapIndex);
+    uint256 tmp = ArithToUint256(num256);
+    std::vector<unsigned char> mapIndex_vec(tmp.begin(), tmp.end());
+    std::reverse(mapIndex_vec.begin(), mapIndex_vec.end());
+    std::vector<unsigned char> additional(32, 0); 
+    mapIndex_vec.insert(mapIndex_vec.end(), additional.begin(), additional.end());
+    keyhw.write((const char *)mapIndex_vec.data(), mapIndex_vec.size());
+    return keyhw.GetHash() == storageProofKey;
+}
+
+template<>
+uint256 CETHPATRICIABranch::SafeCheck(uint256 hash, bool optimizedProof) 
+{
+    return verifyStorageProof(hash, optimizedProof);
 }

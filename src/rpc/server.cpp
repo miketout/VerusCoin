@@ -18,7 +18,7 @@
 
 #include <univalue.h>
 
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/foreach.hpp>
 #include <boost/iostreams/concepts.hpp>
@@ -27,6 +27,8 @@
 #include <boost/signals2/signal.hpp>
 #include <boost/thread.hpp>
 #include <boost/algorithm/string/case_conv.hpp> // for to_upper()
+
+using namespace boost::placeholders;
 
 using namespace RPCServer;
 using namespace std;
@@ -233,7 +235,7 @@ UniValue stop(const UniValue& params, bool fHelp)
     if (fHelp || params.size() > 1)
         throw runtime_error(
             "stop\n"
-            "\nStop Komodo server.");
+            "\nStop the server.");
 
 #ifdef ENABLE_WALLET
     GenerateBitcoins(false, NULL, 0);

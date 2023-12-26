@@ -376,7 +376,7 @@ bool CBasicKeyStore::GetIdentities(std::vector<std::pair<CIdentityMapKey, CIdent
             {
                 if (GetIdentity(primaryIdentity.second.revocationAuthority, revocationAuthority))
                 {
-                    idKey.flags |= (CIdentityMapKey(revocationAuthority.first).flags & (idKey.CAN_SPEND | idKey.CAN_SIGN));
+                    idKey.flags |= (CIdentityMapKey(revocationAuthority.first).flags & idKey.CAN_SIGN);
                 }
             }
 
