@@ -34,6 +34,11 @@ darwin_STRIP=$(shell command -v llvm-strip || command -v strip)
 #         Indicate to the linker the platform, the oldest supported version,
 #         and the SDK used.
 #
+#     -no_adhoc_codesign
+#
+#         Disable adhoc codesigning (for now) when using LLVM tooling, to avoid
+#         non-determinism issues with the Identifier field.
+#
 darwin_CC=clang -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) -isysroot$(OSX_SDK) -nostdlibinc -iwithsysroot/usr/include -iframeworkwithsysroot/System/Library/Frameworks
 darwin_CXX=clang++ -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) -isysroot$(OSX_SDK) -nostdlibinc -iwithsysroot/usr/include/c++/v1 -iwithsysroot/usr/include -iframeworkwithsysroot/System/Library/Frameworks
 
@@ -43,6 +48,7 @@ darwin_LDFLAGS=-Wl,-platform_version,macos,$(OSX_MIN_VERSION),$(OSX_SDK_VERSION)
 
 ifneq ($(build_os),darwin)
 darwin_CFLAGS += -mlinker-version=$(LLD_VERSION)
+darwin_LDFLAGS += -Wl,-no_adhoc_codesign
 endif
 
 darwin_release_CFLAGS=-O2
