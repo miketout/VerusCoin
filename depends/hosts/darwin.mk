@@ -19,11 +19,6 @@ darwin_STRIP=$(shell command -v llvm-strip || command -v strip)
 #         Ensures that modern linker features are enabled. See here for more
 #         details: https://github.com/bitcoin/bitcoin/pull/19407.
 #
-#     -B$(build_prefix)/bin
-#
-#         Explicitly point to our binaries (e.g. cctools) so that they are
-#         ensured to be found and preferred over other possibilities.
-#
 #     -isysroot$(OSX_SDK) -nostdlibinc
 #
 #         Disable default include paths built into the compiler as well as
@@ -34,8 +29,8 @@ darwin_STRIP=$(shell command -v llvm-strip || command -v strip)
 #
 #         Adds the desired paths from the SDK
 #
-darwin_CC=clang -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) -isysroot$(OSX_SDK) -nostdlibinc -iwithsysroot/usr/include -iframeworkwithsysroot/System/Library/Frameworks -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin
-darwin_CXX=clang++ -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) -isysroot$(OSX_SDK) -nostdlibinc -iwithsysroot/usr/include/c++/v1 -iwithsysroot/usr/include -iframeworkwithsysroot/System/Library/Frameworks -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin
+darwin_CC=clang -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) -isysroot$(OSX_SDK) -nostdlibinc -iwithsysroot/usr/include -iframeworkwithsysroot/System/Library/Frameworks -mlinker-version=$(LLD_VERSION)
+darwin_CXX=clang++ -target $(host) -mmacos-version-min=$(OSX_MIN_VERSION) -isysroot$(OSX_SDK) -nostdlibinc -iwithsysroot/usr/include/c++/v1 -iwithsysroot/usr/include -iframeworkwithsysroot/System/Library/Frameworks -mlinker-version=$(LLD_VERSION)
 
 darwin_CFLAGS=-pipe
 darwin_CXXFLAGS=$(darwin_CFLAGS)
