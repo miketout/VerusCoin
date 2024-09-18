@@ -5878,7 +5878,7 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
     auto zaddr = DecodePaymentAddress(fromaddress);
 
     libzcash::PaymentAddress zaddress;
-    if (pwalletMain->GetAndValidateSaplingZAddress(fromaddress, zaddress))
+    if (!IsValidPaymentAddress(zaddr) && pwalletMain->GetAndValidateSaplingZAddress(fromaddress, zaddress))
     {
         zaddr = zaddress;
     }
