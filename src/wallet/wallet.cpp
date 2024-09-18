@@ -5424,7 +5424,7 @@ void CWallet::AvailableReserveCoins(vector<COutput>& vCoins, bool fOnlyConfirmed
     }
 }
 
-bool CWallet::GetAndValidateSaplingZAddress(const std::string &addressStr, libzcash::PaymentAddress &zaddress)
+bool CWallet::GetAndValidateSaplingZAddress(const std::string &addressStr, libzcash::PaymentAddress &zaddress, bool throwException)
 {
     std::string addrCopy = addressStr;
     std::vector<std::string> addressParts;
@@ -5444,12 +5444,19 @@ bool CWallet::GetAndValidateSaplingZAddress(const std::string &addressStr, libzc
                 return true;
             }
         }
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid ID or ID that does not have valid z-address specified");
+        if (throwException)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid ID or ID that does not have valid z-address specified");
+        }
+        else
+        {
+            return false;
+        }
     }
 
     zaddress = DecodePaymentAddress(addrCopy);
     bool hasZSource = boost::get<libzcash::SaplingPaymentAddress>(&zaddress) != nullptr;
-    if (!hasZSource && boost::get<libzcash::SproutPaymentAddress>(&zaddress) != nullptr)
+    if (throwException && !hasZSource && boost::get<libzcash::SproutPaymentAddress>(&zaddress) != nullptr)
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Legacy Sprout address not supported. Use a transparent or Sapling compatible address");
     }

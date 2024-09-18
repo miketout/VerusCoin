@@ -1565,7 +1565,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
 
         std::string encryptZAddress = uni_get_str(find_value(params[0], "encrypttoaddress"));;
         libzcash::PaymentAddress addr;
-        if (pwalletMain->GetAndValidateSaplingZAddress(encryptZAddress, addr))
+        if (pwalletMain->GetAndValidateSaplingZAddress(encryptZAddress, addr, true))
         {
             if (!IsValidPaymentAddress(addr))
             {
@@ -5878,7 +5878,7 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
     auto zaddr = DecodePaymentAddress(fromaddress);
 
     libzcash::PaymentAddress zaddress;
-    if (!IsValidPaymentAddress(zaddr) && pwalletMain->GetAndValidateSaplingZAddress(fromaddress, zaddress))
+    if (pwalletMain->GetAndValidateSaplingZAddress(fromaddress, zaddress))
     {
         zaddr = zaddress;
     }
