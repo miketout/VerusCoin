@@ -6868,7 +6868,7 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
     libzcash::PaymentAddress zaddressSource;
     libzcash::SaplingExpandedSpendingKey expsk;
     uint256 sourceOvk;
-    bool hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(sourceAddress, zaddressSource);
+    bool hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(sourceAddress, zaddressSource, true);
     // if we have a z-address as a source, re-encode it to a string, which is used
     // by the async operation, to ensure that we don't need to lookup IDs in that operation
     if (hasZSource)
@@ -7008,7 +7008,7 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
         if (fundsDestination.which() == COptCCParams::ADDRTYPE_INVALID)
         {
             // make the funds output that defines what we are willing to accept for the input we are offering
-            hasZDest = pwalletMain->GetAndValidateSaplingZAddress(destStr, zaddressDest);
+            hasZDest = pwalletMain->GetAndValidateSaplingZAddress(destStr, zaddressDest, true);
             if (hasZDest)
             {
                 saplingAddress = boost::get<libzcash::SaplingPaymentAddress>(&zaddressDest);
@@ -7828,7 +7828,7 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
     void *saplingSpendCtx = nullptr;
 
     uint256 sourceOvk;
-    bool hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(fundsSource, zaddressSource);
+    bool hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(fundsSource, zaddressSource, true);
     // if we have a z-address as a source, re-encode it to a string, which is used
     // by the async operation, to ensure that we don't need to lookup IDs in that operation
     if (hasZSource)
@@ -9309,7 +9309,7 @@ UniValue closeoffers(const UniValue& params, bool fHelp)
     }
 
     bool hasTDest = transparentDest.which() != COptCCParams::ADDRTYPE_INVALID;
-    bool hasZDest = !hasTDest && pwalletMain->GetAndValidateSaplingZAddress(destStr, zaddressDest);
+    bool hasZDest = !hasTDest && pwalletMain->GetAndValidateSaplingZAddress(destStr, zaddressDest, true);
 
     if (hasTDest)
     {
@@ -9321,7 +9321,7 @@ UniValue closeoffers(const UniValue& params, bool fHelp)
             }
             std::string zDestStr = uni_get_str(params[2]);
 
-            if (!(hasZDest = pwalletMain->GetAndValidateSaplingZAddress(zDestStr, zaddressDest)))
+            if (!(hasZDest = pwalletMain->GetAndValidateSaplingZAddress(zDestStr, zaddressDest, true)))
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Third parameter must be a valid private address");
             }
@@ -9716,7 +9716,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
     LOCK(mempool.cs);
 
     libzcash::PaymentAddress zaddress;
-    bool hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(sourceAddress, zaddress);
+    bool hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(sourceAddress, zaddress, true);
     // if we have a z-address as a source, re-encode it to a string, which is used
     // by the async operation, to ensure that we don't need to lookup IDs in that operation
     if (hasZSource)
@@ -9881,7 +9881,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             }
 
             libzcash::PaymentAddress zaddressDest;
-            bool hasZDest = pwalletMain->GetAndValidateSaplingZAddress(destStr, zaddressDest);
+            bool hasZDest = pwalletMain->GetAndValidateSaplingZAddress(destStr, zaddressDest, true);
             if (hasZDest &&
                 (convertToStr.size() ||
                  viaStr.size() ||
@@ -13506,7 +13506,7 @@ UniValue registernamecommitment(const UniValue& params, bool fHelp)
         wildCardRAddress = sourceAddress == "R*";
         wildCardiAddress = sourceAddress == "i*";
         wildCardAddress = wildCardTransparentAddress || wildCardRAddress || wildCardiAddress;
-        hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(sourceAddress, zaddressSource);
+        hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(sourceAddress, zaddressSource, true);
 
         // if we have a z-address as a source, re-encode it to a string, which is used
         // by the async operation, to ensure that we don't need to lookup IDs in that operation
@@ -14099,7 +14099,7 @@ UniValue registeridentity(const UniValue& params, bool fHelp)
         wildCardRAddress = sourceAddress == "R*";
         wildCardiAddress = sourceAddress == "i*";
         wildCardAddress = wildCardTransparentAddress || wildCardRAddress || wildCardiAddress;
-        hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(sourceAddress, zaddressSource);
+        hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(sourceAddress, zaddressSource, true);
 
         // if we have a z-address as a source, re-encode it to a string, which is used
         // by the async operation, to ensure that we don't need to lookup IDs in that operation
@@ -14854,7 +14854,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
                         libzcash::PaymentAddress encryptToAddress;
                         libzcash::SaplingIncomingViewingKey ivk;
 
-                        bool encryptData = pwalletMain->GetAndValidateSaplingZAddress(uni_get_str(find_value(chainData, "encrypttoaddress")), encryptToAddress);
+                        bool encryptData = pwalletMain->GetAndValidateSaplingZAddress(uni_get_str(find_value(chainData, "encrypttoaddress")), encryptToAddress, true);
                         if (!encryptData)
                         {
                             if (!find_value(chainData, "encrypttoaddress").isNull())
@@ -15046,7 +15046,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         wildCardRAddress = sourceAddress == "R*";
         wildCardiAddress = sourceAddress == "i*";
         wildCardAddress = wildCardTransparentAddress || wildCardRAddress || wildCardiAddress;
-        hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(sourceAddress, zaddressSource);
+        hasZSource = !wildCardAddress && pwalletMain->GetAndValidateSaplingZAddress(sourceAddress, zaddressSource, true);
 
         // if we have a z-address as a source, re-encode it to a string, which is used
         // by the async operation, to ensure that we don't need to lookup IDs in that operation

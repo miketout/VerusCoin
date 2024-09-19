@@ -552,6 +552,29 @@ public:
         static uint160 key = GetDataKey(TypeDefinitionKeyName(), nameSpace);
         return key;
     }
+
+    static std::string UpdateIdentityKeyName()
+    {
+        return "vrsc::identity.actions.update";
+    }
+    static uint160 UpdateIdentityKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(UpdateIdentityKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string LoginConsentRequestKeyName()
+    {
+        return "vsrc::identity.authentication.loginconsent.request";
+    }
+    static uint160 LoginConsentRequestKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(LoginConsentRequestKeyName(), nameSpace);
+        return key;
+    }
+
     static std::string MultiMapKeyName()
     {
         return "vrsc::identity.multimapkey";
@@ -562,6 +585,7 @@ public:
         static uint160 key = GetDataKey(MultiMapKeyName(), nameSpace);
         return key;
     }
+
     static std::string ContentMultiMapRemoveKeyName()
     {
         return "vrsc::identity.multimapremove";
@@ -586,17 +610,114 @@ public:
         return profileMediaKey;
     }
 
-    // for any ID, this key indexes content that applies to representing the profile of
-    // that ID. there may be many mime-type instances of a particular piece of profile media
-    static std::string ProfilePostKeyName()
+    static std::string ProfilePersonalityKeyName()
     {
-        return "vrsc::identity.post";
+        return "vrsc::identity.profile.personality";
     }
-    static uint160 ProfilePostKey()
+    static uint160 ProfilePersonalityKey()
     {
         static uint160 nameSpace;
-        static uint160 profileMediaKey = GetDataKey(ProfilePostKeyName(), nameSpace);
-        return profileMediaKey;
+        static uint160 profilePersonalityKey = GetDataKey(ProfilePersonalityKeyName(), nameSpace);
+        return profilePersonalityKey;
+    }
+
+    static std::string SocialPostKeyName()
+    {
+        return "vrsc::social.post";
+    }
+    static uint160 SocialPostKey()
+    {
+        static uint160 nameSpace;
+        static uint160 socialKey = GetDataKey(SocialPostKeyName(), nameSpace);
+        return socialKey;
+    }
+
+    static std::string SocialRepostKeyName()
+    {
+        return "vrsc::social.repost";
+    }
+    static uint160 SocialRepostKey()
+    {
+        static uint160 nameSpace;
+        static uint160 socialKey = GetDataKey(SocialRepostKeyName(), nameSpace);
+        return socialKey;
+    }
+
+    static std::string SocialQuotepostKeyName()
+    {
+        return "vrsc::social.quotepost";
+    }
+    static uint160 SocialQuotepostKey()
+    {
+        static uint160 nameSpace;
+        static uint160 socialKey = GetDataKey(SocialQuotepostKeyName(), nameSpace);
+        return socialKey;
+    }
+
+    static std::string SocialThreadKeyName()
+    {
+        return "vrsc::social.thread";
+    }
+    static uint160 SocialThreadKey()
+    {
+        static uint160 nameSpace;
+        static uint160 socialKey = GetDataKey(SocialThreadKeyName(), nameSpace);
+        return socialKey;
+    }
+
+    static std::string SocialTagKeyName()
+    {
+        return "vrsc::social.tag";
+    }
+    static uint160 SocialTagKey()
+    {
+        static uint160 nameSpace;
+        static uint160 socialKey = GetDataKey(SocialTagKeyName(), nameSpace);
+        return socialKey;
+    }
+
+    static std::string SocialFollowKeyName()
+    {
+        return "vrsc::social.follow";
+    }
+    static uint160 SocialFollowKey()
+    {
+        static uint160 nameSpace;
+        static uint160 socialKey = GetDataKey(SocialFollowKeyName(), nameSpace);
+        return socialKey;
+    }
+
+    static std::string CuratedFeedKeyName()
+    {
+        return "vrsc::social.curatedfeed";
+    }
+    static uint160 CuratedFeedKey()
+    {
+        static uint160 nameSpace;
+        static uint160 socialKey = GetDataKey(CuratedFeedKeyName(), nameSpace);
+        return socialKey;
+    }
+
+    static std::string FilterListKeyName()
+    {
+        return "vrsc::social.filterlist";
+    }
+    static uint160 FilterListKey()
+    {
+        static uint160 nameSpace;
+        static uint160 socialKey = GetDataKey(FilterListKeyName(), nameSpace);
+        return socialKey;
+    }
+
+    static std::string SocialRatingKeyName()
+    {
+        return "vrsc::social.rating";
+    }
+    static uint160 SocialRatingKey()
+    {
+        static uint160 nameSpace;
+        static uint160 socialKey = GetDataKey(SocialRatingKeyName(), nameSpace);
+        return socialKey;
     }
 
     static std::string ZMemoMessageKeyName()
