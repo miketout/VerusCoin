@@ -1473,7 +1473,9 @@ public:
     CAmount EligibleStakeOutputs(std::vector<COutput> &vecOutputs, std::vector<CWalletTx> &vwtx, bool extendedStake) const;
 
     int32_t VerusStakeTransaction(CBlock *pBlock, CMutableTransaction &txNew, uint32_t &bnTarget, arith_uint256 &hashResult, std::vector<unsigned char> &utxosig, CTxDestination &rewardDest) const;
-    static bool GetAndValidateSaplingZAddress(const std::string &addressStr, libzcash::PaymentAddress &zaddress);
+
+    // if throwException is true, it will throw an RPC exception if the address is Sprout
+    static bool GetAndValidateSaplingZAddress(const std::string &addressStr, libzcash::PaymentAddress &zaddress, bool throwException=false);
 };
 
 /** A key allocated from the key pool. */
