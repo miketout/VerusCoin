@@ -720,6 +720,17 @@ public:
         return socialKey;
     }
 
+    static std::string SocialMentionKeyName()
+    {
+        return "vrsc::social.mention";
+    }
+    static uint160 SocialMentionKey()
+    {
+        static uint160 nameSpace;
+        static uint160 socialKey = GetDataKey(SocialMentionKeyName(), nameSpace);
+        return socialKey;
+    }
+
     static std::string ZMemoMessageKeyName()
     {
         return "vrsc::system.zmemo.message";

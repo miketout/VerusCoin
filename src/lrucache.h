@@ -197,6 +197,29 @@ public:
         }
     }
 
+    void Clear()
+    {
+        int cacheOrigSize = m_lruList.size();
+        if (cacheOrigSize < m_capacity) {
+            return;
+        }
+        int cutPosition = m_capacity;
+        Log("Clearing cache, at capacity:" + std::to_string(cacheOrigSize) + "; Cut at:" + std::to_string(cutPosition));
+        // Remove entries from the look-up map
+        auto lruIter = m_lruList.begin();
+        for (std::advance(lruIter, cutPosition); lruIter != m_lruList.end(); lruIter++)
+        {
+            m_lookUpMap.erase(lruIter->Key);
+        }
+        // Trim the LRU list
+        {
+            auto lruIter = m_lruList.begin();
+            std::advance(lruIter, cutPosition);
+            m_lruList.erase(lruIter, m_lruList.end());
+        }
+        Log("Cache trimmed to:" + std::to_string(m_lruList.size()));
+    }
+
 private:
     void ensureCompaction()
     {

@@ -7563,7 +7563,7 @@ int CChainNotarizationData::BestConfirmedNotarization(const CCurrencyDefinition 
                     break;
                 }
             }
-            if (nIdx < nIdx < vtx.size())
+            if (nIdx < vtx.size())
             {
                 LogPrintf("%s: must have last period unchallenged by more powerful chain to confirm notarization for system: %s\n", __func__, ConnectedChains.GetFriendlyCurrencyName(notarizingSystemID).c_str());
                 return -1;
