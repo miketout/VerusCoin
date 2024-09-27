@@ -197,6 +197,13 @@ public:
         }
     }
 
+    void Clear()
+    {
+        m_lruList.clear();
+        m_lookUpMap.clear();
+        Log("Cache cleared");
+    }
+
 private:
     void ensureCompaction()
     {

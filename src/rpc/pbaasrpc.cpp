@@ -4704,7 +4704,7 @@ UniValue getnotarizationproofs(const UniValue& params, bool fHelp)
                             CProofRoot oneChallengeRoot(find_value(challengeRootsUni[j], "proofroot"));
                             if (oneChallengeRoot.IsValid() &&
                                 oneChallengeRoot.systemID == ASSETCHAINS_CHAINID &&
-                                oneChallengeRoot.rootHeight >= fromHeight)
+                                confirmRoot.rootHeight >= fromHeight)
                             {
                                 uint32_t blockHeight = oneChallengeRoot.rootHeight;
                                 if (blockHeight > confirmRoot.rootHeight)

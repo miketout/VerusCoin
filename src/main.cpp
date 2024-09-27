@@ -2292,10 +2292,10 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
         int64_t maxFreeSizeLimit = GetArg("-limitfreerelay", 15)*1000;
         int64_t defaultLimitRate = maxFreeSizeLimit * 10;
+        CAmount minFee = GetMinRelayFeeByOutputs(txDesc, tx, state, identityFeeFactor);
 
         if (fLimitFree)
         {
-            CAmount minFee = GetMinRelayFeeByOutputs(txDesc, tx, state, identityFeeFactor);
             if (state.IsError())
             {
                 return false;
@@ -2342,20 +2342,20 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
                 LogPrint("mempool", "Rate limit dFreeCount: %g => %g\n", dFreeCount, dFreeCount + nSize);
                 dFreeCount += nSize;
             }
+        }
 
-            // make sure this will check any normal error case and not fail with exchanges, exports/imports, identities, etc.
-            if ((!txDesc.IsValid() || !txDesc.IsHighFee()) &&
-                fRejectAbsurdFee &&
-                nFees > minFee * 10000 &&
-                nFees > (GetMinRelayFee(tx, nSize, defaultLimitRate != 0) * 10000) &&
-                nFees > nValueOut/19)
-            {
-                string errmsg = strprintf("absurdly high fees %s, %d > %d",
-                                        hash.ToString(),
-                                        nFees, ::minRelayTxFee.GetFee(nSize) * 10000);
-                LogPrint("mempool", errmsg.c_str());
-                return state.Error("AcceptToMemoryPool: " + errmsg);
-            }
+        // make sure this will check any normal error case and not fail with exchanges, exports/imports, identities, etc.
+        if (fRejectAbsurdFee &&
+            (!txDesc.IsValid() || !txDesc.IsHighFee()) &&
+            nFees > minFee * 10000 &&
+            nFees > (GetMinRelayFee(tx, nSize, defaultLimitRate != 0) * 10000) &&
+            nFees > nValueOut/19)
+        {
+            string errmsg = strprintf("absurdly high fees %s, %d > %d",
+                                    hash.ToString(),
+                                    nFees, ::minRelayTxFee.GetFee(nSize) * 10000);
+            LogPrint("mempool", errmsg.c_str());
+            return state.Error("AcceptToMemoryPool: " + errmsg);
         }
 
         // Check against previous transactions
