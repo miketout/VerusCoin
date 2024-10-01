@@ -1,4 +1,6 @@
-mingw32_CC=x86_64-w64-mingw32-gcc-posix
+ifneq ($(shell $(SHELL) $(.SHELLFLAGS) "command -v $(host)-gcc-posix"),)
+mingw32_CC := $(host)-gcc-posix
+endif
 ifneq ($(shell $(SHELL) $(.SHELLFLAGS) "command -v $(host)-g++-posix"),)
 mingw32_CXX := $(host)-g++-posix
 endif
