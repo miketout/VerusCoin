@@ -10710,8 +10710,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                             }
                             if (destIdentity.unlockAfter && !destIdentity.IsLocked())
                             {
-                                std::string correctCommand = "Identity time lock should be zeroed before sending cross-chain to avoid inadvertent locking on destination chain. Run the 
-                                command:\nupdateidentity \'{\"name\":\"" + destIdentity.name + "\",\"parent\":\"" + EncodeDestination(CIdentityID(destIdentity.parent)) + "\",\"timelock\":0}\'\nto zero the timelock value before exporting to another chain";
+                                std::string correctCommand = "Identity time lock should be zeroed before sending cross-chain to avoid inadvertent locking on destination chain. Run the command:\nupdateidentity \'{\"name\":\"" + destIdentity.name + "\",\"parent\":\"" + EncodeDestination(CIdentityID(destIdentity.parent)) + "\",\"timelock\":0}\'\nto zero the timelock value before exporting to another chain";
                                 throw JSONRPCError(RPC_INVALID_PARAMETER, correctCommand);
                             }
                             destIdentity.contentMap.clear();
