@@ -1447,8 +1447,9 @@ UniValue GetReserveTransferProgress(const CTransaction &tx, int outNum, const CR
                                                 if (rtImportMapping.second.size() > rtIndexNum && rtImportMapping.second[rtIndexNum].size() && rtImportMapping.second[rtIndexNum][0] < importTx.vout.size())
                                                 {
                                                     UniValue importOutputs(UniValue::VOBJ);
+                                                    UniValue importOutputArr(UniValue::VARR);
                                                     importOutputs.pushKV("importtxout", CUTXORef(importTx.GetHash(), importOutput).ToUniValue());
-                                                    importOutputs.pushKV("timestampprocessed", DateTimeStrFormat("%Y-%m-%d %H:%M:%S", (int64_t)bIT->second->nTime));
+                                                    importOutputs.pushKV("timestampprocessed", (int64_t)bIT->second->nTime);
                                                     importOutputs.pushKV("timedateprocessed", DateTimeStrFormat("%Y-%m-%d %H:%M:%S", (int64_t)bIT->second->nTime));
                                                     for (auto oneOutNum : rtImportMapping.second[rtIndexNum])
                                                     {
@@ -1458,9 +1459,10 @@ UniValue GetReserveTransferProgress(const CTransaction &tx, int outNum, const CR
                                                             ScriptPubKeyToUniv(importTx.vout[oneOutNum].scriptPubKey, scriptPubKeyUni, false);
                                                             scriptPubKeyUni.pushKV("nativeout", ValueFromAmount(importTx.vout[oneOutNum].nValue));
                                                             scriptPubKeyUni.pushKV("outnum", oneOutNum);
+                                                            importOutputArr.push_back(scriptPubKeyUni);
                                                         }
                                                     }
-
+                                                    importOutputs.pushKV("outputs", importOutputArr);
                                                     ret.pushKV("processedoutputs", importOutputs);
                                                 }
                                             }
