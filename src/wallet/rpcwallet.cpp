@@ -3234,6 +3234,9 @@ static void MaybePushAddress(UniValue & entry, const CTxDestination &dest)
 bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTransaction &stakeTx, CStakeParams &stakeParams, bool slowValidation=true);
 bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakeParams, bool slowValidation=true);
 
+std::pair<std::vector<CReserveTransfer>, std::vector<std::vector<int>>> GetReserveTransferImportOutputMapping(const CTransaction &tx, int outNum, CCrossChainImport &cci, CCrossChainImport &sysCCI, CPBaaSNotarization &importNotarization, int32_t &importOutput, uint32_t nHeight);
+UniValue GetReserveTransferProgress(const CTransaction &tx, int outNum, const CReserveTransfer &rt);
+
 void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDepth, bool fLong, UniValue& ret, const isminefilter& filter)
 {
     CAmount nFee;
@@ -3246,7 +3249,6 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
     bool bIsCoinbase = false;
     bool bIsMint = false;
     bool isPBaaS = CConstVerusSolutionVector::GetVersionByHeight(chainActive.Height()) >= CActivationHeight::ACTIVATE_PBAAS;
-    CReserveTransactionDescriptor rtxd;
     CCoinsViewCache view(pcoinsTip);
     uint32_t nHeight = chainActive.Height();
 
@@ -3261,10 +3263,20 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
         bIsMint = pIndex && pIndex->IsVerusPOSBlock();
     }
 
+    CReserveTransactionDescriptor rtxd(wtx, view, nHeight);
+
     if (isPBaaS)
     {
-        if (rtxd.IsReserveTransfer()) ret.push_back(Pair("isreservetransfer", true));
-        if (rtxd.flags & rtxd.IS_IMPORT) ret.push_back(Pair("isimport", true));
+        if (rtxd.IsImport())
+        {
+            ret.push_back(Pair("isimport", true));
+        }
+
+        if (rtxd.IsExport())
+        {
+            ret.push_back(Pair("isexport", true));
+        }
+
         if (rtxd.flags & rtxd.IS_IDENTITY) ret.push_back(Pair("isidentity", true));
         if (rtxd.flags & rtxd.IS_CURRENCY_DEFINITION) ret.push_back(Pair("iscurrencydefinition", true));
         if (rtxd.flags & rtxd.IS_CHAIN_NOTARIZATION) ret.push_back(Pair("isnotarization", true));
@@ -3297,10 +3309,28 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
 
             if (wtx.vout.size() > s.vout)
             {
-                CCurrencyValueMap tokenAmounts = wtx.vout[s.vout].scriptPubKey.ReserveOutValue();
-                if (tokenAmounts.valueMap.size())
+                COptCCParams sentP;
+                CReserveTransfer rt;
+                if (wtx.vout[s.vout].scriptPubKey.IsPayToCryptoCondition(sentP) &&
+                    sentP.IsValid() &&
+                    sentP.vData.size() &&
+                    sentP.evalCode == EVAL_RESERVE_TRANSFER &&
+                    (rt = CReserveTransfer(sentP.vData[0])).IsValid())
                 {
-                    entry.push_back(Pair("tokenamounts", tokenAmounts.ToUniValue()));
+                    entry.push_back(Pair("reservetransfer", rt.ToUniValue()));
+                    UniValue progressUni = GetReserveTransferProgress(wtx, s.vout, rt);
+                    if (!progressUni.isNull())
+                    {
+                        entry.push_back(Pair("progress", progressUni));
+                    }
+                }
+                else
+                {
+                    CCurrencyValueMap tokenAmounts = wtx.vout[s.vout].scriptPubKey.ReserveOutValue();
+                    if (tokenAmounts.valueMap.size())
+                    {
+                        entry.push_back(Pair("tokenamounts", tokenAmounts.ToUniValue()));
+                    }
                 }
             }
 
@@ -3321,7 +3351,10 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
             string account;
             bool isFromZ = r.vout >= wtx.vout.size();
             if (r.destination.which() != COptCCParams::ADDRTYPE_INVALID && pwalletMain->mapAddressBook.count(r.destination))
+            {
                 account = pwalletMain->mapAddressBook[r.destination].name;
+            }
+
             if (fAllAccounts || (account == strAccount))
             {
                 UniValue entry(UniValue::VOBJ);
@@ -3359,6 +3392,57 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                     UniValue ccUni;
                     ScriptPubKeyToJSON(wtx.vout[r.vout].scriptPubKey, ccUni, false, false);
                     entry.push_back(Pair("smartoutput", ccUni));
+                }
+
+                if (rtxd.IsImport())
+                {
+                    CCrossChainImport cci;
+                    CCrossChainImport sysCCI;
+                    CPBaaSNotarization importNotarization;
+                    int32_t importOutNum;
+
+                    std::pair<std::vector<CReserveTransfer>, std::vector<std::vector<int>>> reserveTransferMap = GetReserveTransferImportOutputMapping(wtx, r.vout, cci, sysCCI, importNotarization, importOutNum, nHeight);
+
+                    // if our output is associated with the import, we will have data
+                    if (reserveTransferMap.second.size())
+                    {
+                        UniValue fromImport(UniValue::VOBJ);
+                        fromImport.push_back(Pair("importtxout", CUTXORef(wtx.GetHash(), r.vout).ToUniValue()));
+                        //fromImport.push_back(Pair("import", cci.ToUniValue()));
+                        //fromImport.push_back(Pair("currencystate", importNotarization.currencyState.currencyID == cci.importCurrencyID ? importNotarization.currencyState.ToUniValue() : importNotarization.currencyStates[cci.importCurrencyID].ToUniValue()));
+
+                        if (reserveTransferMap.first.size() < reserveTransferMap.second.size() &&
+                            reserveTransferMap.second[reserveTransferMap.first.size()].size() &&
+                            r.vout >= reserveTransferMap.second[reserveTransferMap.first.size()][0])
+                        {
+                            // this is put on the entry itself intentionally, at the same level as "mint"
+                            entry.push_back(Pair("earnedfees", true));
+                        }
+                        else
+                        {
+                            int i = 0;
+                            int j = 0;
+                            for (i = 0; i < reserveTransferMap.first.size(); i++)
+                            {
+                                for (j = 0; j < reserveTransferMap.second[i].size(); j++)
+                                {
+                                    if (reserveTransferMap.second[i][j] == r.vout)
+                                    {
+                                        break;
+                                    }
+                                }
+                                if (j < reserveTransferMap.second[i].size())
+                                {
+                                    break;
+                                }
+                            }
+                            if (i < reserveTransferMap.first.size())
+                            {
+                                fromImport.push_back(Pair("sourcetransfer", reserveTransferMap.first[i].ToUniValue()));
+                            }
+                        }
+                        entry.pushKV("fromimport", fromImport);
+                    }
                 }
 
                 entry.push_back(Pair("amount", ValueFromAmount(r.amount)));

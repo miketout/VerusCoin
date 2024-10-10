@@ -4689,7 +4689,7 @@ CAmount CWalletTx::GetAvailableCredit(bool fUseCache, bool includeIDLocked, cons
     {
         if (!pwallet->IsSpent(hashTx, i) && vout[i].scriptPubKey.IsSpendableOutputType())
         {
-            CAmount newCredit = pwallet->GetCredit(*this, i, filter);;
+            CAmount newCredit = pwallet->GetCredit(*this, i, filter);
             if (newCredit)
             {
                 if (!includeIDLocked)
