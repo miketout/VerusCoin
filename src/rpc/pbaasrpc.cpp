@@ -1335,35 +1335,86 @@ UniValue GetReserveTransferProgress(const CTransaction &tx, int outNum, const CR
                 myGetTransaction(spentIndexEntry.second.txid, spendingTx, blockHash, false) &&
                 !blockHash.IsNull())
             {
-                CCoinsViewCache view(pcoinsTip);
-
                 auto blockIter = mapBlockIndex.find(blockHash);
                 if (blockIter != mapBlockIndex.end() &&
                     chainActive.Contains(blockIter->second))
                 {
                     pending = false;
-                    CReserveTransactionDescriptor rtxd(spendingTx, view, blockIter->second->GetHeight());
+                    CCrossChainExport ccx(spendingTx);
+
                     // if we have a spent index, an export should spend (arbitrage transfer is spent by an import or normal spend),
                     // follow to the import, if possible, and if there is a second leg, follow the second leg as well
                     // cache useful information for import tracking
                     if (rt.IsArbitrageOnly())
                     {
-                        // get the solve (import) or recovery for this transfer
-                        if (rtxd.IsImport())
+                        CCrossChainImport cci;
+                        CCrossChainImport sysCCI;
+                        CPBaaSNotarization importNotarization;
+                        int32_t importOutput = 0;
+
+                        uint32_t nHeight;
+                        // now, we have the import transaction, get import/reserve transfer results from output
+                        auto rtImportMapping = GetReserveTransferImportOutputMapping(spendingTx, 3, cci, sysCCI, importNotarization, importOutput, blockIter->second->GetHeight());
+
+                        CValidationState state;
+                        std::vector<CUTXORef> arbOuts;
+                        auto arbTransfers = cci.GetArbitrageTransfers(spendingTx, state, blockIter->second->GetHeight(), nullptr, &arbOuts);
+                        int rtIndexNum = 0;
+                        for (; rtIndexNum < arbOuts.size(); rtIndexNum++)
                         {
-                            // should we get the mapping with GetReserveTransferImportOutputMapping?
-                            ret = UniValue(UniValue::VOBJ);
-                            ret.pushKV("status","processed");
+                            if (tx.GetHash() == arbOuts[rtIndexNum].hash && outNum == arbOuts[rtIndexNum].n)
+                            {
+                                break;
+                            }
+                        }
+
+                        ret = UniValue(UniValue::VOBJ);
+                        if (rtIndexNum < arbOuts.size())
+                        {
+                            // use the reserve transfer import number to find the output(s)
+                            if (rtImportMapping.second.size() > rtIndexNum && rtImportMapping.second[rtIndexNum].size() && rtImportMapping.second[rtIndexNum][0] < spendingTx.vout.size())
+                            {
+                                UniValue importOutputs(UniValue::VOBJ);
+                                UniValue importOutputArr(UniValue::VARR);
+                                importOutputs.pushKV("importtxout", CUTXORef(spendingTx.GetHash(), importOutput).ToUniValue());
+                                importOutputs.pushKV("timestampprocessed", (int64_t)blockIter->second->GetHeight());
+                                importOutputs.pushKV("timedateprocessed", DateTimeStrFormat("%Y-%m-%d %H:%M:%S", (int64_t)blockIter->second->GetHeight()));
+                                for (auto oneOutNum : rtImportMapping.second[rtIndexNum])
+                                {
+                                    if (oneOutNum < spendingTx.vout.size())
+                                    {
+                                        UniValue scriptPubKeyUni(UniValue::VOBJ);
+                                        ScriptPubKeyToUniv(spendingTx.vout[oneOutNum].scriptPubKey, scriptPubKeyUni, false);
+                                        scriptPubKeyUni.pushKV("nativeout", ValueFromAmount(spendingTx.vout[oneOutNum].nValue));
+                                        scriptPubKeyUni.pushKV("outnum", oneOutNum);
+                                        importOutputArr.push_back(scriptPubKeyUni);
+                                    }
+                                }
+                                importOutputs.pushKV("outputs", importOutputArr);
+                                ret.pushKV("processedoutputs", importOutputs);
+                            }
+
+                            CCrossChainImport cci(spendingTx);
+
+                            // get the solve (import) or recovery for this transfer
+                            if (cci.IsValid())
+                            {
+                                // should we get the mapping with GetReserveTransferImportOutputMapping?
+                                ret.pushKV("status","processed");
+                            }
+                            else
+                            {
+                                ret.pushKV("status","spent");
+                            }
                         }
                         else
                         {
-                            ret = UniValue(UniValue::VOBJ);
                             ret.pushKV("status","spent");
                         }
                     }
                     else
                     {
-                        if (rtxd.IsExport())
+                        if (ccx.IsValid())
                         {
                             // once we get to an export, we can provide its destination currency and chain
                             CCrossChainExport progressExport;
