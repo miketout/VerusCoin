@@ -1502,6 +1502,35 @@ UniValue GetReserveTransferProgress(const CTransaction &tx, int outNum, const CR
                                                     importOutputs.pushKV("importtxout", CUTXORef(importTx.GetHash(), importOutput).ToUniValue());
                                                     importOutputs.pushKV("timestampprocessed", (int64_t)bIT->second->nTime);
                                                     importOutputs.pushKV("timedateprocessed", DateTimeStrFormat("%Y-%m-%d %H:%M:%S", (int64_t)bIT->second->nTime));
+
+                                                    importOutputs.pushKV("convertfrom", ConnectedChains.GetFriendlyCurrencyName(rt.FirstCurrency()));
+                                                    uint160 convertToCurrency = rt.IsReserveToReserve() ? rt.secondReserveID : rt.destCurrencyID;
+                                                    importOutputs.pushKV("convertto", ConnectedChains.GetFriendlyCurrencyName(convertToCurrency));
+                                                    importOutputs.pushKV("nativecurrency", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID));
+
+                                                    // get cost basis in native currency
+                                                    CCurrencyValueMap costBasisPrices = importNotarization.currencyState.TargetConversionPrices(convertToCurrency,
+                                                                                                                                                CCurrencyValueMap(importNotarization.currencyState.currencies, importNotarization.currencyState.conversionPrice),
+                                                                                                                                                CCurrencyValueMap(importNotarization.currencyState.currencies, importNotarization.currencyState.viaConversionPrice));
+
+                                                    importOutputs.pushKV("costbasisnative", ValueFromAmount(costBasisPrices.valueMap[ASSETCHAINS_CHAINID]));
+                                                    if (IsVerusActive() || ASSETCHAINS_CHAINID == ConnectedChains.vDEXChainID())
+                                                    {
+                                                        uint160 bridgeID = IsVerusActive() ? ValidateCurrencyName("bridge.veth") : ValidateCurrencyName("bridge.vdex");
+                                                        uint160 daiID = ValidateCurrencyName("dai.veth");
+                                                        CCoinbaseCurrencyState vethState = bridgeID == rt.GetImportCurrency() ? importNotarization.currencyState : ConnectedChains.GetCurrencyState(bridgeID, bIT->second->GetHeight());
+                                                        if (vethState.IsValid() && vethState.IsLaunchCompleteMarker())
+                                                        {
+                                                            CCurrencyValueMap daiCostBasisPrices = (bridgeID == rt.GetImportCurrency()) ?
+                                                                                                                    importNotarization.currencyState.TargetConversionPrices(ASSETCHAINS_CHAINID,
+                                                                                                                                                                            CCurrencyValueMap(importNotarization.currencyState.currencies, importNotarization.currencyState.conversionPrice),
+                                                                                                                                                                            CCurrencyValueMap(importNotarization.currencyState.currencies, importNotarization.currencyState.viaConversionPrice)) :
+                                                                                                                    vethState.TargetConversionPrices(ASSETCHAINS_CHAINID);
+
+                                                            importOutputs.pushKV("nativepriceindai", ValueFromAmount(daiCostBasisPrices.valueMap[daiID]));
+                                                        }
+                                                    }
+
                                                     for (auto oneOutNum : rtImportMapping.second[rtIndexNum])
                                                     {
                                                         if (oneOutNum < importTx.vout.size())

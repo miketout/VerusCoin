@@ -817,8 +817,6 @@ bool CCoinbaseCurrencyState::ValidateConversionLimits(bool checkZeroViaOnlyPostL
     return true;
 }
 
-// returns a currency map that is the price in each currency for the target currency specified
-// based on a given fractional currency state
 int64_t CCoinbaseCurrencyState::TargetConversionPrice(const uint160 &sourceCurrencyID, const uint160 &targetCurrencyID) const
 {
     if (!IsFractional())
@@ -851,6 +849,8 @@ int64_t CCoinbaseCurrencyState::TargetConversionPrice(const uint160 &sourceCurre
     }
 }
 
+// returns a currency map that is the price in each currency for the target currency specified
+// based on a given fractional currency state
 CCurrencyValueMap CCoinbaseCurrencyState::TargetConversionPrices(const uint160 &targetCurrencyID) const
 {
     CCurrencyValueMap retVal(std::vector<uint160>({targetCurrencyID}), std::vector<int64_t>({SATOSHIDEN}));
