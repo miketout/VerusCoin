@@ -7337,7 +7337,7 @@ UniValue CEarningsTracker::ToUniValue() const
 void CEarningsTracker::AddValidationEarnings(uint160 originalCurrencyIn, int64_t amountOrig, int64_t valueFiat)
 {
     validationEarnings.valueMap[originalCurrencyIn] += amountOrig;
-    validationEarningsFiat = valueFiat;
+    validationEarningsFiat += valueFiat;
 }
 
 void CEarningsTracker::AddShortTerm(int64_t valueFiat)
