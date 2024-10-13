@@ -3265,6 +3265,8 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
     CCoinsViewCache view(pcoinsTip);
     uint32_t nHeight = chainActive.Height();
 
+    CBlockIndex *pIndex = mapBlockIndex.count(wtx.hashBlock) ? mapBlockIndex[wtx.hashBlock] : nullptr;
+
     if (ValidateStakeTransaction(wtx, p, false))
     {
         bIsStake = true;
@@ -3272,7 +3274,6 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
     else
     {
         bIsCoinbase = wtx.IsCoinBase();
-        CBlockIndex *pIndex = mapBlockIndex.count(wtx.hashBlock) ? mapBlockIndex[wtx.hashBlock] : nullptr;
         bIsMint = pIndex && pIndex->IsVerusPOSBlock();
     }
 
@@ -3398,7 +3399,26 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                         {
                             // add earnings
                             std::map<std::string, int64_t> nativePriceMap;
-                            int64_t fiatValidationEarnings = CCoinbaseCurrencyState::ReserveToNativeRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(CPBaaSNotarization(), pNativePriceMap ? *pNativePriceMap : nativePriceMap, chainActive[nHeight]->nTime, nHeight));
+                            uint32_t txHeight;
+                            uint32_t txTime;
+                            if (!pIndex)
+                            {
+                                uint256 blockHash;
+                                CTransaction chainTx;
+                                if (myGetTransaction(wtx.GetHash(), chainTx, blockHash) &&
+                                    !blockHash.IsNull())
+                                {
+                                    auto blkIter = mapBlockIndex.find(blockHash);
+                                    if (blkIter != mapBlockIndex.end() &&
+                                        chainActive.Contains(blkIter->second))
+                                    {
+                                        pIndex = blkIter->second;
+                                    }
+                                }
+                            }
+                            txHeight = pIndex ? pIndex->GetHeight() : nHeight;
+                            txTime = pIndex ? pIndex->nTime : chainActive[nHeight]->nTime;
+                            int64_t fiatValidationEarnings = CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(CPBaaSNotarization(), pNativePriceMap ? *pNativePriceMap : nativePriceMap, txTime, txHeight));
                             if (fiatValidationEarnings)
                             {
                                 pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, fiatValidationEarnings);
@@ -3453,7 +3473,10 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                                 std::map<std::string, int64_t> nativePriceMap;
                                 auto blockMapIter = mapBlockIndex.find(wtx.hashBlock);
                                 uint32_t blockTime = (blockMapIter != mapBlockIndex.end()) ? blockMapIter->second->nTime : 0;
-                                pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, CCoinbaseCurrencyState::ReserveToNativeRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight)));
+                                uint32_t blockHeight = (blockMapIter != mapBlockIndex.end()) ? blockMapIter->second->GetHeight() : nHeight;
+                                int64_t fiatValue = CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, blockHeight));
+                                pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, fiatValue);
+                                entry.push_back(Pair("fiatvalue", fiatValue));
                             }
 
                             entry.push_back(Pair("earnedfees", true));

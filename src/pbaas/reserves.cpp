@@ -7215,7 +7215,7 @@ CCostBasisTracker::CCostBasisTracker(const UniValue &uni)
                         int64_t amount = AmountFromValueNoErr(find_value(currencyEntries[i],"amount"));
                         if (amount && costBasis)
                         {
-                            costBasisMap.insert({{curID, blockTime}, {costBasis, costBasis}});
+                            costBasisMap.insert({{curID, blockTime}, {costBasis, amount}});
                         }
                     }
                 }
