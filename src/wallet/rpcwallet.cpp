@@ -3394,11 +3394,16 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                     else
                     {
                         entry.push_back(Pair("category", bIsMint ? "mint" : "generate"));
-                        if (wtx.vout[r.vout].nValue && chainActive.Height() >= nHeight)
+                        if (pAggregateEarnings && wtx.vout[r.vout].nValue && chainActive.Height() >= nHeight)
                         {
                             // add earnings
                             std::map<std::string, int64_t> nativePriceMap;
-                            pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(CPBaaSNotarization(), pNativePriceMap ? *pNativePriceMap : nativePriceMap, chainActive[nHeight]->nTime, nHeight)));
+                            int64_t fiatValidationEarnings = CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(CPBaaSNotarization(), pNativePriceMap ? *pNativePriceMap : nativePriceMap, chainActive[nHeight]->nTime, nHeight));
+                            if (fiatValidationEarnings)
+                            {
+                                pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, fiatValidationEarnings);
+                                entry.push_back(Pair("fiatvalue", ValueFromAmount(fiatValidationEarnings)));
+                            }
                         }
                     }
                 }
