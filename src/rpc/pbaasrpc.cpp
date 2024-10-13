@@ -1385,18 +1385,18 @@ UniValue GetTransferImportProgress(const CTransaction &importTx, const CReserveT
                     if ((blockTime - std::get<0>(oneCostBasis)) > pAggregateEarnings->defaultShortLongTermThresholdSeconds)
                     {
                         initialLongTermAmount += std::get<2>(oneCostBasis);
-                        initialLongTermCostBasis += CCoinbaseCurrencyState::NativeToReserveRaw(std::get<2>(oneCostBasis), std::get<1>(oneCostBasis));
+                        initialLongTermCostBasis += CCoinbaseCurrencyState::ReserveToNativeRaw(std::get<2>(oneCostBasis), std::get<1>(oneCostBasis));
                     }
                     else
                     {
-                        initialShortTermCostBasis += CCoinbaseCurrencyState::NativeToReserveRaw(std::get<2>(oneCostBasis), std::get<1>(oneCostBasis));
+                        initialShortTermCostBasis += CCoinbaseCurrencyState::ReserveToNativeRaw(std::get<2>(oneCostBasis), std::get<1>(oneCostBasis));
                     }
                 }
                 int64_t longTermNewAmount = CCurrencyDefinition::CalculateRatioOfValue(newAmount, CCurrencyDefinition::CalculateRatioOfTwoValues(initialLongTermAmount, rt.FirstValue()));
                 int64_t shortTermNewAmount = newAmount - longTermNewAmount;
 
-                int64_t longTermNewCostBasis = CCoinbaseCurrencyState::NativeToReserveRaw(longTermNewAmount, fiatCostBasis);
-                int64_t shortTermNewCostBasis = CCoinbaseCurrencyState::NativeToReserveRaw(shortTermNewAmount, fiatCostBasis);
+                int64_t longTermNewCostBasis = CCoinbaseCurrencyState::ReserveToNativeRaw(longTermNewAmount, fiatCostBasis);
+                int64_t shortTermNewCostBasis = CCoinbaseCurrencyState::ReserveToNativeRaw(shortTermNewAmount, fiatCostBasis);
 
                 if (longTermNewAmount)
                 {
@@ -1412,7 +1412,7 @@ UniValue GetTransferImportProgress(const CTransaction &importTx, const CReserveT
                 if (importNotarization.currencyState.GetReserveMap().count(rt.FeeCurrencyID()))
                 {
                     int64_t feeCostBasisNative = pAggregateEarnings->GetConversionCostBasisNative(importNotarization, rt.FeeCurrencyID(), nHeight);
-                    int64_t feeValueFiat = CCoinbaseCurrencyState::NativeToReserveRaw(rt.nFees, CCoinbaseCurrencyState::NativeToReserveRaw(feeCostBasisNative, pAggregateEarnings->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight)));
+                    int64_t feeValueFiat = CCoinbaseCurrencyState::ReserveToNativeRaw(rt.nFees, CCoinbaseCurrencyState::NativeToReserveRaw(feeCostBasisNative, pAggregateEarnings->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight)));
                     pAggregateEarnings->AddFees(feeValueFiat);
                 }
             }

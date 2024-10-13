@@ -3398,7 +3398,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                         {
                             // add earnings
                             std::map<std::string, int64_t> nativePriceMap;
-                            int64_t fiatValidationEarnings = CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(CPBaaSNotarization(), pNativePriceMap ? *pNativePriceMap : nativePriceMap, chainActive[nHeight]->nTime, nHeight));
+                            int64_t fiatValidationEarnings = CCoinbaseCurrencyState::ReserveToNativeRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(CPBaaSNotarization(), pNativePriceMap ? *pNativePriceMap : nativePriceMap, chainActive[nHeight]->nTime, nHeight));
                             if (fiatValidationEarnings)
                             {
                                 pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, fiatValidationEarnings);
@@ -3453,7 +3453,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                                 std::map<std::string, int64_t> nativePriceMap;
                                 auto blockMapIter = mapBlockIndex.find(wtx.hashBlock);
                                 uint32_t blockTime = (blockMapIter != mapBlockIndex.end()) ? blockMapIter->second->nTime : 0;
-                                pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight)));
+                                pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, CCoinbaseCurrencyState::ReserveToNativeRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight)));
                             }
 
                             entry.push_back(Pair("earnedfees", true));
