@@ -7193,6 +7193,204 @@ CFeePool::CFeePool(const CTransaction &coinbaseTx)
     }
 }
 
+CCostBasisTracker::CCostBasisTracker(const UniValue &uni)
+{
+    // the univalue object is indexed by currency name with an array of objects, each including "timestamp", "costbasis", and "amount"
+    auto allEntries = find_value(uni, "entries");
+    if (allEntries.isObject())
+    {
+        std::vector<std::string> currencyNames = allEntries.getKeys();
+        for (auto &oneName : currencyNames)
+        {
+            uint160 curID = ValidateCurrencyName(oneName);
+            if (!curID.IsNull())
+            {
+                UniValue currencyEntries = find_value(allEntries, oneName);
+                if (currencyEntries.isArray())
+                {
+                    for (int i = 0; i < currencyEntries.size(); i++)
+                    {
+                        uint32_t blockTime = uni_get_int64(find_value(currencyEntries[i],"timestamp"));
+                        int64_t costBasis = AmountFromValueNoErr(find_value(currencyEntries[i],"costbasis"));
+                        int64_t amount = AmountFromValueNoErr(find_value(currencyEntries[i],"amount"));
+                        if (amount && costBasis)
+                        {
+                            costBasisMap.insert({{curID, blockTime}, {costBasis, costBasis}});
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void CCostBasisTracker::PutCurrency(const uint160 &currencyID, uint32_t blockTime, int64_t costBasis, int64_t amount)
+{
+    costBasisMap.insert({{currencyID, blockTime}, {costBasis, amount}});
+}
+
+std::vector<std::tuple<uint32_t, int64_t, int64_t>> CCostBasisTracker::TakeCurrency(const uint160 &currencyID, int64_t amount, int64_t &amountLeft)
+{
+    std::vector<std::tuple<uint32_t, int64_t, int64_t>> retEntries;
+    // if we can take currency, it gets the date and price. if not, the rest gets zero date and price
+    amountLeft = amount;
+    int usedEntries = 0;
+    auto startIter = costBasisMap.lower_bound({currencyID, (uint32_t)0});
+    auto oneIter = startIter;
+    auto endIter = costBasisMap.upper_bound({currencyID, UINT32_MAX});
+    for (; amountLeft && oneIter != endIter; oneIter++)
+    {
+        if (oneIter->second.second > amountLeft)
+        {
+            oneIter->second.second -= amountLeft;
+            retEntries.push_back({oneIter->first.second, oneIter->second.first, amountLeft});
+            amountLeft = 0;
+            break;
+        }
+        else
+        {
+            usedEntries++;
+            retEntries.push_back({oneIter->first.second, oneIter->second.first, oneIter->second.second});
+            amountLeft -= oneIter->second.second;
+        }
+    }
+    if (usedEntries)
+    {
+        costBasisMap.erase(startIter, oneIter);
+    }
+    return retEntries;
+}
+
+UniValue CCostBasisTracker::ToUniValue() const
+{
+    UniValue retVal(UniValue::VOBJ);
+    UniValue entries(UniValue::VOBJ);
+    uint160 currentCurID;
+    UniValue oneCurrencyOut(UniValue::VARR);
+    for (auto &oneEntry : costBasisMap)
+    {
+        if (oneEntry.first.first.IsNull())
+        {
+            continue;
+        }
+        if (oneEntry.first.first != currentCurID &&
+            !currentCurID.IsNull() &&
+            oneCurrencyOut.size())
+        {
+            entries.pushKV(EncodeDestination(CIdentityID(currentCurID)), oneCurrencyOut);
+            oneCurrencyOut = UniValue(UniValue::VARR);
+        }
+
+        currentCurID = oneEntry.first.first;
+        UniValue oneEntryVal(UniValue::VOBJ);
+        oneEntryVal.pushKV("timestamp", (int64_t)oneEntry.first.second);
+        oneEntryVal.pushKV("costbasis", ValueFromAmount(oneEntry.second.first));
+        oneEntryVal.pushKV("amount", ValueFromAmount(oneEntry.second.second));
+        oneCurrencyOut.push_back(oneEntryVal);
+    }
+    if (oneCurrencyOut.size())
+    {
+        entries.pushKV(EncodeDestination(CIdentityID(currentCurID)), oneCurrencyOut);
+    }
+    if (entries.size())
+    {
+        retVal.pushKV("entries", entries);
+    }
+    return retVal;
+}
+
+CEarningsTracker::CEarningsTracker(const UniValue &uni)
+{
+    fiatCurrencyID = ValidateCurrencyName(uni_get_str(find_value(uni, "fiatcurrency"), FiatDefaultName()));
+    shortLongTermThresholdSeconds = uni_get_int64(find_value(uni, "shortlongthresholdseconds"), defaultShortLongTermThresholdSeconds);
+    validationEarnings = CCurrencyValueMap(find_value(uni, "validationearnings"));
+    validationEarningsFiat = AmountFromValueNoErr(find_value(uni, "validationearningsfiat"));
+    feesInFiat = AmountFromValueNoErr(find_value(uni, "feesinfiat"));
+    shortTermGainLossFiat = AmountFromValueNoErr(find_value(uni, "shorttermgainlossfiat"));
+    longTermGainLossFiat = AmountFromValueNoErr(find_value(uni, "longtermgainlossfiat"));
+}
+
+uint160 CEarningsTracker::FiatDefault()
+{
+    static uint160 parentID;
+    return CIdentity::GetID(FiatDefaultName(), parentID);
+}
+
+uint160 CEarningsTracker::FiatCurrencyID() const
+{
+    return fiatCurrencyID.IsNull() ? FiatDefault() : fiatCurrencyID;
+}
+
+UniValue CEarningsTracker::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("fiatcurrency", ConnectedChains.GetFriendlyCurrencyName(fiatCurrencyID));
+    ret.pushKV("shortlongthresholdseconds", (int64_t)shortLongTermThresholdSeconds);
+    ret.pushKV("validationearnings", validationEarnings.ToUniValue());
+    ret.pushKV("validationearningsfiat", ValueFromAmount(validationEarningsFiat));
+    ret.pushKV("feesinfiat", ValueFromAmount(feesInFiat));
+    ret.pushKV("shorttermgainlossfiat", ValueFromAmount(shortTermGainLossFiat));
+    ret.pushKV("longtermgainlossfiat", ValueFromAmount(longTermGainLossFiat));
+    return ret;
+}
+
+void CEarningsTracker::AddValidationEarnings(uint160 originalCurrencyIn, int64_t amountOrig, int64_t valueFiat)
+{
+    validationEarnings.valueMap[originalCurrencyIn] += amountOrig;
+    validationEarningsFiat = valueFiat;
+}
+
+void CEarningsTracker::AddShortTerm(int64_t valueFiat)
+{
+    shortTermGainLossFiat += valueFiat;
+}
+
+void CEarningsTracker::AddLongTerm(int64_t valueFiat)
+{
+    longTermGainLossFiat += valueFiat;
+}
+
+int64_t CEarningsTracker::GetNativeCostBasisFiat(const CPBaaSNotarization &importNotarization, const std::map<std::string, int64_t> &nativePriceMap, uint32_t blockTime, uint32_t nHeight) const
+{
+    // get cost basis in native currency
+    CCurrencyValueMap costBasisPrices;
+
+    if (IsVerusActive() || ASSETCHAINS_CHAINID == ConnectedChains.vDEXChainID())
+    {
+        uint160 bridgeID = IsVerusActive() ? ValidateCurrencyName("bridge.veth") : ValidateCurrencyName("bridge.vdex");
+        CCoinbaseCurrencyState vethState = bridgeID == importNotarization.currencyState.currencyID ? importNotarization.currencyState : ConnectedChains.GetCurrencyState(bridgeID, nHeight);
+        if (vethState.IsValid() && vethState.IsLaunchCompleteMarker())
+        {
+            costBasisPrices = (bridgeID == importNotarization.currencyState.currencyID) ?
+                                                                    importNotarization.currencyState.TargetConversionPrices(ASSETCHAINS_CHAINID,
+                                                                                                                            CCurrencyValueMap(importNotarization.currencyState.currencies, importNotarization.currencyState.conversionPrice),
+                                                                                                                            CCurrencyValueMap(importNotarization.currencyState.currencies, importNotarization.currencyState.viaConversionPrice)) :
+                                                                    vethState.TargetConversionPrices(ASSETCHAINS_CHAINID);
+        }
+    }
+
+    if (!costBasisPrices.valueMap.size())
+    {
+        auto priceIter = nativePriceMap.find(DateTimeStrFormat("%Y-%m-%d", (int64_t)blockTime));
+        if (priceIter != nativePriceMap.end())
+        {
+            costBasisPrices.valueMap[fiatCurrencyID] = priceIter->second;
+        }
+    }
+
+    return costBasisPrices.valueMap[fiatCurrencyID];
+}
+
+int64_t CEarningsTracker::GetConversionCostBasisNative(const CPBaaSNotarization &importNotarization, const uint160 &convertToCurrencyID, uint32_t nHeight) const
+{
+    // get cost basis in native currency
+    CCurrencyValueMap costBasisPrices = importNotarization.currencyState.TargetConversionPrices(convertToCurrencyID,
+                                                                                                CCurrencyValueMap(importNotarization.currencyState.currencies, importNotarization.currencyState.conversionPrice),
+                                                                                                CCurrencyValueMap(importNotarization.currencyState.currencies, importNotarization.currencyState.viaConversionPrice));
+
+    return costBasisPrices.valueMap[ASSETCHAINS_CHAINID];
+}
+
 bool ValidateFeePool(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled)
 {
     // fee pool output is unspendable
