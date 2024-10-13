@@ -2168,12 +2168,12 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
         );
 
 
-    UniValue startValue = find_value(params[0].get_obj(), "start");
-    UniValue endValue = find_value(params[0].get_obj(), "end");
-
     bool includeChainInfo = uni_get_bool(find_value(params[0].get_obj(), "chaininfo"));
     bool friendlyNames = uni_get_bool(find_value(params[0].get_obj(), "friendlynames"));
     int verbosity = uni_get_bool(find_value(params[0].get_obj(), "verbosity"));
+
+    UniValue startValue = find_value(params[0].get_obj(), "start");
+    UniValue endValue = find_value(params[0].get_obj(), "end");
 
     int start = 0;
     int end = 0;
@@ -2313,13 +2313,14 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
     bool friendlyNames = uni_get_bool(find_value(params[0].get_obj(), "friendlynames"));
+    int32_t asOfBlock = uni_get_int(find_value(params[0].get_obj(), "asofblock"));
 
     std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
 
     LOCK2(cs_main, mempool.cs);
 
     for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
-        if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
+        if (!GetAddressIndex((*it).first, (*it).second, addressIndex, 0, asOfBlock)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
     }
