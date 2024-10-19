@@ -1351,12 +1351,12 @@ UniValue GetTransferImportProgress(const CTransaction &importTx, const CReserveT
 
         if (pAggregateEarnings)
         {
-            int64_t nativeCostBasis = pAggregateEarnings->GetConversionCostBasisNative(importNotarization, convertToCurrency, nHeight);
-            importOutputs.pushKV("newcostbasisnative", nativeCostBasis);
+            int64_t nativeCostBasis = pCurrenciesCostBases->GetConversionCostBasisNative(importNotarization, convertToCurrency, nHeight);
+            importOutputs.pushKV("newcostbasisnative", ValueFromAmount(nativeCostBasis));
 
             std::map<std::string, int64_t> nativePriceMap;
-            int64_t fiatCostBasis = CCoinbaseCurrencyState::NativeToReserveRaw(nativeCostBasis, pAggregateEarnings->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight));
-            importOutputs.pushKV("newcostbasisfiat", fiatCostBasis);
+            int64_t fiatCostBasis = CCoinbaseCurrencyState::NativeToReserveRaw(nativeCostBasis, pCurrenciesCostBases->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight, pAggregateEarnings->FiatCurrencyID()));
+            importOutputs.pushKV("newcostbasisfiat", ValueFromAmount(fiatCostBasis));
 
             if (pCurrenciesCostBases)
             {
@@ -1369,10 +1369,10 @@ UniValue GetTransferImportProgress(const CTransaction &importTx, const CReserveT
                 if (amountLeft)
                 {
                     UniValue missingCostBasis(UniValue::VOBJ);
-                    missingCostBasis.pushKV(EncodeDestination(CIdentityID(rt.FirstCurrency())), amountLeft);
+                    missingCostBasis.pushKV(EncodeDestination(CIdentityID(rt.FirstCurrency())), ValueFromAmount(amountLeft));
                     importOutputs.pushKV("missinginitialcostbasis", missingCostBasis);
-                    int64_t currentCostBasis = pAggregateEarnings->GetConversionCostBasisNative(importNotarization, rt.FirstCurrency(), nHeight);
-                    int64_t currentFiatCostBasis = CCoinbaseCurrencyState::NativeToReserveRaw(currentCostBasis, pAggregateEarnings->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight));
+                    int64_t currentCostBasis = pCurrenciesCostBases->GetConversionCostBasisNative(importNotarization, rt.FirstCurrency(), nHeight);
+                    int64_t currentFiatCostBasis = CCoinbaseCurrencyState::NativeToReserveRaw(currentCostBasis, pCurrenciesCostBases->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight, pAggregateEarnings->FiatCurrencyID()));
                     fromCostBasis.push_back({blockTime, currentFiatCostBasis, amountLeft});
                 }
 
@@ -1411,8 +1411,8 @@ UniValue GetTransferImportProgress(const CTransaction &importTx, const CReserveT
                 // add fees
                 if (importNotarization.currencyState.GetReserveMap().count(rt.FeeCurrencyID()))
                 {
-                    int64_t feeCostBasisNative = pAggregateEarnings->GetConversionCostBasisNative(importNotarization, rt.FeeCurrencyID(), nHeight);
-                    int64_t feeValueFiat = CCoinbaseCurrencyState::NativeToReserveRaw(rt.nFees, CCoinbaseCurrencyState::NativeToReserveRaw(feeCostBasisNative, pAggregateEarnings->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight)));
+                    int64_t feeCostBasisNative = pCurrenciesCostBases->GetConversionCostBasisNative(importNotarization, rt.FeeCurrencyID(), nHeight);
+                    int64_t feeValueFiat = CCoinbaseCurrencyState::NativeToReserveRaw(rt.nFees, CCoinbaseCurrencyState::NativeToReserveRaw(feeCostBasisNative, pCurrenciesCostBases->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, nHeight, pAggregateEarnings->FiatCurrencyID())));
                     pAggregateEarnings->AddFees(feeValueFiat);
                 }
             }

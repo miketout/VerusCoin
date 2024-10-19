@@ -3418,10 +3418,17 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                             }
                             txHeight = pIndex ? pIndex->GetHeight() : nHeight;
                             txTime = pIndex ? pIndex->nTime : chainActive[nHeight]->nTime;
-                            int64_t fiatValidationEarnings = CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(CPBaaSNotarization(), pNativePriceMap ? *pNativePriceMap : nativePriceMap, txTime, txHeight));
+
+                            int64_t fiatCostBasis = pCurrenciesCostBases->GetNativeCostBasisFiat(CPBaaSNotarization(), pNativePriceMap ? *pNativePriceMap : nativePriceMap, txTime, txHeight, pAggregateEarnings->FiatCurrencyID());
+                            int64_t fiatValidationEarnings = CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, fiatCostBasis);
+
+                            // TODO: ACCOUNTING - add all currencies, not just native to earnings for PBaaS chains
+
                             if (fiatValidationEarnings)
                             {
                                 pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, fiatValidationEarnings);
+                                pCurrenciesCostBases->PutCurrency(ASSETCHAINS_CHAINID, txTime, fiatCostBasis, wtx.vout[r.vout].nValue);
+                                entry.push_back(Pair("earningscostbasis", ValueFromAmount(fiatCostBasis)));
                                 entry.push_back(Pair("fiatvalue", ValueFromAmount(fiatValidationEarnings)));
                             }
                         }
@@ -3468,20 +3475,24 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                             // this is put on the entry itself intentionally, at the same level as "mint"
 
                             // add this to earnings
+                            // TODO: ACCOUNTING - add all currencies, not just native to earnings for PBaaS chains
                             if (pAggregateEarnings)
                             {
                                 std::map<std::string, int64_t> nativePriceMap;
                                 auto blockMapIter = mapBlockIndex.find(wtx.hashBlock);
                                 uint32_t blockTime = (blockMapIter != mapBlockIndex.end()) ? blockMapIter->second->nTime : 0;
                                 uint32_t blockHeight = (blockMapIter != mapBlockIndex.end()) ? blockMapIter->second->GetHeight() : nHeight;
-                                int64_t fiatValue = CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, pAggregateEarnings->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, blockHeight));
+                                int64_t fiatCostBasis = pCurrenciesCostBases->GetNativeCostBasisFiat(importNotarization, pNativePriceMap ? *pNativePriceMap : nativePriceMap, blockTime, blockHeight, pAggregateEarnings->FiatCurrencyID());
+                                int64_t fiatValue = CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, fiatCostBasis);
                                 pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, fiatValue);
+                                pCurrenciesCostBases->PutCurrency(ASSETCHAINS_CHAINID, blockTime, fiatCostBasis, wtx.vout[r.vout].nValue);
+                                entry.push_back(Pair("earningscostbasis", ValueFromAmount(fiatCostBasis)));
                                 entry.push_back(Pair("fiatvalue", fiatValue));
                             }
 
                             entry.push_back(Pair("earnedfees", true));
                         }
-                        else
+                        else if (reserveTransferMap.second.back().size() && r.vout <= reserveTransferMap.second.back()[0])
                         {
                             int i = 0;
                             int j = 0;
@@ -3512,10 +3523,10 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                                             pCurrenciesCostBases->PutCurrency(oneCostBasis.first.first, oneCostBasis.first.second, oneCostBasis.second.first, oneCostBasis.second.second);
                                         }
                                     }
-                                    else
+                                    else if (cci.sourceSystemID != ASSETCHAINS_CHAINID)
                                     {
-                                        // flag that it has a missing cost basis by adding a return of null currency on the export and rt index
-                                        (*pOutgoingCostBases)[{cci.exportTxId, i}].insert({{uint160(), 0}, {0, 0}});
+                                        // if from off-chain, flag that it has a missing cost basis by adding an entry of the system with zero cost basis and amount with the export and rt index
+                                        (*pOutgoingCostBases)[{cci.exportTxId, i}].insert({{cci.sourceSystemID, INT32_MAX}, {0, 0}});
                                     }
                                 }
 

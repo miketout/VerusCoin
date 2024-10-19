@@ -7299,9 +7299,15 @@ UniValue CCostBasisTracker::ToUniValue() const
     return retVal;
 }
 
+uint160 CCostBasisTracker::FiatDefault()
+{
+    static uint160 parentID;
+    return CIdentity::GetID(FiatDefaultName(), parentID);
+}
+
 CEarningsTracker::CEarningsTracker(const UniValue &uni)
 {
-    fiatCurrencyID = ValidateCurrencyName(uni_get_str(find_value(uni, "fiatcurrency"), FiatDefaultName()));
+    fiatCurrencyID = ValidateCurrencyName(uni_get_str(find_value(uni, "fiatcurrency"), ConnectedChains.GetFriendlyCurrencyName(FiatCurrencyID())));
     shortLongTermThresholdSeconds = uni_get_int64(find_value(uni, "shortlongthresholdseconds"), defaultShortLongTermThresholdSeconds);
     validationEarnings = CCurrencyValueMap(find_value(uni, "validationearnings"));
     validationEarningsFiat = AmountFromValueNoErr(find_value(uni, "validationearningsfiat"));
@@ -7310,15 +7316,9 @@ CEarningsTracker::CEarningsTracker(const UniValue &uni)
     longTermGainLossFiat = AmountFromValueNoErr(find_value(uni, "longtermgainlossfiat"));
 }
 
-uint160 CEarningsTracker::FiatDefault()
-{
-    static uint160 parentID;
-    return CIdentity::GetID(FiatDefaultName(), parentID);
-}
-
 uint160 CEarningsTracker::FiatCurrencyID() const
 {
-    return fiatCurrencyID.IsNull() ? FiatDefault() : fiatCurrencyID;
+    return fiatCurrencyID.IsNull() ? CCostBasisTracker::FiatDefault() : fiatCurrencyID;
 }
 
 UniValue CEarningsTracker::ToUniValue() const
@@ -7350,22 +7350,22 @@ void CEarningsTracker::AddLongTerm(int64_t valueFiat)
     longTermGainLossFiat += valueFiat;
 }
 
-int64_t CEarningsTracker::GetNativeCostBasisFiat(const CPBaaSNotarization &importNotarization, const std::map<std::string, int64_t> &nativePriceMap, uint32_t blockTime, uint32_t nHeight) const
+int64_t CCostBasisTracker::GetNativeCostBasisFiat(const CPBaaSNotarization &importNotarization, const std::map<std::string, int64_t> &nativePriceMap, uint32_t blockTime, uint32_t nHeight, const uint160 &fiatCurrencyID) const
 {
     // get cost basis in native currency
     CCurrencyValueMap costBasisPrices;
 
-    if (IsVerusActive() || ASSETCHAINS_CHAINID == ConnectedChains.vDEXChainID())
+    if (fiatCurrencyID == CCostBasisTracker::FiatDefault() && (IsVerusActive() || ASSETCHAINS_CHAINID == ConnectedChains.vDEXChainID()))
     {
-        uint160 bridgeID = IsVerusActive() ? ValidateCurrencyName("bridge.veth") : ValidateCurrencyName("bridge.vdex");
-        CCoinbaseCurrencyState vethState = bridgeID == importNotarization.currencyState.currencyID ? importNotarization.currencyState : ConnectedChains.GetCurrencyState(bridgeID, nHeight);
-        if (vethState.IsValid() && vethState.IsLaunchCompleteMarker())
+        uint160 bridgeID = IsVerusActive() ? ValidateCurrencyName("bridge.veth") : ConnectedChains.ThisChain().GatewayConverterID();
+        CCoinbaseCurrencyState bridgeState = bridgeID == importNotarization.currencyState.currencyID ? importNotarization.currencyState : ConnectedChains.GetCurrencyState(bridgeID, nHeight);
+        if (bridgeState.IsValid() && bridgeState.IsLaunchCompleteMarker())
         {
             costBasisPrices = (bridgeID == importNotarization.currencyState.currencyID) ?
                                                                     importNotarization.currencyState.TargetConversionPrices(ASSETCHAINS_CHAINID,
                                                                                                                             CCurrencyValueMap(importNotarization.currencyState.currencies, importNotarization.currencyState.conversionPrice),
                                                                                                                             CCurrencyValueMap(importNotarization.currencyState.currencies, importNotarization.currencyState.viaConversionPrice)) :
-                                                                    vethState.TargetConversionPrices(ASSETCHAINS_CHAINID);
+                                                                    bridgeState.TargetConversionPrices(ASSETCHAINS_CHAINID);
         }
     }
 
@@ -7381,7 +7381,7 @@ int64_t CEarningsTracker::GetNativeCostBasisFiat(const CPBaaSNotarization &impor
     return costBasisPrices.valueMap[fiatCurrencyID];
 }
 
-int64_t CEarningsTracker::GetConversionCostBasisNative(const CPBaaSNotarization &importNotarization, const uint160 &convertToCurrencyID, uint32_t nHeight) const
+int64_t CCostBasisTracker::GetConversionCostBasisNative(const CPBaaSNotarization &importNotarization, const uint160 &convertToCurrencyID, uint32_t nHeight) const
 {
     // get cost basis in native currency
     CCurrencyValueMap costBasisPrices = importNotarization.currencyState.TargetConversionPrices(convertToCurrencyID,

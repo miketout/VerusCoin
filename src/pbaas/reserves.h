@@ -1867,6 +1867,17 @@ public:
     void PutCurrency(const uint160 &currencyID, uint32_t blockTime, int64_t costBasis, int64_t amount);
     std::vector<std::tuple<uint32_t, int64_t, int64_t>> TakeCurrency(const uint160 &currencyID, int64_t amount, int64_t &amountLeft);
     UniValue ToUniValue() const;
+
+    static std::string FiatDefaultName()
+    {
+        return "dai.veth";
+    }
+
+    static uint160 FiatDefault();
+
+    int64_t GetNativeCostBasisFiat(const CPBaaSNotarization &importNotarization, const std::map<std::string, int64_t> &nativePriceMap, uint32_t blockTime, uint32_t nHeight, const uint160 &fiatCurrency=FiatDefault()) const;
+
+    int64_t GetConversionCostBasisNative(const CPBaaSNotarization &importNotarization, const uint160 &convertToCurrencyID, uint32_t nHeight) const;
 };
 
 // consider keeping ordered list of:
@@ -1888,17 +1899,10 @@ public:
     CCurrencyValueMap longTermGainLoss;
     int64_t longTermGainLossFiat;
 
-    CEarningsTracker(const uint160 &FiatCurrency=FiatDefault(), uint32_t ShortLongThresholdSeconds=defaultShortLongTermThresholdSeconds) :
+    CEarningsTracker(const uint160 &FiatCurrency=CCostBasisTracker::FiatDefault(), uint32_t ShortLongThresholdSeconds=defaultShortLongTermThresholdSeconds) :
         fiatCurrencyID(FiatCurrency), shortLongTermThresholdSeconds(ShortLongThresholdSeconds), validationEarningsFiat(0), feesInFiat(0), shortTermGainLossFiat(0), longTermGainLossFiat(0) {}
 
     CEarningsTracker(const UniValue &uni);
-
-    static std::string FiatDefaultName()
-    {
-        return "dai.veth";
-    }
-
-    static uint160 FiatDefault();
 
     uint160 FiatCurrencyID() const;
 
@@ -1914,10 +1918,6 @@ public:
     void AddShortTerm(int64_t valueFiat);
 
     void AddLongTerm(int64_t valueFiat);
-
-    int64_t GetNativeCostBasisFiat(const CPBaaSNotarization &importNotarization, const std::map<std::string, int64_t> &nativePriceMap, uint32_t blockTime, uint32_t nHeight) const;
-
-    int64_t GetConversionCostBasisNative(const CPBaaSNotarization &importNotarization, const uint160 &convertToCurrencyID, uint32_t nHeight) const;
 };
 
 struct CCcontract_info;
