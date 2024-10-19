@@ -3428,7 +3428,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                             {
                                 pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, fiatValidationEarnings);
                                 pCurrenciesCostBases->PutCurrency(ASSETCHAINS_CHAINID, txTime, fiatCostBasis, wtx.vout[r.vout].nValue);
-                                entry.push_back(Pair("earningscostbasis", ValueFromAmount(fiatCostBasis)));
+                                entry.push_back(Pair("costbasis", ValueFromAmount(fiatCostBasis)));
                                 entry.push_back(Pair("fiatvalue", ValueFromAmount(fiatValidationEarnings)));
                             }
                         }
@@ -3486,7 +3486,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                                 int64_t fiatValue = CCoinbaseCurrencyState::NativeToReserveRaw(wtx.vout[r.vout].nValue, fiatCostBasis);
                                 pAggregateEarnings->AddValidationEarnings(ASSETCHAINS_CHAINID, wtx.vout[r.vout].nValue, fiatValue);
                                 pCurrenciesCostBases->PutCurrency(ASSETCHAINS_CHAINID, blockTime, fiatCostBasis, wtx.vout[r.vout].nValue);
-                                entry.push_back(Pair("earningscostbasis", ValueFromAmount(fiatCostBasis)));
+                                entry.push_back(Pair("costbasis", ValueFromAmount(fiatCostBasis)));
                                 entry.push_back(Pair("fiatvalue", fiatValue));
                             }
 
