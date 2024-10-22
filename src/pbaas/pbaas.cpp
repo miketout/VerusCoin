@@ -2110,7 +2110,8 @@ bool ValidateFinalizeExport(struct CCcontract_info *cp, Eval* eval, const CTrans
                 p.evalCode == EVAL_CROSSCHAIN_IMPORT &&
                 p.vData.size() &&
                 (cci = CCrossChainImport(p.vData[0])).IsValid() &&
-                cci.exportTxId == exportTx.GetHash())
+                cci.exportTxId == exportTx.GetHash() &&
+                cci.exportTxOutNum == of.output.n)
             {
                 return true;
             }
@@ -6530,6 +6531,20 @@ bool CConnectedChains::CheckClearConvert(uint32_t height) const
     return height >= 8330 || pendingTestnetExportHeights.count(height);
 }
 
+/* Replace the function above with this on testnet reset
+bool CConnectedChains::CheckClearConvert(uint32_t height) const
+{
+    if (IsVerusMainnetActive())
+    {
+        if (height < PBAAS_CLEARCONVERT_HEIGHT)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+*/
+
 uint32_t CConnectedChains::AutoArbitrageEnabledHeight(bool getVerusHeight) const
 {
     return (getVerusHeight || IsVerusActive()) && !PBAAS_TESTMODE ? 2873057 : 2;
@@ -6558,7 +6573,7 @@ uint160 CConnectedChains::vARRRChainID() const
 
 uint160 CConnectedChains::vDEXChainID() const
 {
-    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vDEX@"));
     return vARRRID;
 }
 
@@ -6688,6 +6703,42 @@ bool CConnectedChains::IsPromoteExchangeRate(uint32_t height) const
         }
     }
     return true;
+}
+
+/* Replace function above with this on testnet reset
+bool CConnectedChains::IsPromoteExchangeRate(uint32_t height) const
+{
+    if (IsVerusMainnetActive())
+    {
+        if (height < PBAAS_PROMOTE_EXCHANGE_RATE_HEIGHT)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+*/
+
+// Height is minimum that we must be in sync with for an answer (-1 = don't know, not caught up enough, 0 = before real time as of height, 1 = past real time as of height, if height = 0, based on chain tip)
+// If any header is past the time over the last block averaging period, we consider it past that real time.
+int CConnectedChains::IsPastRealTime(uint32_t nTime, int64_t height) const
+{
+    if (chainActive.Height() >= height)
+    {
+        if (!height)
+        {
+            height = chainActive.Height();
+        }
+        for (int64_t i = height; i > std::max(height - Params().GetConsensus().nPowAveragingWindow, (int64_t)0); i--)
+        {
+            if (chainActive[i]->nTime >= nTime)
+            {
+                return 1;
+            }
+        }
+        return 0;
+    }
+    return -1;
 }
 
 uint32_t CConnectedChains::GetChainBranchId(const uint160 &sysID, int height, const Consensus::Params& params) const

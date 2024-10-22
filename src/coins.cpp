@@ -623,7 +623,7 @@ CAmount CCoinsViewCache::GetValueIn(int32_t nHeight, int64_t *interestp, const C
         }
         else
         {
-            printf("%s: input #%d txid:n (%s:%u) not available in view. returning 0\n", __func__, i, tx.vin[i].prevout.hash.GetHex().c_str(), tx.vin[i].prevout.n);
+            LogPrint("txinputs", "%s: input #%d txid:n (%s:%u) not available in view. returning 0\n", __func__, i, tx.vin[i].prevout.hash.GetHex().c_str(), tx.vin[i].prevout.n);
             return 0;
         }
 

@@ -1854,6 +1854,72 @@ public:
                                          bool finalValidityCheck=false);
 };
 
+// FIFO cost basis tracker, could be changed to have FIFO, LIFO, etc.
+// Supports storing and retrieving currencies by a combination of currency and block time, and keeping
+// association with cost basis and amounts
+class CCostBasisTracker
+{
+public:
+    std::multimap<std::pair<uint160,uint32_t>,std::pair<int64_t,int64_t>> costBasisMap;
+
+    CCostBasisTracker() {}
+    CCostBasisTracker(const UniValue &uni);
+    void PutCurrency(const uint160 &currencyID, uint32_t blockTime, int64_t costBasis, int64_t amount);
+    std::vector<std::tuple<uint32_t, int64_t, int64_t>> TakeCurrency(const uint160 &currencyID, int64_t amount, int64_t &amountLeft);
+    UniValue ToUniValue() const;
+
+    static std::string FiatDefaultName()
+    {
+        return "dai.veth";
+    }
+
+    static uint160 FiatDefault();
+
+    int64_t GetNativeCostBasisFiat(const CPBaaSNotarization &importNotarization, const std::map<std::string, int64_t> &nativePriceMap, uint32_t blockTime, uint32_t nHeight, const uint160 &fiatCurrency=FiatDefault()) const;
+
+    int64_t GetConversionCostBasisNative(const CPBaaSNotarization &importNotarization, const uint160 &convertToCurrencyID, uint32_t nHeight) const;
+};
+
+// consider keeping ordered list of:
+// short term transactions
+// long term transactions
+class CEarningsTracker
+{
+public:
+    enum {
+        defaultShortLongTermThresholdSeconds = 31536000
+    };
+    uint160 fiatCurrencyID;
+    uint32_t shortLongTermThresholdSeconds;
+    CCurrencyValueMap validationEarnings;
+    int64_t validationEarningsFiat;
+    int64_t feesInFiat;
+    CCurrencyValueMap shortTermGainLoss;
+    int64_t shortTermGainLossFiat;
+    CCurrencyValueMap longTermGainLoss;
+    int64_t longTermGainLossFiat;
+
+    CEarningsTracker(const uint160 &FiatCurrency=CCostBasisTracker::FiatDefault(), uint32_t ShortLongThresholdSeconds=defaultShortLongTermThresholdSeconds) :
+        fiatCurrencyID(FiatCurrency), shortLongTermThresholdSeconds(ShortLongThresholdSeconds), validationEarningsFiat(0), feesInFiat(0), shortTermGainLossFiat(0), longTermGainLossFiat(0) {}
+
+    CEarningsTracker(const UniValue &uni);
+
+    uint160 FiatCurrencyID() const;
+
+    UniValue ToUniValue() const;
+
+    void AddValidationEarnings(uint160 originalCurrencyIn, int64_t amountOrig, int64_t valueFiat);
+
+    void AddFees(int64_t valueFiat)
+    {
+        feesInFiat += valueFiat;
+    }
+
+    void AddShortTerm(int64_t valueFiat);
+
+    void AddLongTerm(int64_t valueFiat);
+};
+
 struct CCcontract_info;
 struct Eval;
 class CValidationState;

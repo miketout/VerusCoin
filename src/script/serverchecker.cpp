@@ -36,7 +36,7 @@ static uint160 _vARRRChainID()
 
 static uint160 _vDEXChainID()
 {
-    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vDEX@"));
     return vARRRID;
 }
 

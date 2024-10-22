@@ -2490,17 +2490,20 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                             {
                                 LOCK2(cs_main, pwalletMain->cs_wallet);
                                 std::vector<COutput> vCoins;
+                                CTxDestination notaryDest(VERUS_NOTARYID);
                                 if (IsVerusActive())
                                 {
+                                    CCurrencyValueMap totalTxFees;
+                                    totalTxFees.valueMap[ASSETCHAINS_CHAINID] = CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE;
                                     nativeValueOut = CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE;
-                                    pwalletMain->AvailableCoins(vCoins,
-                                                                false,
-                                                                nullptr,
-                                                                false,
-                                                                true,
-                                                                true,
-                                                                false,
-                                                                false);
+                                    pwalletMain->AvailableReserveCoins(vCoins,
+                                                                    false,
+                                                                    nullptr,
+                                                                    true,
+                                                                    true,
+                                                                    &notaryDest,
+                                                                    &totalTxFees,
+                                                                    false);
                                     success = pwalletMain->SelectCoinsMinConf(CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE, 0, 0, vCoins, setCoinsRet, nativeValueOut);
                                     notarizationBuilder.SetFee(CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE);
                                 }
@@ -2515,7 +2518,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                                                     nullptr,
                                                                     true,
                                                                     true,
-                                                                    nullptr,
+                                                                    &notaryDest,
                                                                     &totalTxFees,
                                                                     false);
 
