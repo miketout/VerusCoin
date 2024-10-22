@@ -53,6 +53,7 @@ static const uint32_t PBAAS_PROMOTE_EXCHANGE_RATE_TEST_HEIGHT = 171274;
 static const uint32_t PBAAS_NOTARIZATION_ORDER_HEIGHT = 3227685;
 static const uint32_t PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT = 238210;
 static const uint32_t PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT = 68730;
+static const uint32_t PBAAS_SCHEDULED_PROTOCOL_UPGRADE_01 = 1736971200;
 
 class CUpgradeDescriptor
 {
@@ -1241,6 +1242,8 @@ public:
     bool CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t height) const;
     bool BlockOneIDUpgrade() const;
     bool IsPromoteExchangeRate(uint32_t height) const;
+    int IsPastRealTime(uint32_t nTime, int64_t height=0) const;
+
     uint32_t GetChainBranchId(const uint160 &sysID, int nHeight, const Consensus::Params& params) const;
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()

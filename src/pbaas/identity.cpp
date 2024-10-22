@@ -1034,7 +1034,6 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
 {
     // CHECK #1 - there is only one reservation output, and there is also one identity output that matches the reservation.
     //            the identity output must come first and have from 0 to 3 referral outputs between it and the reservation.
-    int numReferrers = 0;
     int identityCount = 0;
     int reservationCount = 0;
     CIdentity newIdentity;
@@ -1641,47 +1640,51 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
 
         if (heightOut != 1)
         {
-            for (auto &txout : referralTx.vout)
+            if (!ConnectedChains.IsPastRealTime(PBAAS_SCHEDULED_PROTOCOL_UPGRADE_01, height - 1) ||
+                checkReferrers.size() < issuingParent.IDReferralLevels())
             {
-                COptCCParams p;
-                if (txout.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.version >= p.VERSION_V3)
+                for (auto &txout : referralTx.vout)
                 {
-                    if (p.evalCode == EVAL_IDENTITY_PRIMARY)
+                    COptCCParams p;
+                    if (txout.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.version >= p.VERSION_V3)
                     {
-                        afterPrimary = true;
-                    }
-                    else if (afterPrimary &&
-                             !isReferral &&
-                             issuingParent.IDReferrals() &&
-                             issuingParent.IDReferralLevels() &&
-                             ((issuingParent.proofProtocol != issuingParent.PROOF_CHAINID && p.evalCode == EVAL_RESERVE_TRANSFER) ||
-                              (issuingParent.proofProtocol == issuingParent.PROOF_CHAINID && (p.evalCode == EVAL_RESERVE_OUTPUT || p.evalCode == EVAL_NONE))))
-                    {
-                        isReferral = true;
-                        continue;
-                    }
-                    else if (p.evalCode == EVAL_IDENTITY_RESERVATION || p.evalCode == EVAL_IDENTITY_ADVANCEDRESERVATION)
-                    {
-                        break;
-                    }
-                    else if (isReferral || (afterPrimary &&
-                                            issuerID == ASSETCHAINS_CHAINID &&
-                                            issuingParent.proofProtocol != issuingParent.PROOF_CHAINID &&
-                                            issuingParent.IDReferrals() &&
-                                            issuingParent.IDReferralLevels()))
-                    {
-                        isReferral = true;
-                        if (p.vKeys.size() != 1 || p.vKeys[0].which() != COptCCParams::ADDRTYPE_ID)
+                        if (p.evalCode == EVAL_IDENTITY_PRIMARY)
                         {
-                            // invalid referral
-                            return state.Error("Invalid identity registration referral outputs");
+                            afterPrimary = true;
                         }
-                        else
+                        else if (afterPrimary &&
+                                !isReferral &&
+                                issuingParent.IDReferrals() &&
+                                issuingParent.IDReferralLevels() &&
+                                ((issuingParent.proofProtocol != issuingParent.PROOF_CHAINID && p.evalCode == EVAL_RESERVE_TRANSFER) ||
+                                (issuingParent.proofProtocol == issuingParent.PROOF_CHAINID && (p.evalCode == EVAL_RESERVE_OUTPUT || p.evalCode == EVAL_NONE))))
                         {
-                            checkReferrers.push_back(p.vKeys[0]);
-                            if (checkReferrers.size() == issuingParent.IDReferralLevels())
+                            isReferral = true;
+                            continue;
+                        }
+                        else if (p.evalCode == EVAL_IDENTITY_RESERVATION || p.evalCode == EVAL_IDENTITY_ADVANCEDRESERVATION)
+                        {
+                            break;
+                        }
+                        else if (isReferral || (afterPrimary &&
+                                                issuerID == ASSETCHAINS_CHAINID &&
+                                                issuingParent.proofProtocol != issuingParent.PROOF_CHAINID &&
+                                                issuingParent.IDReferrals() &&
+                                                issuingParent.IDReferralLevels()))
+                        {
+                            isReferral = true;
+                            if (p.vKeys.size() != 1 || p.vKeys[0].which() != COptCCParams::ADDRTYPE_ID)
                             {
-                                break;
+                                // invalid referral
+                                return state.Error("Invalid identity registration referral outputs");
+                            }
+                            else
+                            {
+                                checkReferrers.push_back(p.vKeys[0]);
+                                if (checkReferrers.size() == issuingParent.IDReferralLevels())
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1828,7 +1831,6 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
     uint160 parentID = issuingCurrency.GetID();
     uint160 issuerID = parentID;
 
-    int numReferrers = 0;
     int identityCount = 0;
     int reservationCount = 0;
     CIdentity newIdentity;
