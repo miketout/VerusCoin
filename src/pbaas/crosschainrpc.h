@@ -233,12 +233,17 @@ public:
                          std::vector<unsigned char> Destination,
                          const uint160 &GatewayID=uint160(),
                          const uint160 &GatewayCode=uint160(),
-                         int64_t Fees=0) :
+                         int64_t Fees=0,
+                         const std::vector<std::vector<unsigned char>> &AuxDests=std::vector<std::vector<unsigned char>>()) :
                          type(Type),
                          destination(Destination),
                          gatewayID(GatewayID),
                          gatewayCode(GatewayCode),
-                         fees(Fees) {}
+                         fees(Fees),
+                         auxDests(AuxDests)
+    {
+        type |= ((auxDests.size() > 0 && auxDests[0].size() > 0) ? FLAG_DEST_AUX : 0) + (gatewayID.IsNull() ? 0 : FLAG_DEST_GATEWAY);
+    }
 
     ADD_SERIALIZE_METHODS;
 

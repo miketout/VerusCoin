@@ -4137,6 +4137,8 @@ int64_t CWalletTx::GetTxTime() const
 }
 
 // GetAmounts will determine the transparent debits and credits for a given wallet tx.
+// in addition to sources that are already transparent in this wallet, it considers a Sapling source
+// and a negative value balance to be transparent debit
 void CWalletTx::GetAmounts(list<COutputEntry>& listReceived,
                            list<COutputEntry>& listSent, CAmount& nFee, string& strSentAccount, const isminefilter& filter) const
 {
@@ -4147,21 +4149,58 @@ void CWalletTx::GetAmounts(list<COutputEntry>& listReceived,
 
     // Is this tx sent/signed by me?
     CAmount nDebit = GetDebit(filter);
+    CAmount nShieldedDebit = 0;
 
     bool isFromMyTaddr = false;
 
-    for (auto &txin : vin)
+    // if the filter is just spendable, check sapling spends as well
+    if ((filter & ISMINE_SPENDABLE) && vShieldedSpend.size())
     {
-        map<uint256, CWalletTx>::const_iterator mi = pwallet->mapWallet.find(txin.prevout.hash);
-        if (mi != pwallet->mapWallet.end())
-        {
-            const CWalletTx& prev = (*mi).second;
-            if (txin.prevout.n < prev.vout.size())
+        std::set<uint256> ovks;
+        for (size_t i = 0; i < vShieldedSpend.size(); ++i) {
+            auto spend = vShieldedSpend[i];
+
+            // Fetch the note that is being spent
+            auto res = pwalletMain->mapSaplingNullifiersToNotes.find(spend.nullifier);
+            if (res == pwalletMain->mapSaplingNullifiersToNotes.end()) {
+                continue;
+            }
+
+            auto op = res->second;
+            auto wtxPrev = pwalletMain->mapWallet.at(op.hash);
+
+            auto decrypted = wtxPrev.DecryptSaplingNote(op).get();
+            auto notePt = decrypted.first;
+            auto pa = decrypted.second;
+
+            // Store the OutgoingViewingKey for recovering outputs
+            libzcash::SaplingExtendedFullViewingKey extfvk;
+            assert(pwalletMain->GetSaplingFullViewingKey(wtxPrev.mapSaplingNoteData.at(op).ivk, extfvk));
+
+            // if we have the spending key, add negative value balance to the debit value
+            if (pwalletMain->HaveSaplingSpendingKey(extfvk))
             {
-                if (::IsMine(*pwallet, prev.vout[txin.prevout.n].scriptPubKey) & filter)
+                isFromMyTaddr = true;
+                nShieldedDebit += notePt.value();
+            }
+        }
+    }
+
+    if (!isFromMyTaddr)
+    {
+        for (auto &txin : vin)
+        {
+            map<uint256, CWalletTx>::const_iterator mi = pwallet->mapWallet.find(txin.prevout.hash);
+            if (mi != pwallet->mapWallet.end())
+            {
+                const CWalletTx& prev = (*mi).second;
+                if (txin.prevout.n < prev.vout.size())
                 {
-                    isFromMyTaddr = true;
-                    break;
+                    if (::IsMine(*pwallet, prev.vout[txin.prevout.n].scriptPubKey) & filter)
+                    {
+                        isFromMyTaddr = true;
+                        break;
+                    }
                 }
             }
         }
@@ -4241,7 +4280,7 @@ void CWalletTx::GetAmounts(list<COutputEntry>& listReceived,
         // Only need to handle txouts if AT LEAST one of these is true:
         //   1) they debit from us (sent)
         //   2) the output is to us (received)
-        if (nDebit > 0)
+        if (nDebit > 0 || nShieldedDebit > 0)
         {
             // Don't report 'change' txouts
             if (!(filter & ISMINE_CHANGE) && pwallet->IsChange(txout))
@@ -4261,7 +4300,7 @@ void CWalletTx::GetAmounts(list<COutputEntry>& listReceived,
         COutputEntry output = {address, txout.nValue, (int)i};
 
         // If we are debited by the transaction, add the output as a "sent" entry
-        if (nDebit > 0)
+        if (nDebit > 0 || nShieldedDebit > 0)
             listSent.push_back(output);
 
         // If we are receiving the output, add it as a "received" entry
@@ -4689,7 +4728,7 @@ CAmount CWalletTx::GetAvailableCredit(bool fUseCache, bool includeIDLocked, cons
     {
         if (!pwallet->IsSpent(hashTx, i) && vout[i].scriptPubKey.IsSpendableOutputType())
         {
-            CAmount newCredit = pwallet->GetCredit(*this, i, filter);;
+            CAmount newCredit = pwallet->GetCredit(*this, i, filter);
             if (newCredit)
             {
                 if (!includeIDLocked)
