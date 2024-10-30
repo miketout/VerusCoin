@@ -6124,9 +6124,9 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                         autoProof.chainObjects[1]->objectType == CHAINOBJ_PROOF_ROOT &&
                         autoProof.chainObjects[2]->objectType == CHAINOBJ_TRANSACTION_PROOF)
                     {
-                        uint32_t futureHeight = ((CChainObject<CProofRoot> *)autoProof.chainObjects[1])->object.rootHeight;
-                        if (futureHeight > chainActive.Height() ||
-                            ((CChainObject<CProofRoot> *)autoProof.chainObjects[1])->object != CProofRoot::GetProofRoot(futureHeight))
+                        CProofRoot futureRoot = ((CChainObject<CProofRoot> *)autoProof.chainObjects[1])->object;
+                        if (futureRoot.rootHeight > chainActive.Height() ||
+                            (futureRoot != CProofRoot::GetProofRoot(futureRoot.rootHeight)))
                         {
                             // we don't agree with this one because of the proof root, so we will ignore its existence
                             isValid = false;
@@ -6140,9 +6140,9 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
             }
             if (isValid)
             {
-                CPBaaSNotarization priorNotarization;
+                CPBaaSNotarization localPriorNotarization;
                 if (i &&
-                    !crosschainCND.vtx[i].second.CheckCrossNotarizationProgression(systemDef, priorNotarization, height + 1, state))
+                    !crosschainCND.vtx[i].second.CheckCrossNotarizationProgression(systemDef, localPriorNotarization, height + 1, state))
                 {
                     isValid = false;
                 }

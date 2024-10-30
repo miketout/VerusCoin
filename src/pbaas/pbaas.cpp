@@ -5047,6 +5047,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                  (height - ourLastRoot->second.rootHeight) >
                     ((CPBaaSNotarization::MAX_NOTARIZATION_DELAY_BEFORE_CROSSCHAIN_PAUSE * 60) / ConnectedChains.ThisChain().blockTime)))
             {
+                //printf("Confirmed notarizations for destination system are lagging behind, cannot send: %s\n", rt.ToUniValue().write(1,2).c_str());
                 return state.Error("Confirmed notarizations for destination system are lagging behind, cannot send: " + rt.ToUniValue().write(1,2));
             }
             if (systemDest.proofProtocol == systemDest.PROOF_ETHNOTARIZATION)
@@ -6365,6 +6366,7 @@ void CConnectedChains::CheckOracleUpgrades()
         for (auto &oneUpgrade : upgradeData)
         {
             CUpgradeDescriptor upgrade(std::get<0>(oneUpgrade));
+
             if (upgrade.IsValid())
             {
                 LOCK(ConnectedChains.cs_mergemining);
@@ -6739,6 +6741,11 @@ int CConnectedChains::IsPastRealTime(uint32_t nTime, int64_t height) const
         return 0;
     }
     return -1;
+}
+
+int CConnectedChains::IsUpgrade01Active(int64_t height) const
+{
+    return IsPastRealTime(PBAAS_TESTMODE ? PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_01 : PBAAS_SCHEDULED_PROTOCOL_UPGRADE_01, height);
 }
 
 uint32_t CConnectedChains::GetChainBranchId(const uint160 &sysID, int height, const Consensus::Params& params) const
