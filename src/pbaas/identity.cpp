@@ -1640,7 +1640,7 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
 
         if (heightOut != 1)
         {
-            if (!ConnectedChains.IsPastRealTime(PBAAS_TESTMODE ? PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_01 : PBAAS_SCHEDULED_PROTOCOL_UPGRADE_01, height - 1) ||
+            if ((ConnectedChains.IsUpgrade01Active(height - 1) == 1) ||
                 checkReferrers.size() < issuingParent.IDReferralLevels())
             {
                 for (auto &txout : referralTx.vout)
