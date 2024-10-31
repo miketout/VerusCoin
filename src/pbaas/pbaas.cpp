@@ -6725,7 +6725,11 @@ bool CConnectedChains::IsPromoteExchangeRate(uint32_t height) const
 // If any header is past the time over the last block averaging period, we consider it past that real time.
 int CConnectedChains::IsPastRealTime(uint32_t nTime, int64_t height) const
 {
-    if (chainActive.Height() >= height)
+    if (height > chainActive.Height() && chainActive.LastTip()->nTime >= nTime)
+    {
+        return 1;
+    }
+    else if (chainActive.Height() >= height)
     {
         if (!height)
         {
