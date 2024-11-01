@@ -3207,6 +3207,14 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                             }
                         }
 
+                        if (ConnectedChains.IsUpgrade01Active((nHeight - 1) == chainActive.Height() ? nHeight - 1 : nHeight) == 1 &&
+                            newState.reserveOut == std::vector<int64_t>(newState.reserveOut.size(), 0) &&
+                            importNotarization.currencyState.viaConversionPrice != newState.viaConversionPrice &&
+                            newState.viaConversionPrice[0] == newState.conversionPrice[0])
+                        {
+                            newState.viaConversionPrice = importNotarization.currencyState.viaConversionPrice;
+                        }
+
                         // these affect comparison, but not calculations
                         if (newState.reserveIn != importNotarization.currencyState.reserveIn ||
                             newState.reserveOut != importNotarization.currencyState.reserveOut)
@@ -5599,7 +5607,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
             if (newOut.nValue < 0)
             {
                 // if we get here, we have absorbed the entire transfer
-                LogPrintf("%s: skip creating output for import to %s\n", __func__, currencyDest.name.c_str());
+                LogPrintf("%s: skip creating output for import to %s\n", __func__, ConnectedChains.GetFriendlyCurrencyName(currencyDest.GetID()).c_str());
             }
             else
             {
