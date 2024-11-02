@@ -1515,9 +1515,9 @@ CTxOut MakeCC1of2Vout(uint8_t evalcode, CAmount nValue, CPubKey pk1, CPubKey pk2
     vout = CTxOut(nValue,CCPubKey(payoutCond));
     cc_free(payoutCond);
 
-    std::vector<CPubKey> vpk({pk1, pk2});
+    std::vector<CTxDestination> vdest({CTxDestination(pk1), CTxDestination(pk2)});
     std::vector<std::vector<unsigned char>> vvch({::AsVector((const TOBJ)obj)});
-    COptCCParams vParams = COptCCParams(COptCCParams::VERSION_V2, evalcode, 1, 2, vpk, vvch);
+    COptCCParams vParams = COptCCParams(COptCCParams::VERSION_V2, evalcode, 1, 2, vdest, vvch);
 
     // add the object to the end of the script
     vout.scriptPubKey << vParams.AsVector() << OP_DROP;
