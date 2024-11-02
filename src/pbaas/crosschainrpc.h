@@ -1744,6 +1744,9 @@ public:
                 state.hw_sha256D->write(pch, size);
                 break;
             }
+            default:
+                // No action needed for HASH_INVALID or HASH_LASTTYPE?
+            break;
         }
         return (*this);
     }
