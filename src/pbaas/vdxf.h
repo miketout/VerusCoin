@@ -814,7 +814,7 @@ public:
             READWRITE(data);
             if (data.size() >= sizeof(uint256))
             {
-                salt = uint256(std::vector<unsigned char>(data.end() - sizeof(uint256)), data.end());
+                salt = uint256(std::vector<unsigned char>(data.end() - sizeof(uint256), data.end()));
                 data.resize(data.size() - sizeof(uint256));
             }
         }
