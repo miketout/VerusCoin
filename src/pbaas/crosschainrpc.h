@@ -1777,6 +1777,9 @@ public:
                 result = state.hw_sha256D->GetHash();
                 break;
             }
+            default:
+                // No action needed for HASH_INVALID or HASH_LASTTYPE?
+            break;
         }
         return result;
     }
