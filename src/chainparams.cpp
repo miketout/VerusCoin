@@ -235,7 +235,8 @@ void *chainparams_commandline(void *ptr)
         mainParams.pchMessageStart[1] = (ASSETCHAINS_MAGIC >> 8) & 0xff;
         mainParams.pchMessageStart[2] = (ASSETCHAINS_MAGIC >> 16) & 0xff;
         mainParams.pchMessageStart[3] = (ASSETCHAINS_MAGIC >> 24) & 0xff;
-        fprintf(stderr,">>>>>>>>>> %s: p2p.%u rpc.%u magic.%08x %u %" PRId64 " coins\n",ASSETCHAINS_SYMBOL,ASSETCHAINS_P2PPORT,ASSETCHAINS_RPCPORT,ASSETCHAINS_MAGIC,ASSETCHAINS_MAGIC,ASSETCHAINS_SUPPLY / COIN);
+        fprintf(stderr, ">>>>>>>>>> %s: p2p.%u rpc.%u magic.%08x %u %" PRId64 " coins\n", ASSETCHAINS_SYMBOL, ASSETCHAINS_P2PPORT, ASSETCHAINS_RPCPORT, ASSETCHAINS_MAGIC, ASSETCHAINS_MAGIC, ASSETCHAINS_SUPPLY / COIN);
+
 
         bool isVerusActive = _IsVerusActive();
 
