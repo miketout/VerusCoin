@@ -11781,7 +11781,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                             requiredFees = 0;           // clear them, as they are used below as well when sending directly across
                             reversePriceInFeeCur = feePriceState.TargetConversionPricesReverse(ASSETCHAINS_CHAINID, true).valueMap[feeCurrencyID];
 
-                            printf("%s: setting transfer fees in currency %s to %ld\n", __func__, EncodeDestination(CIdentityID(feeCurrencyID)).c_str(), dest.fees);
+                            printf("%s: setting transfer fees in currency %s to %" PRId64 "\n", __func__, EncodeDestination(CIdentityID(feeCurrencyID)).c_str(), dest.fees);
                             flags &= ~CReserveTransfer::CROSS_SYSTEM;
 
                             // at this point, we either need a refund ID or a change address for refund, or there is risk of loss, so fail instead
