@@ -8,7 +8,7 @@ $(package)_config_opts=
 
 ifeq ($(build_os),darwin)
 define $(package)_set_vars
-  $(package)_build_env=MACOSX_DEPLOYMENT_TARGET="10.11"
+  $(package)_build_env=MACOSX_DEPLOYMENT_TARGET="$(OSX_MIN_VERSION)"
   $(package)_cc=clang
   $(package)_cxx=clang++
 endef

@@ -1722,7 +1722,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
         createMMR = false;
     }
 
-    createMMR = createMMR | mmrDataUni.size() > 1;
+    createMMR = createMMR | (mmrDataUni.size() > 1);
 
     CVDXF::EHashTypes hashType = CVDXF::EHashTypes::HASH_SHA256;
 

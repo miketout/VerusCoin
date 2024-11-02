@@ -8,6 +8,7 @@
 #include "utilstrencodings.h"
 #include "uint256.h"
 #include "mmr.h"
+#include <inttypes.h>
 
 /**
  * Helper functions
@@ -119,7 +120,7 @@ std::string uint64_to_hex_deprecated(uint64_t input){
         return result;
     }
     char buffer[64] = {0};
-    sprintf(buffer,"%lx",input);
+    sprintf(buffer, "%" PRIx64, input);
     return std::string(buffer);
 }
 

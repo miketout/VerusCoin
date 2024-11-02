@@ -5017,7 +5017,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                   verusFeePoolVal > verusCheckVal)) ||
                 (feePool.reserveValues.IntersectingValues(intersectMap)).CanonicalMap().valueMap.size() != (feePool.reserveValues).CanonicalMap().valueMap.size())
             {
-                printf("%s: rewardfees: %ld, verusfees: %ld, feePool: %s\nfeepoolcheck: %s\n",
+                printf("%s: rewardfees: %" PRId64 ", verusfees: %" PRId64 ", feePool: %s\nfeepoolcheck: %s\n",
                         __func__,
                         rewardFees,
                         verusFees,
@@ -5069,7 +5069,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     if (ASSETCHAINS_SYMBOL[0] != 0 && pindex->GetHeight() == 1 && block.vtx[0].GetValueOut() != nativeBlockReward)
     {
-        printf("%s: block.vtx[0].GetValueOut(): %ld, nativeBlockReward: %ld\nreservevalueout: %s\nvalidextracoinbaseoutputs: %s\n",
+        printf("%s: block.vtx[0].GetValueOut(): %" PRId64 ", nativeBlockReward: %" PRId64 "\nreservevalueout: %s\nvalidextracoinbaseoutputs: %s\n",
             __func__,
             block.vtx[0].GetValueOut(),
             nativeBlockReward,
@@ -5086,7 +5086,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     if ( block.vtx[0].GetValueOut() > nativeBlockReward || outOverflow || (block.vtx[0].GetReserveValueOut() > validExtraCoinbaseOutputs) )
     {
-        printf("%s: block.vtx[0].GetValueOut(): %ld, nativeBlockReward: %ld\nreservevalueout: %s\nvalidextracoinbaseoutputs: %s\n",
+        printf("%s: block.vtx[0].GetValueOut(): %" PRId64 ", nativeBlockReward: %" PRId64 "\nreservevalueout: %s\nvalidextracoinbaseoutputs: %s\n",
             __func__,
             block.vtx[0].GetValueOut(),
             nativeBlockReward,
