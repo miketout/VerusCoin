@@ -490,6 +490,7 @@ class CRLPProof
 public:
     std::vector<std::vector <unsigned char>> proof_branch;
     CRLPProof() {}
+    CRLPProof(const std::vector<std::vector<unsigned char>>& data) : proof_branch(data) {}
 
     ADD_SERIALIZE_METHODS;
 
@@ -551,8 +552,11 @@ public:
     CRLPProof storageProof; 
     uint160 address;
     CPATRICIABranch() : CMerkleBranchBase(BRANCH_ETH) {}
-    CPATRICIABranch(std::vector<std::vector<unsigned char>> a, std::vector<std::vector<unsigned char>> b) : CMerkleBranchBase(BRANCH_ETH), accountProof(a), storageProof(b) {}
-    
+    CPATRICIABranch(
+        const std::vector<std::vector<unsigned char>>& a,
+        const std::vector<std::vector<unsigned char>>& b
+    ) : CMerkleBranchBase(BRANCH_ETH), accountProof(a), storageProof(b) {}
+
     CPATRICIABranch& operator<<(CPATRICIABranch append)
     {
         //TODO
