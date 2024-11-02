@@ -140,7 +140,7 @@ public:
     {
         arith_uint256 work = Work() + nRight.Work();
         arith_uint256 stake = Stake() + nRight.Stake();
-        assert(work << 128 >> 128 == work && stake << 128 >> 128 == stake);
+        assert((work << 128 >> 128) == work && (stake << 128 >> 128) == stake);
 
         uint256 nodePower = ArithToUint256(stake << 128 | work);
 
