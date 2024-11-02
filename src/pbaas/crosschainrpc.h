@@ -1684,6 +1684,9 @@ public:
                     delete state.hw_sha256D;
                     break;
                 }
+                default:
+                // No action needed for HASH_INVALID or HASH_LASTTYPE?
+                break;
             }
         }
         state.hw_blake2b = nullptr;
