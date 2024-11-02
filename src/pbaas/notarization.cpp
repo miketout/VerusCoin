@@ -4481,7 +4481,7 @@ std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> GetLastConfirmedNotarization(
                             // remove it and try again
                             if (checkBlockHash.IsNull())
                             {
-                                std::__cxx11::list<CTransaction> removed;
+                                std::list<CTransaction> removed;
                                 mempool.remove(checkTx, removed, true);
                                 unspentFinalizations = CObjectFinalization::GetUnspentConfirmedFinalizations(curID);
                                 exitLoop = !unspentFinalizations.size();
