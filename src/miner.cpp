@@ -4794,11 +4794,7 @@ void static BitcoinMiner_noeq()
                 uint64_t hashesPerNonceMask = ASSETCHAINS_NONCEMASK[ASSETCHAINS_ALGO] >> 3;
                 if (!(totalDone < hashesPerNonceMask))
                 {
-#ifdef _WIN32
-                    printf("%llu mega hashes complete - working\n", (hashesPerNonceMask + 1) / 1048576);
-#else
-                    printf("%lu mega hashes complete - working\n", (hashesPerNonceMask + 1) / 1048576);
-#endif
+                    printf("%" PRIu64 " mega hashes complete - working\n", (hashesPerNonceMask + 1) / 1048576);
                 }
                 break;
 
