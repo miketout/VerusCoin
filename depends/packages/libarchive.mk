@@ -8,14 +8,14 @@ $(package)_config_opts_linux=--disable-bsdtar --disable-bsdcpio --disable-shared
 $(package)_config_opts_mingw32=--disable-bsdtar --disable-bsdcpio --disable-shared --enable-static --prefix=$(host_prefix) --host=x86_64-w64-mingw32
 $(package)_config_opts_darwin=--disable-bsdtar --disable-bsdcpio --disable-shared --enable-static --prefix=$(host_prefix)
 $(package)_sha256_hash=fcf87f3ad8db2e4f74f32526dee62dd1fb9894782b0a503a89c9d7a70a235191
-$(package)_cflags_darwin=-mmacosx-version-min=10.9
+$(package)_cflags_darwin=-mmacosx-version-min=$(OSX_MIN_VERSION)
 $(package)_conf_tool=./configure
 
 $(package)_dependencies=zlib
 
 ifeq ($(build_os),darwin)
 define $(package)_set_vars
-  $(package)_build_env=MACOSX_DEPLOYMENT_TARGET="10.9"
+  $(package)_build_env=MACOSX_DEPLOYMENT_TARGET="$(OSX_MIN_VERSION)"
 endef
 endif
 
@@ -35,7 +35,7 @@ endef
 
 ifeq ($(build_os),darwin)
 define $(package)_build_cmds
-  $(MAKE) CPPFLAGS="-I$(host_prefix)/include -fPIC" CFLAGS='-mmacosx-version-min=10.9'
+  $(MAKE) CPPFLAGS="-I$(host_prefix)/include -fPIC" CFLAGS="-mmacosx-version-min=$(OSX_MIN_VERSION)"
 endef
 else
 define $(package)_build_cmds
