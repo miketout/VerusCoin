@@ -4531,7 +4531,7 @@ void static BitcoinMiner_noeq()
                         }
                         continue;
                     }
-                    if (mergeMining = (params.isNull() && error.isNull()))
+                    if (mergeMining && (params.isNull() && error.isNull()))
                     {
                         printf("Merge mining %s with %s as the hashing chain\n", ASSETCHAINS_SYMBOL, ConnectedChains.FirstNotaryChain().chainDefinition.name.c_str());
                         LogPrintf("Merge mining with %s as the hashing chain\n", ConnectedChains.FirstNotaryChain().chainDefinition.name.c_str());
