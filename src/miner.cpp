@@ -2042,8 +2042,9 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             {
                 UniValue scriptUni(UniValue::VOBJ);
                 ScriptPubKeyToUniv(output.scriptPubKey, scriptUni, true, true);
-                printf("%s, \"shareratio\": %ld, \"total\": %ld\n", scriptUni.write(1,2).c_str(), output.nValue, shareCheck);
-                LogPrintf("%s, \"shareratio\": %ld, \"total\": %ld\n", scriptUni.write(1,2).c_str(), output.nValue, shareCheck);
+                printf("%s, \"shareratio\": %" PRId64 ", \"total\": %" PRId64 "\n", scriptUni.write(1, 2).c_str(), output.nValue, shareCheck);
+                LogPrintf("%s, \"shareratio\": %" PRId64 ", \"total\": %" PRId64 "\n", scriptUni.write(1, 2).c_str(), output.nValue, shareCheck);
+
                 if (shareCheck > INT_MAX)
                 {
                     printf("OVERFLOW, value greater than %d\n", INT_MAX);
