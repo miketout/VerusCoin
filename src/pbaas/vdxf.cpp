@@ -624,11 +624,11 @@ bool CVDXFEncryptor::Encrypt(const libzcash::SaplingPaymentAddress &saplingAddre
 
     if (encType != ENCRYPTION_CHACHA20POLY1305 || 
         !librustzcash_sapling_ka_derivepublic(saplingAddress.d.begin(), esk.begin(), pk.begin())) {
-        false;
+        return false;
     }
 
     if (!librustzcash_sapling_ka_agree(saplingAddress.pk_d.begin(), esk.begin(), dhsecret.begin())) {
-        false;
+        return false;
     }
 
     // Construct the symmetric key
