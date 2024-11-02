@@ -53,7 +53,7 @@ arith_uint256 GetCompactPower(const uint256 &nNonce, uint32_t nBits, int32_t ver
         // or ~bnTarget / (nTarget+1) + 1.
         bnWork = (~bnWork / (bnWork + 1)) + 1;
         bnStake = ((~bnStake / (bnStake + 1)) + 1) + ((~aNonce / (aNonce + 1)) + 1);
-        if (!(bnWork >> 128 == BIG_ZERO && bnStake >> 128 == BIG_ZERO))
+        if (!((bnWork >> 128) == BIG_ZERO && (bnStake >> 128) == BIG_ZERO))
         {
             return BIG_ZERO;
         }
