@@ -777,7 +777,7 @@ bool DecodeOneExport(const UniValue obj, CCrossChainExport &ccx,
         exportTx.vout.size() <= outNum ||
         !exportTx.vout[outNum].scriptPubKey.IsPayToCryptoCondition(p) ||
         !p.IsValid() ||
-        !p.evalCode == EVAL_CROSSCHAIN_EXPORT ||
+        p.evalCode != EVAL_CROSSCHAIN_EXPORT ||
         (outputValue = exportTx.vout[outNum].nValue) == -1)
     {
         //UniValue jsonTxOut(UniValue::VOBJ);
