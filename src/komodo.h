@@ -307,7 +307,7 @@ int32_t komodo_parsestatefiledata(struct komodo_state *sp,uint8_t *filedata,long
                 errs++;
             if ( memread(&olen,sizeof(olen),filedata,&fpos,datalen) != sizeof(olen) )
                 errs++;
-            if ( olen < sizeof(opret) )
+            if ( olen <= sizeof(opret) - 1)
             {
                 if ( memread(opret,olen,filedata,&fpos,datalen) != olen )
                     errs++;
