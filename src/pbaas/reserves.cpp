@@ -2099,8 +2099,8 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
         if (oneIn < 0)
         {
             failed = true;
-            printf("%s: invalid reserve input amount for conversion %ld\n", __func__, oneIn);
-            LogPrintf("%s: invalid reserve input amount for conversion %ld\n", __func__, oneIn);
+            printf("%s: invalid reserve input amount for conversion %" PRId64 "\n", __func__, oneIn);
+            LogPrintf("%s: invalid reserve input amount for conversion %" PRId64 "\n", __func__, oneIn);
             break;
         }
     }
@@ -2109,8 +2109,8 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
         if (oneIn < 0)
         {
             failed = true;
-            printf("%s: invalid fractional input amount for conversion %ld\n", __func__, oneIn);
-            LogPrintf("%s: invalid fractional input amount for conversion %ld\n", __func__, oneIn);
+            printf("%s: invalid fractional input amount for conversion %" PRId64 "\n", __func__, oneIn);
+            LogPrintf("%s: invalid fractional input amount for conversion %" PRId64 "\n", __func__, oneIn);
             break;
         }
     }
@@ -5696,8 +5696,8 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     {
         if ((burnedChangePrice + burnedChangeWeight) > newCurrencyState.supply)
         {
-            printf("%s: Invalid burn amount %ld\n", __func__, burnedChangePrice + burnedChangeWeight);
-            LogPrintf("%s: Invalid burn amount %ld\n", __func__, burnedChangePrice + burnedChangeWeight);
+            printf("%s: Invalid burn amount %" PRId64 "\n", __func__, burnedChangePrice + burnedChangeWeight);
+            LogPrintf("%s: Invalid burn amount %" PRId64 "\n", __func__, burnedChangePrice + burnedChangeWeight);
             return false;
         }
 
@@ -6419,7 +6419,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     {
         printf("importCurrencyState: %s\nnewCurrencyState: %s\n", importCurrencyState.ToUniValue().write(1,2).c_str(), newCurrencyState.ToUniValue().write(1,2).c_str());
         printf("newConvertedReservePool: %s\n", newConvertedReservePool.ToUniValue().write(1,2).c_str());
-        printf("ReserveInputs: %s\nspentCurrencyOut: %s\nReserveInputs - spentCurrencyOut: %s\ncheckAgainstInputs: %s\nreserveBalanceInMap: %s\ntotalNativeFee: %ld, totalVerusFee: %ld\n",
+        printf("ReserveInputs: %s\nspentCurrencyOut: %s\nReserveInputs - spentCurrencyOut: %s\ncheckAgainstInputs: %s\nreserveBalanceInMap: %s\ntotalNativeFee: %" PRId64 ", totalVerusFee: %l" PRId64 "\n",
             ReserveInputs.ToUniValue().write(1,2).c_str(),
             spentCurrencyOut.ToUniValue().write(1,2).c_str(),
             (ReserveInputs - spentCurrencyOut).ToUniValue().write(1,2).c_str(),
