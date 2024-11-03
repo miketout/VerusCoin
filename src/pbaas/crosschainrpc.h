@@ -1685,7 +1685,7 @@ public:
                     break;
                 }
                 default:
-                // No action needed for HASH_INVALID or HASH_LASTTYPE?
+                // No action needed for HASH_INVALID or HASH_LASTTYPE
                 break;
             }
         }
@@ -1745,7 +1745,7 @@ public:
                 break;
             }
             default:
-                // No action needed for HASH_INVALID or HASH_LASTTYPE?
+                // No action for HASH_INVALID or HASH_LASTTYPE
             break;
         }
         return (*this);
@@ -1778,7 +1778,7 @@ public:
                 break;
             }
             default:
-                // No action needed for HASH_INVALID or HASH_LASTTYPE?
+                // No action for HASH_INVALID or HASH_LASTTYPE
             break;
         }
         return result;
