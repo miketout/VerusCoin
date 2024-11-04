@@ -25,10 +25,6 @@
 #define printf(...)
 #endif
 
-#ifdef HAVE_CONFIG_H
-#include "config/bitcoin-config.h"
-#endif
-
 /* Introduction text for doxygen: */
 
 /*! \mainpage Developer documentation
@@ -138,11 +134,6 @@ bool AppInit(int argc, char* argv[])
         fprintf(stdout, "%s", strUsage.c_str());
         return true;
     }
-
-    #if defined(__APPLE__) && defined(APPLE_SILICON_ROSETTA) && (APPLE_SILICON_ROSETTA == 1)
-        std::cerr << "AVX Status: Disabled\n";
-        std::cerr << "Built on Apple Silicon under Rosetta." << std::endl;
-    #endif
 
     try
     {
