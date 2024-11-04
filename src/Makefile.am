@@ -474,8 +474,7 @@ crypto_libverus_crypto_a_SOURCES = \
   crypto/haraka.h \
   crypto/haraka.c \
   crypto/verus_clhash.h \
-  crypto/verus_clhash.cpp \
-  crypto/verus_clhash_tsp.cpp
+  crypto/verus_clhash.cpp
 
 # Verus hash specific library - portable
 if ARCH_ARM
@@ -490,7 +489,8 @@ crypto_libverus_portable_crypto_a_SOURCES = \
   crypto/haraka_portable.h \
   crypto/haraka_portable.c \
   crypto/verus_clhash.h \
-  crypto/verus_clhash_portable.cpp
+  crypto/verus_clhash_portable.cpp \
+  crypto/verus_clhash_tsp.cpp
 
 # common: shared between zcashd and non-server tools
 libbitcoin_common_a_CPPFLAGS = -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
