@@ -1,25 +1,6 @@
-struct thread_specific_ptr {
-    void *ptr;
-    thread_specific_ptr() { ptr = NULL; }
-    void reset(void *newptr = NULL)
-    {
-        if (ptr && ptr != newptr)
-        {
-            std::free(ptr);
-        }
-        ptr = newptr;
-
-    }
-    void *get() { return ptr; }
-#if defined(__APPLE__) || defined(_WIN32)
-    // horrible MingW and Mac with gcc thread local storage bug workaround
-    ~thread_specific_ptr();
-#else
-    ~thread_specific_ptr() {
-        this->reset();
-    }
-#endif
-};
+#include <cstdlib>
+#include "uint256.h"
+#include "crypto/verus_clhash.h"
 
 #if defined(__APPLE__) || defined(_WIN32)
 // attempt to workaround horrible mingw/gcc destructor bug on Windows and Mac, which passes garbage in the this pointer
