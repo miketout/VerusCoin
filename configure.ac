@@ -556,13 +556,11 @@ if test x$TARGET_OS = xdarwin; then
     [
       dnl Success case: Running under Rosetta
       AC_DEFINE([APPLE_SILICON_ROSETTA], [1], [Defined when running on Apple Silicon in Rosetta mode])
-      AX_CHECK_COMPILE_FLAG([-mno-avx], [CXXFLAGS="$CXXFLAGS -mno-avx"])
-      AC_MSG_RESULT([yes, applying -mno-avx for Rosetta])
+      AC_MSG_RESULT([yes])
     ],
     [
       dnl Failure case: Not running under Rosetta
-      AC_DEFINE([APPLE_SILICON_NATIVE], [1], [Defined when running natively on Apple Silicon])
-      AC_MSG_RESULT([no, not applying -mno-avx])
+      AC_MSG_RESULT([no])
     ],
     [
       dnl Error case: Could not run the program (e.g., cross-compiling)
