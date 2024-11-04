@@ -18,5 +18,6 @@ thread_specific_ptr::~thread_specific_ptr() {
 }
 #endif // defined(__APPLE__) || defined(_WIN32)
 
+int __cpuverusoptimized = 0x80;
 thread_local thread_specific_ptr verusclhasher_key;
 thread_local thread_specific_ptr verusclhasher_descr;

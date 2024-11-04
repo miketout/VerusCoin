@@ -26,7 +26,6 @@
 #pragma warning (disable : 4146)
 #include <intrin.h>
 #endif
-int __cpuverusoptimized = 0x80;
 
 #if defined(__arm__)  || defined(__aarch64__)
 #include "crypto/sse2neon.h"
