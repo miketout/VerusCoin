@@ -139,11 +139,9 @@ bool AppInit(int argc, char* argv[])
         return true;
     }
 
-    #if defined(OS_MACOSX)
-        #if defined(APPLE_SILICON_ROSETTA)
+    #if defined(__APPLE__) && defined(APPLE_SILICON_ROSETTA) && (APPLE_SILICON_ROSETTA == 1)
         std::cerr << "AVX Status: Disabled\n";
         std::cerr << "Built on Apple Silicon under Rosetta." << std::endl;
-        #endif
     #endif
 
     try
