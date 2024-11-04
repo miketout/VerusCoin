@@ -25,6 +25,10 @@
 #define printf(...)
 #endif
 
+#ifdef HAVE_CONFIG_H
+#include "config/bitcoin-config.h"
+#endif
+
 /* Introduction text for doxygen: */
 
 /*! \mainpage Developer documentation
