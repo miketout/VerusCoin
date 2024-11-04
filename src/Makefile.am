@@ -474,7 +474,8 @@ crypto_libverus_crypto_a_SOURCES = \
   crypto/haraka.h \
   crypto/haraka.c \
   crypto/verus_clhash.h \
-  crypto/verus_clhash.cpp
+  crypto/verus_clhash.cpp \
+  crypto/verus_clhash_tsp.cpp
 
 # Verus hash specific library - portable
 if ARCH_ARM

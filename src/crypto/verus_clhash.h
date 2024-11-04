@@ -70,29 +70,7 @@ struct verusclhash_descr
     uint32_t keySizeInBytes;
 };
 
-struct thread_specific_ptr {
-    void *ptr;
-    thread_specific_ptr() { ptr = NULL; }
-    void reset(void *newptr = NULL)
-    {
-        if (ptr && ptr != newptr)
-        {
-            std::free(ptr);
-        }
-        ptr = newptr;
-
-    }
-    void *get() { return ptr; }
-#if defined(__APPLE__) || defined(_WIN32)
-    // horrible MingW and Mac with gcc thread local storage bug workaround
-    ~thread_specific_ptr();
-#else
-    ~thread_specific_ptr() {
-        this->reset();
-    }
-#endif
-};
-
+struct thread_specific_ptr;
 extern thread_local thread_specific_ptr verusclhasher_key;
 extern thread_local thread_specific_ptr verusclhasher_descr;
 
