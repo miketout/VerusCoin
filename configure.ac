@@ -534,10 +534,41 @@ if test x$TARGET_OS = xdarwin; then
   AX_CHECK_LINK_FLAG([[-Wl,-dead_strip]], [LDFLAGS="$LDFLAGS -Wl,-dead_strip"])
 fi
 
-# Check if we're on macOS (Darwin)
 if test x$TARGET_OS = xdarwin; then
-  # Check if the compiler accepts the -mno-avx flag
-  AX_CHECK_COMPILE_FLAG([-mno-avx], [CXXFLAGS="$CXXFLAGS -mno-avx"])
+  AC_MSG_CHECKING([if running on Apple Silicon under Rosetta])
+
+  AC_RUN_IFELSE(
+    [AC_LANG_PROGRAM([[
+      #include <stdlib.h>
+      #include <stdio.h>
+      #include <sys/types.h>
+      #include <sys/sysctl.h>
+
+      int check_rosetta_main() {
+        int translated = 0;
+        size_t size = sizeof(translated);
+        if (sysctlbyname("sysctl.proc_translated", &translated, &size, NULL, 0) == 0 && translated == 1) {
+          return 0; // Running under Rosetta
+        }
+        return -1; // Not running under Rosetta
+      }
+    ]], [[return check_rosetta_main();]])],
+    [
+      dnl Success case: Running under Rosetta
+      AC_DEFINE([APPLE_SILICON_ROSETTA], [1], [Defined when running on Apple Silicon in Rosetta mode])
+      AX_CHECK_COMPILE_FLAG([-mno-avx], [CXXFLAGS="$CXXFLAGS -mno-avx"])
+      AC_MSG_RESULT([yes, applying -mno-avx for Rosetta])
+    ],
+    [
+      dnl Failure case: Not running under Rosetta
+      AC_DEFINE([APPLE_SILICON_NATIVE], [1], [Defined when running natively on Apple Silicon])
+      AC_MSG_RESULT([no, not applying -mno-avx])
+    ],
+    [
+      dnl Error case: Could not run the program (e.g., cross-compiling)
+      AC_MSG_WARN([Could not determine if running under Rosetta (likely cross-compiling)])
+    ]
+  )
 fi
 
 AC_CHECK_HEADERS([endian.h sys/endian.h byteswap.h stdio.h stdlib.h unistd.h strings.h sys/types.h sys/stat.h sys/select.h sys/prctl.h])

@@ -135,6 +135,13 @@ bool AppInit(int argc, char* argv[])
         return true;
     }
 
+    #if defined(OS_MACOSX)
+        #if defined(APPLE_SILICON_ROSETTA)
+        std::cerr << "AVX Status: Disabled\n";
+        std::cerr << "Built on Apple Silicon under Rosetta." << std::endl;
+        #endif
+    #endif
+
     try
     {
         if (!AppInitNetworking())
