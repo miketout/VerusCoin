@@ -43,9 +43,6 @@
 
 #include <boost/thread.hpp>
 #include "tinyformat.h"
-#ifdef __APPLE__
-void __tls_init();
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -199,9 +196,6 @@ struct verusclhasher {
     // align on 256 bit boundary at end
     verusclhasher(uint64_t keysize=VERUSKEYSIZE, int solutionVersion=SOLUTION_VERUSHHASH_V2) : keySizeInBytes((keysize >> 5) << 5)
     {
-#ifdef __APPLE__
-       __tls_init();
-#endif
         if (IsCPUVerusOptimized())
         {
             if (solutionVersion >= SOLUTION_VERUSHHASH_V2_1)

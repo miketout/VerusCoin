@@ -11426,7 +11426,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                             }
                             if (destIdentity.unlockAfter && !destIdentity.IsLocked())
                             {
-                                std::string correctCommand = "Identity time lock should be zeroed before sending cross-chain to avoid inadvertent locking on destination chain. Run the command:\nupdateidentity \'{\"name\":" + destIdentity.name + "\",\"parent\":\"" + EncodeDestination(CIdentityID(destIdentity.parent)) + "\",\"timelock\":0}\'\nto zero the timelock value before exporting to another chain";
+                                std::string correctCommand = "Identity time lock should be zeroed before sending cross-chain to avoid inadvertent locking on destination chain. Run the command:\nupdateidentity \'{\"name\":\"" + destIdentity.name + "\",\"parent\":\"" + EncodeDestination(CIdentityID(destIdentity.parent)) + "\",\"timelock\":0}\'\nto zero the timelock value before exporting to another chain";
                                 throw JSONRPCError(RPC_INVALID_PARAMETER, correctCommand);
                             }
                             destIdentity.contentMap.clear();
@@ -11781,7 +11781,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                             requiredFees = 0;           // clear them, as they are used below as well when sending directly across
                             reversePriceInFeeCur = feePriceState.TargetConversionPricesReverse(ASSETCHAINS_CHAINID, true).valueMap[feeCurrencyID];
 
-                            printf("%s: setting transfer fees in currency %s to %ld\n", __func__, EncodeDestination(CIdentityID(feeCurrencyID)).c_str(), dest.fees);
+                            printf("%s: setting transfer fees in currency %s to %" PRId64 "\n", __func__, EncodeDestination(CIdentityID(feeCurrencyID)).c_str(), dest.fees);
                             flags &= ~CReserveTransfer::CROSS_SYSTEM;
 
                             // at this point, we either need a refund ID or a change address for refund, or there is risk of loss, so fail instead

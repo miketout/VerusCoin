@@ -1684,6 +1684,9 @@ public:
                     delete state.hw_sha256D;
                     break;
                 }
+                default:
+                // No action needed for HASH_INVALID or HASH_LASTTYPE
+                break;
             }
         }
         state.hw_blake2b = nullptr;
@@ -1741,6 +1744,9 @@ public:
                 state.hw_sha256D->write(pch, size);
                 break;
             }
+            default:
+                // No action for HASH_INVALID or HASH_LASTTYPE
+            break;
         }
         return (*this);
     }
@@ -1771,6 +1777,9 @@ public:
                 result = state.hw_sha256D->GetHash();
                 break;
             }
+            default:
+                // No action for HASH_INVALID or HASH_LASTTYPE
+            break;
         }
         return result;
     }

@@ -777,7 +777,7 @@ bool DecodeOneExport(const UniValue obj, CCrossChainExport &ccx,
         exportTx.vout.size() <= outNum ||
         !exportTx.vout[outNum].scriptPubKey.IsPayToCryptoCondition(p) ||
         !p.IsValid() ||
-        !p.evalCode == EVAL_CROSSCHAIN_EXPORT ||
+        p.evalCode != EVAL_CROSSCHAIN_EXPORT ||
         (outputValue = exportTx.vout[outNum].nValue) == -1)
     {
         //UniValue jsonTxOut(UniValue::VOBJ);
@@ -2042,8 +2042,9 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             {
                 UniValue scriptUni(UniValue::VOBJ);
                 ScriptPubKeyToUniv(output.scriptPubKey, scriptUni, true, true);
-                printf("%s, \"shareratio\": %ld, \"total\": %ld\n", scriptUni.write(1,2).c_str(), output.nValue, shareCheck);
-                LogPrintf("%s, \"shareratio\": %ld, \"total\": %ld\n", scriptUni.write(1,2).c_str(), output.nValue, shareCheck);
+                printf("%s, \"shareratio\": %" PRId64 ", \"total\": %" PRId64 "\n", scriptUni.write(1, 2).c_str(), output.nValue, shareCheck);
+                LogPrintf("%s, \"shareratio\": %" PRId64 ", \"total\": %" PRId64 "\n", scriptUni.write(1, 2).c_str(), output.nValue, shareCheck);
+
                 if (shareCheck > INT_MAX)
                 {
                     printf("OVERFLOW, value greater than %d\n", INT_MAX);
@@ -4530,7 +4531,8 @@ void static BitcoinMiner_noeq()
                         }
                         continue;
                     }
-                    if (mergeMining = (params.isNull() && error.isNull()))
+                    mergeMining = (params.isNull() && error.isNull());
+                    if (mergeMining)
                     {
                         printf("Merge mining %s with %s as the hashing chain\n", ASSETCHAINS_SYMBOL, ConnectedChains.FirstNotaryChain().chainDefinition.name.c_str());
                         LogPrintf("Merge mining with %s as the hashing chain\n", ConnectedChains.FirstNotaryChain().chainDefinition.name.c_str());
@@ -4793,11 +4795,7 @@ void static BitcoinMiner_noeq()
                 uint64_t hashesPerNonceMask = ASSETCHAINS_NONCEMASK[ASSETCHAINS_ALGO] >> 3;
                 if (!(totalDone < hashesPerNonceMask))
                 {
-#ifdef _WIN32
-                    printf("%llu mega hashes complete - working\n", (hashesPerNonceMask + 1) / 1048576);
-#else
-                    printf("%lu mega hashes complete - working\n", (hashesPerNonceMask + 1) / 1048576);
-#endif
+                    printf("%" PRIu64 " mega hashes complete - working\n", (hashesPerNonceMask + 1) / 1048576);
                 }
                 break;
 

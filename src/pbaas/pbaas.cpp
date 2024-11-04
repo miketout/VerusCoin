@@ -2039,7 +2039,7 @@ std::tuple<bool, uint32_t, CTransaction, COptCCParams> GetPriorOutputTx(const CT
     // if not fulfilled, ensure that no part of the primary identity is modified
     COptCCParams p;
     uint256 blkHash;
-    if (std::get<0>(retVal) = myGetTransaction(spendingTx.vin[nIn].prevout.hash, std::get<2>(retVal), blkHash))
+    if ((std::get<0>(retVal) = myGetTransaction(spendingTx.vin[nIn].prevout.hash, std::get<2>(retVal), blkHash)))
     {
         auto bIt = mapBlockIndex.find(blkHash);
         if (bIt == mapBlockIndex.end() || !bIt->second)
@@ -2258,7 +2258,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                 if (!validHash)
                 {
                     validHash = false;
-                    printf("%s: invalid nonce value for PoS block\nnNonce: %s\nrawHash: %s\nposHash: %s\nvalue: %lu\n",
+                    printf("%s: invalid nonce value for PoS block\nnNonce: %s\nrawHash: %s\nposHash: %s\nvalue: %" PRId64 "\n",
                             __func__, pblock->nNonce.GetHex().c_str(), rawHash.GetHex().c_str(), posHash.GetHex().c_str(), value);
                 }
                 else if (!attackMitigation)
@@ -2266,7 +2266,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                     if (posHash > target)
                     {
                         validHash = false;
-                        printf("%s: invalid nonce value for PoS block\nnNonce: %s\nrawHash: %s\nposHash: %s\nvalue: %lu\n",
+                        printf("%s: invalid nonce value for PoS block\nnNonce: %s\nrawHash: %s\nposHash: %s\nvalue: %" PRId64 "\n",
                                 __func__, pblock->nNonce.GetHex().c_str(), rawHash.GetHex().c_str(), posHash.GetHex().c_str(), value);
                     }
                     // make sure prev block hash and block height are correct
@@ -3050,12 +3050,12 @@ bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTrans
     }
 
     // if we found a valid output, determine if the output is direct or system source
-    bool gatewaySource = false;
-    if (gatewaySource = authorizingImport.IsSourceSystemImport())
+    bool gatewaySource = authorizingImport.IsSourceSystemImport();
+    if (gatewaySource)
     {
         COptCCParams p;
         importOutNum--;        // set i to the actual import
-        if (!(importOutNum >= 0 &
+        if (!(importOutNum >= 0 &&
               tx.vout[importOutNum].scriptPubKey.IsPayToCryptoCondition(p) &&
               p.IsValid() &&
               p.evalCode == EVAL_CROSSCHAIN_IMPORT &&

@@ -4481,7 +4481,7 @@ std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> GetLastConfirmedNotarization(
                             // remove it and try again
                             if (checkBlockHash.IsNull())
                             {
-                                std::__cxx11::list<CTransaction> removed;
+                                std::list<CTransaction> removed;
                                 mempool.remove(checkTx, removed, true);
                                 unspentFinalizations = CObjectFinalization::GetUnspentConfirmedFinalizations(curID);
                                 exitLoop = !unspentFinalizations.size();
@@ -10559,7 +10559,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                 }
 
                 // ensure that this is part of an export transaction
-                bool exportOutNum = -1;
+                int exportOutNum = -1;
                 CCrossChainExport exportToCheck;
                 for (int loop = 0; loop < tx.vout.size(); loop++)
                 {

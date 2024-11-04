@@ -357,7 +357,7 @@ public:
     bool IsPrimaryMutation(const CPrincipal &newPrincipal, uint32_t currentVersion) const // post PBaaS, version is checked elsewhere
     {
         if ((currentVersion < VERSION_PBAAS && newPrincipal.nVersion != nVersion) ||
-            minSigs != minSigs ||
+            minSigs != newPrincipal.minSigs ||
             primaryAddresses.size() != newPrincipal.primaryAddresses.size())
         {
             return true;
