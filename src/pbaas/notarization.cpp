@@ -4903,12 +4903,12 @@ bool CPBaaSNotarization::CreateAcceptedNotarization(const CCurrencyDefinition &e
 
     // we've found the priorAgreedNotarization on the chain, if the one we are trying to add is already on-chain or in mempool,
     // do not add another instance
-    CNativeHashWriter hw;
-    hw << newNotarization;
-    uint256 objHash = hw.GetHash();
+    CNativeHashWriter hwCheck;
+    hwCheck << newNotarization;
+    uint256 objHashCheck = hwCheck.GetHash();
     std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> memResults;
     std::vector<CAddressIndexDbEntry> addressIndex;
-    uint160 notarizationIdxKey = CCrossChainRPCData::GetConditionID(newNotarization.currencyID, CPBaaSNotarization::EarnedNotarizationKey(), objHash);
+    uint160 notarizationIdxKey = CCrossChainRPCData::GetConditionID(newNotarization.currencyID, CPBaaSNotarization::EarnedNotarizationKey(), objHashCheck);
     if ((mempool.getAddressIndex({{notarizationIdxKey, CScript::P2IDX}}, memResults) && memResults.size()) ||
         GetAddressIndex(notarizationIdxKey, CScript::P2IDX, addressIndex) && addressIndex.size())
     {
