@@ -666,7 +666,8 @@ public:
     bool FindEarnedNotarizations(std::vector<CObjectFinalization> &finalization, std::vector<CAddressIndexDbEntry>  *pEarnedNotarizationIndex=nullptr) const;
     static bool FindFinalizedIndexByVDXFKey(const uint160 &notarizationIdxKey,
                                             CObjectFinalization &confirmedFinalization,
-                                            CAddressIndexDbEntry &earnedNotarizationIndex);
+                                            CAddressIndexDbEntry &earnedNotarizationIndex,
+                                            bool selectLast=false);
     static bool FindFinalizedIndexesByVDXFKey(const uint160 &notarizationIdxKey,
                                               std::vector<CObjectFinalization> &confirmedFinalizations,
                                               std::vector<CAddressIndexDbEntry> &earnedNotarizationIndex);
