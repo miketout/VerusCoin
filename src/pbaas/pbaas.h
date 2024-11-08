@@ -55,6 +55,8 @@ static const uint32_t PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT = 238210;
 static const uint32_t PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT = 68730;
 static const uint32_t PBAAS_SCHEDULED_PROTOCOL_UPGRADE_01 = 1731002400;
 static const uint32_t PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_01 = 1730228400;
+static const uint32_t PBAAS_SCHEDULED_PROTOCOL_UPGRADE_02 = 1732471200; // (GMT): Sunday, November 24, 2024 6:00:00 PM
+static const uint32_t PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_02 = 1730228400;
 
 class CUpgradeDescriptor
 {
@@ -1246,6 +1248,7 @@ public:
     bool IsPromoteExchangeRate(uint32_t height) const;
     int IsPastRealTime(uint32_t nTime, int64_t height=0) const;
     int IsUpgrade01Active(int64_t height=0) const;
+    int IsUpgrade02Active(int64_t height=0) const;
 
     uint32_t GetChainBranchId(const uint160 &sysID, int nHeight, const Consensus::Params& params) const;
 

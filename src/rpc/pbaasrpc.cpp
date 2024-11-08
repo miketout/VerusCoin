@@ -11491,16 +11491,17 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                             canExport.valueMap.size() &&
                             !cannotExport.valueMap.size())
                         {
-                            if (validCurrencies.count(sourceCurrencyID))
+                            if (validCurrencies.count(sourceCurrencyID) ||
+                                IsValidExportCurrency(offChainDef, sourceCurrencyID, height))
                             {
-                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Unnecessary to export currency to system. Currency is already exported to destination network.");
+                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Unnecessary to export currency to system. Currency is already available on destination network.");
                             }
                         }
                         else
                         {
                             if (!CCurrencyDefinition::IsValidDefinitionImport(thisChain, offChainDef, sourceCurrencyDef.parent, height))
                             {
-                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot export currency to import system");
+                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot export currency to import system, must first export parent currency " + ConnectedChains.GetFriendlyCurrencyName(sourceCurrencyDef.parent));
                             }
                         }
                     }
