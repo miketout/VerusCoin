@@ -7179,12 +7179,12 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
         }
         else
         {
-            if (preConvert && fractionalCurrency.launchSystemID != ASSETCHAINS_CHAINID)
+            if (!preConvert || fractionalCurrency.launchSystemID != ASSETCHAINS_CHAINID)
             {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only preconvert to currencies launching on the current chain");
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only estimate preconversions to currencies that will launch on the current chain");
             }
             CChainNotarizationData cnd;
-            if (GetNotarizationData(fractionalCurrencyID, cnd))
+            if (GetNotarizationData(fractionalCurrency.systemID, cnd))
             {
                 notarization = cnd.vtx[cnd.forks[cnd.bestChain].back()].second;
             }

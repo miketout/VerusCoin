@@ -9297,7 +9297,7 @@ bool CCurrencyDefinition::IsValidDefinitionImport(const CCurrencyDefinition &sou
     CCurrencyDefinition curSystem = ConnectedChains.GetCachedCurrency(currencyParentID);
     if (sourceSystemID == ASSETCHAINS_CHAINID)
     {
-        // if we are sending from this chain, we must know that the parent already exists there, or
+        // if we are sending from this chain, we must know that the parent already exists on the destination, or
         // we would create an invalid import
         if (!IsValidExportCurrency(destSystem, currencyParentID, height))
         {
