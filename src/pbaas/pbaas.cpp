@@ -5361,8 +5361,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 }
             }
 
-            if (!validExportCurrencies.count(rt.FirstCurrency()) &&
-                (rt.IsPreConversion() || !IsValidExportCurrency(systemDest, rt.FirstCurrency(), height)))
+            if (!validExportCurrencies.count(rt.FirstCurrency()) && !IsValidExportCurrency(systemDest, rt.FirstCurrency(), height))
             {
                 // if destination system does not already have the exporting currency or
                 // is not multicurrency, invalid
