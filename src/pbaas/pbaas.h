@@ -1246,9 +1246,9 @@ public:
     bool CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t height) const;
     bool BlockOneIDUpgrade() const;
     bool IsPromoteExchangeRate(uint32_t height) const;
-    int IsPastRealTime(uint32_t nTime, int64_t height=0) const;
-    int IsUpgrade01Active(int64_t height=0) const;
-    int IsUpgrade02Active(int64_t height=0) const;
+    int CheckPastRealTime(uint32_t nTime, int64_t height=0) const;
+    bool IsUpgrade01Active(int64_t height=0) const;
+    bool IsUpgrade02Active(int64_t height=0) const;
 
     uint32_t GetChainBranchId(const uint160 &sysID, int nHeight, const Consensus::Params& params) const;
 

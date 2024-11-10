@@ -3207,7 +3207,7 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                             }
                         }
 
-                        if (ConnectedChains.IsUpgrade01Active((nHeight - 1) == chainActive.Height() ? nHeight - 1 : nHeight) == 1 &&
+                        if (ConnectedChains.IsUpgrade01Active((nHeight - 1) == chainActive.Height() ? nHeight - 1 : nHeight) &&
                             newState.reserveOut == std::vector<int64_t>(newState.reserveOut.size(), 0) &&
                             importNotarization.currencyState.viaConversionPrice != newState.viaConversionPrice &&
                             newState.viaConversionPrice[0] == newState.conversionPrice[0])
