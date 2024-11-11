@@ -4901,6 +4901,20 @@ bool CPBaaSNotarization::CreateAcceptedNotarization(const CCurrencyDefinition &e
         }
     }
 
+    // we've found the priorAgreedNotarization on the chain, if the one we are trying to add is already on-chain or in mempool,
+    // do not add another instance
+    CNativeHashWriter hwCheck;
+    hwCheck << newNotarization;
+    uint256 objHashCheck = hwCheck.GetHash();
+    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> memResults;
+    std::vector<CAddressIndexDbEntry> addressIndex;
+    uint160 notarizationIdxKey = CCrossChainRPCData::GetConditionID(newNotarization.currencyID, CPBaaSNotarization::EarnedNotarizationKey(), objHashCheck);
+    if ((mempool.getAddressIndex({{notarizationIdxKey, CScript::P2IDX}}, memResults) && memResults.size()) ||
+        GetAddressIndex(notarizationIdxKey, CScript::P2IDX, addressIndex) && addressIndex.size())
+    {
+        return state.Error(errorPrefix + " Cannot create accepted notarization. Notarization already present on chain.");
+    }
+
     // challenge roots must include all UTXOs between our last agreed index and the end
     int numChallenges = cnd.vtx.size() - (priorNotarizationIdx + 1);
     bool isChallengeStronger = false;
@@ -8819,7 +8833,8 @@ bool CallNotary(const CRPCChainData &notarySystem, std::string command, const Un
 
 bool CPBaaSNotarization::FindFinalizedIndexByVDXFKey(const uint160 &notarizationIdxKey,
                                                      CObjectFinalization &confirmedFinalization,
-                                                     CAddressIndexDbEntry &earnedNotarizationIndex)
+                                                     CAddressIndexDbEntry &earnedNotarizationIndex,
+                                                     bool selectLast)
 {
     bool retVal = false;
     std::vector<CAddressIndexDbEntry> addressIndex;
@@ -8832,14 +8847,30 @@ bool CPBaaSNotarization::FindFinalizedIndexByVDXFKey(const uint160 &notarization
         return retVal;
     }
 
-    for (auto &oneIndexEntry : addressIndex)
+    if (selectLast)
     {
-        if (oneIndexEntry.first.spending)
+        for (int i = addressIndex.size() - 1; i >= 0; i--)
         {
-            continue;
+            auto &oneIndexEntry = addressIndex[i];
+            if (oneIndexEntry.first.spending)
+            {
+                continue;
+            }
+            earnedNotarizationIndex = oneIndexEntry;
+            break;
         }
-        earnedNotarizationIndex = oneIndexEntry;
-        break;
+    }
+    else
+    {
+        for (auto &oneIndexEntry : addressIndex)
+        {
+            if (oneIndexEntry.first.spending)
+            {
+                continue;
+            }
+            earnedNotarizationIndex = oneIndexEntry;
+            break;
+        }
     }
     if (!earnedNotarizationIndex.first.blockHeight)
     {
@@ -9026,7 +9057,7 @@ bool CPBaaSNotarization::FindEarnedNotarization(CObjectFinalization &confirmedFi
     hw << checkNotarization;
     uint256 objHash = hw.GetHash();
     uint160 notarizationIdxKey = CCrossChainRPCData::GetConditionID(currencyID, CPBaaSNotarization::EarnedNotarizationKey(), objHash);
-    return FindFinalizedIndexByVDXFKey(notarizationIdxKey, confirmedFinalization, earnedNotarizationIndex);
+    return FindFinalizedIndexByVDXFKey(notarizationIdxKey, confirmedFinalization, earnedNotarizationIndex, true);
 }
 
 bool CPBaaSNotarization::FindEarnedNotarizations(std::vector<CObjectFinalization> &confirmedFinalizations, std::vector<CAddressIndexDbEntry> *pEarnedNotarizationIndex) const

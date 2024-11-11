@@ -55,6 +55,8 @@ static const uint32_t PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT = 238210;
 static const uint32_t PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT = 68730;
 static const uint32_t PBAAS_SCHEDULED_PROTOCOL_UPGRADE_01 = 1731002400;
 static const uint32_t PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_01 = 1730228400;
+static const uint32_t PBAAS_SCHEDULED_PROTOCOL_UPGRADE_02 = 1732471200; // (GMT): Sunday, November 24, 2024 6:00:00 PM
+static const uint32_t PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_02 = 1731373200; // (GMT): Tuesday, November 12, 2024 1:00:00 AM
 
 class CUpgradeDescriptor
 {
@@ -666,7 +668,8 @@ public:
     bool FindEarnedNotarizations(std::vector<CObjectFinalization> &finalization, std::vector<CAddressIndexDbEntry>  *pEarnedNotarizationIndex=nullptr) const;
     static bool FindFinalizedIndexByVDXFKey(const uint160 &notarizationIdxKey,
                                             CObjectFinalization &confirmedFinalization,
-                                            CAddressIndexDbEntry &earnedNotarizationIndex);
+                                            CAddressIndexDbEntry &earnedNotarizationIndex,
+                                            bool selectLast=false);
     static bool FindFinalizedIndexesByVDXFKey(const uint160 &notarizationIdxKey,
                                               std::vector<CObjectFinalization> &confirmedFinalizations,
                                               std::vector<CAddressIndexDbEntry> &earnedNotarizationIndex);
@@ -1243,8 +1246,9 @@ public:
     bool CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t height) const;
     bool BlockOneIDUpgrade() const;
     bool IsPromoteExchangeRate(uint32_t height) const;
-    int IsPastRealTime(uint32_t nTime, int64_t height=0) const;
-    int IsUpgrade01Active(int64_t height=0) const;
+    int CheckPastRealTime(uint32_t nTime, int64_t height=0) const;
+    bool IsUpgrade01Active(int64_t height=0) const;
+    bool IsUpgrade02Active(int64_t height=0) const;
 
     uint32_t GetChainBranchId(const uint160 &sysID, int nHeight, const Consensus::Params& params) const;
 

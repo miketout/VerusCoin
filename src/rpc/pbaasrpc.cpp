@@ -7179,12 +7179,12 @@ UniValue estimateconversion(const UniValue& params, bool fHelp)
         }
         else
         {
-            if (preConvert && fractionalCurrency.launchSystemID != ASSETCHAINS_CHAINID)
+            if (!preConvert || fractionalCurrency.launchSystemID != ASSETCHAINS_CHAINID)
             {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only preconvert to currencies launching on the current chain");
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only estimate preconversions to currencies that will launch on the current chain");
             }
             CChainNotarizationData cnd;
-            if (GetNotarizationData(fractionalCurrencyID, cnd))
+            if (GetNotarizationData(fractionalCurrency.systemID, cnd))
             {
                 notarization = cnd.vtx[cnd.forks[cnd.bestChain].back()].second;
             }
@@ -11491,16 +11491,17 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                             canExport.valueMap.size() &&
                             !cannotExport.valueMap.size())
                         {
-                            if (validCurrencies.count(sourceCurrencyID))
+                            if (validCurrencies.count(sourceCurrencyID) ||
+                                IsValidExportCurrency(offChainDef, sourceCurrencyID, height))
                             {
-                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Unnecessary to export currency to system. Currency is already exported to destination network.");
+                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Unnecessary to export currency to system. Currency is already available on destination network.");
                             }
                         }
                         else
                         {
                             if (!CCurrencyDefinition::IsValidDefinitionImport(thisChain, offChainDef, sourceCurrencyDef.parent, height))
                             {
-                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot export currency to import system");
+                                throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot export currency to import system, must first export parent currency " + ConnectedChains.GetFriendlyCurrencyName(sourceCurrencyDef.parent));
                             }
                         }
                     }

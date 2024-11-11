@@ -4594,6 +4594,22 @@ bool IsValidExportCurrency(const CCurrencyDefinition &systemDest, const uint160 
         return true;
     }
 
+    std::set<uint160> validCurrencies;
+    if (ConnectedChains.IsUpgrade02Active(height))
+    {
+        CCurrencyDefinition exportCurrency = ConnectedChains.GetCachedCurrency(exportCurrencyID);
+        if (!exportCurrency.IsValid())
+        {
+            return false;
+        }
+
+        if (BaseBridgeCurrencies(systemDest, height, false).count(exportCurrencyID) ||
+            ConnectedChains.IsValidCurrencyDefinitionImport(systemDest, ConnectedChains.ThisChain(), exportCurrency, height))
+        {
+            return true;
+        }
+    }
+
     // if this gateway or PBaaS chain was launched from this system
     if ((systemDest.IsPBaaSChain() || systemDest.IsGateway()) &&
         sysID != ASSETCHAINS_CHAINID &&
@@ -5345,10 +5361,10 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 }
             }
 
-            if ((validExportCurrencies.size() && !validExportCurrencies.count(rt.FirstCurrency())) ||
-                (!validExportCurrencies.size() && !IsValidExportCurrency(systemDest, rt.FirstCurrency(), height)))
+            if (!validExportCurrencies.count(rt.FirstCurrency()) && !IsValidExportCurrency(systemDest, rt.FirstCurrency(), height))
             {
-                // if destination system is not multicurrency or currency is already a valid export currency, invalid
+                // if destination system does not already have the exporting currency or
+                // is not multicurrency, invalid
                 return state.Error("Invalid currency export in reserve transfer " + rt.ToUniValue().write(1,2));
             }
 
@@ -6723,7 +6739,7 @@ bool CConnectedChains::IsPromoteExchangeRate(uint32_t height) const
 
 // Height is minimum that we must be in sync with for an answer (-1 = don't know, not caught up enough, 0 = before real time as of height, 1 = past real time as of height, if height = 0, based on chain tip)
 // If any header is past the time over the last block averaging period, we consider it past that real time.
-int CConnectedChains::IsPastRealTime(uint32_t nTime, int64_t height) const
+int CConnectedChains::CheckPastRealTime(uint32_t nTime, int64_t height) const
 {
     if (height > chainActive.Height() && chainActive.LastTip()->nTime >= nTime)
     {
@@ -6747,9 +6763,14 @@ int CConnectedChains::IsPastRealTime(uint32_t nTime, int64_t height) const
     return -1;
 }
 
-int CConnectedChains::IsUpgrade01Active(int64_t height) const
+bool CConnectedChains::IsUpgrade01Active(int64_t height) const
 {
-    return IsPastRealTime(PBAAS_TESTMODE ? PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_01 : PBAAS_SCHEDULED_PROTOCOL_UPGRADE_01, height);
+    return CheckPastRealTime(PBAAS_TESTMODE ? PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_01 : PBAAS_SCHEDULED_PROTOCOL_UPGRADE_01, height) == 1;
+}
+
+bool CConnectedChains::IsUpgrade02Active(int64_t height) const
+{
+    return CheckPastRealTime(PBAAS_TESTMODE ? PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_02 : PBAAS_SCHEDULED_PROTOCOL_UPGRADE_02, height) == 1;
 }
 
 uint32_t CConnectedChains::GetChainBranchId(const uint160 &sysID, int height, const Consensus::Params& params) const
@@ -9276,7 +9297,7 @@ bool CCurrencyDefinition::IsValidDefinitionImport(const CCurrencyDefinition &sou
     CCurrencyDefinition curSystem = ConnectedChains.GetCachedCurrency(currencyParentID);
     if (sourceSystemID == ASSETCHAINS_CHAINID)
     {
-        // if we are sending from this chain, we must know that the parent has already been exported, or
+        // if we are sending from this chain, we must know that the parent already exists on the destination, or
         // we would create an invalid import
         if (!IsValidExportCurrency(destSystem, currencyParentID, height))
         {

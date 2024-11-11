@@ -72,8 +72,8 @@ struct verusclhash_descr
 
 struct thread_specific_ptr {
     void *ptr;
-    thread_specific_ptr() { ptr = NULL; }
-    void reset(void *newptr = NULL)
+    thread_specific_ptr() { ptr = nullptr; }
+    void reset(void *newptr = nullptr)
     {
         if (ptr && ptr != newptr)
         {
