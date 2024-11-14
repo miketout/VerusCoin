@@ -3307,6 +3307,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
 
     bool fAllAccounts = (strAccount == string("*"));
     bool involvesWatchonly = wtx.IsFromMe(ISMINE_WATCH_ONLY);
+    bool extendedInfo = pCurrenciesCostBases || pAggregateEarnings;
 
     // Sent
     if ((!listSent.empty() || nFee != 0) && (fAllAccounts || strAccount == strSentAccount))
@@ -3332,10 +3333,13 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                     (rt = CReserveTransfer(sentP.vData[0])).IsValid())
                 {
                     entry.push_back(Pair("reservetransfer", rt.ToUniValue()));
-                    UniValue progressUni = GetReserveTransferProgress(wtx, s.vout, rt, pCurrenciesCostBases, pIncomingCostBases, pOutgoingCostBases, pAggregateEarnings, pNativePriceMap);
-                    if (!progressUni.isNull())
+                    if (extendedInfo)
                     {
-                        entry.push_back(Pair("progress", progressUni));
+                        UniValue progressUni = GetReserveTransferProgress(wtx, s.vout, rt, pCurrenciesCostBases, pIncomingCostBases, pOutgoingCostBases, pAggregateEarnings, pNativePriceMap);
+                        if (!progressUni.isNull())
+                        {
+                            entry.push_back(Pair("progress", progressUni));
+                        }
                     }
                 }
                 else
@@ -3395,7 +3399,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                     else
                     {
                         entry.push_back(Pair("category", bIsMint ? "mint" : "generate"));
-                        if (pAggregateEarnings && wtx.vout[r.vout].nValue && chainActive.Height() >= nHeight)
+                        if (pAggregateEarnings && pCurrenciesCostBases && wtx.vout[r.vout].nValue && chainActive.Height() >= nHeight)
                         {
                             // add earnings
                             std::map<std::string, int64_t> nativePriceMap;
@@ -3476,7 +3480,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
 
                             // add this to earnings
                             // TODO: ACCOUNTING - add all currencies, not just native to earnings for PBaaS chains
-                            if (pAggregateEarnings)
+                            if (pAggregateEarnings && pCurrenciesCostBases)
                             {
                                 std::map<std::string, int64_t> nativePriceMap;
                                 auto blockMapIter = mapBlockIndex.find(wtx.hashBlock);
@@ -3513,7 +3517,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                             if (i < reserveTransferMap.first.size())
                             {
                                 // if the source transfer is from off-chain, match it up with an off-chain transfer if it's in our off-chain transfer map
-                                if (pIncomingCostBases && pOutgoingCostBases)
+                                if (pCurrenciesCostBases && pIncomingCostBases && pOutgoingCostBases)
                                 {
                                     std::map<std::pair<uint256, int32_t>, std::multimap<std::pair<uint160, uint32_t>, std::pair<int64_t, int64_t>>>::iterator knownImportIT = pIncomingCostBases->find({cci.exportTxId, i});
                                     if (knownImportIT != pIncomingCostBases->end())
