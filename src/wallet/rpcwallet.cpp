@@ -1616,10 +1616,11 @@ UniValue signdata(const UniValue& params, bool fHelp)
             strDataHash = uni_get_str(find_value(params[0], "datahash"));
 
             if (((int)strFileName.empty() +
-                (int)strMessage.empty() +
-                (int)strHex.empty() +
-                (int)strBase64.empty() +
-                (int)strDataHash.empty()) != 4)
+                 (int)strMessage.empty() +
+                 (int)vdxfData.isNull() +
+                 (int)strHex.empty() +
+                 (int)strBase64.empty() +
+                 (int)strDataHash.empty()) != 4)
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include one and only one of \"filename\", \"message\", \"messagehex\", \"messagebase64\", and \"datahash\"");
             }
