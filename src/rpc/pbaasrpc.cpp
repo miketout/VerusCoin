@@ -15731,7 +15731,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
     {
         if (!oldID.HasTokenizedControl())
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only used ID control token for ID that has tokenized ID control on this chain");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Can only use ID control token for ID that has tokenized ID control on this chain");
         }
     }
 
