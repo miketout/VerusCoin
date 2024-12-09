@@ -2279,22 +2279,24 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
 
                 if (haveNewObject)
                 {
+                    CVDXF_Data vdxfEvidence;
+
+
                     CVDXFDataDescriptor evidenceData;
                     CDataDescriptor dataDescr(CDataDescriptor::VERSION_INVALID);
                     CMMRDescriptor mmrDescr(CMMRDescriptor::VERSION_INVALID);
                     bool success = false;
-                    ::FromVector(newObject, evidenceData, &success);
+                    ::FromVector(newObject, vdxfEvidence, &success);
                     if (success)
                     {
                         success = false;
-                        if (evidenceData.key == CVDXF_Data::DataDescriptorKey())
+                        if (vdxfEvidence.key == CVDXF_Data::DataDescriptorKey())
                         {
-                            success = true;
-                            dataDescr = evidenceData.dataDescriptor;
+                            ::FromVector(vdxfEvidence.data, dataDescr, &success);
                         }
-                        else if ((evidenceData.key == CVDXF_Data::MMRDescriptorKey()))
+                        else if ((vdxfEvidence.key == CVDXF_Data::MMRDescriptorKey()))
                         {
-                            ::FromVector(evidenceData.data, mmrDescr, &success);
+                            ::FromVector(vdxfEvidence.data, mmrDescr, &success);
                             if (success &&
                                 mmrDescr.IsValid())
                             {
@@ -2332,7 +2334,7 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
                             }
                             newVDXFData.push_back(dataDescr.ToUniValue());
                         }
-                        else if (mmrDescr.IsValid())
+                        if (mmrDescr.IsValid())
                         {
                             if (wIvk.IsNull())
                             {

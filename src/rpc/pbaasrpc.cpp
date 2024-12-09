@@ -11259,18 +11259,35 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                     throw JSONRPCError(RPC_INVALID_PARAMETER, "Memo is only an option for z-address destinations.");
                 }
 
+                /*
+                // throwing an error if a destination ID is not present on the current chain when sending to an ID on another chain
+                // may sometimes be inconvenient, but it also helps ensure that a fat finger error won't lose funds. The alternate way,
+                // which does not throw an error is in this comment, if desired.
+                CTxDestination destination;
+
+                if (destSystemID != thisChainID || (!exportToCurrencyID.IsNull() && exportToCurrencyID != thisChainID))
+                {
+                    destination = DecodeDestination(destStr);
+                }
+                else
+                {
+                    destination = ValidateDestination(destStr);
+                }
+                */
+
+                // if enabling the alternate to strict verification of ID on this chain when sending at all times, comment this and uncomment above
                 CTxDestination destination = ValidateDestination(destStr);
 
                 CTxDestination refundDestination = DecodeDestination(refundToStr);
                 if (refundDestination.which() == COptCCParams::ADDRTYPE_INVALID)
                 {
-                    if (!VERUS_DEFAULTID.IsNull())
-                    {
-                        refundDestination = VERUS_DEFAULTID;
-                    }
-                    else if (!hasZSource && !wildCardAddress && sourceDest.which() != COptCCParams::ADDRTYPE_INVALID)
+                    if (!hasZSource && !wildCardAddress && sourceDest.which() != COptCCParams::ADDRTYPE_INVALID)
                     {
                         refundDestination = sourceDest;
+                    }
+                    else if (!VERUS_DEFAULTID.IsNull())
+                    {
+                        refundDestination = VERUS_DEFAULTID;
                     }
                     else
                     {
@@ -11282,7 +11299,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                 {
                     if (!CIdentity::LookupIdentity(GetDestinationID(refundDestination)).IsValid())
                     {
-                        throw JSONRPCError(RPC_INVALID_PARAMETER, "When refunding to an ID, the ID must be valid.");
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "When explicitly refunding to an ID, the ID must be valid on the current chain.");
                     }
                 }
 
