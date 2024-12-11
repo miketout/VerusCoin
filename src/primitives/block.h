@@ -2416,6 +2416,7 @@ public:
     enum {
         FLAG_ISEVIDENCE = 1,
         FLAG_HAS_SYSTEM = 2,
+        FLAG_HAS_HASH = 4,
     };
 
     uint32_t version;
@@ -2424,14 +2425,15 @@ public:
     int32_t objectNum;              // object number in the notary evidence output
     int32_t subObject;
     uint160 systemID;
+    uint256 dataHash;
 
-    CPBaaSEvidenceRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(FLAG_ISEVIDENCE), subObject(0) {}
-    CPBaaSEvidenceRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        version(Version), flags(Flags), output(op), systemID(SystemID), objectNum(ObjectNum), subObject(SubObject)
+    CPBaaSEvidenceRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(FLAG_ISEVIDENCE), subObject(-1) {}
+    CPBaaSEvidenceRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=-1, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        version(Version), flags(Flags), output(op), systemID(SystemID), dataHash(DataHash), objectNum(ObjectNum), subObject(SubObject)
     {
         SetFlags();
     }
-    CPBaaSEvidenceRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+    CPBaaSEvidenceRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=-1, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         version(Version), flags(Flags), output(HashIn, nIn), systemID(SystemID), objectNum(ObjectNum), subObject(SubObject)
     {
         SetFlags();
@@ -2453,6 +2455,10 @@ public:
         {
             flags |= FLAG_HAS_SYSTEM;
         }
+        if (!dataHash.IsNull())
+        {
+            flags |= FLAG_HAS_HASH;
+        }
     }
 
     template <typename Stream, typename Operation>
@@ -2469,6 +2475,10 @@ public:
         if (flags & FLAG_HAS_SYSTEM)
         {
             READWRITE(systemID);
+        }
+        if (flags & FLAG_HAS_HASH)
+        {
+            READWRITE(dataHash);
         }
     }
 
@@ -2589,12 +2599,22 @@ public:
 class CURLRef
 {
 public:
+    enum {
+        VERSION_INVALID = CVDXF_Data::VERSION_INVALID,
+        FIRST_VERSION = CVDXF_Data::FIRST_VERSION,
+        HASHDATA_VERSION = 2,
+        LAST_VERSION = 2,
+        DEFAULT_VERSION = 2,
+        FLAG_HAS_HASH = 1
+    };
     uint32_t version;
+    uint32_t flags;
+    uint256 dataHash;
     std::string url;
 
-    CURLRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version) {}
-    CURLRef(const std::string &URL, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        version(Version), url(URL)
+    CURLRef(uint32_t Version=VERSION_INVALID) : version(Version), flags(0) {}
+    CURLRef(const std::string &URL, uint32_t Version=DEFAULT_VERSION, uint32_t Flags=0, const uint256 &DataHash=uint256()) : 
+        version(Version), url(URL), flags(DataHash.IsNull() && !(Flags & FLAG_HAS_HASH) ? 0 : FLAG_HAS_HASH), dataHash(DataHash)
     {
         if (url.size() > 4096)
         {
@@ -2614,12 +2634,20 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(VARINT(version));
+        if (version >= HASHDATA_VERSION)
+        {
+            READWRITE(VARINT(flags));
+            if (flags & FLAG_HAS_HASH)
+            {
+                READWRITE(dataHash);
+            }
+        }
         READWRITE(LIMITED_STRING(url, 4096));
     }
 
     bool IsValid() const
     {
-        return version >= CVDXF_Data::FIRST_VERSION && version <= CVDXF_Data::LAST_VERSION && !url.empty();
+        return version >= FIRST_VERSION && version <= LAST_VERSION && !url.empty();
     }
 
     // returns false if hash is null
@@ -2640,8 +2668,8 @@ public:
     boost::variant<CPBaaSEvidenceRef, CIdentityMultimapRef, CURLRef> ref;
 
     CCrossChainDataRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : ref(CPBaaSEvidenceRef(Version)) {}
-    CCrossChainDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        ref(CPBaaSEvidenceRef(op, ObjectNum, SubObject, SystemID, Flags, Version)) {}
+    CCrossChainDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        ref(CPBaaSEvidenceRef(op, ObjectNum, SubObject, SystemID, DataHash, Flags, Version)) {}
 
     CCrossChainDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         ref(CPBaaSEvidenceRef(HashIn, nIn, ObjectNum, SubObject, SystemID, Flags, Version)) {}
@@ -2764,8 +2792,8 @@ public:
     CCrossChainDataRef ref;
 
     CVDXFDataRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : ref(Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
-    CVDXFDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        ref(op, ObjectNum, SubObject, SystemID, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
+    CVDXFDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+        ref(op, ObjectNum, SubObject, SystemID, DataHash, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
 
     CVDXFDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         ref(HashIn, nIn, ObjectNum, SubObject, SystemID, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}

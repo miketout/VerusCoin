@@ -77,7 +77,11 @@ struct thread_specific_ptr {
     {
         if (ptr && ptr != newptr)
         {
+#if defined(_WIN32)
+            _aligned_free(ptr);
+#else
             std::free(ptr);
+#endif
         }
         ptr = newptr;
 

@@ -1616,10 +1616,11 @@ UniValue signdata(const UniValue& params, bool fHelp)
             strDataHash = uni_get_str(find_value(params[0], "datahash"));
 
             if (((int)strFileName.empty() +
-                (int)strMessage.empty() +
-                (int)strHex.empty() +
-                (int)strBase64.empty() +
-                (int)strDataHash.empty()) != 4)
+                 (int)strMessage.empty() +
+                 (int)vdxfData.isNull() +
+                 (int)strHex.empty() +
+                 (int)strBase64.empty() +
+                 (int)strDataHash.empty()) != 4)
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include one and only one of \"filename\", \"message\", \"messagehex\", \"messagebase64\", and \"datahash\"");
             }
@@ -2278,22 +2279,24 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
 
                 if (haveNewObject)
                 {
+                    CVDXF_Data vdxfEvidence;
+
+
                     CVDXFDataDescriptor evidenceData;
                     CDataDescriptor dataDescr(CDataDescriptor::VERSION_INVALID);
                     CMMRDescriptor mmrDescr(CMMRDescriptor::VERSION_INVALID);
                     bool success = false;
-                    ::FromVector(newObject, evidenceData, &success);
+                    ::FromVector(newObject, vdxfEvidence, &success);
                     if (success)
                     {
                         success = false;
-                        if (evidenceData.key == CVDXF_Data::DataDescriptorKey())
+                        if (vdxfEvidence.key == CVDXF_Data::DataDescriptorKey())
                         {
-                            success = true;
-                            dataDescr = evidenceData.dataDescriptor;
+                            ::FromVector(vdxfEvidence.data, dataDescr, &success);
                         }
-                        else if ((evidenceData.key == CVDXF_Data::MMRDescriptorKey()))
+                        else if ((vdxfEvidence.key == CVDXF_Data::MMRDescriptorKey()))
                         {
-                            ::FromVector(evidenceData.data, mmrDescr, &success);
+                            ::FromVector(vdxfEvidence.data, mmrDescr, &success);
                             if (success &&
                                 mmrDescr.IsValid())
                             {
@@ -2301,10 +2304,6 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
                                     mmrDescr.dataDescriptors.size() > boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject)
                                 {
                                     dataDescr = mmrDescr.dataDescriptors[boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject];
-                                }
-                                if (boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject != -1)
-                                {
-                                    mmrDescr = CMMRDescriptor(CMMRDescriptor::VERSION_INVALID);
                                 }
                             }
                         }
@@ -2331,7 +2330,7 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
                             }
                             newVDXFData.push_back(dataDescr.ToUniValue());
                         }
-                        else if (mmrDescr.IsValid())
+                        if (mmrDescr.IsValid())
                         {
                             if (wIvk.IsNull())
                             {
@@ -3307,6 +3306,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
 
     bool fAllAccounts = (strAccount == string("*"));
     bool involvesWatchonly = wtx.IsFromMe(ISMINE_WATCH_ONLY);
+    bool extendedInfo = pCurrenciesCostBases || pAggregateEarnings;
 
     // Sent
     if ((!listSent.empty() || nFee != 0) && (fAllAccounts || strAccount == strSentAccount))
@@ -3332,10 +3332,13 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                     (rt = CReserveTransfer(sentP.vData[0])).IsValid())
                 {
                     entry.push_back(Pair("reservetransfer", rt.ToUniValue()));
-                    UniValue progressUni = GetReserveTransferProgress(wtx, s.vout, rt, pCurrenciesCostBases, pIncomingCostBases, pOutgoingCostBases, pAggregateEarnings, pNativePriceMap);
-                    if (!progressUni.isNull())
+                    if (extendedInfo)
                     {
-                        entry.push_back(Pair("progress", progressUni));
+                        UniValue progressUni = GetReserveTransferProgress(wtx, s.vout, rt, pCurrenciesCostBases, pIncomingCostBases, pOutgoingCostBases, pAggregateEarnings, pNativePriceMap);
+                        if (!progressUni.isNull())
+                        {
+                            entry.push_back(Pair("progress", progressUni));
+                        }
                     }
                 }
                 else
@@ -3395,7 +3398,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                     else
                     {
                         entry.push_back(Pair("category", bIsMint ? "mint" : "generate"));
-                        if (pAggregateEarnings && wtx.vout[r.vout].nValue && chainActive.Height() >= nHeight)
+                        if (pAggregateEarnings && pCurrenciesCostBases && wtx.vout[r.vout].nValue && chainActive.Height() >= nHeight)
                         {
                             // add earnings
                             std::map<std::string, int64_t> nativePriceMap;
@@ -3476,7 +3479,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
 
                             // add this to earnings
                             // TODO: ACCOUNTING - add all currencies, not just native to earnings for PBaaS chains
-                            if (pAggregateEarnings)
+                            if (pAggregateEarnings && pCurrenciesCostBases)
                             {
                                 std::map<std::string, int64_t> nativePriceMap;
                                 auto blockMapIter = mapBlockIndex.find(wtx.hashBlock);
@@ -3513,7 +3516,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                             if (i < reserveTransferMap.first.size())
                             {
                                 // if the source transfer is from off-chain, match it up with an off-chain transfer if it's in our off-chain transfer map
-                                if (pIncomingCostBases && pOutgoingCostBases)
+                                if (pCurrenciesCostBases && pIncomingCostBases && pOutgoingCostBases)
                                 {
                                     std::map<std::pair<uint256, int32_t>, std::multimap<std::pair<uint160, uint32_t>, std::pair<int64_t, int64_t>>>::iterator knownImportIT = pIncomingCostBases->find({cci.exportTxId, i});
                                     if (knownImportIT != pIncomingCostBases->end())
@@ -6210,6 +6213,7 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
     if (pwalletMain->GetAndValidateSaplingZAddress(fromaddress, zaddress))
     {
         zaddr = zaddress;
+        fromaddress = EncodePaymentAddress(zaddress);
     }
 
     if (!IsValidPaymentAddress(zaddr)) {

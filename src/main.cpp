@@ -9222,7 +9222,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                     }
                 }
             }
-            else if (state.GetRejectReason() == "tx-overwinter-not-active")
+            else if (state.GetRejectReason() == "tx-overwinter-not-active" || state.GetRejectReason() == "bad-txns-inputs-missing")
             {
                 sendReject = false;
                 nDoS = 0;

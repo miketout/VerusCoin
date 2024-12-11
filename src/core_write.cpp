@@ -1183,6 +1183,7 @@ CPBaaSEvidenceRef::CPBaaSEvidenceRef(const UniValue &uni) :
     flags(uni_get_int64(find_value(uni, "flags"), FLAG_ISEVIDENCE)),
     output(CUTXORef(find_value(uni, "output"))),
     systemID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "systemid"))))),
+    dataHash(uint256S(uni_get_str(find_value(uni, "datahash")))),
     objectNum(uni_get_int(find_value(uni, "objectnum"), 0)),
     subObject(uni_get_int64(find_value(uni, "subobject"), 0))
 {
@@ -1199,6 +1200,10 @@ UniValue CPBaaSEvidenceRef::ToUniValue() const
     if (flags & FLAG_HAS_SYSTEM)
     {
         obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
+    }
+    if (flags & FLAG_HAS_HASH)
+    {
+        obj.pushKV("datahash", dataHash.GetHex());
     }
     obj.pushKV("objectnum", objectNum);
     obj.pushKV("subobject", subObject);
@@ -1237,7 +1242,9 @@ UniValue CIdentityMultimapRef::ToUniValue() const
 }
 
 CURLRef::CURLRef(const UniValue &uni) :
-    version(uni_get_int64(find_value(uni, "version"), CVDXF_Data::DEFAULT_VERSION)),
+    version(uni_get_int64(find_value(uni, "version"), DEFAULT_VERSION)),
+    flags(uni_get_int64(find_value(uni, "flags"), 0)),
+    dataHash(uint256S(uni_get_str(find_value(uni, "datahash")))),
     url(uni_get_str(find_value(uni, "url")))
 {
     if (url.size() > 4096)
@@ -1250,6 +1257,8 @@ UniValue CURLRef::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("version", (int64_t)version);
+    obj.pushKV("flags", (int64_t)version);
+    obj.pushKV("datahash", dataHash.GetHex());
     obj.pushKV("url", url);
     return obj;
 }
