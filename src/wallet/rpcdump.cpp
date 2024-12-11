@@ -975,6 +975,13 @@ UniValue z_exportkey(const UniValue& params, bool fHelp)
     string strAddress = params[0].get_str();
 
     auto address = DecodePaymentAddress(strAddress);
+
+    libzcash::PaymentAddress zaddress;
+    if (pwalletMain->GetAndValidateSaplingZAddress(strAddress, zaddress))
+    {
+        address = zaddress;
+    }
+
     if (!IsValidPaymentAddress(address)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid zaddr");
     }

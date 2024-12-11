@@ -2427,13 +2427,13 @@ public:
     uint160 systemID;
     uint256 dataHash;
 
-    CPBaaSEvidenceRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(FLAG_ISEVIDENCE), subObject(0) {}
-    CPBaaSEvidenceRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+    CPBaaSEvidenceRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(FLAG_ISEVIDENCE), subObject(-1) {}
+    CPBaaSEvidenceRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=-1, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
         version(Version), flags(Flags), output(op), systemID(SystemID), dataHash(DataHash), objectNum(ObjectNum), subObject(SubObject)
     {
         SetFlags();
     }
-    CPBaaSEvidenceRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
+    CPBaaSEvidenceRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=-1, const uint160 &SystemID=uint160(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         version(Version), flags(Flags), output(HashIn, nIn), systemID(SystemID), objectNum(ObjectNum), subObject(SubObject)
     {
         SetFlags();

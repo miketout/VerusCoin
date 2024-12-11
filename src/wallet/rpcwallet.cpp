@@ -2305,10 +2305,6 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
                                 {
                                     dataDescr = mmrDescr.dataDescriptors[boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject];
                                 }
-                                if (boost::get<CPBaaSEvidenceRef>(dataRef.ref).subObject != -1)
-                                {
-                                    mmrDescr = CMMRDescriptor(CMMRDescriptor::VERSION_INVALID);
-                                }
                             }
                         }
                     }
@@ -6217,6 +6213,7 @@ UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp)
     if (pwalletMain->GetAndValidateSaplingZAddress(fromaddress, zaddress))
     {
         zaddr = zaddress;
+        fromaddress = EncodePaymentAddress(zaddress);
     }
 
     if (!IsValidPaymentAddress(zaddr)) {
