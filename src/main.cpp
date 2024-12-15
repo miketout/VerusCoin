@@ -1304,7 +1304,7 @@ bool ContextualCheckTransaction(
         // Check that all transactions are unexpired
         if (IsExpiredTx(tx, nHeight)) {
             // Don't increase banscore if the transaction only just expired
-            int expiredDosLevel = IsExpiredTx(tx, std::max(nHeight - 2, 1)) ? dosLevel : 0;
+            int expiredDosLevel = IsExpiredTx(tx, std::max(nHeight - 2, 1)) ? (dosLevel == -1 ? 1 : dosLevel) : 0;
             return state.DoS(expiredDosLevel, error("ContextualCheckTransaction(): transaction is expired"), REJECT_INVALID, "tx-overwinter-expired");
         }
     }
