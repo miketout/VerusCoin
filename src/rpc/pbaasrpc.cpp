@@ -16441,6 +16441,11 @@ UniValue recoveridentity(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "ID not found " + newID.ToUniValue().write());
     }
 
+    if (find_value(newUniIdentity, "systemid").isNull())
+    {
+        newID.systemID = oldID.systemID;
+    }
+
     if (!oldID.IsRevoked())
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity must be revoked in order to recover : " + newID.name);

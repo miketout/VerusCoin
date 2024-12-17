@@ -1967,7 +1967,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
     LOCK2(smartTransactionCS, pool.cs);
 
-    // DoS level set to 10 to be more forgiving.
+    // DoS level set to 1 to be more forgiving.
     // Check transaction contextually against the set of consensus rules which apply in the next block to be mined.
     if (!ContextualCheckTransaction(tx, state, chainParams, nextBlockHeight, (dosLevel == -1) ? 1 : dosLevel))
     {
