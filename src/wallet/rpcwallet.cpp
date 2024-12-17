@@ -1620,7 +1620,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
                  (int)vdxfData.isNull() +
                  (int)strHex.empty() +
                  (int)strBase64.empty() +
-                 (int)strDataHash.empty()) != 4)
+                 (int)strDataHash.empty()) != 5)
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Must include one and only one of \"filename\", \"message\", \"messagehex\", \"messagebase64\", and \"datahash\"");
             }
