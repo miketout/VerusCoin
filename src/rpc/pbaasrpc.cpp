@@ -453,7 +453,7 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
         mapArgs["-notarizationperiod"] = to_string(ConnectedChains.ThisChain().blockNotarizationModulo);
     }
 
-    DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = std::max((uint32_t)CCurrencyDefinition::MAX_DEFAULT_TX_EXPIRY, std::min((uint32_t)CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY, (20 * 60) / ConnectedChains.ThisChain().blockTime));
+    DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = std::max((uint32_t)CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY, std::min((uint32_t)CCurrencyDefinition::MAX_DEFAULT_TX_EXPIRY, (20 * 60) / ConnectedChains.ThisChain().blockTime));
 
     auto numEras = ConnectedChains.ThisChain().rewards.size();
     ASSETCHAINS_LASTERA = numEras - 1;
