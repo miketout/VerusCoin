@@ -107,6 +107,7 @@ bool fAlerts = DEFAULT_ALERTS;
 int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
 
 boost::optional<unsigned int> expiryDeltaArg = boost::none;
+unsigned int DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY;
 
 /** Fees smaller than this (in satoshi) are considered zero fee (for relaying and mining) */
 CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);

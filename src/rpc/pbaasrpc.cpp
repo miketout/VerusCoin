@@ -443,9 +443,17 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
         ASSETCHAINS_ERAOPTIONS[0] = ConnectedChains.ThisChain().ChainOptions();
 
         mapArgs["-blocktime"] = to_string(ConnectedChains.ThisChain().blockTime);
+        if (ConnectedChains.ThisChain().blockTime != CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET &&
+            !mapArgs.count("-powaveragingwindow") &&
+            ConnectedChains.Chips777TestnetChainID() != ConnectedChains.ThisChain().GetID())
+        {
+            ConnectedChains.ThisChain().powAveragingWindow = std::max((uint32_t)CCurrencyDefinition::MAX_DEFAULT_AVERAGING_WINDOW, (60 * 45) / ConnectedChains.ThisChain().blockTime);
+        }
         mapArgs["-powaveragingwindow"] = to_string(ConnectedChains.ThisChain().powAveragingWindow);
         mapArgs["-notarizationperiod"] = to_string(ConnectedChains.ThisChain().blockNotarizationModulo);
     }
+
+    DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = std::max((uint32_t)CCurrencyDefinition::MAX_DEFAULT_TX_EXPIRY, std::min((uint32_t)CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY, (20 * 60) / ConnectedChains.ThisChain().blockTime));
 
     auto numEras = ConnectedChains.ThisChain().rewards.size();
     ASSETCHAINS_LASTERA = numEras - 1;
