@@ -447,7 +447,7 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
             !mapArgs.count("-powaveragingwindow") &&
             ConnectedChains.Chips777TestnetChainID() != ConnectedChains.ThisChain().GetID())
         {
-            ConnectedChains.ThisChain().powAveragingWindow = std::max((uint32_t)CCurrencyDefinition::MAX_DEFAULT_AVERAGING_WINDOW, (60 * 45) / ConnectedChains.ThisChain().blockTime);
+            ConnectedChains.ThisChain().powAveragingWindow = std::min((uint32_t)CCurrencyDefinition::MAX_AVERAGING_WINDOW, std::max((uint32_t)CCurrencyDefinition::MIN_AVERAGING_WINDOW, (60 * 45) / ConnectedChains.ThisChain().blockTime));
         }
         mapArgs["-powaveragingwindow"] = to_string(ConnectedChains.ThisChain().powAveragingWindow);
         mapArgs["-notarizationperiod"] = to_string(ConnectedChains.ThisChain().blockNotarizationModulo);
