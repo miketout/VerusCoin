@@ -1465,7 +1465,16 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
                     if (!mapArgs["-blocktime"].empty() || !mapArgs["-powaveragingwindow"].empty() || !mapArgs["-notarizationperiod"].empty())
                     {
                         int paramBlockTime = GetArg("-blocktime", CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
-                        int powAveragingWindow = GetArg("-powaveragingwindow", CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW);
+                        int powAveragingWindow = GetArg("-powaveragingwindow",
+                                                        std::min(
+                                                            (int)CCurrencyDefinition::MAX_AVERAGING_WINDOW,
+                                                            std::max(
+                                                                (int)CCurrencyDefinition::MIN_AVERAGING_WINDOW,
+                                                                ((int)(CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET * (int)CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW) / paramBlockTime
+                                                                 )
+                                                                )
+                                                            )
+                                                        );
                         int notarizationPeriod = GetArg("-notarizationperiod",
                                                         std::max((int)(CCurrencyDefinition::DEFAULT_BLOCK_NOTARIZATION_TIME / paramBlockTime),
                                                                  (int)CCurrencyDefinition::MIN_BLOCK_NOTARIZATION_PERIOD));
@@ -2241,7 +2250,16 @@ void komodo_args(char *argv0)
 
                 int paramBlockTime = GetArg("-blocktime", (int64_t)CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
                 obj.pushKV("blocktime", paramBlockTime);
-                obj.pushKV("powaveragingwindow", GetArg("-powaveragingwindow", (int64_t)CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW));
+                obj.pushKV("powaveragingwindow", GetArg("-powaveragingwindow",
+                                                        std::min(
+                                                            (int)CCurrencyDefinition::MAX_AVERAGING_WINDOW,
+                                                            std::max(
+                                                                (int)CCurrencyDefinition::MIN_AVERAGING_WINDOW,
+                                                                ((int)(CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET * (int)CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW) / paramBlockTime)
+                                                                )
+                                                            )
+                                                        )
+                           );
                 obj.pushKV("notarizationperiod", GetArg("-notarizationperiod",
                                                         std::max((int64_t)(CCurrencyDefinition::DEFAULT_BLOCK_NOTARIZATION_TIME / paramBlockTime), (int64_t)CCurrencyDefinition::MIN_BLOCK_NOTARIZATION_PERIOD)));
 
