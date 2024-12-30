@@ -443,13 +443,14 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
         ASSETCHAINS_ERAOPTIONS[0] = ConnectedChains.ThisChain().ChainOptions();
 
         mapArgs["-blocktime"] = to_string(ConnectedChains.ThisChain().blockTime);
-        if (ConnectedChains.ThisChain().blockTime != CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET &&
-            !mapArgs.count("-powaveragingwindow") &&
-            ConnectedChains.Chips777TestnetChainID() != ConnectedChains.ThisChain().GetID())
+        if (mapArgs.count("-powaveragingwindow"))
         {
-            ConnectedChains.ThisChain().powAveragingWindow = std::min((uint32_t)CCurrencyDefinition::MAX_AVERAGING_WINDOW, std::max((uint32_t)CCurrencyDefinition::MIN_AVERAGING_WINDOW, (uint32_t)((CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET * CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW) / ConnectedChains.ThisChain().blockTime)));
+            ConnectedChains.ThisChain().powAveragingWindow = atoi(mapArgs["-powaveragingwindow"].c_str());
         }
-        mapArgs["-powaveragingwindow"] = to_string(ConnectedChains.ThisChain().powAveragingWindow);
+        else
+        {
+            mapArgs["-powaveragingwindow"] = to_string(ConnectedChains.ThisChain().powAveragingWindow);
+        }
         mapArgs["-notarizationperiod"] = to_string(ConnectedChains.ThisChain().blockNotarizationModulo);
     }
 
