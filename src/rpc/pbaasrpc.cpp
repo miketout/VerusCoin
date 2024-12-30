@@ -445,7 +445,7 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
         mapArgs["-blocktime"] = to_string(ConnectedChains.ThisChain().blockTime);
         if (mapArgs.count("-powaveragingwindow"))
         {
-            ConnectedChains.ThisChain().powAveragingWindow = atoi(mapArgs["-powaveragingwindow"].c_str());
+            ConnectedChains.ThisChain().powAveragingWindow = stoi(mapArgs["-powaveragingwindow"]);
         }
         else
         {
