@@ -107,6 +107,7 @@ bool fAlerts = DEFAULT_ALERTS;
 int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
 
 boost::optional<unsigned int> expiryDeltaArg = boost::none;
+unsigned int DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY;
 
 /** Fees smaller than this (in satoshi) are considered zero fee (for relaying and mining) */
 CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
@@ -1304,7 +1305,7 @@ bool ContextualCheckTransaction(
         // Check that all transactions are unexpired
         if (IsExpiredTx(tx, nHeight)) {
             // Don't increase banscore if the transaction only just expired
-            int expiredDosLevel = IsExpiredTx(tx, nHeight - 1) ? (IsExpiredTx(tx, std::max(nHeight - 2, 1)) ? (dosLevel > 10 ? dosLevel : 10) : (dosLevel > 1 ? dosLevel : 1)) : 0;
+            int expiredDosLevel = IsExpiredTx(tx, std::max(nHeight - 2, 1)) ? (dosLevel == -1 ? 1 : dosLevel) : 0;
             return state.DoS(expiredDosLevel, error("ContextualCheckTransaction(): transaction is expired"), REJECT_INVALID, "tx-overwinter-expired");
         }
     }
@@ -1967,9 +1968,9 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
     LOCK2(smartTransactionCS, pool.cs);
 
-    // DoS level set to 10 to be more forgiving.
+    // DoS level set to 1 to be more forgiving.
     // Check transaction contextually against the set of consensus rules which apply in the next block to be mined.
-    if (!ContextualCheckTransaction(tx, state, chainParams, nextBlockHeight, (dosLevel == -1) ? 10 : dosLevel))
+    if (!ContextualCheckTransaction(tx, state, chainParams, nextBlockHeight, (dosLevel == -1) ? 1 : dosLevel))
     {
         return error("AcceptToMemoryPool: ContextualCheckTransaction failed");
     }

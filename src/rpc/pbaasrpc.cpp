@@ -443,9 +443,18 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
         ASSETCHAINS_ERAOPTIONS[0] = ConnectedChains.ThisChain().ChainOptions();
 
         mapArgs["-blocktime"] = to_string(ConnectedChains.ThisChain().blockTime);
-        mapArgs["-powaveragingwindow"] = to_string(ConnectedChains.ThisChain().powAveragingWindow);
+        if (mapArgs.count("-powaveragingwindow"))
+        {
+            ConnectedChains.ThisChain().powAveragingWindow = stoi(mapArgs["-powaveragingwindow"]);
+        }
+        else
+        {
+            mapArgs["-powaveragingwindow"] = to_string(ConnectedChains.ThisChain().powAveragingWindow);
+        }
         mapArgs["-notarizationperiod"] = to_string(ConnectedChains.ThisChain().blockNotarizationModulo);
     }
+
+    DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = std::max((uint32_t)CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY, std::min((uint32_t)CCurrencyDefinition::MAX_DEFAULT_TX_EXPIRY, (uint32_t)((CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY * CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET) / ConnectedChains.ThisChain().blockTime)));
 
     auto numEras = ConnectedChains.ThisChain().rewards.size();
     ASSETCHAINS_LASTERA = numEras - 1;
@@ -16439,6 +16448,11 @@ UniValue recoveridentity(const UniValue& params, bool fHelp)
     if (!(oldID = CIdentity::LookupIdentity(newIDID, 0, &idHeight, &idTxIn)).IsValid())
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "ID not found " + newID.ToUniValue().write());
+    }
+
+    if (find_value(newUniIdentity, "systemid").isNull())
+    {
+        newID.systemID = oldID.systemID;
     }
 
     if (!oldID.IsRevoked())

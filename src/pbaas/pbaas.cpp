@@ -6595,6 +6595,12 @@ uint160 CConnectedChains::vDEXChainID() const
     return vARRRID;
 }
 
+uint160 CConnectedChains::Chips777TestnetChainID() const
+{
+    static uint160 Chips777TestnetID = GetDestinationID(DecodeDestination("chips777.vrsctest.@"));
+    return Chips777TestnetID;
+}
+
 bool CConnectedChains::ForceIdentityUpgrade(uint32_t height) const
 {
     if (vARRRChainID() != ASSETCHAINS_CHAINID || height >= 18250)

@@ -4955,8 +4955,12 @@ std::vector<uint256> CWallet::ResendWalletTransactionsBefore(int64_t nTime)
         if ( item.second != 0 )
         {
             CWalletTx &wtx = *item.second;
-            if (wtx.RelayWalletTransaction())
-                result.push_back(wtx.GetHash());
+            uint32_t curHeight = chainActive.Height();
+            if (!IsExpiredTx(wtx, curHeight + 1))
+            {
+                if (wtx.RelayWalletTransaction())
+                    result.push_back(wtx.GetHash());
+            }
         }
     }
     for (auto hash : vwtxh)
