@@ -108,6 +108,8 @@ int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
 
 boost::optional<unsigned int> expiryDeltaArg = boost::none;
 unsigned int DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY;
+int COINBASE_MATURITY = CCurrencyDefinition::MIN_COINBASE_MATURITY;
+unsigned int MAX_REORG_LENGTH = COINBASE_MATURITY - 1;
 
 /** Fees smaller than this (in satoshi) are considered zero fee (for relaying and mining) */
 CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
@@ -3299,8 +3301,6 @@ bool ContextualCheckInputs(const CTransaction& tx,
 
  // If prev is coinbase, check that it's matured
  if (coins->IsCoinBase()) {
- if ( ASSETCHAINS_SYMBOL[0] == 0 )
- COINBASE_MATURITY = _COINBASE_MATURITY;
  if (nSpendHeight - coins->nHeight < COINBASE_MATURITY) {
  fprintf(stderr,"ContextualCheckInputs failure.1 i.%d of %d\n",i,(int32_t)tx.vin.size());
 
@@ -5815,7 +5815,6 @@ static bool ActivateBestChainStep(CValidationState& state, const CChainParams& c
     //   then pindexFork will be null, and we would need to remove the entire chain including
     //   our genesis block. In practice this (probably) won't happen because of checks elsewhere.
     auto reorgLength = pindexOldTip ? oldHeight - (pindexFork ? pindexFork->GetHeight() : -1) : 0;
-    static_assert(MAX_REORG_LENGTH > 0, "We must be able to reorg some distance");
     if (reorgLength > MAX_REORG_LENGTH) {
         auto msg = strprintf(_(
                                "A block chain reorganization has been detected that would roll back %d blocks! "
