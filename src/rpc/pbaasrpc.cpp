@@ -455,7 +455,9 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
     }
 
     DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = std::max((uint32_t)CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY, std::min((uint32_t)CCurrencyDefinition::MAX_DEFAULT_TX_EXPIRY, (uint32_t)((CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY * CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET) / ConnectedChains.ThisChain().blockTime)));
-
+    COINBASE_MATURITY = (uint32_t)((CCurrencyDefinition::DEFAULT_COINBASE_MATURITY * CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET / ConnectedChains.ThisChain().blockTime));
+    WITNESS_CACHE_SIZE = COINBASE_MATURITY + 1;
+    MAX_REORG_LENGTH = COINBASE_MATURITY - 1;
     auto numEras = ConnectedChains.ThisChain().rewards.size();
     ASSETCHAINS_LASTERA = numEras - 1;
     mapArgs["-ac_eras"] = to_string(numEras);
