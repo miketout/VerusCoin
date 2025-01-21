@@ -2186,7 +2186,6 @@ void komodo_args(char *argv0)
         if ( ASSETCHAINS_SYMBOL[0] != 0 )
         {
             int32_t komodo_baseid(char *origbase);
-            extern int COINBASE_MATURITY;
             if ( (port = komodo_userpass(ASSETCHAINS_USERPASS, ASSETCHAINS_SYMBOL)) != 0 )
             {
                 ASSETCHAINS_RPCPORT = port;

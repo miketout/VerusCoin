@@ -497,6 +497,8 @@ public:
         MIN_EARNED_FOR_AUTO = 4,
         MIN_BLOCKS_TO_SIGNCONFIRM = 15,
         MIN_BLOCKS_TO_AUTOCONFIRM = 150,
+        MIN_COINBASE_MATURITY = 100,                // minimum blocks to spend coinbase transaction outputs
+        MAX_COINBASE_MATURITY = 150 - 1,            // maximum blocks to spend coinbase transaction outputs, equal to mininum confirmations to stake minus 1
     };
 
     enum ECurrencyOptions
