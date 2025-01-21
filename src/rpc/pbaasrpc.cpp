@@ -456,7 +456,7 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
 
     DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = std::max((uint32_t)CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY, std::min((uint32_t)CCurrencyDefinition::MAX_DEFAULT_TX_EXPIRY, (uint32_t)((CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY * CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET) / ConnectedChains.ThisChain().blockTime)));
 
-    if (ConnectedChains.ThisChain().blockTime < CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET) {
+    if (ConnectedChains.ThisChain().blockTime < CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET  && ConnectedChains.Chips777TestnetChainID() != ConnectedChains.ThisChain().GetID()) {
         COINBASE_MATURITY = std::max(
             static_cast<uint32_t>(CCurrencyDefinition::MIN_COINBASE_MATURITY),
             std::min(
