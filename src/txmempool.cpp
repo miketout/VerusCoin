@@ -20,7 +20,6 @@
 #include "pbaas/pbaas.h"
 #include "pbaas/identity.h"
 #include "pbaas/notarization.h"
-#define _COINBASE_MATURITY 100
 
 using namespace std;
 
@@ -432,10 +431,6 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
     // remove:
     // 1) transactions spending a coinbase which are now immature
     // 2) exports, notarizations, and imports that that are no longer valid at the current height
-    extern char ASSETCHAINS_SYMBOL[KOMODO_ASSETCHAIN_MAXLEN];
-
-    if ( ASSETCHAINS_SYMBOL[0] == 0 )
-        COINBASE_MATURITY = _COINBASE_MATURITY;
 
     finalizationEvidenceCache.Clear();
 
