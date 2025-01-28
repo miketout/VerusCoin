@@ -64,7 +64,7 @@ public:
     TransactionBuilderResult(const std::string& error);
     bool IsTx();
     bool IsError();
-    bool IsHexTx();
+    bool IsHexTx(CTransaction *pTx=nullptr);
     CTransaction GetTxOrThrow();
     std::string GetError();
 };
