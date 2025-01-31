@@ -971,7 +971,7 @@ std::vector<unsigned char> VectorEncodeVDXFUniObjOrArray(const UniValue &obj)
     // if object push to an array 
     if(obj.isObject())
     {
-        newObj.push_back(oneValValues[k]);
+        newObj.push_back(obj);
     } 
     else if(obj.isArray())
     {
