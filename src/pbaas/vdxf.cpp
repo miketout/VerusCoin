@@ -718,15 +718,26 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
         mimeType.resize(128);
     }
     SetFlags();
-
     UniValue objUni = find_value(uni, "objectdata");
-    if (HasMIME() &&
-        std::string(mimeType.begin(), mimeType.begin() + 5) == std::string("text/") &&
-        objUni.isStr())
+
+    if (objUni.isObject() || objUni.isStr())
     {
-        objUni.pushKV("message", objUni);
+        objectData = VectorEncodeVDXFUni(objUni);
     }
-    objectData = VectorEncodeVDXFUni(find_value(uni, "objectdata"));
+    else if (objUni.isArray())
+    {
+        CDataStream ss(PROTOCOL_VERSION, SER_DISK);
+        for (int i = 0; i < objUni.size(); i++)
+        {
+            std::vector<unsigned char> vec = VectorEncodeVDXFUni(objUni[i]);
+            ss.write(reinterpret_cast<const char*>(vec.data()), vec.size());
+        }
+        objectData = std::vector<unsigned char>(ss.begin(), ss.end());
+    }
+    else
+    {
+        objectData = std::vector<unsigned char>();
+    }
 }
 
 std::vector<uint256> CDataDescriptor::DecodeHashVector() const
