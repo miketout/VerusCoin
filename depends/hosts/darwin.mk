@@ -8,6 +8,7 @@ OSX_SDK=$(SDK_PATH)/Xcode-$(XCODE_VERSION)-$(XCODE_BUILD_ID)-extracted-SDK-with-
 
 darwin_AR=$(shell command -v llvm-ar || command -v ar)
 darwin_NM=$(shell command -v llvm-nm || command -v nm)
+darwin_OBJCOPY=$(shell command -v llvm-objcopy)
 darwin_RANLIB=$(shell command -v llvm-ranlib || command -v ranlib)
 darwin_STRIP=$(shell command -v llvm-strip || command -v strip)
 
