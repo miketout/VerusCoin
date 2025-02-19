@@ -717,7 +717,7 @@ uint256 HashFile(const std::string &filepath, CNativeHashWriter &ss)
         return uint256();
     }
 
-    std::vector<char> vch(4 * 1024);
+    std::vector<char> vch(64 * 1024);
 
     while (ifs.read(vch.data(), vch.size()) || ifs.gcount() > 0)
     {
