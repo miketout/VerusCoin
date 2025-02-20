@@ -31,7 +31,7 @@
 #include <fstream>
 #include <ostream>
 #include <algorithm>
-#include <filesystem>
+#include <boost/filesystem.hpp>
 
 using namespace std;
 
@@ -704,7 +704,7 @@ UniValue createmultisig(const UniValue& params, bool fHelp)
 
 uint256 HashFile(const std::string &filepath, CNativeHashWriter &ss)
 {
-    if (!std::filesystem::exists(filepath))
+    if (!boost::filesystem::exists(filepath))
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + filepath);
         return uint256();
