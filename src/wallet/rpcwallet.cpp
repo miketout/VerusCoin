@@ -1459,7 +1459,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
             "             \"mmrdata\":[{\"filename | serializedhex | serializedbase64 | vdxfdata | message | datahash\":\"str\"} | \"strdata\"],\n"
             "             \"mmrsalt\":[array of \"salt\" to match the mmrdata],\n"
             "             \"mmrhash\":\"sha256\" | \"sha256D\" | \"blake2b\" | \"keccak256\",\n"
-            "             \"priormmr\":\"[array of mmr hashes prior to this data and optional prior tx reference for rev-linked MMR data]\","
+            "             \"priormmr\":\"[array of mmr hashes prior to this data and optional prior tx reference for rev-linked MMR data]\" - \"priormmr\" IS UNIMPLEMENTED,"
             "           \"vdxfkeys\":[\"vdxfkey i-address\", ...],\n"
             "           \"vdxfkeynames\":[\"vdxfkeyname, object for getvdxfid API, or friendly name ID -- no i-addresses\", ...],\n"
             "           \"boundhashes\":[\"hexhash\", ...],\n"

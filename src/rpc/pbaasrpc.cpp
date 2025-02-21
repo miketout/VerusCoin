@@ -16799,7 +16799,7 @@ bool CConnectedChains::GetNotaryIDs(const CRPCChainData notaryChain,
         {
             return false;
         }
-            
+
         {
             identities[oneDef.GetID()] = oneDef;
         }

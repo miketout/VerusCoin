@@ -4372,7 +4372,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 {
                     // we need to pay 1/2 of the launch cost for the launch system in launch fees
                     // remainder was paid when the currency is defined
-                    currencyRegistrationFee = systemSource.LaunchFeeImportShare(importCurrencyDef.options);
+                    currencyRegistrationFee = (importCurrencyState.IsRefunding() && importCurrencyDef.systemID != systemDestID && ConnectedChains.IsPBaaSRefundFixActive(height)) ? ConnectedChains.ThisChain().LaunchFeeImportShare(importCurrencyDef.options) : systemSource.LaunchFeeImportShare(importCurrencyDef.options);
                     transferFees.valueMap[importCurrencyDef.launchSystemID] += currencyRegistrationFee;
                     if (importCurrencyDef.launchSystemID != systemDestID)
                     {

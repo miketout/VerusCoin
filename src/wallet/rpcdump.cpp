@@ -797,29 +797,42 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
         if (IsHex(strSecret))
         {
             std::vector<unsigned char> data = ParseHex(strSecret);
-            std::vector<unsigned char, secure_allocator<unsigned char>> vch(data.begin(), data.end());
-            memory_cleanse(data.data(), data.size());
-            if (vch.size() != 32 && vch.size() != 64)
+
+            // if we should be deserializing an extended spending key, do it
+            if (data.size() == 169)
             {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid hex spending key");
+                libzcash::SaplingExtendedSpendingKey sxSK;
+                ::FromVector(data, sxSK);
+                memory_cleanse(data.data(), data.size());
+                spendingkey = sxSK;
             }
+            else
+            {
+                std::vector<unsigned char, secure_allocator<unsigned char>> vch(data.begin(), data.end());
+                memory_cleanse(data.data(), data.size());
 
-            HDSeed seed(vch);
+                if (vch.size() != 32 && vch.size() != 64)
+                {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid hex spending key");
+                }
 
-            // Derive the address for Sapling account 0
-            auto m = libzcash::SaplingExtendedSpendingKey::Master(seed);
-            uint32_t bip44CoinType = Params().BIP44CoinType();
+                HDSeed seed(vch);
 
-            // We use a fixed keypath scheme of m/32'/coin_type'/account'
-            // Derive m/32'
-            auto m_32h = m.Derive(32 | ZIP32_HARDENED_KEY_LIMIT);
+                // Derive the address for Sapling account 0
+                auto m = libzcash::SaplingExtendedSpendingKey::Master(seed);
+                uint32_t bip44CoinType = Params().BIP44CoinType();
 
-            // Derive m/32'/coin_type'
-            auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
+                // We use a fixed keypath scheme of m/32'/coin_type'/account'
+                // Derive m/32'
+                auto m_32h = m.Derive(32 | ZIP32_HARDENED_KEY_LIMIT);
 
-            // Derive m/32'/coin_type'/0'
-            libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(0 | ZIP32_HARDENED_KEY_LIMIT);
-            spendingkey = xsk;
+                // Derive m/32'/coin_type'
+                auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
+
+                // Derive m/32'/coin_type'/0'
+                libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(0 | ZIP32_HARDENED_KEY_LIMIT);
+                spendingkey = xsk;
+            }
         }
         else
         {
