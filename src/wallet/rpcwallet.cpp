@@ -9956,6 +9956,7 @@ extern UniValue dumpwallet(const UniValue& params, bool fHelp);
 extern UniValue importwallet(const UniValue& params, bool fHelp);
 extern UniValue z_exportkey(const UniValue& params, bool fHelp);
 extern UniValue z_importkey(const UniValue& params, bool fHelp);
+extern UniValue z_getencryptionaddress(const UniValue& params, bool fHelp);
 extern UniValue z_exportviewingkey(const UniValue& params, bool fHelp);
 extern UniValue z_importviewingkey(const UniValue& params, bool fHelp);
 extern UniValue z_exportwallet(const UniValue& params, bool fHelp);
@@ -10037,6 +10038,7 @@ static const CRPCCommand commands[] =
     { "wallet",             "z_listaddresses",          &z_listaddresses,          true  },
     { "wallet",             "z_exportkey",              &z_exportkey,              true  },
     { "wallet",             "z_importkey",              &z_importkey,              true  },
+    { "wallet",             "z_getencryptionaddress",   &z_getencryptionaddress,   true  },
     { "wallet",             "z_exportviewingkey",       &z_exportviewingkey,       true  },
     { "wallet",             "z_importviewingkey",       &z_importviewingkey,       true  },
     { "wallet",             "z_exportwallet",           &z_exportwallet,           true  },

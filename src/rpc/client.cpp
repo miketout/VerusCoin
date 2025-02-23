@@ -1754,6 +1754,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "kvsearch", 1 },
     { "kvupdate", 4 },
     { "z_importkey", 2 },
+    { "z_getencryptionaddress", 0 },
     { "z_importviewingkey", 2 },
     { "z_getpaymentdisclosure", 1},
     { "z_getpaymentdisclosure", 2},
