@@ -914,12 +914,12 @@ UniValue z_getencryptionaddress(const UniValue& params, bool fHelp)
     CIdentityID toID = GetDestinationID(DecodeDestination(uni_get_str(find_value(params[0], "toid"))));
     bool returnSecret = uni_get_bool(find_value(params[0], "returnsecret"));
 
-    if (((int)strAddress.empty() + (int)strSeed.empty() + (int)strRootkey.empty()) != 2)
+    if (((int)strAddress.empty() + (int)strSeed.empty() + (int)strSeed.empty()) != 2)
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Must provide one and only one of either a valid Sapling address from this wallet, a valid wallet seed, or a root Sapling extended key to use as a base for the encryption address");
     }
 
-    if (hdIndex != 0 && !strSeed.empty())
+    if (hdIndex != 0 && strSeed.empty())
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "if \"hdindex\" is present, seed must be an HD wallet seed for which \"hdindex\" represents a valid address index" + to_string(ZIP32_HARDENED_KEY_LIMIT - 1));
     }
@@ -963,7 +963,7 @@ UniValue z_getencryptionaddress(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Seed for encryption address must be in hex and represent a 32 or 64 byte value");
             }
 
-            std::vector<unsigned char> data = ParseHex(strRootkey);
+            std::vector<unsigned char> data = ParseHex(strSeed);
             std::vector<unsigned char, secure_allocator<unsigned char>> vch(data.begin(), data.end());
             memory_cleanse(data.data(), data.size());
 
