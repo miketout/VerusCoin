@@ -914,7 +914,7 @@ UniValue z_getencryptionaddress(const UniValue& params, bool fHelp)
     CIdentityID toID = GetDestinationID(DecodeDestination(uni_get_str(find_value(params[0], "toid"))));
     bool returnSecret = uni_get_bool(find_value(params[0], "returnsecret"));
 
-    if (((int)strAddress.empty() + (int)strSeed.empty() + (int)strSeed.empty()) != 2)
+    if (((int)strAddress.empty() + (int)strSeed.empty() + (int)strRootkey.empty()) != 2)
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Must provide one and only one of either a valid Sapling address from this wallet, a valid wallet seed, or a root Sapling extended key to use as a base for the encryption address");
     }
