@@ -31,6 +31,7 @@
 #include <fstream>
 #include <ostream>
 #include <algorithm>
+#include <boost/filesystem.hpp>
 
 using namespace std;
 
@@ -703,25 +704,38 @@ UniValue createmultisig(const UniValue& params, bool fHelp)
 
 uint256 HashFile(const std::string &filepath, CNativeHashWriter &ss)
 {
-    ifstream ifs = ifstream(filepath, std::ios::binary | std::ios::in);
-    if (ifs.is_open() && !ifs.eof())
+    if (!boost::filesystem::exists(filepath))
     {
-        std::vector<char> vch(4096);
-        int readNum = 0;
-        do
-        {
-            readNum = ifs.readsome(&vch[0], vch.size());
-            if (readNum)
-            {
-                ss.write(&vch[0], readNum);
-            }
-        } while (readNum != 0 && !ifs.eof());
-
-        ifs.close();
-
-        return ss.GetHash();
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + filepath);
+        return uint256();
     }
-    return uint256();
+
+    std::ifstream ifs(filepath, std::ios::binary | std::ios::in);
+    if (!ifs)
+    {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot open file " + filepath);
+        return uint256();
+    }
+
+    std::vector<char> vch(64 * 1024);
+
+    while (ifs.read(vch.data(), vch.size()) || ifs.gcount() > 0)
+    {
+        std::streamsize readNum = ifs.gcount();
+
+        if (ifs.fail() && !ifs.eof())
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error while reading file " + filepath);
+            return uint256();
+        }
+
+        if (readNum > 0)
+        {
+            ss.write(vch.data(), static_cast<size_t>(readNum));
+        }
+    }
+    ifs.close();
+    return ss.GetHash();
 }
 
 uint256 HashFile(const std::string &filepath)

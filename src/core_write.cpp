@@ -1094,6 +1094,8 @@ UniValue CReserveTransfer::ToUniValue() const
         ret.push_back(Pair("burnchangeweight", true));
     if (IsMint())
         ret.push_back(Pair("mint", true));
+    if (IsArbitrageOnly())
+        ret.push_back(Pair("arbitrageonly", true));
 
     ret.push_back(Pair("feecurrencyid", EncodeDestination(CIdentityID(feeCurrencyID))));
     ret.push_back(Pair("fees", ValueFromAmount(nFees)));

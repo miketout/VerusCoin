@@ -2026,6 +2026,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
                                                     const std::vector<CAmount> &_inputFractional,
                                                     CCurrencyState &_newState,
                                                     bool promoteExchangeRate,
+                                                    bool layerFixActive,
                                                     CValidationState &state,
                                                     std::vector<std::vector<CAmount>> const *pCrossConversions,
                                                     std::vector<CAmount> *pViaPrices) const
@@ -2383,8 +2384,8 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
         CAmount totalLayerReservesBB = ((bigSupply * bigLayerWeight) / bigSatoshi).GetLow64() + addNormalizedReservesBB;
         CAmount totalLayerReservesAB = ((arith_uint256(supplyAfterBuy) * bigLayerWeight) / bigSatoshi).GetLow64() + addNormalizedReservesAB;
 
-        CAmount newNormalizedReserveBB = CalculateReserveOut(layer.second.first, supply + addSupply, totalLayerReservesBB + addNormalizedReservesBB, layer.first);
-        CAmount newNormalizedReserveAB = CalculateReserveOut(layer.second.first, supplyAfterBuy + addSupply, totalLayerReservesAB + addNormalizedReservesAB, layer.first);
+        CAmount newNormalizedReserveBB = CalculateReserveOut(layer.second.first, supply + addSupply, layerFixActive ? totalLayerReservesBB : totalLayerReservesBB + addNormalizedReservesBB, layer.first);
+        CAmount newNormalizedReserveAB = CalculateReserveOut(layer.second.first, supplyAfterBuy + addSupply, layerFixActive ? totalLayerReservesAB : totalLayerReservesAB + addNormalizedReservesAB, layer.first);
 
         // input fractional is burned and output reserves are removed from reserves
         addSupply -= layer.second.first;
@@ -2587,7 +2588,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             std::vector<CAmount> _viaPrices;
             std::vector<CAmount> &viaPrices(pViaPrices ? *pViaPrices : _viaPrices);
             CCurrencyState intermediateState = newState;
-            viaPrices = intermediateState.ConvertAmounts(scratchValues, fractionsToConvert, newState, promoteExchangeRate, state);
+            viaPrices = intermediateState.ConvertAmounts(scratchValues, fractionsToConvert, newState, promoteExchangeRate, layerFixActive, state);
         }
     }
 
@@ -4372,7 +4373,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 {
                     // we need to pay 1/2 of the launch cost for the launch system in launch fees
                     // remainder was paid when the currency is defined
-                    currencyRegistrationFee = systemSource.LaunchFeeImportShare(importCurrencyDef.options);
+                    currencyRegistrationFee = (importCurrencyState.IsRefunding() && importCurrencyDef.systemID != systemDestID && ConnectedChains.IsPBaaSRefundFixActive(height)) ? ConnectedChains.ThisChain().LaunchFeeImportShare(importCurrencyDef.options) : systemSource.LaunchFeeImportShare(importCurrencyDef.options);
                     transferFees.valueMap[importCurrencyDef.launchSystemID] += currencyRegistrationFee;
                     if (importCurrencyDef.launchSystemID != systemDestID)
                     {
@@ -5809,6 +5810,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                                                     fractionalConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     dummyCurState,
                                                     ConnectedChains.IsPromoteExchangeRate(height),
+                                                    ConnectedChains.IsPBaaSRefundFixActive(height),
                                                     state,
                                                     &crossConversions,
                                                     &newCurrencyState.viaConversionPrice);

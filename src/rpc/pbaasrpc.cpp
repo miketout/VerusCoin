@@ -16164,14 +16164,20 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
     tb.SetFee(feeOffer);
 
     TransactionBuilderResult preResult = tb.Build(true);
-    CTransaction commitTx = preResult.GetTxOrThrow();
+    CTransaction commitTx;
 
     if (returnTx)
     {
+        if (preResult.IsTx() || !preResult.IsHexTx(&commitTx))
+        {
+            commitTx = preResult.GetTxOrThrow();
+        }
         return EncodeHexTx(commitTx);
     }
     else
     {
+        commitTx = preResult.GetTxOrThrow();
+
         // add to mem pool and relay
         LOCK(cs_main);
 
@@ -16793,7 +16799,7 @@ bool CConnectedChains::GetNotaryIDs(const CRPCChainData notaryChain,
         {
             return false;
         }
-            
+
         {
             identities[oneDef.GetID()] = oneDef;
         }

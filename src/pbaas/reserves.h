@@ -1350,6 +1350,7 @@ public:
                                         const std::vector<CAmount> &inputFractional,    // fractional to convert to each reserve
                                         CCurrencyState &newState,
                                         bool promoteExchangeRate,                       // true to compensate for library issue & false to remain compatible with on-chain data
+                                        bool layerFixActive,                            // true to enable layer calc fix
                                         CValidationState &validationState,
                                         const std::vector<std::vector<CAmount>> *pCrossConversions=nullptr,
                                         std::vector<CAmount> *pViaPrices=nullptr) const;

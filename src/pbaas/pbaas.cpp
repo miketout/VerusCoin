@@ -6779,6 +6779,11 @@ bool CConnectedChains::IsUpgrade02Active(int64_t height) const
     return CheckPastRealTime(PBAAS_TESTMODE ? PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_02 : PBAAS_SCHEDULED_PROTOCOL_UPGRADE_02, height) == 1;
 }
 
+bool CConnectedChains::IsPBaaSRefundFixActive(int64_t height) const
+{
+    return CheckPastRealTime(PBAAS_TESTMODE ? PBAAS_LAUNCH_REFUND_FIX_TESTNET_UPGRADE_02 : PBAAS_LAUNCH_REFUND_FIX_UPGRADE, height);
+}
+
 uint32_t CConnectedChains::GetChainBranchId(const uint160 &sysID, int height, const Consensus::Params& params) const
 {
     auto oracleProofFix = activeUpgradesByKey.find(CConnectedChains::PBaaSCrossChainProofUpgradeKey());

@@ -797,29 +797,42 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
         if (IsHex(strSecret))
         {
             std::vector<unsigned char> data = ParseHex(strSecret);
-            std::vector<unsigned char, secure_allocator<unsigned char>> vch(data.begin(), data.end());
-            memory_cleanse(data.data(), data.size());
-            if (vch.size() != 32 && vch.size() != 64)
+
+            // if we should be deserializing an extended spending key, do it
+            if (data.size() == 169)
             {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid hex spending key");
+                libzcash::SaplingExtendedSpendingKey sxSK;
+                ::FromVector(data, sxSK);
+                memory_cleanse(data.data(), data.size());
+                spendingkey = sxSK;
             }
+            else
+            {
+                std::vector<unsigned char, secure_allocator<unsigned char>> vch(data.begin(), data.end());
+                memory_cleanse(data.data(), data.size());
 
-            HDSeed seed(vch);
+                if (vch.size() != 32 && vch.size() != 64)
+                {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid hex spending key");
+                }
 
-            // Derive the address for Sapling account 0
-            auto m = libzcash::SaplingExtendedSpendingKey::Master(seed);
-            uint32_t bip44CoinType = Params().BIP44CoinType();
+                HDSeed seed(vch);
 
-            // We use a fixed keypath scheme of m/32'/coin_type'/account'
-            // Derive m/32'
-            auto m_32h = m.Derive(32 | ZIP32_HARDENED_KEY_LIMIT);
+                // Derive the address for Sapling account 0
+                auto m = libzcash::SaplingExtendedSpendingKey::Master(seed);
+                uint32_t bip44CoinType = Params().BIP44CoinType();
 
-            // Derive m/32'/coin_type'
-            auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
+                // We use a fixed keypath scheme of m/32'/coin_type'/account'
+                // Derive m/32'
+                auto m_32h = m.Derive(32 | ZIP32_HARDENED_KEY_LIMIT);
 
-            // Derive m/32'/coin_type'/0'
-            libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(0 | ZIP32_HARDENED_KEY_LIMIT);
-            spendingkey = xsk;
+                // Derive m/32'/coin_type'
+                auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
+
+                // Derive m/32'/coin_type'/0'
+                libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(0 | ZIP32_HARDENED_KEY_LIMIT);
+                spendingkey = xsk;
+            }
         }
         else
         {
@@ -850,6 +863,214 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
         pwalletMain->ScanForWalletTransactions(chainActive[nRescanHeight], true);
     }
 
+    return result;
+}
+
+UniValue z_getencryptionaddress(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1 || !params[0].isObject())
+        throw runtime_error(
+            "z_generateencryptionkey '{(\"address\":\"zaddress present in wallet\" | \"seed\":\"wallet seed for address\", \"hdindex\":n - address to derive from seed | \"rootkey\":\"extended private key\"),\n"
+            "                          \"fromid\":\"id@ or i-address\",\n"
+            "                          \"toid\":\"id@ or i-address\",\n"
+            "                          \"returnsecret\": true | false}'\n"
+            "\nReturns z-address, viewing key, and optionally an extended secret key.\n"
+            "\nArguments:\n"
+            "   \"address\"          (string, optional) z-address that is present in this wallet\n"
+            "   \"seed\"             (string, optional) raw wallet seed\n"
+            "   \"hdindex\"          (number, optional) address to derive from seed (default=0)\n"
+            "   \"rootkey\"          (string, optional) extended private key\n"
+            "   \"fromid\"           (string, optional) a key to be used between the fromid and the toid\n"
+            "   \"toid\"             (string, optional) a key to be used between the fromid and the toid\n"
+            "   \"encryptionindex\"  (number, optional) can be used as an index to derive the final encryption HD address from the derived seed (default=0)\n"
+            "   \"returnsecret\"     (bool, optional) if true, returns extended private key - defaults to false\n"
+            "\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"extendedviewingkey\" : \"evk\",            (string) \"sapling\" extended viewing key\n"
+            "  \"address\" : \"encryptionaddress\",         (string) The encryption address derived\n"
+            "  \"extendedspendingkey\" : \"encryptionaddress\", (string) Spending key for the address, if requested\n"
+            "}\n"
+            "\nExamples:\n"
+            "\nExample1 description\n"
+            + HelpExampleCli("z_generateencryptionkey", "'{\"address\":\"localzaddress\",\"fromid\":\"bob@\",\"toid\":\"alice@\"}") +
+            "\nExample2 description\n"
+            + HelpExampleCli("z_generateencryptionkey", "'{\"address\":\"localzaddress\",\"fromid\":\"bob@\",\"toid\":\"alice@\"}") +
+            "\nExample3 description\n"
+            + HelpExampleCli("z_generateencryptionkey", "'{\"address\":\"localzaddress\",\"fromid\":\"bob@\",\"toid\":\"alice@\"}") +
+            "\nExample4 description\n"
+            + HelpExampleRpc("z_generateencryptionkey", "'{\"address\":\"localzaddress\",\"fromid\":\"bob@\",\"toid\":\"alice@\"}")
+        );
+
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+
+    // parse parameters
+    std::string strAddress = uni_get_str(find_value(params[0], "address"));
+    std::string strSeed = uni_get_str(find_value(params[0], "seed"));
+    std::string strRootkey = uni_get_str(find_value(params[0], "rootkey"));
+    int64_t hdIndex = uni_get_int64(find_value(params[0], "hdindex"));
+    int64_t encryptionIndex = uni_get_int64(find_value(params[0], "encryptionindex"));
+    CIdentityID fromID = GetDestinationID(DecodeDestination(uni_get_str(find_value(params[0], "fromid"))));
+    CIdentityID toID = GetDestinationID(DecodeDestination(uni_get_str(find_value(params[0], "toid"))));
+    bool returnSecret = uni_get_bool(find_value(params[0], "returnsecret"));
+
+    if (((int)strAddress.empty() + (int)strSeed.empty() + (int)strRootkey.empty()) != 2)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Must provide one and only one of either a valid Sapling address from this wallet, a valid wallet seed, or a root Sapling extended key to use as a base for the encryption address");
+    }
+
+    if (hdIndex != 0 && strSeed.empty())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "if \"hdindex\" is present, seed must be an HD wallet seed for which \"hdindex\" represents a valid address index" + to_string(ZIP32_HARDENED_KEY_LIMIT - 1));
+    }
+
+    if (encryptionIndex < 0 || encryptionIndex >= ZIP32_HARDENED_KEY_LIMIT)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "if present, \"encryptionindex\" must be an index between 0 and " + to_string(ZIP32_HARDENED_KEY_LIMIT - 1));
+    }
+
+    libzcash::SaplingExtendedSpendingKey baseSpendingKey;
+    libzcash::SaplingSpendingKey encryptionSpendingKey;
+    libzcash::SaplingPaymentAddress encryptionAddress;
+    libzcash::SaplingExtendedFullViewingKey viewingKey;
+
+    // if we are expected to get the secret key from a local wallet, make sure we have access to it
+    if (!strAddress.empty())
+    {
+        EnsureWalletIsAvailable(false);
+        EnsureWalletIsUnlocked();
+
+        // get the secret extended key from the wallet
+        libzcash::PaymentAddress address;
+        pwalletMain->GetAndValidateSaplingZAddress(strAddress, address, true);
+        encryptionAddress = boost::get<libzcash::SaplingPaymentAddress>(address);
+    
+        if (!pwalletMain->GetSaplingExtendedSpendingKey(encryptionAddress, baseSpendingKey))
+        {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Wallet does not hold private zkey for the specified address");
+        }
+    }
+    else if (!strSeed.empty())
+    {
+        if (hdIndex < 0 || hdIndex >= ZIP32_HARDENED_KEY_LIMIT)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "if present, \"hdindex\" must be an index between 0 and " + to_string(ZIP32_HARDENED_KEY_LIMIT - 1));
+        }
+        else
+        {
+            if (!IsHex(strSeed))
+            {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Seed for encryption address must be in hex and represent a 32 or 64 byte value");
+            }
+
+            std::vector<unsigned char> data = ParseHex(strSeed);
+            std::vector<unsigned char, secure_allocator<unsigned char>> vch(data.begin(), data.end());
+            memory_cleanse(data.data(), data.size());
+
+            if (vch.size() != 32 && vch.size() != 64)
+            {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid hex spending key - must represent a 32 or 64 byte value");
+            }
+
+            HDSeed seed(vch);
+
+            // Derive the address for Sapling account 0
+            auto m = libzcash::SaplingExtendedSpendingKey::Master(seed);
+            uint32_t bip44CoinType = Params().BIP44CoinType();
+
+            // We use a fixed keypath scheme of m/32'/coin_type'/account'
+            // Derive m/32'
+            auto m_32h = m.Derive(32 | ZIP32_HARDENED_KEY_LIMIT);
+
+            // Derive m/32'/coin_type'
+            auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
+
+            // Derive m/32'/coin_type'/0'
+            baseSpendingKey = m_32h_cth.Derive((uint32_t)hdIndex | ZIP32_HARDENED_KEY_LIMIT);
+        }
+    }
+    else
+    {
+        libzcash::SpendingKey genericSpendingKey;
+        genericSpendingKey = DecodeSpendingKey(strRootkey);
+        if (!IsValidSpendingKey(genericSpendingKey)) {
+            bool success = false;
+            if (IsHex(strRootkey))
+            {
+                std::vector<unsigned char> data = ParseHex(strRootkey);
+                bool success = false;
+
+                // if we should be deserializing an extended spending key, do it
+                if (data.size() == 169)
+                {
+                    ::FromVector(data, baseSpendingKey, &success);
+                    memory_cleanse(data.data(), data.size());
+                }
+                if (!success)
+                {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid hex root key");
+                }
+            }
+            else
+            {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid root key");
+            }
+        }
+        else
+        {
+            libzcash::SpendingKey testWhich = baseSpendingKey;
+            if (genericSpendingKey.which() != testWhich.which())
+            {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Root key must be valid Sapling spending key");
+            }
+            baseSpendingKey = boost::get<libzcash::SaplingExtendedSpendingKey>(genericSpendingKey);
+        }
+    }
+
+    // now use the base spending key along with from and to addresses to derive encryption key
+    uint256 derivedEncryptionSeed;
+
+    CHashWriterSHA256 hw(SER_GETHASH, PROTOCOL_VERSION);
+    hw << baseSpendingKey;
+    if (!fromID.IsNull())
+    {
+        hw << fromID;
+    }
+    if (!toID.IsNull())
+    {
+        hw << toID;
+    }
+    derivedEncryptionSeed = hw.GetHash();
+
+    libzcash::SaplingExtendedSpendingKey esk;
+
+    std::vector<unsigned char, secure_allocator<unsigned char>> vch(derivedEncryptionSeed.begin(), derivedEncryptionSeed.end());
+    memory_cleanse(derivedEncryptionSeed.begin(), derivedEncryptionSeed.size());
+
+    HDSeed seed(vch);
+
+    // Derive the address for Sapling account 0
+    auto m = libzcash::SaplingExtendedSpendingKey::Master(seed);
+    uint32_t bip44CoinType = Params().BIP44CoinType();
+
+    // We use a fixed keypath scheme of m/32'/coin_type'/account'
+    // Derive m/32'
+    auto m_32h = m.Derive(32 | ZIP32_HARDENED_KEY_LIMIT);
+
+    // Derive m/32'/coin_type'
+    auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
+
+    // Derive m/32'/coin_type'/0'
+    libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(encryptionIndex | ZIP32_HARDENED_KEY_LIMIT);
+
+    UniValue result(UniValue::VOBJ);
+
+    result.pushKV("address", EncodePaymentAddress(xsk.DefaultAddress()));
+    result.pushKV("extendedviewingkey", EncodeViewingKey(xsk.ToXFVK()));
+    if (returnSecret)
+    {
+        result.pushKV("extendedspendingkey", EncodeSpendingKey(xsk));
+    }
     return result;
 }
 

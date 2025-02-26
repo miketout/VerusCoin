@@ -500,7 +500,7 @@ static bool SignStepCC(const BaseSignatureCreator& creator, const CScript& scrip
                     }
                 }
                 // to save space, use default only if we don't have all other private keys for signing
-                if (!(privKeys.size() && (privKeys.size() + defaultKeys.size()) != destMap.size()))
+                if (!(privKeys.size() && (privKeys.size() + defaultKeys.size()) == destMap.size()))
                 {
                     for (auto &oneDefaultKey : defaultKeys)
                     {
