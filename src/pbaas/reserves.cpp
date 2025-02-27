@@ -5809,8 +5809,8 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 scratchCurrencyState.ConvertAmounts(adjustedReserveConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     fractionalConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     dummyCurState,
-                                                    ConnectedChains.IsPromoteExchangeRate(height) || (IsVerusActive() && importCurrencyState.GetID() == ConnectedChains.KaijuCurrencyID() && height >= 3448609),
-                                                    ConnectedChains.IsPBaaSRefundFixActive(height),
+                                                    ConnectedChains.IsPromoteExchangeRate(height),
+                                                    ConnectedChains.IsPBaaSRefundFixActive(height) || (IsVerusActive() && importCurrencyState.GetID() == ConnectedChains.KaijuCurrencyID() && height >= 3448609),
                                                     state,
                                                     &crossConversions,
                                                     &newCurrencyState.viaConversionPrice);
