@@ -5810,7 +5810,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                                                     fractionalConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     dummyCurState,
                                                     ConnectedChains.IsPromoteExchangeRate(height),
-                                                    ConnectedChains.IsPBaaSRefundFixActive(height),
+                                                    ConnectedChains.IsPBaaSRefundFixActive(height) || (IsVerusActive() && importCurrencyState.GetID() == ConnectedChains.KaijuCurrencyID() && height >= 3448609),
                                                     state,
                                                     &crossConversions,
                                                     &newCurrencyState.viaConversionPrice);
