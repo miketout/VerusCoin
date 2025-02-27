@@ -1238,6 +1238,7 @@ public:
     bool vARRRUpdateEnabled(uint32_t height) const;
     uint160 vARRRChainID() const;
     uint160 vDEXChainID() const;
+    uint160 KaijuCurrencyID() const;
     uint160 Chips777TestnetChainID() const;
     bool ForceIdentityUpgrade(uint32_t height) const;
     bool ForceIdentityUnlock(uint32_t height) const;

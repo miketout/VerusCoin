@@ -6589,6 +6589,12 @@ uint160 CConnectedChains::vARRRChainID() const
     return vARRRID;
 }
 
+uint160 CConnectedChains::KaijuCurrencyID() const
+{
+    static uint160 KaijuID = GetDestinationID(DecodeDestination("Kaiju@"));
+    return KaijuID;
+}
+
 uint160 CConnectedChains::vDEXChainID() const
 {
     static uint160 vARRRID = GetDestinationID(DecodeDestination("vDEX@"));
