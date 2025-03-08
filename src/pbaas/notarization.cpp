@@ -3705,8 +3705,12 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                         int heightChange = futureProofRoot.rootHeight -
                                             lastNotarization.proofRoots[lastNotarization.currencyID].rootHeight;
                         numExpectedCheckpoints = CPBaaSNotarization::GetNumCheckpoints(heightChange);
+                        blocksPerCheckpoint = CPBaaSNotarization::GetBlocksPerCheckpoint(heightChange);
                         validBasicEvidence = !challengeProofRoot.IsValid();
-                        proofState = validBasicEvidence ? EXPECT_NOTHING : EXPECT_COMMITMENT_PROOF;
+                        if (validBasicEvidence)
+                        {
+                            proofState = EXPECT_NOTHING;
+                        }
                     }
                     else
                     {
@@ -3797,7 +3801,7 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                     }
                     else
                     {
-                        validBasicEvidence = (lastLocalNotarization.IsValid() && lastLocalNotarization.IsPreLaunch()) || !challengeProofRoot.IsValid();
+                        validBasicEvidence = (lastLocalNotarization.IsValid() && (lastLocalNotarization.IsPreLaunch() || validateEarned)) || !challengeProofRoot.IsValid();
                         proofState = validBasicEvidence ? EXPECT_NOTHING : EXPECT_COMMITMENT_PROOF;
                     }
                 }
@@ -3818,7 +3822,8 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                         checkpointRoots.push_back(oneCheckpoint);
                         if (numCheckpointsFound == numExpectedCheckpoints)
                         {
-                            validBasicEvidence = (lastLocalNotarization.IsValid() && lastLocalNotarization.IsPreLaunch()) || !challengeProofRoot.IsValid();
+                            validBasicEvidence = (lastLocalNotarization.IsValid() && lastLocalNotarization.IsPreLaunch()) || !challengeProofRoot.IsValid() || (validateEarned && challengeProofRoot.systemID == externalSystemID);
+                            validChallengeEvidence = validateEarned && challengeProofRoot.IsValid() && challengeProofRoot.systemID == externalSystemID;
                             proofState = validBasicEvidence ? EXPECT_NOTHING : EXPECT_COMMITMENT_PROOF;
                         }
                         else

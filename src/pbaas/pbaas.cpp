@@ -6585,19 +6585,19 @@ bool CConnectedChains::vARRRUpdateEnabled(uint32_t height) const
 
 uint160 CConnectedChains::vARRRChainID() const
 {
-    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR.vrsc.@"));
     return vARRRID;
 }
 
 uint160 CConnectedChains::KaijuCurrencyID() const
 {
-    static uint160 KaijuID = GetDestinationID(DecodeDestination("Kaiju@"));
+    static uint160 KaijuID = GetDestinationID(DecodeDestination("Kaiju.vrsc.@"));
     return KaijuID;
 }
 
 uint160 CConnectedChains::vDEXChainID() const
 {
-    static uint160 vARRRID = GetDestinationID(DecodeDestination("vDEX@"));
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vDEX.vrsc.@"));
     return vARRRID;
 }
 
@@ -6605,6 +6605,12 @@ uint160 CConnectedChains::Chips777TestnetChainID() const
 {
     static uint160 Chips777TestnetID = GetDestinationID(DecodeDestination("chips777.vrsctest.@"));
     return Chips777TestnetID;
+}
+
+uint160 CConnectedChains::ChipsChainID() const
+{
+    static uint160 ChipsID = GetDestinationID(DecodeDestination("chips.vrsc.@"));
+    return ChipsID;
 }
 
 bool CConnectedChains::ForceIdentityUpgrade(uint32_t height) const
@@ -6788,6 +6794,11 @@ bool CConnectedChains::IsUpgrade02Active(int64_t height) const
 bool CConnectedChains::IsPBaaSRefundFixActive(int64_t height) const
 {
     return CheckPastRealTime(PBAAS_TESTMODE ? PBAAS_LAUNCH_REFUND_FIX_TESTNET_UPGRADE_02 : PBAAS_LAUNCH_REFUND_FIX_UPGRADE, height) == 1;
+}
+
+bool CConnectedChains::IsPBaaSNotarizationFix01Active(int64_t height) const
+{
+    return CheckPastRealTime(PBAAS_TESTMODE ? PBAAS_ALLCHAINS_NOTARIZATION_FIX_TESTNET_UPGRADE : ASSETCHAINS_CHAINID == ChipsChainID() ? PBAAS_CHIPS_NOTARIZATION_FIX_UPGRADE : PBAAS_ALLCHAINS_NOTARIZATION_FIX_UPGRADE, height) == 1;
 }
 
 uint32_t CConnectedChains::GetChainBranchId(const uint160 &sysID, int height, const Consensus::Params& params) const

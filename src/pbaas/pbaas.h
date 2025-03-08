@@ -59,6 +59,9 @@ static const uint32_t PBAAS_SCHEDULED_PROTOCOL_UPGRADE_02 = 1732471200; // (GMT)
 static const uint32_t PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_02 = 1731373200; // (GMT): Tuesday, November 12, 2024 1:00:00 AM
 static const uint32_t PBAAS_LAUNCH_REFUND_FIX_UPGRADE = 1740679200; // GMT: Thursday, Feb 27, 2025 6:00:00 PM
 static const uint32_t PBAAS_LAUNCH_REFUND_FIX_TESTNET_UPGRADE_02 = 1740679200; // GMT: Thursday, Feb 27, 2025 6:00:00 PM
+static const uint32_t PBAAS_CHIPS_NOTARIZATION_FIX_UPGRADE = 1740679200; // GMT: Thursday, Feb 27, 2025 6:00:00 PM
+static const uint32_t PBAAS_ALLCHAINS_NOTARIZATION_FIX_UPGRADE = 1740679200; // GMT: Thursday, Feb 27, 2025 6:00:00 PM
+static const uint32_t PBAAS_ALLCHAINS_NOTARIZATION_FIX_TESTNET_UPGRADE = 1740679200; // GMT: Thursday, Feb 27, 2025 6:00:00 PM
 
 class CUpgradeDescriptor
 {
@@ -1240,6 +1243,7 @@ public:
     uint160 vDEXChainID() const;
     uint160 KaijuCurrencyID() const;
     uint160 Chips777TestnetChainID() const;
+    uint160 ChipsChainID() const;
     bool ForceIdentityUpgrade(uint32_t height) const;
     bool ForceIdentityUnlock(uint32_t height) const;
     bool IdentityLockOverride(const CIdentity &identity, uint32_t height) const;
@@ -1254,6 +1258,7 @@ public:
     bool IsUpgrade01Active(int64_t height=0) const;
     bool IsUpgrade02Active(int64_t height=0) const;
     bool IsPBaaSRefundFixActive(int64_t height=0) const;
+    bool IsPBaaSNotarizationFix01Active(int64_t height) const;
 
     uint32_t GetChainBranchId(const uint160 &sysID, int nHeight, const Consensus::Params& params) const;
 
