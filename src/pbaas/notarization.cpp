@@ -3822,8 +3822,8 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                         checkpointRoots.push_back(oneCheckpoint);
                         if (numCheckpointsFound == numExpectedCheckpoints)
                         {
-                            validBasicEvidence = (lastLocalNotarization.IsValid() && lastLocalNotarization.IsPreLaunch()) || !challengeProofRoot.IsValid() || (validateEarned && challengeProofRoot.systemID == externalSystemID);
-                            validChallengeEvidence = validateEarned && challengeProofRoot.IsValid() && challengeProofRoot.systemID == externalSystemID;
+                            validChallengeEvidence = ConnectedChains.IsPBaaSNotarizationFix01Active(height) && validateEarned && challengeProofRoot.IsValid() && challengeProofRoot.systemID == externalSystemID;
+                            validBasicEvidence = (lastLocalNotarization.IsValid() && lastLocalNotarization.IsPreLaunch()) || !challengeProofRoot.IsValid() || validChallengeEvidence;
                             proofState = validBasicEvidence ? EXPECT_NOTHING : EXPECT_COMMITMENT_PROOF;
                         }
                         else
