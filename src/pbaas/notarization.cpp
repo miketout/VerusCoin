@@ -511,6 +511,12 @@ CNotaryEvidence::EStates CNotaryEvidence::CheckSignatureConfirmation(const uint2
                                                                      std::map<uint32_t, std::map<CIdentityID, CIdentitySignature>> *pRejectsByHeight,
                                                                      std::map<uint32_t, std::map<CIdentityID, CIdentitySignature>> *pConfirmsByHeight) const
 {
+    // TESTING CROSS-CHAIN HACK, REMOVE WHEN DONE
+    if (GetBoolArg("-testnotarizationhack", false))
+    {
+        minConfirming = 1;
+    }
+
     std::map<uint32_t, std::map<CIdentityID, CIdentitySignature>> _rejectedByHeight;
     std::map<uint32_t, std::map<CIdentityID, CIdentitySignature>> _confirmedByHeight;
     std::map<uint32_t, std::map<CIdentityID, CIdentitySignature>> &rejectedByHeight = pRejectsByHeight ? *pRejectsByHeight : _rejectedByHeight;
