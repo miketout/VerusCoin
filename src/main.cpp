@@ -2074,7 +2074,15 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
                     {
                         if (pfMissingInputs)
                             *pfMissingInputs = true;
-                        //fprintf(stderr,"missing inputs\n");
+                        if (LogAcceptCategory("showinputnotfoundtxes"))
+                        {
+                            printf("missing inputs\n");
+                            LogPrintf("missing inputs\n");
+                            UniValue jsonTx(UniValue::VOBJ);
+                            TxToUniv(tx, uint256(), jsonTx);
+                            printf("\n%s\n", jsonTx.write(1,2).c_str());
+                            LogPrintf("\n%s\n", jsonTx.write(1,2).c_str());
+                        }
                         return state.DoS(0, error((std::string("AcceptToMemoryPool: tx inputs not found ") + txin.prevout.hash.GetHex()).c_str()),REJECT_INVALID, "bad-txns-inputs-missing");
                     }
                 }
@@ -8747,30 +8755,38 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         }
         std::string sanitizedReason = SanitizeString(strReason);
         int misbehavingLevel = (sanitizedReason == "txoverwinternotactive" || sanitizedReason == "txoverwinterexpired") ? 0 : 1;
-        if (isRejectNewTx &&
-            sanitizedReason == "badtxnsinputsspent")
+        if (isRejectNewTx && sanitizedReason == "badtxnsinputsspent")
         {
-            CTransaction mTx;
-            LOCK(mempool.cs);
-            if (mempool.lookup(hash, mTx))
+            CNodeStateStats statestats;
+            bool fStateStats = GetNodeStateStats(pfrom->id, statestats);
+            if (statestats.nCommonHeight < chainActive.Height())
             {
-                CObjectFinalization of;
-                // if it is an import or export, don't report to reduce network traffic. that will happen.
-                for (auto &oneOut : mTx.vout)
+                misbehavingLevel = 0;
+            }
+            else
+            {
+                CTransaction mTx;
+                LOCK(mempool.cs);
+                if (mempool.lookup(hash, mTx))
                 {
-                    COptCCParams chkP;
-                    if (CCrossChainExport(oneOut.scriptPubKey).IsValid() ||
-                        CCrossChainImport(oneOut.scriptPubKey).IsValid() ||
-                        CPBaaSNotarization(oneOut.scriptPubKey).IsValid() ||
-                        (oneOut.scriptPubKey.IsPayToCryptoCondition(chkP) &&
-                         chkP.IsValid() &&
-                         chkP.vData.size() &&
-                         chkP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
-                         (of = CObjectFinalization(chkP.vData[0])).IsValid() &&
-                         of.IsConfirmed()))
+                    CObjectFinalization of;
+                    // if it is an import or export, don't report to reduce network traffic. that will happen.
+                    for (auto &oneOut : mTx.vout)
                     {
-                        misbehavingLevel = 0;
-                        break;
+                        COptCCParams chkP;
+                        if (CCrossChainExport(oneOut.scriptPubKey).IsValid() ||
+                            CCrossChainImport(oneOut.scriptPubKey).IsValid() ||
+                            CPBaaSNotarization(oneOut.scriptPubKey).IsValid() ||
+                            (oneOut.scriptPubKey.IsPayToCryptoCondition(chkP) &&
+                            chkP.IsValid() &&
+                            chkP.vData.size() &&
+                            chkP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
+                            (of = CObjectFinalization(chkP.vData[0])).IsValid() &&
+                            of.IsConfirmed()))
+                        {
+                            misbehavingLevel = 0;
+                            break;
+                        }
                     }
                 }
             }
