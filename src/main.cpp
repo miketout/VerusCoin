@@ -8789,6 +8789,15 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                         }
                     }
                 }
+                if (LogAcceptCategory("showinputnotfoundtxes"))
+                {
+                    printf("missing inputs\n");
+                    LogPrintf("missing inputs\n");
+                    UniValue jsonTx(UniValue::VOBJ);
+                    TxToUniv(mTx, uint256(), jsonTx);
+                    printf("\n%s\n", jsonTx.write(1,2).c_str());
+                    LogPrintf("\n%s\n", jsonTx.write(1,2).c_str());
+                }
             }
         }
         Misbehaving(pfrom->GetId(), misbehavingLevel);
@@ -9217,24 +9226,34 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             bool sendReject = true;
             if (state.GetRejectReason() == "bad-txns-inputs-spent" && nDoS <= 1)
             {
-                CObjectFinalization of;
-                // if it is an import or export, don't report to reduce network traffic. that will happen.
-                for (auto &oneOut : tx.vout)
+                CNodeStateStats statestats;
+                bool fStateStats = GetNodeStateStats(pfrom->id, statestats);
+                if (statestats.nSyncHeight > chainActive.Height())
                 {
-                    COptCCParams chkP;
-                    if (CCrossChainExport(oneOut.scriptPubKey).IsValid() ||
-                        CCrossChainImport(oneOut.scriptPubKey).IsValid() ||
-                        CPBaaSNotarization(oneOut.scriptPubKey).IsValid() ||
-                        (oneOut.scriptPubKey.IsPayToCryptoCondition(chkP) &&
-                         chkP.IsValid() &&
-                         chkP.vData.size() &&
-                         chkP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
-                         (of = CObjectFinalization(chkP.vData[0])).IsValid() &&
-                         of.IsConfirmed()))
+                    sendReject = false;
+                    nDoS = 0;
+                }
+                else
+                {
+                    CObjectFinalization of;
+                    // if it is an import or export, don't report to reduce network traffic. that will happen.
+                    for (auto &oneOut : tx.vout)
                     {
-                        sendReject = false;
-                        nDoS = 0;
-                        break;
+                        COptCCParams chkP;
+                        if (CCrossChainExport(oneOut.scriptPubKey).IsValid() ||
+                            CCrossChainImport(oneOut.scriptPubKey).IsValid() ||
+                            CPBaaSNotarization(oneOut.scriptPubKey).IsValid() ||
+                            (oneOut.scriptPubKey.IsPayToCryptoCondition(chkP) &&
+                            chkP.IsValid() &&
+                            chkP.vData.size() &&
+                            chkP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
+                            (of = CObjectFinalization(chkP.vData[0])).IsValid() &&
+                            of.IsConfirmed()))
+                        {
+                            sendReject = false;
+                            nDoS = 0;
+                            break;
+                        }
                     }
                 }
             }
