@@ -11492,6 +11492,10 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
     auto lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1);
     if (!std::get<0>(lastConfirmedNotarizationInfo))
     {
+        if (LogAcceptCategory("notarization"))
+        {
+            lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1);
+        }
         return state.Error("Unable to get last confirmed notarization");
     }
 

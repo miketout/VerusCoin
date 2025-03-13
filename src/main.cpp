@@ -8791,8 +8791,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 }
                 if (LogAcceptCategory("showinputnotfoundtxes"))
                 {
-                    printf("missing inputs\n");
-                    LogPrintf("missing inputs\n");
+                    printf("reject - inputs spent\n");
+                    LogPrintf("reject - inputs spent\n");
                     UniValue jsonTx(UniValue::VOBJ);
                     TxToUniv(mTx, uint256(), jsonTx);
                     printf("\n%s\n", jsonTx.write(1,2).c_str());
