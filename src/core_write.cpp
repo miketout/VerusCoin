@@ -1477,6 +1477,25 @@ UniValue CRating::ToUniValue() const
     return retVal;
 }
 
+UniValue CCredential::ToUniValue() const
+{
+
+    UniValue ret(UniValue::VOBJ);
+    int64_t Flags = CalcFlags();
+
+    ret.pushKV("version", (int64_t)version);
+    ret.pushKV("flags", Flags);
+    ret.pushKV("credentialType", (int64_t)credentialType);
+    ret.pushKV("credential", credential);
+    ret.pushKV("recipient", TrimSpaces(recipient, true, ""));
+
+    if (HasNote()) {
+        ret.pushKV("note", TrimSpaces(note, true, ""));
+    }
+
+    return ret;
+}
+
 UniValue CMMRProof::ToUniValue() const
 {
     UniValue retObj(UniValue::VOBJ);
@@ -1610,6 +1629,18 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             {
                 objectUni = UniValue(UniValue::VOBJ);
                 objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), oneRatingObj.ToUniValue());
+            }
+        }
+        else if (checkVal == CVDXF_Data::DataCredentialKey())
+        {
+            CCredential oneCredentialObj;
+            ss >> VARINT(version);
+            ss >> COMPACTSIZE(objSize);
+            ss >> oneCredentialObj;
+            if (oneCredentialObj.IsValid())
+            {
+                objectUni = UniValue(UniValue::VOBJ);
+                objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), oneCredentialObj.ToUniValue());
             }
         }
         else if (checkVal == CVDXF_Data::DataTransferDestinationKey())

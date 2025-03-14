@@ -432,6 +432,16 @@ public:
         static uint160 key = GetDataKey(DataRatingsKeyName(), nameSpace);
         return key;
     }
+    static std::string DataCredentialKeyName()
+    {
+        return "vrsc::data.type.object.credential";
+    }
+    static uint160 DataCredentialKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(DataCredentialKeyName(), nameSpace);
+        return key;
+    }
     static std::string DataURLKeyName()
     {
         return "vrsc::data.type.object.url";

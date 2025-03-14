@@ -1314,6 +1314,103 @@ public:
     UniValue ToUniValue() const;
 };
 
+class CCredential
+{
+
+public:
+    enum ECredentialTypes
+    {
+        VERSION_INVALID = 0,
+        VERSION_FIRST = 1,
+        VERSION_LAST = 1,
+        VERSION_CURRENT = 1,
+
+        FLAG_NOTE_PRESENT = 1,
+
+        // credential definitions
+        CREDENTIAL_UNKNOWN = 0,                 // unknown credential
+        CREDENTIAL_USERNAME = 1,
+        CREDENTIAL_PASSWORD = 2,
+        CREDENTIAL_CARD_NUMBER = 3,             // payment credentials
+        CREDENTIAL_CARD_EXPIRATION_MONTH = 4,
+        CREDENTIAL_CARD_EXPIRATION_YEAR= 5,
+        CREDENTIAL_CARD_SECURITY_CODE = 6,
+        CREDENTIAL_ADDRESS = 6,
+        CREDENTIAL_AREA_CODE = 7,
+        CREDENTIAL_DATE_OF_BIRTH = 8,
+        CREDENTIAL_ID = 9,
+    };
+
+    uint32_t version;
+    uint32_t flags;
+    uint32_t credentialType;
+    std::string credential;
+    std::string recipient;              // who is receiving the credential, normally an app ID or service URL
+    std::string note;                   // optional note to include
+
+    CCredential(uint32_t Version=VERSION_INVALID,
+                uint32_t Flags=0,
+                uint32_t CredentialType=CREDENTIAL_UNKNOWN,
+                const std::string &Credential=std::string(),
+                const std::string &Recipient=std::string(),
+                const std::string &Note=std::string()) :
+        version(Version), flags(Flags), credentialType(CredentialType), credential(Credential), recipient(Recipient), note(Note)
+    {
+        SetFlags();
+    }
+
+    CCredential(const std::vector<unsigned char> &vch)
+    {
+        bool success;
+        ::FromVector(vch, *this, &success);
+        if (!success)
+        {
+            version = VERSION_INVALID;
+            flags = 0;
+            credentialType = CREDENTIAL_UNKNOWN;
+        }
+    }
+
+    CCredential(const UniValue uni);
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(version);
+        READWRITE(flags);
+        READWRITE(credentialType);
+        READWRITE(credential);
+        READWRITE(recipient);
+
+        if (HasNote()) {
+            READWRITE(note);
+        }
+    }
+
+    bool HasNote() const
+    {
+        return flags & FLAG_NOTE_PRESENT;
+    }
+
+    uint32_t CalcFlags() const
+    {
+        return (note.size() ? FLAG_NOTE_PRESENT : 0);
+    }
+
+    uint32_t SetFlags()
+    {
+        return flags = CalcFlags();
+    }
+
+    bool IsValid()
+    {
+        return version >= VERSION_FIRST && version <= VERSION_LAST;
+    }
+
+    UniValue ToUniValue() const;
+};
+
 struct CCcontract_info;
 struct Eval;
 class CValidationState;

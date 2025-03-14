@@ -958,6 +958,17 @@ CRating::CRating(const UniValue uni) :
     }
 }
 
+CCredential::CCredential(const UniValue uni) : 
+    version(uni_get_int64(find_value(uni, "version"))),
+    flags(uni_get_int64(find_value(uni, "flags"))),
+    credentialType(uni_get_int64(find_value(uni, "credentialType"))),
+    credential(uni_get_str(find_value(uni, "credential"))),
+    recipient(TrimSpaces(uni_get_str(find_value(uni, "recipient")), true, "")),
+    note(TrimSpaces(uni_get_str(find_value(uni, "note")), true, ""))
+{
+    SetFlags();
+}
+
 std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
 {
     CDataStream ss(PROTOCOL_VERSION, SER_DISK);
@@ -1077,6 +1088,14 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
             ss << VARINT(oneRatingObj.version);
             ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, oneRatingObj));
             ss << oneRatingObj;
+        }
+        else if (objTypeKey == CVDXF_Data::DataCredentialKey())
+        {
+            CCredential oneCredentialObj(oneValValues[k]);
+            ss << objTypeKey;
+            ss << VARINT(oneCredentialObj.version);
+            ss << COMPACTSIZE((uint64_t)GetSerializeSize(ss, oneCredentialObj));
+            ss << oneCredentialObj;
         }
         else if (objTypeKey == CVDXF_Data::DataTransferDestinationKey())
         {
