@@ -4475,6 +4475,7 @@ std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> GetLastConfirmedNotarization(
                          oneFinalization.first == 0 ||
                          firstUnspentFinalization.first < oneFinalization.first))
                     {
+                        targetBlockHash.SetNull();
                         if (checkP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
                             (!((ofCandidate = CObjectFinalization(checkP.vData[0])).IsValid() &&
                                ofCandidate.output.GetOutputTransaction(targetTx, targetBlockHash, true)) ||

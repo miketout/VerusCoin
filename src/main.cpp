@@ -2520,6 +2520,7 @@ bool myGetTransaction(const uint256 &hash, CTransaction &txOut, uint256 &hashBlo
         if (checkMempool && mempool.lookup(hash, txOut))
         {
             //fprintf(stderr,"found in mempool\n");
+            hashBlock.SetNull();
             return true;
         }
     }
