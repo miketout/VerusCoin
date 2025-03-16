@@ -9983,6 +9983,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
             if (fSendTrickle) {
                 // Produce a vector with all candidates for sending
                 vector<std::set<uint256>::iterator> vInvTx;
+
                 vInvTx.reserve(pto->setInventoryTxToSend.size());
                 for (std::set<uint256>::iterator it = pto->setInventoryTxToSend.begin(); it != pto->setInventoryTxToSend.end(); it++) {
                     vInvTx.push_back(it);
@@ -9994,6 +9995,10 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                 // No reason to drain out at many times the network's capacity,
                 // especially since we have many peers and some will draw much shorter delays.
                 unsigned int nRelayedTransactions = 0;
+
+                std::set<uint256> relayedThisRound;
+                std::set<uint256> dependentThisRound;
+
                 LOCK(pto->cs_filter);
                 while (!vInvTx.empty() && nRelayedTransactions < INVENTORY_BROADCAST_MAX) {
                     // Fetch the top element from the heap
@@ -10017,27 +10022,96 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                     if (IsExpiringSoonTx(txForInv, currentHeight + 1)) continue;
                     if (pto->pfilter && !pto->pfilter->IsRelevantAndUpdate(txForInv)) continue;
 
-                    // Send
-                    vInv.push_back(inv);
-                    nRelayedTransactions++;
+                    // make a vector of all mempool transactions that this transaction depends upon
+                    // traverse the graph, while avoiding actual recursion with this method. if our transaction has a dependency
+                    // on a mempool transaction that the filter doesn't have, we go deeper. if the filter has the dependency already and
+                    // we haven't put it in relayedThisRound, it does not prevent us from putting the current transaction in
+                    std::vector<std::tuple<int, bool, uint256, CTransaction>> dependencyStack;   // position in the input vector of the tx at current depth
+                    std::map<uint256, CTransaction> toRelayThisRound;
+                    do
                     {
-                        // Expire old relay messages
-                        while (!vRelayExpiration.empty() && vRelayExpiration.front().first < nNow)
+                        if (!dependencyStack.size())
                         {
-                            mapRelay.erase(vRelayExpiration.front().second);
-                            vRelayExpiration.pop_front();
+                            dependencyStack.push_back({-1, true, hash, txForInv});
+                        }
+                        CTransaction curTx = std::get<3>(dependencyStack.back());
+                        if (++std::get<0>(dependencyStack.back()) >= curTx.vin.size())
+                        {
+                            if (std::get<1>(dependencyStack.back()))
+                            {
+                                if (!relayedThisRound.count(std::get<2>(dependencyStack.back())) && !dependentThisRound.count(std::get<2>(dependencyStack.back())))
+                                {
+                                    toRelayThisRound.insert({std::get<2>(dependencyStack.back()), curTx});
+                                    relayedThisRound.insert(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash);
+                                }
+                                // if we have a parent, do not relay it
+                                if (dependencyStack.size() > 1)
+                                {
+                                    std::get<1>(dependencyStack[dependencyStack.size() - 2]) = false;
+                                    dependentThisRound.insert(std::get<2>(dependencyStack[dependencyStack.size() - 2]));
+                                }
+                            }
+                            dependencyStack.pop_back();
+                        }
+                        else
+                        {
+                            CTransaction dependencyTx;
+
+                            // if we already put this dependency in the dependencies for relay this round, move to the next input at this level
+                            // we will not send this transaction or need to go deeper
+                            if (relayedThisRound.count(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash))
+                            {
+                                std::get<1>(dependencyStack.back()) = false;
+                                dependentThisRound.insert(std::get<2>(dependencyStack.back()));
+                            }
+                            // if we find one that isn't relayed this round, and is in the mempool, we will go deeper, and this one won't be relayed
+                            else if (mempool.lookup(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash, dependencyTx))
+                            {
+                                std::get<1>(dependencyStack.back()) = false;
+                                dependentThisRound.insert(std::get<2>(dependencyStack.back()));
+                                // we need to go deeper and check the dependencies on this transaction as well
+                                dependencyStack.push_back({-1, true, curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash, dependencyTx});
+                            }
+                        }
+                    } while (dependencyStack.size());
+
+                    // now, we have all dependencies in our map, if we have any dependencies to relay first,
+                    // don't relay our initial intended tx
+                    if (!dependentThisRound.count(hash))
+                    {
+                        toRelayThisRound.insert({hash, txForInv});
+                        relayedThisRound.insert(hash);
+                    }
+
+                    for (auto &oneTx : toRelayThisRound)
+                    {
+                        vInv.push_back(CInv(MSG_TX, oneTx.first));
+                        nRelayedTransactions++;
+
+                        if (nRelayedTransactions >= INVENTORY_BROADCAST_MAX)
+                        {
+                            break;
                         }
 
-                        auto ret = mapRelay.insert(std::make_pair(inv.hash, std::make_shared<CTransaction>(txForInv)));
-                        if (ret.second) {
-                            vRelayExpiration.push_back(std::make_pair(nNow + 15 * 60 * 1000000, ret.first));
+                        {
+                            // Expire old relay messages
+                            while (!vRelayExpiration.empty() && vRelayExpiration.front().first < nNow)
+                            {
+                                mapRelay.erase(vRelayExpiration.front().second);
+                                vRelayExpiration.pop_front();
+                            }
+    
+                            auto ret = mapRelay.insert(std::make_pair(inv.hash, std::make_shared<CTransaction>(toRelayThisRound[inv.hash])));
+                            if (ret.second) {
+                                vRelayExpiration.push_back(std::make_pair(nNow + 15 * 60 * 1000000, ret.first));
+                            }
                         }
+                        if (vInv.size() == MAX_INV_SZ) {
+                            pto->PushMessage("inv", vInv);
+                            vInv.clear();
+                        }
+                        pto->AddKnownTxId(hash);
                     }
-                    if (vInv.size() == MAX_INV_SZ) {
-                        pto->PushMessage("inv", vInv);
-                        vInv.clear();
-                    }
-                    pto->AddKnownTxId(hash);
                 }
             }
         }
