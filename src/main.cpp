@@ -10059,13 +10059,13 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
 
                             // if we already put this dependency in the dependencies for relay this round, move to the next input at this level
                             // we will not send this transaction or need to go deeper
-                            if (relayedThisRound.count(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash))
+                            if (relayedThisRound.count(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash) || dependentThisRound.count(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash))
                             {
                                 std::get<1>(dependencyStack.back()) = false;
                                 dependentThisRound.insert(std::get<2>(dependencyStack.back()));
                             }
                             // if we find one that isn't relayed this round, and is in the mempool, we will go deeper, and this one won't be relayed
-                            else if (mempool.lookup(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash, dependencyTx))
+                            else if (!pto->HasKnownTxId(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash) && mempool.lookup(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash, dependencyTx))
                             {
                                 std::get<1>(dependencyStack.back()) = false;
                                 dependentThisRound.insert(std::get<2>(dependencyStack.back()));
