@@ -10017,7 +10017,6 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                     if (!mempool.lookup(hash, txForInv)) {
                         continue;
                     }
-                    CInv inv(MSG_TX, hash);
 
                     if (IsExpiringSoonTx(txForInv, currentHeight + 1)) continue;
                     if (pto->pfilter && !pto->pfilter->IsRelevantAndUpdate(txForInv)) continue;
@@ -10087,6 +10086,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                     {
                         vInv.push_back(CInv(MSG_TX, oneTx.first));
                         nRelayedTransactions++;
+                        CTransaction txToSend = oneTx.second;
 
                         if (nRelayedTransactions >= INVENTORY_BROADCAST_MAX)
                         {
@@ -10101,7 +10101,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                                 vRelayExpiration.pop_front();
                             }
     
-                            auto ret = mapRelay.insert(std::make_pair(inv.hash, std::make_shared<CTransaction>(toRelayThisRound[inv.hash])));
+                            auto ret = mapRelay.insert(std::make_pair(oneTx.first, std::make_shared<CTransaction>(txToSend)));
                             if (ret.second) {
                                 vRelayExpiration.push_back(std::make_pair(nNow + 15 * 60 * 1000000, ret.first));
                             }
