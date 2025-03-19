@@ -1614,9 +1614,10 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
         }
 
         // the input vec should be the same as the export transfers
-        if (ccx.reserveTransfers.size() ||
-            reserveTransfers.size() != txInputVec.size() ||
-            ccx.IsClearLaunch() != isClearLaunchExport)
+        if (!isPreSync &&
+            (ccx.reserveTransfers.size() ||
+             reserveTransfers.size() != txInputVec.size() ||
+             ccx.IsClearLaunch() != isClearLaunchExport))
         {
             if (LogAcceptCategory("crosschainexports"))
             {
