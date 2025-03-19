@@ -1470,6 +1470,12 @@ bool ContextualCheckTransaction(
             {
                 if (!EvalNoneContextualPreCheck(tx, i, state, nHeight))
                 {
+                    if (LogAcceptCategory("precheckdisplayfailedtx"))
+                    {
+                        UniValue txUniv(UniValue::VOBJ);
+                        TxToUniv(tx, uint256(), txUniv);
+                        LogPrintf("%s: Precheck failure:\n%s\n", __func__, txUniv.write(1,2).c_str());
+                    }
                     return state.DoS(10, error(state.GetRejectReason().c_str()), REJECT_INVALID, "bad-txns-failed-precheck");
                 }
             }
