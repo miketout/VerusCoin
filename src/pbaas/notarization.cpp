@@ -4475,6 +4475,7 @@ std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> GetLastConfirmedNotarization(
                          oneFinalization.first == 0 ||
                          firstUnspentFinalization.first < oneFinalization.first))
                     {
+                        targetBlockHash.SetNull();
                         if (checkP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
                             (!((ofCandidate = CObjectFinalization(checkP.vData[0])).IsValid() &&
                                ofCandidate.output.GetOutputTransaction(targetTx, targetBlockHash, true)) ||
@@ -11492,6 +11493,10 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
     auto lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1);
     if (!std::get<0>(lastConfirmedNotarizationInfo))
     {
+        if (LogAcceptCategory("notarization"))
+        {
+            lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1);
+        }
         return state.Error("Unable to get last confirmed notarization");
     }
 

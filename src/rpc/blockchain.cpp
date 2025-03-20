@@ -549,6 +549,28 @@ UniValue getrawmempool(const UniValue& params, bool fHelp)
     return mempoolToJSON(fVerbose);
 }
 
+UniValue clearrawmempool(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() > 0)
+        throw runtime_error(
+            "clearrawmempool\n"
+            "\nClear the mempool of all transactions on this node.\n"
+            "\nArguments:\n"
+            "   none\n"
+            "\nResult:\n"
+            "   none on success\n"
+            "\n"
+            "\nExamples\n"
+            + HelpExampleCli("clearrawmempool", "")
+            + HelpExampleRpc("clearrawmempool", "")
+        );
+
+    LOCK(cs_main);
+
+    mempool.clear();
+    return NullUniValue;
+}
+
 UniValue getblockdeltas(const UniValue& params, bool fHelp)
 {
     std::string enableArg = "insightexplorer";
@@ -1984,6 +2006,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "getdifficulty",          &getdifficulty,          true  },
     { "blockchain",         "getmempoolinfo",         &getmempoolinfo,         true  },
     { "blockchain",         "getrawmempool",          &getrawmempool,          true  },
+    { "blockchain",         "clearrawmempool",        &clearrawmempool,        true  },
     { "blockchain",         "gettxout",               &gettxout,               true  },
     { "blockchain",         "gettxoutsetinfo",        &gettxoutsetinfo,        true  },
     { "blockchain",         "verifychain",            &verifychain,            true  },
