@@ -1339,6 +1339,7 @@ public:
         CREDENTIAL_AREA_CODE = 8,
         CREDENTIAL_DATE_OF_BIRTH = 9,
         CREDENTIAL_ID = 10,
+        CREDENTIAL_PHONE_NUMBER = 11,
     };
 
     uint32_t version;
