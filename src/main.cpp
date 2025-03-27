@@ -10042,7 +10042,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                         CTransaction curTx = std::get<3>(dependencyStack.back());
                         if (++std::get<0>(dependencyStack.back()) >= curTx.vin.size())
                         {
-                            if (curTx.vin.size() &&  std::get<1>(dependencyStack.back()))
+                            if (std::get<1>(dependencyStack.back()))
                             {
                                 if (!relayedThisRound.count(std::get<2>(dependencyStack.back())) && !dependentThisRound.count(std::get<2>(dependencyStack.back())))
                                 {
