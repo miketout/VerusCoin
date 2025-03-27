@@ -10047,7 +10047,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                                 if (!relayedThisRound.count(std::get<2>(dependencyStack.back())) && !dependentThisRound.count(std::get<2>(dependencyStack.back())))
                                 {
                                     toRelayThisRound.insert({std::get<2>(dependencyStack.back()), curTx});
-                                    relayedThisRound.insert(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash);
+                                    relayedThisRound.insert(std::get<2>(dependencyStack.back()));
                                 }
                                 // if we have a parent, do not relay it
                                 if (dependencyStack.size() > 1)
