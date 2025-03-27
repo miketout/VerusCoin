@@ -585,6 +585,39 @@ public:
         return key;
     }
 
+    static std::string CredentialsKeyName()
+    {
+        return "vrsc::identity.credentials";
+    }
+    static uint160 CredentialsKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(CredentialsKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string CredentialPasswordKeyName()
+    {
+        return "vrsc::identity.credential.password";
+    }
+    static uint160 CredentialPasswordKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(CredentialPasswordKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string CredentialUsernameKeyName()
+    {
+        return "vrsc::identity.credential.username";
+    }
+    static uint160 CredentialUsernameKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(CredentialUsernameKeyName(), nameSpace);
+        return key;
+    }
+
     static std::string MultiMapKeyName()
     {
         return "vrsc::identity.multimapkey";

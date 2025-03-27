@@ -1326,36 +1326,22 @@ public:
         VERSION_CURRENT = 1,
 
         FLAG_NOTE_PRESENT = 1,
-
-        // credential definitions
-        CREDENTIAL_UNKNOWN = 0,                 // unknown credential
-        CREDENTIAL_USERNAME = 1,
-        CREDENTIAL_PASSWORD = 2,
-        CREDENTIAL_CARD_NUMBER = 3,             // payment credentials
-        CREDENTIAL_CARD_EXPIRATION_MONTH = 4,
-        CREDENTIAL_CARD_EXPIRATION_YEAR= 5,
-        CREDENTIAL_CARD_SECURITY_CODE = 6,
-        CREDENTIAL_ADDRESS = 7,
-        CREDENTIAL_AREA_CODE = 8,
-        CREDENTIAL_DATE_OF_BIRTH = 9,
-        CREDENTIAL_ID = 10,
-        CREDENTIAL_PHONE_NUMBER = 11,
     };
 
     uint32_t version;
     uint32_t flags;
-    uint32_t credentialType;
+    uint160 credentialKey;
     std::string credential;
     std::string recipient;              // who is receiving the credential, normally an app ID or service URL
     std::string note;                   // optional note to include
 
     CCredential(uint32_t Version=VERSION_INVALID,
                 uint32_t Flags=0,
-                uint32_t CredentialType=CREDENTIAL_UNKNOWN,
+                const uint160 &CredentialKey=uint160(),
                 const std::string &Credential=std::string(),
                 const std::string &Recipient=std::string(),
                 const std::string &Note=std::string()) :
-        version(Version), flags(Flags), credentialType(CredentialType), credential(Credential), recipient(Recipient), note(Note)
+        version(Version), flags(Flags), credentialKey(CredentialKey), credential(Credential), recipient(Recipient), note(Note)
     {
         SetFlags();
     }
@@ -1368,7 +1354,7 @@ public:
         {
             version = VERSION_INVALID;
             flags = 0;
-            credentialType = CREDENTIAL_UNKNOWN;
+            credentialKey = uint160();
         }
     }
 
@@ -1380,7 +1366,7 @@ public:
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(version);
         READWRITE(flags);
-        READWRITE(credentialType);
+        READWRITE(credentialKey);
         READWRITE(credential);
         READWRITE(recipient);
 

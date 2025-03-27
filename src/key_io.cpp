@@ -961,7 +961,7 @@ CRating::CRating(const UniValue uni) :
 CCredential::CCredential(const UniValue uni) : 
     version(uni_get_int64(find_value(uni, "version"))),
     flags(uni_get_int64(find_value(uni, "flags"))),
-    credentialType(uni_get_int64(find_value(uni, "credentialType"))),
+    credentialKey(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "credentialKey"))))),
     credential(uni_get_str(find_value(uni, "credential"))),
     recipient(TrimSpaces(uni_get_str(find_value(uni, "recipient")), true, "")),
     note(TrimSpaces(uni_get_str(find_value(uni, "note")), true, ""))
