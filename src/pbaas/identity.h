@@ -1325,7 +1325,7 @@ public:
         VERSION_LAST = 1,
         VERSION_CURRENT = 1,
 
-        FLAG_NOTE_PRESENT = 1,
+        FLAG_LABEL_PRESENT = 1,
     };
 
     uint32_t version;
@@ -1333,15 +1333,15 @@ public:
     uint160 credentialKey;
     std::string credential;
     std::string recipient;              // who is receiving the credential, normally an app ID or service URL
-    std::string note;                   // optional note to include
+    std::string label;                  // optional label to include
 
     CCredential(uint32_t Version=VERSION_INVALID,
                 uint32_t Flags=0,
                 const uint160 &CredentialKey=uint160(),
                 const std::string &Credential=std::string(),
                 const std::string &Recipient=std::string(),
-                const std::string &Note=std::string()) :
-        version(Version), flags(Flags), credentialKey(CredentialKey), credential(Credential), recipient(Recipient), note(Note)
+                const std::string &Label=std::string()) :
+        version(Version), flags(Flags), credentialKey(CredentialKey), credential(Credential), recipient(Recipient), label(Label)
     {
         SetFlags();
     }
@@ -1370,19 +1370,19 @@ public:
         READWRITE(credential);
         READWRITE(recipient);
 
-        if (HasNote()) {
-            READWRITE(note);
+        if (HasLabel()) {
+            READWRITE(LIMITED_STRING(label, 512));
         }
     }
 
-    bool HasNote() const
+    bool HasLabel() const
     {
-        return flags & FLAG_NOTE_PRESENT;
+        return flags & FLAG_LABEL_PRESENT;
     }
 
     uint32_t CalcFlags() const
     {
-        return (note.size() ? FLAG_NOTE_PRESENT : 0);
+        return (label.size() ? FLAG_LABEL_PRESENT : 0);
     }
 
     uint32_t SetFlags()

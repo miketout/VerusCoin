@@ -1489,8 +1489,8 @@ UniValue CCredential::ToUniValue() const
     ret.pushKV("credential", credential);
     ret.pushKV("recipient", TrimSpaces(recipient, true, ""));
 
-    if (HasNote()) {
-        ret.pushKV("note", TrimSpaces(note, true, ""));
+    if (HasLabel()) {
+        ret.pushKV("label", TrimSpaces(label, true, ""));
     }
 
     return ret;
