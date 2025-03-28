@@ -10042,12 +10042,12 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                         CTransaction curTx = std::get<3>(dependencyStack.back());
                         if (++std::get<0>(dependencyStack.back()) >= curTx.vin.size())
                         {
-                            if (curTx.vin.size() &&  std::get<1>(dependencyStack.back()))
+                            if (std::get<1>(dependencyStack.back()))
                             {
                                 if (!relayedThisRound.count(std::get<2>(dependencyStack.back())) && !dependentThisRound.count(std::get<2>(dependencyStack.back())))
                                 {
                                     toRelayThisRound.insert({std::get<2>(dependencyStack.back()), curTx});
-                                    relayedThisRound.insert(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash);
+                                    relayedThisRound.insert(std::get<2>(dependencyStack.back()));
                                 }
                                 // if we have a parent, do not relay it
                                 if (dependencyStack.size() > 1)
