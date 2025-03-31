@@ -1486,7 +1486,9 @@ UniValue CCredential::ToUniValue() const
     ret.pushKV("version", (int64_t)version);
     ret.pushKV("flags", Flags);
     ret.pushKV("credentialKey", EncodeDestination(CIdentityID(credentialKey)));
-    ret.pushKV("credential", credential);
+
+    ret.pushKV("credential", credential.get_str());
+   
     ret.pushKV("recipient", TrimSpaces(recipient, true, ""));
 
     if (HasLabel()) {

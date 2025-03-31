@@ -1331,14 +1331,14 @@ public:
     uint32_t version;
     uint32_t flags;
     uint160 credentialKey;
-    std::string credential;
+    UniValue credential;
     std::string recipient;              // who is receiving the credential, normally an app ID or service URL
     std::string label;                  // optional label to include
 
     CCredential(uint32_t Version=VERSION_INVALID,
                 uint32_t Flags=0,
                 const uint160 &CredentialKey=uint160(),
-                const std::string &Credential=std::string(),
+                const UniValue &Credential=UniValue(UniValue::VSTR),
                 const std::string &Recipient=std::string(),
                 const std::string &Label=std::string()) :
         version(Version), flags(Flags), credentialKey(CredentialKey), credential(Credential), recipient(Recipient), label(Label)
@@ -1367,7 +1367,17 @@ public:
         READWRITE(version);
         READWRITE(flags);
         READWRITE(credentialKey);
-        READWRITE(credential);
+
+        // Serialize the credential as a string.
+        if (ser_action.ForRead()) {
+            std::string credStr;
+            READWRITE(credStr);
+            credential = UniValue(credStr);
+        } else {
+            std::string credStr = credential.get_str();
+            READWRITE(credStr);
+        }
+
         READWRITE(recipient);
 
         if (HasLabel()) {
