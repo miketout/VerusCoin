@@ -963,7 +963,7 @@ CCredential::CCredential(const UniValue uni) :
     flags(uni_get_int64(find_value(uni, "flags"))),
     credentialKey(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "credentialKey"))))),
     credential(uni_get_str(find_value(uni, "credential"))),
-    recipient(TrimSpaces(uni_get_str(find_value(uni, "recipient")), true, "")),
+    scopes(TrimSpaces(uni_get_str(find_value(uni, "scopes")), true, "")),
     label(TrimSpaces(uni_get_str(find_value(uni, "label")), true, ""))
 {
     SetFlags();
