@@ -1949,13 +1949,13 @@ void komodo_args(char *argv0)
                 UniValue params(UniValue::VARR);
                 params.push_back(name);
 
-                UniValue result;
+                UniValue reply, result;
                 try
                 {
                     CCurrencyDefinition thisCurrency;
-                    result = RPCCallRoot("getcurrency", params);
+                    reply = RPCCallRoot("getcurrency", params);
                     // set local parameters
-                    result = find_value(result, "result");
+                    result = find_value(reply, "result");
                     if (result.isNull() || !SetThisChain(result, &thisCurrency))
                     {
                         throw error("Cannot find blockchain data");
