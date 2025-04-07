@@ -4164,7 +4164,9 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                    nHeight < 1800000)))
             {
                 LogPrintf("%s: ERROR: %s\nBlock %s rejected\n", __func__, state.GetRejectReason().c_str(), block.GetHash().GetHex().c_str());
-                if (state.GetRejectReason() != "bad-txns-invalid-reservetransfer")
+                if (state.GetRejectReason() != "bad-txns-invalid-reservetransfer" &&
+                    state.GetRejectReason() != "unable to get last confirmed notarization" &&
+                    state.IsInvalid())
                 {
                     InvalidBlockFound(pindex, state, Params());
                 }
@@ -4175,7 +4177,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             CReserveTransactionDescriptor rtxd(tx, view, nHeight);
             if (rtxd.IsReject())
             {
-                return state.DoS(100, error(strprintf("%s: Invalid reserve transaction", __func__).c_str()), REJECT_INVALID, "bad-txns-invalid-reserve");
+                return state.DoS(5, error(strprintf("%s: Invalid reserve transaction", __func__).c_str()), REJECT_INVALID, "bad-txns-invalid-reserve");
             }
 
             if (isPBaaS && (rtxd.flags & (rtxd.IS_IMPORT | rtxd.IS_RESERVETRANSFER | rtxd.IS_EXPORT | rtxd.IS_IDENTITY_DEFINITION | rtxd.IS_CURRENCY_DEFINITION)))
@@ -4453,7 +4455,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             {
                 if (!view.HaveInputs(tx))
                 {
-                    return state.DoS(100, error("ConnectBlock(): inputs missing/spent"),
+                    return state.DoS(2, error("ConnectBlock(): inputs missing/spent"),
                                     REJECT_INVALID, "bad-txns-inputs-missingorspent");
                 }
                 // are the JoinSplit's requirements met?
@@ -5629,7 +5631,9 @@ bool static ConnectTip(CValidationState& state, const CChainParams& chainparams,
         GetMainSignals().BlockChecked(*pblock, state);
         if (!rv) {
             if (state.IsInvalid())
+            {
                 InvalidBlockFound(pindexNew, state, chainparams);
+            }
             return error("ConnectTip(): ConnectBlock %s failed", pindexNew->GetBlockHash().ToString());
         }
         mapBlockSource.erase(pindexNew->GetBlockHash());
@@ -6762,7 +6766,7 @@ static bool AcceptBlockHeader(int32_t *futureblockp,const CBlockHeader& block, C
         {
             //printf("block height: %u, hash: %s\n", pindex->GetHeight(), pindex->GetBlockHash().GetHex().c_str());
             LogPrint("net", "block height: %u, hash: %s\n", pindex->GetHeight(), pindex->GetBlockHash().GetHex().c_str());
-            return state.DoS(100, error("%s: block is marked invalid", __func__), REJECT_INVALID, "banned-for-invalid-block");
+            return state.DoS(2, error("%s: block is marked invalid", __func__), REJECT_INVALID, "misbehaving-invalid-block");
         }
         /*if ( pindex != 0 && hash == komodo_requestedhash )
         {
