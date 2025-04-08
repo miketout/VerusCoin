@@ -5987,11 +5987,11 @@ vector<pair<string, UniValue>> CConnectedChains::SubmitQualifiedBlocks()
             // any one stalled daemon
             UniValue submitParams(UniValue::VARR);
             submitParams.push_back(EncodeHexBlk(chainData.block));
-            UniValue result, error;
+            UniValue reply, result, error;
             try
             {
-                result = RPCCall("submitblock", submitParams, chainData.rpcUserPass, chainData.rpcPort, chainData.rpcHost);
-                result = find_value(result, "result");
+                reply = RPCCall("submitblock", submitParams, chainData.rpcUserPass, chainData.rpcPort, chainData.rpcHost);
+                result = find_value(reply, "result");
                 error = find_value(result, "error");
             }
             catch (exception e)

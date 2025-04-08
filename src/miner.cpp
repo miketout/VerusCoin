@@ -3062,6 +3062,9 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                         LogPrintf("ERROR: mempool transaction missing input\n");
                         LogPrint("mempool", "mempool transaction missing input");
                         fMissingInputs = true;
+
+                        txesToRemove.push_back(tx);
+        
                         if (porphan)
                         {
                             for (int inNumStart = 0; inNumStart < inNum; inNumStart++)
