@@ -1371,16 +1371,16 @@ public:
         if (ser_action.ForRead()) {
             std::string credStr;
             READWRITE(credStr);
-            credential = UniValue(credStr);
+            credential.read(credStr);
 
             std::string scopeStr;
             READWRITE(scopeStr);
-            scopes = UniValue(scopeStr);
+            scopes.read(scopeStr);
         } else {
-            std::string credStr = credential.get_str();
+            std::string credStr = credential.write();
             READWRITE(credStr);
 
-            std::string scopeStr = scopes.get_str();
+            std::string scopeStr = scopes.write();
             READWRITE(scopeStr);
         }
 

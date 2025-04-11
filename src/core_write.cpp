@@ -1479,7 +1479,6 @@ UniValue CRating::ToUniValue() const
 
 UniValue CCredential::ToUniValue() const
 {
-
     UniValue ret(UniValue::VOBJ);
     int64_t Flags = CalcFlags();
 
@@ -1487,8 +1486,8 @@ UniValue CCredential::ToUniValue() const
     ret.pushKV("flags", Flags);
     ret.pushKV("credentialKey", EncodeDestination(CIdentityID(credentialKey)));
 
-    ret.pushKV("credential", credential.get_str());
-    ret.pushKV("scopes", TrimSpaces(scopes.get_str(), true, ""));
+    ret.pushKV("credential", credential);
+    ret.pushKV("scopes", scopes);
 
     if (HasLabel()) {
         ret.pushKV("label", TrimSpaces(label, true, ""));

@@ -962,8 +962,8 @@ CCredential::CCredential(const UniValue uni) :
     version(uni_get_int64(find_value(uni, "version"))),
     flags(uni_get_int64(find_value(uni, "flags"))),
     credentialKey(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "credentialKey"))))),
-    credential(uni_get_str(find_value(uni, "credential"))),
-    scopes(TrimSpaces(uni_get_str(find_value(uni, "scopes")), true, "")),
+    credential(find_value(uni, "credential")),
+    scopes(find_value(uni, "scopes")),
     label(TrimSpaces(uni_get_str(find_value(uni, "label")), true, ""))
 {
     SetFlags();

@@ -596,14 +596,14 @@ public:
         return key;
     }
 
-    static std::string CredentialPasswordKeyName()
+    static std::string CredentialPlainLoginKeyName()
     {
-        return "vrsc::identity.credential.password";
+        return "vrsc::identity.credential.plainlogin";
     }
-    static uint160 CredentialPasswordKey()
+    static uint160 CredentialPlainLoginKey()
     {
         static uint160 nameSpace;
-        static uint160 key = GetDataKey(CredentialPasswordKeyName(), nameSpace);
+        static uint160 key = GetDataKey(CredentialPlainLoginKeyName(), nameSpace);
         return key;
     }
 
