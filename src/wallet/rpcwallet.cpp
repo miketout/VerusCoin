@@ -3647,10 +3647,20 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
     string strAccount = "*";
     if (params.size() > 0)
     {
-        strAccount = uni_get_str(params[0]);
+        reportQuery = params[0];
+        if (!reportQuery.isObject())
+        {
+            strAccount = uni_get_str(reportQuery);
+            if (!strAccount.empty())
+            {
+                if (!reportQuery.read(strAccount) && reportQuery.isObject())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid JSON parameter");
+                }
+            }
+        }
 
-        if (((reportQuery = params[0]).isObject() || (!strAccount.empty() && reportQuery.read(strAccount))) &&
-            reportQuery.isObject())
+        if (reportQuery.isObject())
         {
             strAccount = uni_get_str(find_value(reportQuery, "account"), "*");
 
@@ -3708,6 +3718,37 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
 
             fromBlock = uni_get_int64(find_value(reportQuery, "fromblock"), fromBlock);
             toBlock = uni_get_int64(find_value(reportQuery, "toblock"), toBlock);
+
+            // if native prices are not present. create a price list if possible and toBlock is at least 2 days away from tip
+            if (nativePricesUni.isNull() && IsVerusMainnetActive() && fromBlock > 2856975 && fromBlock < toBlock && (toBlock + 2880) < ((uint32_t)chainActive.Height()))
+            {
+                uint32_t currentBlock = fromBlock;
+                uint160 priceCurID = CVDXF::GetID("bridge.veth.vrsc@");
+                // start calculating prices from 10 minutes after first block move forward 1440 blocks at a time and look for the closest time
+                // to one day each time within 10 minute error
+                for (int64_t i = chainActive[fromBlock]->nTime + 600; i <= ((int64_t)chainActive[toBlock]->nTime + 86400); i += 86400, currentBlock += 1440)
+                {
+                    int64_t timeError = ((int64_t)chainActive[currentBlock]->nTime) - i;
+                    while (timeError > 600)
+                    {
+                        currentBlock--;
+                        timeError = ((int64_t)chainActive[currentBlock]->nTime - i);
+                    }
+                    while (timeError < 600)
+                    {
+                        currentBlock++;
+                        timeError = ((int64_t)chainActive[currentBlock]->nTime - i);
+                    }
+                    CCoinbaseCurrencyState state1 = ConnectedChains.GetCurrencyState(priceCurID, currentBlock);
+                    uint32_t midBlock = std::min(currentBlock + 720, ((uint32_t)chainActive.Height()));
+                    CCoinbaseCurrencyState state2 = ConnectedChains.GetCurrencyState(priceCurID, midBlock);
+
+                    CCurrencyValueMap prices1 = state1.TargetConversionPrices(ASSETCHAINS_CHAINID);
+                    CCurrencyValueMap prices2 = state2.TargetConversionPrices(ASSETCHAINS_CHAINID);
+
+                    nativePriceMap.insert({DateTimeStrFormat("%Y-%m-%d", i), (prices1.valueMap[CVDXF::GetID("dai.veth.vrsc@")] + prices2.valueMap[CVDXF::GetID("dai.veth.vrsc@")]) >> 1});
+                }
+            }
 
             // look for object specification of report parameters,
             //
@@ -3844,6 +3885,10 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
     }
 
     summaryRet.pushKV("offchaintransfers", offChainTransfers);
+    if (!nativePriceMap.size())
+    {
+        summaryRet.pushKV("warning", "invalidpricelist");
+    }
     summaryRet.pushKV("aggregateearnings", aggregateEarnings.ToUniValue());
 
     return summaryRet;
