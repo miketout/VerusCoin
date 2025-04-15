@@ -1373,15 +1373,15 @@ public:
             READWRITE(credStr);
             credential.read(credStr);
 
-            std::string scopeStr;
-            READWRITE(scopeStr);
-            scopes.read(scopeStr);
+            std::string scopesStr;
+            READWRITE(scopesStr);
+            scopes.read(scopesStr);
         } else {
             std::string credStr = credential.write();
             READWRITE(credStr);
 
-            std::string scopeStr = scopes.write();
-            READWRITE(scopeStr);
+            std::string scopesStr = scopes.write();
+            READWRITE(scopesStr);
         }
 
         if (HasLabel()) {
