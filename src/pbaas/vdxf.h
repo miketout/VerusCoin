@@ -596,6 +596,10 @@ public:
         return key;
     }
 
+    // The plainlogin key expects the credential to be a username and password
+    // in an array with the format [username, password]. The scopes are also
+    // expected to be in an array with the first value being the main scope.
+    // e.g. [mainScope, secondaryScope]
     static std::string CredentialPlainLoginKeyName()
     {
         return "vrsc::identity.credential.plainlogin";
@@ -604,17 +608,6 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = GetDataKey(CredentialPlainLoginKeyName(), nameSpace);
-        return key;
-    }
-
-    static std::string CredentialUsernameKeyName()
-    {
-        return "vrsc::identity.credential.username";
-    }
-    static uint160 CredentialUsernameKey()
-    {
-        static uint160 nameSpace;
-        static uint160 key = GetDataKey(CredentialUsernameKeyName(), nameSpace);
         return key;
     }
 

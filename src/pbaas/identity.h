@@ -1335,6 +1335,15 @@ public:
     UniValue scopes;              // who is receiving the credential, normally an app ID or service URL
     std::string label;            // optional label to include
 
+    // The max length that the credential or scopes should be when their UniValue is stringified.
+    // For a plain login (username and password):
+    // - An average length email is around 30 characters
+    // - A 15 word password from the eff long wordlist is around 120 characters
+    // - The brackets, quotes and commas needed for the string are 7 characters. 
+    // The total of 157 characters fits easily into 512 characters and has space
+    // for larger fields that future credential types may have.
+    static const size_t MAX_JSON_STRING_LENGTH = 512;
+
     CCredential(uint32_t Version=VERSION_INVALID,
                 uint32_t Flags=0,
                 const uint160 &CredentialKey=uint160(),
@@ -1343,6 +1352,12 @@ public:
                 const std::string &Label=std::string()) :
         version(Version), flags(Flags), credentialKey(CredentialKey), credential(Credential), scopes(Scopes), label(Label)
     {
+        std::string credStr = credential.write();
+        std::string scopesStr = scopes.write();
+        if (credStr.size() > MAX_JSON_STRING_LENGTH || scopesStr.size() > MAX_JSON_STRING_LENGTH) {
+            version = VERSION_INVALID;
+        }
+
         SetFlags();
     }
 
@@ -1370,18 +1385,18 @@ public:
 
         if (ser_action.ForRead()) {
             std::string credStr;
-            READWRITE(credStr);
+            READWRITE(LIMITED_STRING(credStr, MAX_JSON_STRING_LENGTH));
             credential.read(credStr);
 
             std::string scopesStr;
-            READWRITE(scopesStr);
+            READWRITE(LIMITED_STRING(scopesStr, MAX_JSON_STRING_LENGTH));
             scopes.read(scopesStr);
         } else {
             std::string credStr = credential.write();
-            READWRITE(credStr);
+            READWRITE(LIMITED_STRING(credStr, MAX_JSON_STRING_LENGTH));
 
             std::string scopesStr = scopes.write();
-            READWRITE(scopesStr);
+            READWRITE(LIMITED_STRING(scopesStr, MAX_JSON_STRING_LENGTH));
         }
 
         if (HasLabel()) {
@@ -1406,7 +1421,7 @@ public:
 
     bool IsValid()
     {
-        return version >= VERSION_FIRST && version <= VERSION_LAST;
+        return (version >= VERSION_FIRST && version <= VERSION_LAST) && credentialKey != uint160();
     }
 
     UniValue ToUniValue() const;
