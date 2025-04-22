@@ -432,6 +432,16 @@ public:
         static uint160 key = GetDataKey(DataRatingsKeyName(), nameSpace);
         return key;
     }
+    static std::string DataCredentialKeyName()
+    {
+        return "vrsc::data.type.object.credential";
+    }
+    static uint160 DataCredentialKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(DataCredentialKeyName(), nameSpace);
+        return key;
+    }
     static std::string DataURLKeyName()
     {
         return "vrsc::data.type.object.url";
@@ -572,6 +582,32 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = GetDataKey(LoginConsentRequestKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string CredentialsKeyName()
+    {
+        return "vrsc::identity.credentials";
+    }
+    static uint160 CredentialsKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(CredentialsKeyName(), nameSpace);
+        return key;
+    }
+
+    // The plainlogin key expects the credential to be a username and password
+    // in an array with the format [username, password]. The scopes are also
+    // expected to be in an array with the first value being the main scope.
+    // e.g. [mainScope, secondaryScope]
+    static std::string CredentialPlainLoginKeyName()
+    {
+        return "vrsc::identity.credential.plainlogin";
+    }
+    static uint160 CredentialPlainLoginKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = GetDataKey(CredentialPlainLoginKeyName(), nameSpace);
         return key;
     }
 
