@@ -707,34 +707,30 @@ uint256 HashFile(const std::string &filepath, CNativeHashWriter &ss)
     if (!boost::filesystem::exists(filepath))
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + filepath);
-        return uint256();
     }
 
     std::ifstream ifs(filepath, std::ios::binary | std::ios::in);
     if (!ifs)
     {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot open file " + filepath);
-        return uint256();
     }
 
     std::vector<char> vch(64 * 1024);
 
-    while (ifs.read(vch.data(), vch.size()) || ifs.gcount() > 0)
+    while (ifs)
     {
+        ifs.read(vch.data(), vch.size());
         std::streamsize readNum = ifs.gcount();
-
-        if (ifs.fail() && !ifs.eof())
+        if (ifs.bad())
         {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error while reading file " + filepath);
-            return uint256();
         }
-
         if (readNum > 0)
         {
             ss.write(vch.data(), static_cast<size_t>(readNum));
         }
-    }
-    ifs.close();
+   }
+
     return ss.GetHash();
 }
 
