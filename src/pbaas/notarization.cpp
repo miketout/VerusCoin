@@ -11497,7 +11497,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
         {
             lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1);
         }
-        return state.Error("Unable to get last confirmed notarization");
+        return state.Error("unable to get last confirmed notarization");
     }
 
     if (currentFinalization.IsConfirmed() || currentFinalization.IsRejected())
