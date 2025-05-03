@@ -25,6 +25,8 @@
 #include <string>
 #include <vector>
 
+#include "uint256.h"
+
 #include <boost/filesystem/path.hpp>
 #include <boost/signals2/signal.hpp>
 #include <boost/thread/exceptions.hpp>
@@ -74,6 +76,7 @@ bool SetupNetworking();
 bool _IsVerusActive();
 bool _IsVerusName(const std::string &name);
 bool _IsVerusMainnetActive();
+bool _IsCurrentChainID(const uint160 &CID);
 
 /** Return true if log accepts specified category */
 bool LogAcceptCategory(const char* category);
