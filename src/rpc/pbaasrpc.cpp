@@ -16027,7 +16027,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
     }
 
     // if fee offer was not specified, calculate
-    if (!feeOffer)
+    if (!feeOffer && !returnTx)
     {
         // calculate total fee required to update based on content in content maps
         // as of PBaaS, standard contentMaps cost an extra standard fee per entry
@@ -16071,7 +16071,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
             success = true;
         }
     }
-    else
+    else if (feeOffer)
     {
         success = find_utxos(from_taddress, vCoins) &&
                 pwalletMain->SelectCoinsMinConf(feeOffer, 0, 0, vCoins, setCoinsRet, totalFound);
