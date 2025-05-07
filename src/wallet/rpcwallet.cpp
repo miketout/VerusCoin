@@ -1365,22 +1365,43 @@ UniValue signfile(const UniValue& params, bool fHelp)
     }
 }
 
-int FileToVector(const std::string &filepath, std::vector<unsigned char> &dataVec, int maxBytes)
+std::size_t FileToVector(const std::string &filepath, std::vector<unsigned char> &dataVec, std::size_t maxBytes)
 {
-    ifstream ifs = ifstream(filepath, std::ios::binary | std::ios::in);
-    int readNum = 0;
-    if (ifs.is_open() && !ifs.eof())
+    if (!boost::filesystem::exists(filepath))
     {
-        dataVec.resize(maxBytes);
-        readNum = ifs.readsome((char *)(&dataVec[0]), maxBytes);
-        dataVec.resize(readNum);
-        if (maxBytes == readNum && !ifs.eof())
-        {
-            ifs.close();
-            throw JSONRPCError(RPC_INVALID_PARAMS, "File too large " + filepath);
-        }
-        ifs.close();
+        throw JSONRPCError(RPC_INVALID_PARAMS, "File does not exist: " + filepath);
     }
+
+    std::ifstream ifs(filepath, std::ios::binary | std::ios::ate);
+    if (!ifs.is_open())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "Failed to open file: " + filepath);
+    }
+
+    std::size_t fileSize = static_cast<std::size_t>(ifs.tellg());
+    if (fileSize == 0)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "File is empty: " + filepath);
+    }
+
+    if (fileSize > maxBytes)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "File too large: " + filepath +
+                           ", size = " + std::to_string(fileSize) + " bytes, max allowed = " +
+                           std::to_string(maxBytes) + " bytes.");
+    }
+
+    dataVec.resize(fileSize);
+
+    ifs.seekg(0, std::ios::beg);
+    ifs.read(reinterpret_cast<char*>(dataVec.data()), fileSize);
+    std::size_t readNum = static_cast<std::size_t>(ifs.gcount());
+
+    if (ifs.bad() || readNum != fileSize)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "Failed to read file completely: " + filepath);
+    }
+
     return readNum;
 }
 
@@ -1438,7 +1459,7 @@ size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vect
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + strFileName + " for data output");
         }
-        int bytesRead = FileToVector(strFileName, dataVec, MAX_TX_SIZE_AFTER_SAPLING >> 1);
+        std::size_t bytesRead = FileToVector(strFileName, dataVec,  static_cast<std::size_t>(MAX_TX_SIZE_AFTER_SAPLING >> 1));
         if (!bytesRead)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + strFileName + " for data output");
