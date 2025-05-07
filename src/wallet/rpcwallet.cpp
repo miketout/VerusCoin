@@ -1389,15 +1389,25 @@ size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vect
 {
     auto strFileName = uni_get_str(find_value(uni, "filename"));
     auto messageUni = find_value(uni, "message");
+    auto hexUni = find_value(uni, "serializedhex");
+    auto base64Uni = find_value(uni, "serializedbase64");
     auto vdxfUni = find_value(uni, "vdxfdata");
     auto strDataHash = uni_get_str(find_value(uni, "datahash"));
 
     if (!strDataHash.empty())
     {
         uint256 dataHash;
+        const std::vector<unsigned char> hashAsVec = ParseHex(strDataHash);
+
+        // Check to make sure the hash is 32 bytes whatever the endianness
+        if (hashAsVec.size() != 32)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Hash must be 32 bytes");
+        }
+
         if (hashType == CVDXF::EHashTypes::HASH_SHA256)
         {
-            dataHash = uint256(ParseHex(strDataHash));
+            dataHash = uint256(hashAsVec);
         }
         else
         {
@@ -1410,16 +1420,17 @@ size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vect
     {
         dataVec = VectorEncodeVDXFUni(vdxfUni);
     }
+    else if (!hexUni.isNull())
+    {
+        dataVec = VectorEncodeVDXFUni(uni);
+    }
+    else if (!base64Uni.isNull())
+    {
+        dataVec = VectorEncodeVDXFUni(uni);
+    }
     else if (!messageUni.isNull())
     {
-        if (messageUni.isStr())
-        {
-            dataVec = VectorEncodeVDXFUni(uni);
-        }
-        else
-        {
-            dataVec = VectorEncodeVDXFUni(messageUni);
-        }
+        dataVec = VectorEncodeVDXFUni(messageUni.isStr() ? uni : messageUni);
     }
     else if (!strFileName.empty())
     {

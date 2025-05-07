@@ -718,15 +718,47 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
         mimeType.resize(128);
     }
     SetFlags();
-
+    
     UniValue objUni = find_value(uni, "objectdata");
-    if (HasMIME() &&
-        std::string(mimeType.begin(), mimeType.begin() + 5) == std::string("text/") &&
-        objUni.isStr())
+
+    if (objUni.isArray())
     {
-        objUni.pushKV("message", objUni);
+        for (int j = 0; j < objUni.size(); j++)
+        {
+            CDataStream ss(PROTOCOL_VERSION, SER_DISK);
+            for (int i = 0; i < objUni.size(); i++)
+            {
+                std::vector<unsigned char> vec = VectorEncodeVDXFUni(objUni[i]);
+                ss.write((const char *)vec.data(), vec.size());
+            }
+            objectData = std::vector<unsigned char>(ss.begin(), ss.end());
+        }
     }
-    objectData = VectorEncodeVDXFUni(find_value(uni, "objectdata"));
+    else if (objUni.isStr())
+    {
+        std::string valueString;
+        if (IsHex(valueString = uni_get_str(objUni)))
+        {
+            objectData = VectorEncodeVDXFUni(objUni);
+        }
+        else
+        {
+            objectData = std::vector<unsigned char>();
+        }
+    }
+    else if (objUni.isObject())
+    {
+        std::vector<unsigned char> mapBytesValue = VectorEncodeVDXFUni(objUni);
+        if (!mapBytesValue.size())
+        {
+            return;
+        }
+        objectData = VectorEncodeVDXFUni(objUni);
+    }
+    else
+    {
+        objectData = std::vector<unsigned char>();
+    }
 }
 
 std::vector<uint256> CDataDescriptor::DecodeHashVector() const
