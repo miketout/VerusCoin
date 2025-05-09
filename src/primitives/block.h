@@ -2587,7 +2587,7 @@ public:
 
     bool IsValid() const
     {
-        return version >= CVDXF_Data::FIRST_VERSION && version <= CVDXF_Data::LAST_VERSION && (flags & ~(FLAG_HAS_DATAHASH + FLAG_HAS_SYSTEM)) == 0 && !idID.IsNull() && !key.IsNull();
+        return version >= CVDXF_Data::FIRST_VERSION && version <= CVDXF_Data::LAST_VERSION && (flags & ~(FLAG_HAS_DATAHASH + FLAG_HAS_SYSTEM + FLAG_NO_DELETION)) == 0 && !idID.IsNull() && !key.IsNull();
     }
 
     // returns false if hash is null
