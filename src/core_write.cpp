@@ -1216,6 +1216,7 @@ CIdentityMultimapRef::CIdentityMultimapRef(const UniValue &uni) :
     version(uni_get_int64(find_value(uni, "version"), CVDXF_Data::DEFAULT_VERSION)),
     flags(uni_get_int64(find_value(uni, "flags"))),
     key(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "vdxfkey"))))),
+    idID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "identityid"))))),
     heightStart(uni_get_int64(find_value(uni, "startheight"))),
     heightEnd(uni_get_int64(find_value(uni, "endheight"))),
     dataHash(uint256S(uni_get_str(find_value(uni, "datahash")))),
@@ -1230,6 +1231,7 @@ UniValue CIdentityMultimapRef::ToUniValue() const
     obj.pushKV("version", (int64_t)version);
     obj.pushKV("flags", (int64_t)flags);
     obj.pushKV("vdxfkey", EncodeDestination(CIdentityID(key)));
+    obj.pushKV("identityid", EncodeDestination(CIdentityID(idID)));
     if (HasDataHash())
     {
         obj.pushKV("datahash", dataHash.GetHex());

@@ -2521,7 +2521,7 @@ public:
 
     CIdentityMultimapRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), heightStart(0), heightEnd(0), flags(0) {}
     CIdentityMultimapRef(const CIdentityID &ID, const uint160 &Key, uint32_t HeightStart=0, uint32_t HeightEnd=0, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), bool keepDeleted=false, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
-        version(Version), key(Key), heightStart(HeightStart), heightEnd(HeightEnd), dataHash(DataHash), systemID(SystemID), flags(keepDeleted ? FLAG_NO_DELETION : 0)
+        version(Version), idID(ID), key(Key), heightStart(HeightStart), heightEnd(HeightEnd), dataHash(DataHash), systemID(SystemID), flags(keepDeleted ? FLAG_NO_DELETION : 0)
     {
         SetFlags();
     }
