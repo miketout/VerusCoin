@@ -417,7 +417,7 @@ void CTxMemPool::remove(const CTransaction &origTx, std::list<CTransaction>& rem
                 removeAddressIndex(hash);
             if (fSpentIndex)
                 removeSpentIndex(hash);
-            ClearPrioritisation(tx.GetHash());
+            ClearPrioritisation(hash);
         }
     }
 }
