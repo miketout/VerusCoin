@@ -1,8 +1,8 @@
-OSX_MIN_VERSION=10.15
-OSX_SDK_VERSION=10.15.6
-XCODE_VERSION=12.1
-XCODE_BUILD_ID=12A7403
-LD64_VERSION=609
+OSX_MIN_VERSION=13.0
+OSX_SDK_VERSION=14.0
+XCODE_VERSION=15.0
+XCODE_BUILD_ID=15A240d
+LLD_VERSION=711
 
 OSX_SDK=$(SDK_PATH)/Xcode-$(XCODE_VERSION)-$(XCODE_BUILD_ID)-extracted-SDK-with-libcxx-headers
 
@@ -28,8 +28,8 @@ OSX_SDK=$(SDK_PATH)/Xcode-$(XCODE_VERSION)-$(XCODE_BUILD_ID)-extracted-SDK-with-
 #         https://reviews.llvm.org/D64089, we should use that instead. Read the
 #         differential summary there for more details.
 #
-darwin_CC=clang -target $(host) -mmacosx-version-min=$(OSX_MIN_VERSION) --sysroot $(OSX_SDK) -mlinker-version=$(LD64_VERSION) -B$(build_prefix)/bin
-darwin_CXX=clang++ -target $(host) -mmacosx-version-min=$(OSX_MIN_VERSION) --sysroot $(OSX_SDK) -stdlib=libc++ -mlinker-version=$(LD64_VERSION) -B$(build_prefix)/bin -nostdinc++ -isystem $(OSX_SDK)/usr/include/c++/v1
+darwin_CC=clang -target $(host) -mmacosx-version-min=$(OSX_MIN_VERSION) --sysroot $(OSX_SDK) -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin
+darwin_CXX=clang++ -target $(host) -mmacosx-version-min=$(OSX_MIN_VERSION) --sysroot $(OSX_SDK) -stdlib=libc++ -mlinker-version=$(LLD_VERSION) -B$(build_prefix)/bin -nostdinc++ -isystem $(OSX_SDK)/usr/include/c++/v1
 
 darwin_CFLAGS=-pipe
 darwin_CXXFLAGS=$(darwin_CFLAGS)
