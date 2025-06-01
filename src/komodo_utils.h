@@ -1325,7 +1325,7 @@ void iguana_initQ(queue_t *Q,char *name)
 
 uint16_t _komodo_userpass(char *username,char *password, FILE *fp)
 {
-    char *rpcuser,*rpcpassword,*str,line[8192]; uint16_t port = 0;
+    char *rpcuser,*rpcpassword,*rpcportstr,*str,line[8192]; uint16_t rpcport = 0;
     rpcuser = rpcpassword = 0;
     username[0] = password[0] = 0;
     while ( fgets(line,sizeof(line),fp) != 0 )
@@ -1337,11 +1337,8 @@ uint16_t _komodo_userpass(char *username,char *password, FILE *fp)
             rpcuser = parse_conf_line(str,(char *)"rpcuser");
         else if ( (str= strstr(line,(char *)"rpcpassword")) != 0 )
             rpcpassword = parse_conf_line(str,(char *)"rpcpassword");
-        else if ( (str= strstr(line,(char *)"rpcport")) != 0 )
-        {
-            port = atoi(parse_conf_line(str,(char *)"rpcport"));
-            //fprintf(stderr,"rpcport.%u in file\n",port);
-        }
+        else if ((str = strstr(line, (char *)"rpcport")) != 0)
+            rpcportstr = parse_conf_line(str, (char *)"rpcport");
     }
     if ( rpcuser != 0 && rpcpassword != 0 )
     {
@@ -1353,7 +1350,10 @@ uint16_t _komodo_userpass(char *username,char *password, FILE *fp)
         free(rpcuser);
     if ( rpcpassword != 0 )
         free(rpcpassword);
-    return(port);
+    if ( rpcportstr != 0 )
+        rpcport = (uint16_t)atoi(rpcportstr);
+        free(rpcportstr);
+    return(rpcport);
 }
 
 // create a config file. if this is a PBaaS chain, we assume that the loaded CCurrencyDefinition is complete, which may not
