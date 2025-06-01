@@ -873,7 +873,7 @@ int32_t decode_hex(uint8_t *bytes,int32_t n,char *hex)
     }
     if ( hex[n-1] == '\n' || hex[n-1] == '\r' )
         hex[--n] = 0;
-    if ( n == 0 || (hex[n*2+1] == 0 && hex[n*2] != 0) )
+    if ( n == 0 || (strlen(hex) > n * 2 && hex[n*2+1] == 0 && hex[n*2] != 0) )
     {
         if ( n > 0 )
         {
