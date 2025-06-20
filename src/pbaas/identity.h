@@ -1379,8 +1379,8 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(version);
-        READWRITE(flags);
+        READWRITE(VARINT(version));
+        READWRITE(VARINT(flags));
         READWRITE(credentialKey);
 
         if (ser_action.ForRead()) {
