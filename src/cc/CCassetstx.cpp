@@ -134,7 +134,7 @@ UniValue AssetOrders(uint256 refassetid)
                 funcidstr[1] = 0;
                 item.pushKV("funcid", funcidstr);
                 item.pushKV("txid", uint256_str(assetidstr,txid));
-                item.push_back(Pair("vout", (int64_t)it->first.index));
+                item.pushKV("vout", (int64_t)it->first.index);
                 if ( funcid == 'b' || funcid == 'B' )
                 {
                     sprintf(numstr,"%.8f",(double)vintx.vout[it->first.index].nValue/COIN);
@@ -169,7 +169,7 @@ UniValue AssetOrders(uint256 refassetid)
                     }
                     else
                     {
-                        item.push_back(Pair("totalrequired", (int64_t)price));
+                        item.pushKV("totalrequired", (int64_t)price);
                         sprintf(numstr,"%.8f",(double)vintx.vout[0].nValue / (price * COIN));
                         item.pushKV("price",numstr);
                     }

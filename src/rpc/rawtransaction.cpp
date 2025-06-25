@@ -88,7 +88,7 @@ UniValue TxJoinSplitToJSON(const CTransaction& tx) {
         CDataStream ssProof(SER_NETWORK, PROTOCOL_VERSION);
         auto ps = SproutProofSerializer<CDataStream>(ssProof, useGroth);
         boost::apply_visitor(ps, jsdescription.proof);
-        joinsplit.push_back(Pair("proof", HexStr(ssProof.begin(), ssProof.end())));
+        joinsplit.pushKV("proof", HexStr(ssProof.begin(), ssProof.end()));
 
         {
             UniValue ciphertexts(UniValue::VARR);
@@ -113,8 +113,8 @@ UniValue TxShieldedSpendsToJSON(const CTransaction& tx) {
         obj.pushKV("anchor", spendDesc.anchor.GetHex());
         obj.pushKV("nullifier", spendDesc.nullifier.GetHex());
         obj.pushKV("rk", spendDesc.rk.GetHex());
-        obj.push_back(Pair("proof", HexStr(spendDesc.zkproof.begin(), spendDesc.zkproof.end())));
-        obj.push_back(Pair("spendAuthSig", HexStr(spendDesc.spendAuthSig.begin(), spendDesc.spendAuthSig.end())));
+        obj.pushKV("proof", HexStr(spendDesc.zkproof.begin(), spendDesc.zkproof.end()));
+        obj.pushKV("spendAuthSig", HexStr(spendDesc.spendAuthSig.begin(), spendDesc.spendAuthSig.end()));
         vdesc.push_back(obj);
     }
     return vdesc;
@@ -127,9 +127,9 @@ UniValue TxShieldedOutputsToJSON(const CTransaction& tx) {
         obj.pushKV("cv", outputDesc.cv.GetHex());
         obj.pushKV("cmu", outputDesc.cm.GetHex());
         obj.pushKV("ephemeralKey", outputDesc.ephemeralKey.GetHex());
-        obj.push_back(Pair("encCiphertext", HexStr(outputDesc.encCiphertext.begin(), outputDesc.encCiphertext.end())));
-        obj.push_back(Pair("outCiphertext", HexStr(outputDesc.outCiphertext.begin(), outputDesc.outCiphertext.end())));
-        obj.push_back(Pair("proof", HexStr(outputDesc.zkproof.begin(), outputDesc.zkproof.end())));
+        obj.pushKV("encCiphertext", HexStr(outputDesc.encCiphertext.begin(), outputDesc.encCiphertext.end()));
+        obj.pushKV("outCiphertext", HexStr(outputDesc.outCiphertext.begin(), outputDesc.outCiphertext.end()));
+        obj.pushKV("proof", HexStr(outputDesc.zkproof.begin(), outputDesc.zkproof.end()));
         vdesc.push_back(obj);
     }
     return vdesc;
@@ -157,9 +157,9 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
     if (tx.fOverwintered) {
         entry.pushKV("versiongroupid", HexInt(tx.nVersionGroupId));
     }
-    entry.push_back(Pair("locktime", (int64_t)tx.nLockTime));
+    entry.pushKV("locktime", (int64_t)tx.nLockTime);
     if (tx.fOverwintered) {
-        entry.push_back(Pair("expiryheight", (int64_t)tx.nExpiryHeight));
+        entry.pushKV("expiryheight", (int64_t)tx.nExpiryHeight);
     }
     UniValue vin(UniValue::VARR);
     for (int i = 0; i < tx.vin.size(); i++)
@@ -167,13 +167,13 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
         const CTxIn &txin = tx.vin[i];
         UniValue in(UniValue::VOBJ);
         if (tx.IsCoinBase())
-            in.push_back(Pair("coinbase", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
+            in.pushKV("coinbase", HexStr(txin.scriptSig.begin(), txin.scriptSig.end()));
         else if (tx.IsCoinImport()) {
             in.pushKV("is_import", "1");
         }
         else {
             in.pushKV("txid", txin.prevout.hash.GetHex());
-            in.push_back(Pair("vout", (int64_t)txin.prevout.n));
+            in.pushKV("vout", (int64_t)txin.prevout.n);
             {
                 uint256 hash; CTransaction txFrom;
                 if (GetTransaction(txin.prevout.hash, txFrom, hash, false) &&
@@ -230,7 +230,7 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
             }
             UniValue o(UniValue::VOBJ);
             o.pushKV("asm", ScriptToAsmStr(txin.scriptSig, true));
-            o.push_back(Pair("hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
+            o.pushKV("hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end()));
             in.pushKV("scriptSig", o);
 
             // Add address and value info if spentindex enabled
@@ -247,7 +247,7 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
                 }
             }
         }
-        in.push_back(Pair("sequence", (int64_t)txin.nSequence));
+        in.pushKV("sequence", (int64_t)txin.nSequence);
         vin.push_back(in);
     }
 
@@ -268,7 +268,7 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
             out.pushKV("interest", ValueFromAmount(interest));
         }
         out.pushKV("valueSat", txout.nValue); // [+] Decker
-        out.push_back(Pair("n", (int64_t)i));
+        out.pushKV("n", (int64_t)i);
         UniValue o(UniValue::VOBJ);
         ScriptPubKeyToJSON(txout.scriptPubKey, o, true);
         out.pushKV("scriptPubKey", o);
@@ -278,7 +278,7 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
         CSpentIndexKey spentKey(txid, i);
         if (GetSpentIndex(spentKey, spentInfo)) {
             out.pushKV("spentTxId", spentInfo.txid.GetHex());
-            out.push_back(Pair("spentIndex", (int)spentInfo.inputIndex));
+            out.pushKV("spentIndex", (int)spentInfo.inputIndex);
             out.pushKV("spentHeight", spentInfo.blockHeight);
         }
         vout.push_back(out);
@@ -295,7 +295,7 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
         UniValue voutputdesc = TxShieldedOutputsToJSON(tx);
         entry.pushKV("vShieldedOutput", voutputdesc);
         if (!(vspenddesc.empty() && voutputdesc.empty())) {
-            entry.push_back(Pair("bindingSig", HexStr(tx.bindingSig.begin(), tx.bindingSig.end())));
+            entry.pushKV("bindingSig", HexStr(tx.bindingSig.begin(), tx.bindingSig.end()));
         }
     }
 
@@ -323,21 +323,21 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
     if (tx.fOverwintered) {
         entry.pushKV("versiongroupid", HexInt(tx.nVersionGroupId));
     }
-    entry.push_back(Pair("locktime", (int64_t)tx.nLockTime));
+    entry.pushKV("locktime", (int64_t)tx.nLockTime);
     if (tx.fOverwintered) {
-        entry.push_back(Pair("expiryheight", (int64_t)tx.nExpiryHeight));
+        entry.pushKV("expiryheight", (int64_t)tx.nExpiryHeight);
     }
     UniValue vin(UniValue::VARR);
     BOOST_FOREACH(const CTxIn& txin, tx.vin) {
         UniValue in(UniValue::VOBJ);
         if (tx.IsCoinBase())
-            in.push_back(Pair("coinbase", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
+            in.pushKV("coinbase", HexStr(txin.scriptSig.begin(), txin.scriptSig.end()));
         else {
             in.pushKV("txid", txin.prevout.hash.GetHex());
-            in.push_back(Pair("vout", (int64_t)txin.prevout.n));
+            in.pushKV("vout", (int64_t)txin.prevout.n);
             UniValue o(UniValue::VOBJ);
             o.pushKV("asm", ScriptToAsmStr(txin.scriptSig, true));
-            o.push_back(Pair("hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
+            o.pushKV("hex", HexStr(txin.scriptSig.begin(), txin.scriptSig.end()));
             in.pushKV("scriptSig", o);
 
             // Add address and value info if spentindex enabled
@@ -354,7 +354,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
                 }
             }
         }
-        in.push_back(Pair("sequence", (int64_t)txin.nSequence));
+        in.pushKV("sequence", (int64_t)txin.nSequence);
         vin.push_back(in);
     }
     entry.pushKV("vin", vin);
@@ -374,7 +374,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
         }
         out.pushKV("valueZat", txout.nValue);
         out.pushKV("valueSat", txout.nValue);
-        out.push_back(Pair("n", (int64_t)i));
+        out.pushKV("n", (int64_t)i);
         UniValue o(UniValue::VOBJ);
         ScriptPubKeyToJSON(txout.scriptPubKey, o, true);
         out.pushKV("scriptPubKey", o);
@@ -384,7 +384,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
         CSpentIndexKey spentKey(txid, i);
         if (fSpentIndex && GetSpentIndex(spentKey, spentInfo)) {
             out.pushKV("spentTxId", spentInfo.txid.GetHex());
-            out.push_back(Pair("spentIndex", (int)spentInfo.inputIndex));
+            out.pushKV("spentIndex", (int)spentInfo.inputIndex);
             out.pushKV("spentHeight", spentInfo.blockHeight);
         }
         vout.push_back(out);
@@ -402,7 +402,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
         UniValue voutputdesc = TxShieldedOutputsToJSON(tx);
         entry.pushKV("vShieldedOutput", voutputdesc);
         if (!(vspenddesc.empty() && voutputdesc.empty())) {
-            entry.push_back(Pair("bindingSig", HexStr(tx.bindingSig.begin(), tx.bindingSig.end())));
+            entry.pushKV("bindingSig", HexStr(tx.bindingSig.begin(), tx.bindingSig.end()));
         }
     }
 
@@ -413,7 +413,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
             CBlockIndex* pindex = (*mi).second;
             if (chainActive.Contains(pindex)) {
                 entry.pushKV("height", pindex->GetHeight());
-                entry.push_back(Pair("confirmations", 1 + chainActive.Height() - pindex->GetHeight()));
+                entry.pushKV("confirmations", 1 + chainActive.Height() - pindex->GetHeight());
                 entry.pushKV("time", pindex->GetBlockTime());
                 entry.pushKV("blocktime", pindex->GetBlockTime());
             } else {
@@ -1040,9 +1040,9 @@ static void TxInErrorToJSON(const CTxIn& txin, UniValue& vErrorsRet, const std::
 {
     UniValue entry(UniValue::VOBJ);
     entry.pushKV("txid", txin.prevout.hash.ToString());
-    entry.push_back(Pair("vout", (uint64_t)txin.prevout.n));
-    entry.push_back(Pair("scriptSig", HexStr(txin.scriptSig.begin(), txin.scriptSig.end())));
-    entry.push_back(Pair("sequence", (uint64_t)txin.nSequence));
+    entry.pushKV("vout", (uint64_t)txin.prevout.n);
+    entry.pushKV("scriptSig", HexStr(txin.scriptSig.begin(), txin.scriptSig.end()));
+    entry.pushKV("sequence", (uint64_t)txin.nSequence);
     entry.pushKV("error", strMessage);
     vErrorsRet.push_back(entry);
 }

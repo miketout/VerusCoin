@@ -65,16 +65,16 @@ UniValue height_MoM(const UniValue& params, bool fHelp)
     {
         if ( chainActive.Tip() == 0 )
         {
-            ret.push_back(Pair("error",(char *)"no active chain yet"));
+            ret.pushKV("error",(char *)"no active chain yet");
             return(ret);
         }
         height = chainActive.Tip()->GetHeight();
     }
     //fprintf(stderr,"height_MoM height.%d\n",height);
     depth = komodo_MoM(&notarized_height,&MoM,&kmdtxid,height,&MoMoM,&MoMoMoffset,&MoMoMdepth,&kmdstarti,&kmdendi);
-    ret.push_back(Pair("coin",(char *)(ASSETCHAINS_SYMBOL[0] == 0 ? "KMD" : ASSETCHAINS_SYMBOL)));
+    ret.pushKV("coin",(char *)(ASSETCHAINS_SYMBOL[0] == 0 ? "KMD" : ASSETCHAINS_SYMBOL));
     ret.pushKV("height",height);
-    ret.push_back(Pair("timestamp",(uint64_t)timestamp));
+    ret.pushKV("timestamp",(uint64_t)timestamp);
     if ( depth > 0 )
     {
         ret.pushKV("depth",depth);
@@ -89,7 +89,7 @@ UniValue height_MoM(const UniValue& params, bool fHelp)
             ret.pushKV("kmdstarti",kmdstarti);
             ret.pushKV("kmdendi",kmdendi);
         }
-    } else ret.push_back(Pair("error",(char *)"no MoM for height"));
+    } else ret.pushKV("error",(char *)"no MoM for height");
     
     return ret;
 }
@@ -104,7 +104,7 @@ UniValue MoMoMdata(const UniValue& params, bool fHelp)
     uint32_t ccid = atoi(params[2].get_str().c_str());
     ret.pushKV("coin",symbol);
     ret.pushKV("kmdheight",kmdheight);
-    ret.push_back(Pair("ccid", (int) ccid));
+    ret.pushKV("ccid", (int) ccid);
 
     uint256 destNotarisationTxid;
     std::vector<uint256> moms;
@@ -133,7 +133,7 @@ UniValue calc_MoM(const UniValue& params, bool fHelp)
         throw runtime_error("calc_MoM illegal height or MoMdepth\n");
     //fprintf(stderr,"height_MoM height.%d\n",height);
     MoM = komodo_calcMoM(height,MoMdepth);
-    ret.push_back(Pair("coin",(char *)(ASSETCHAINS_SYMBOL[0] == 0 ? "KMD" : ASSETCHAINS_SYMBOL)));
+    ret.pushKV("coin",(char *)(ASSETCHAINS_SYMBOL[0] == 0 ? "KMD" : ASSETCHAINS_SYMBOL));
     ret.pushKV("height",height);
     ret.pushKV("MoMdepth",MoMdepth);
     ret.pushKV("MoM",MoM.GetHex());

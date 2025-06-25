@@ -2226,17 +2226,17 @@ void komodo_args(char *argv0)
             }
             else
             {
-                obj.push_back(Pair("options", ASSETCHAINS_ERAOPTIONS[0]));
+                obj.pushKV("options", ASSETCHAINS_ERAOPTIONS[0]);
 
                 // we need to set the chain definition for this chain based on globals set above
-                obj.push_back(Pair("premine", ASSETCHAINS_SUPPLY));
-                obj.push_back(Pair("name", ASSETCHAINS_SYMBOL));
+                obj.pushKV("premine", ASSETCHAINS_SUPPLY);
+                obj.pushKV("name", ASSETCHAINS_SYMBOL);
 
-                obj.push_back(Pair("startblock", PBAAS_STARTBLOCK));
-                obj.push_back(Pair("endblock", PBAAS_ENDBLOCK));
-                obj.push_back(Pair("launchsystemid", GetArg("-launchsystemid","")));
-                obj.push_back(Pair("systemid", GetArg("-systemid","")));
-                obj.push_back(Pair("parent", GetArg("-parentid","")));
+                obj.pushKV("startblock", PBAAS_STARTBLOCK);
+                obj.pushKV("endblock", PBAAS_ENDBLOCK);
+                obj.pushKV("launchsystemid", GetArg("-launchsystemid",""));
+                obj.pushKV("systemid", GetArg("-systemid",""));
+                obj.pushKV("parent", GetArg("-parentid",""));
 
                 int paramBlockTime = GetArg("-blocktime", (int64_t)CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
                 obj.pushKV("blocktime", paramBlockTime);
@@ -2248,15 +2248,15 @@ void komodo_args(char *argv0)
                 for (int i = 0; i <= ASSETCHAINS_LASTERA; i++)
                 {
                     UniValue era(UniValue::VOBJ);
-                    era.push_back(Pair("reward", ASSETCHAINS_REWARD[i]));
-                    era.push_back(Pair("decay", ASSETCHAINS_DECAY[i]));
-                    era.push_back(Pair("halving", ASSETCHAINS_HALVING[i]));
-                    era.push_back(Pair("eraend", ASSETCHAINS_ENDSUBSIDY[i]));
+                    era.pushKV("reward", ASSETCHAINS_REWARD[i]);
+                    era.pushKV("decay", ASSETCHAINS_DECAY[i]);
+                    era.pushKV("halving", ASSETCHAINS_HALVING[i]);
+                    era.pushKV("eraend", ASSETCHAINS_ENDSUBSIDY[i]);
                     eras.push_back(era);
                 }
-                obj.push_back(Pair("eras", eras));
+                obj.pushKV("eras", eras);
 
-                obj.push_back(Pair("gatewayconverterissuance", ValueFromAmount(ASSETCHAINS_ISSUANCE)));
+                obj.pushKV("gatewayconverterissuance", ValueFromAmount(ASSETCHAINS_ISSUANCE));
 
                 // we do not have pre-allocation data here, so fake one lump sum of pre-allocation to a NULL address
                 // this will get replaced from either block 1 of our chain, or a connection to VRSC
@@ -2264,9 +2264,9 @@ void komodo_args(char *argv0)
                 {
                     UniValue preallocArr(UniValue::VARR);
                     UniValue preallocObj(UniValue::VOBJ);
-                    preallocObj.push_back(Pair("blockoneminer", ValueFromAmount((CAmount)ASSETCHAINS_SUPPLY)));
+                    preallocObj.pushKV("blockoneminer", ValueFromAmount((CAmount)ASSETCHAINS_SUPPLY));
                     preallocArr.push_back(preallocObj);
-                    obj.push_back(Pair("preallocations", preallocArr));
+                    obj.pushKV("preallocations", preallocArr);
                 }
             }
 

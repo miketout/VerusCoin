@@ -876,7 +876,7 @@ UniValue OracleInfo(uint256 origtxid)
                 {
                     if ( regtx.vout.size() > 0 && DecodeOraclesOpRet(regtx.vout[regtx.vout.size()-1].scriptPubKey,oracletxid,pk,datafee) == 'R' && oracletxid == origtxid )
                     {
-                        obj.push_back(Pair("publisher",pubkey33_str(str,(uint8_t *)pk.begin())));
+                        obj.pushKV("publisher",pubkey33_str(str,(uint8_t *)pk.begin()));
                         Getscriptaddress(batonaddr,regtx.vout[1].scriptPubKey);
                         batontxid = OracleBatonUtxo(10000,cp,oracletxid,batonaddr,pk,data);
                         obj.pushKV("baton",batonaddr);

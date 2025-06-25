@@ -1501,7 +1501,7 @@ UniValue AsyncRPCOperation_sendmany::perform_joinsplit(
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("encryptednote1", encryptedNote1);
     obj.pushKV("encryptednote2", encryptedNote2);
-    obj.push_back(Pair("rawtxn", HexStr(ss.begin(), ss.end())));
+    obj.pushKV("rawtxn", HexStr(ss.begin(), ss.end()));
     obj.pushKV("inputmap", arrInputMap);
     obj.pushKV("outputmap", arrOutputMap);
     return obj;

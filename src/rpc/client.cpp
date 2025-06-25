@@ -971,8 +971,8 @@ UniValue CCurrencyDefinition::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
 
-    obj.push_back(Pair("version", (int64_t)nVersion));
-    obj.push_back(Pair("options", (int64_t)options));
+    obj.pushKV("version", (int64_t)nVersion);
+    obj.pushKV("options", (int64_t)options);
     obj.pushKV("name", name);
     obj.pushKV("currencyid", EncodeDestination(CIdentityID(GetID())));
     if (!parent.IsNull())
@@ -981,8 +981,8 @@ UniValue CCurrencyDefinition::ToUniValue() const
     }
 
     obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
-    obj.push_back(Pair("notarizationprotocol", (int)notarizationProtocol));
-    obj.push_back(Pair("proofprotocol", (int)proofProtocol));
+    obj.pushKV("notarizationprotocol", (int)notarizationProtocol);
+    obj.pushKV("proofprotocol", (int)proofProtocol);
 
     if (nativeCurrencyID.IsValid())
     {
@@ -993,8 +993,8 @@ UniValue CCurrencyDefinition::ToUniValue() const
     {
         obj.pushKV("launchsystemid", EncodeDestination(CIdentityID(launchSystemID)));
     }
-    obj.push_back(Pair("startblock", (int64_t)startBlock));
-    obj.push_back(Pair("endblock", (int64_t)endBlock));
+    obj.pushKV("startblock", (int64_t)startBlock);
+    obj.pushKV("endblock", (int64_t)endBlock);
 
     // currencies that can be converted for pre-launch or fractional usage
     if (currencies.size())
@@ -1064,8 +1064,8 @@ UniValue CCurrencyDefinition::ToUniValue() const
         for (auto &onePreAllocation : preAllocation)
         {
             UniValue onePreAlloc(UniValue::VOBJ);
-            onePreAlloc.push_back(Pair(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)),
-                                       ValueFromAmount(onePreAllocation.second)));
+            onePreAlloc.pushKV(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)),
+                                       ValueFromAmount(onePreAllocation.second));
             preAllocationArr.push_back(onePreAlloc);
         }
         obj.pushKV("preallocations", preAllocationArr);
@@ -1126,7 +1126,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
         {
             arith_uint256 target;
             target.SetCompact(initialBits);
-            obj.push_back(Pair("initialtarget", ArithToUint256(target).GetHex()));
+            obj.pushKV("initialtarget", ArithToUint256(target).GetHex());
 
             obj.pushKV("blocktime", (int64_t)blockTime);
             obj.pushKV("powaveragingwindow", (int64_t)powAveragingWindow);
@@ -1136,10 +1136,10 @@ UniValue CCurrencyDefinition::ToUniValue() const
             for (int i = 0; i < rewards.size(); i++)
             {
                 UniValue era(UniValue::VOBJ);
-                era.push_back(Pair("reward", rewards.size() > i ? rewards[i] : (int64_t)0));
-                era.push_back(Pair("decay", rewardsDecay.size() > i ? rewardsDecay[i] : (int64_t)0));
-                era.push_back(Pair("halving", halving.size() > i ? (int32_t)halving[i] : (int32_t)0));
-                era.push_back(Pair("eraend", eraEnd.size() > i ? (int32_t)eraEnd[i] : (int32_t)0));
+                era.pushKV("reward", rewards.size() > i ? rewards[i] : (int64_t)0);
+                era.pushKV("decay", rewardsDecay.size() > i ? rewardsDecay[i] : (int64_t)0);
+                era.pushKV("halving", halving.size() > i ? (int32_t)halving[i] : (int32_t)0);
+                era.pushKV("eraend", eraEnd.size() > i ? (int32_t)eraEnd[i] : (int32_t)0);
                 eraArr.push_back(era);
             }
             obj.pushKV("eras", eraArr);

@@ -743,10 +743,10 @@ CProofRoot::CProofRoot(const UniValue &uni) :
 UniValue CProofRoot::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
-    obj.push_back(Pair("version", (int64_t)version));
-    obj.push_back(Pair("type", (int64_t)type));
+    obj.pushKV("version", (int64_t)version);
+    obj.pushKV("type", (int64_t)type);
     obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
-    obj.push_back(Pair("height", (int64_t)rootHeight));
+    obj.pushKV("height", (int64_t)rootHeight);
     obj.pushKV("stateroot", stateRoot.GetHex());
     obj.pushKV("blockhash", blockHash.GetHex());
     obj.pushKV("power", compactPower.GetHex());
@@ -1609,7 +1609,7 @@ UniValue CNotaryEvidence::ToUniValue() const
     retObj.pushKV("type", type);
     retObj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
     retObj.pushKV("output", output.ToUniValue());
-    retObj.push_back(Pair("state", (int)state));
+    retObj.pushKV("state", (int)state);
     retObj.pushKV("evidence", evidence.ToUniValue());
     return retObj;
 }

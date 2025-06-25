@@ -277,7 +277,7 @@ UniValue z_validatepaymentdisclosure(const UniValue& params, bool fHelp)
 
             std::vector<unsigned char> rawData(npt.memo().data(), npt.memo().data() + npt.memo().size());
             UniValue memoUni = CIdentity::VDXFDataToUniValue(rawData);
-            o.push_back(Pair("memo", (memoUni.isObject() || memoUni.isArray()) ? memoUni : (memoUni.isStr() ? uni_get_str(memoUni) : memoUni.write(1,2))));
+            o.pushKV("memo", (memoUni.isObject() || memoUni.isArray()) ? memoUni : (memoUni.isStr() ? uni_get_str(memoUni) : memoUni.write(1,2)));
             o.pushKV("value", ValueFromAmount(npt.value()));
             
             // Check the blockchain commitment matches decrypted note commitment

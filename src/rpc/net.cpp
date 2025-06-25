@@ -440,7 +440,7 @@ static UniValue GetNetworksInfo()
         obj.pushKV("name", GetNetworkName(network));
         obj.pushKV("limited", IsLimited(network));
         obj.pushKV("reachable", IsReachable(network));
-        obj.push_back(Pair("proxy", proxy.IsValid() ? proxy.proxy.ToStringIPPort() : string()));
+        obj.pushKV("proxy", proxy.IsValid() ? proxy.proxy.ToStringIPPort() : string());
         obj.pushKV("proxy_randomize_credentials", proxy.randomize_credentials);
         networks.push_back(obj);
     }
@@ -467,8 +467,8 @@ UniValue getdeprecationinfo(const UniValue& params, bool fHelp)
 
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("version", CLIENT_VERSION);
-    obj.push_back(Pair("subversion",
-        FormatSubVersion(CLIENT_NAME, CLIENT_VERSION, std::vector<string>())));
+    obj.pushKV("subversion",
+        FormatSubVersion(CLIENT_NAME, CLIENT_VERSION, std::vector<string>()));
     obj.pushKV("deprecationheight", DEPRECATION_HEIGHT);
 
     return obj;
@@ -521,7 +521,7 @@ UniValue getnetworkinfo(const UniValue& params, bool fHelp)
     obj.pushKV("protocolversion",PROTOCOL_VERSION);
     obj.pushKV("localservices",       strprintf("%016x", nLocalServices));
     obj.pushKV("timeoffset",    GetTimeOffset());
-    obj.push_back(Pair("connections",   (int)vNodes.size()));
+    obj.pushKV("connections",   (int)vNodes.size());
     obj.pushKV("networks",      GetNetworksInfo());
     obj.pushKV("relayfee",      ValueFromAmount(::minRelayTxFee.GetFeePerK()));
     UniValue localAddresses(UniValue::VARR);
@@ -623,8 +623,8 @@ UniValue listbanned(const UniValue& params, bool fHelp)
     for (std::map<CSubNet, int64_t>::iterator it = banMap.begin(); it != banMap.end(); it++)
     {
         UniValue rec(UniValue::VOBJ);
-        rec.push_back(Pair("address", (*it).first.ToString()));
-        rec.push_back(Pair("banned_until", (*it).second));
+        rec.pushKV("address", (*it).first.ToString());
+        rec.pushKV("banned_until", (*it).second);
         bannedAddresses.push_back(rec);
     }
 

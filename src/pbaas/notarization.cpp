@@ -2104,7 +2104,7 @@ UniValue CChainNotarizationData::ToUniValue(const std::vector<std::pair<CTransac
                                             const std::vector<std::vector<std::tuple<CObjectFinalization, CNotaryEvidence>>> &evidence) const
 {
     UniValue obj(UniValue::VOBJ);
-    obj.push_back(Pair("version", (int32_t)version));
+    obj.pushKV("version", (int32_t)version);
     UniValue notarizations(UniValue::VARR);
     for (int64_t i = 0; i < vtx.size(); i++)
     {
@@ -2116,7 +2116,7 @@ UniValue CChainNotarizationData::ToUniValue(const std::vector<std::pair<CTransac
         {
             notarization.pushKV("blockhash", transactionsAndBlockHash[i].second.GetHex());
         }
-        notarization.push_back(Pair("vout", (int32_t)vtx[i].first.n));
+        notarization.pushKV("vout", (int32_t)vtx[i].first.n);
         notarization.pushKV("notarization", vtx[i].second.ToUniValue());
         if (i < evidence.size())
         {
@@ -2166,7 +2166,7 @@ UniValue CChainNotarizationData::ToUniValue(const std::vector<std::pair<CTransac
     obj.pushKV("forks", Forks);
     if (IsConfirmed())
     {
-        obj.push_back(Pair("lastconfirmedheight", (int32_t)vtx[lastConfirmed].second.notarizationHeight));
+        obj.pushKV("lastconfirmedheight", (int32_t)vtx[lastConfirmed].second.notarizationHeight);
         if (transactionsAndBlockHash.size() > lastConfirmed)
         {
             auto blockIt = mapBlockIndex.find(transactionsAndBlockHash[lastConfirmed].second);

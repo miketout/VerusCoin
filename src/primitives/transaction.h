@@ -1538,9 +1538,9 @@ public:
     {
         UniValue obj(UniValue::VOBJ);
 
-        obj.push_back(Pair("signaturetype", (int)sigType));
-        obj.push_back(Pair("publickeydata", HexBytes(&pubKeyData[0], pubKeyData.size())));
-        obj.push_back(Pair("signature", HexBytes(&signature[0], signature.size())));
+        obj.pushKV("signaturetype", (int)sigType);
+        obj.pushKV("publickeydata", HexBytes(&pubKeyData[0], pubKeyData.size()));
+        obj.pushKV("signature", HexBytes(&signature[0], signature.size()));
         return obj;
     }
 
@@ -1637,14 +1637,14 @@ public:
     {
         UniValue obj(UniValue::VOBJ);
 
-        obj.push_back(Pair("version", (int)version));
-        obj.push_back(Pair("signaturehashtype", (int)sigHashType));
+        obj.pushKV("version", (int)version);
+        obj.pushKV("signaturehashtype", (int)sigHashType);
         UniValue uniSigs(UniValue::VARR);
         for (auto sig : signatures)
         {
             uniSigs.push_back(sig.second.ToUniValue());
         }
-        obj.push_back(Pair("signatures", uniSigs));
+        obj.pushKV("signatures", uniSigs);
         return obj;
     }
 

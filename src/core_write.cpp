@@ -213,8 +213,8 @@ UniValue CCurrencyDefinition::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
 
-    obj.push_back(Pair("version", (int64_t)nVersion));
-    obj.push_back(Pair("options", (int64_t)options));
+    obj.pushKV("version", (int64_t)nVersion);
+    obj.pushKV("options", (int64_t)options);
     obj.pushKV("name", name);
     obj.pushKV("currencyid", EncodeDestination(CIdentityID(GetID())));
     if (!parent.IsNull())
@@ -223,8 +223,8 @@ UniValue CCurrencyDefinition::ToUniValue() const
     }
 
     obj.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
-    obj.push_back(Pair("notarizationprotocol", (int)notarizationProtocol));
-    obj.push_back(Pair("proofprotocol", (int)proofProtocol));
+    obj.pushKV("notarizationprotocol", (int)notarizationProtocol);
+    obj.pushKV("proofprotocol", (int)proofProtocol);
 
     if (nativeCurrencyID.IsValid())
     {
@@ -235,8 +235,8 @@ UniValue CCurrencyDefinition::ToUniValue() const
     {
         obj.pushKV("launchsystemid", EncodeDestination(CIdentityID(launchSystemID)));
     }
-    obj.push_back(Pair("startblock", (int64_t)startBlock));
-    obj.push_back(Pair("endblock", (int64_t)endBlock));
+    obj.pushKV("startblock", (int64_t)startBlock);
+    obj.pushKV("endblock", (int64_t)endBlock);
 
     // currencies that can be converted for pre-launch or fractional usage
     if (currencies.size())
@@ -306,8 +306,8 @@ UniValue CCurrencyDefinition::ToUniValue() const
         for (auto &onePreAllocation : preAllocation)
         {
             UniValue onePreAlloc(UniValue::VOBJ);
-            onePreAlloc.push_back(Pair(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)),
-                                       ValueFromAmount(onePreAllocation.second)));
+            onePreAlloc.pushKV(onePreAllocation.first.IsNull() ? "blockoneminer" : EncodeDestination(CIdentityID(onePreAllocation.first)),
+                                       ValueFromAmount(onePreAllocation.second));
             preAllocationArr.push_back(onePreAlloc);
         }
         obj.pushKV("preallocations", preAllocationArr);
@@ -368,7 +368,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
         {
             arith_uint256 target;
             target.SetCompact(initialBits);
-            obj.push_back(Pair("initialtarget", ArithToUint256(target).GetHex()));
+            obj.pushKV("initialtarget", ArithToUint256(target).GetHex());
 
             obj.pushKV("blocktime", (int64_t)blockTime);
             obj.pushKV("powaveragingwindow", (int64_t)powAveragingWindow);
@@ -378,10 +378,10 @@ UniValue CCurrencyDefinition::ToUniValue() const
             for (int i = 0; i < rewards.size(); i++)
             {
                 UniValue era(UniValue::VOBJ);
-                era.push_back(Pair("reward", rewards.size() > i ? rewards[i] : (int64_t)0));
-                era.push_back(Pair("decay", rewardsDecay.size() > i ? rewardsDecay[i] : (int64_t)0));
-                era.push_back(Pair("halving", halving.size() > i ? (int32_t)halving[i] : (int32_t)0));
-                era.push_back(Pair("eraend", eraEnd.size() > i ? (int32_t)eraEnd[i] : (int32_t)0));
+                era.pushKV("reward", rewards.size() > i ? rewards[i] : (int64_t)0);
+                era.pushKV("decay", rewardsDecay.size() > i ? rewardsDecay[i] : (int64_t)0);
+                era.pushKV("halving", halving.size() > i ? (int32_t)halving[i] : (int32_t)0);
+                era.pushKV("eraend", eraEnd.size() > i ? (int32_t)eraEnd[i] : (int32_t)0);
                 eraArr.push_back(era);
             }
             obj.pushKV("eras", eraArr);
@@ -394,8 +394,8 @@ UniValue CCurrencyDefinition::ToUniValue() const
 UniValue CCurrencyState::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
-    ret.push_back(Pair("flags", (int32_t)flags));
-    ret.push_back(Pair("version", (int32_t)version));
+    ret.pushKV("flags", (int32_t)flags);
+    ret.pushKV("version", (int32_t)version);
     ret.pushKV("currencyid", EncodeDestination(CIdentityID(currencyID)));
 
     if (IsValid())
@@ -407,8 +407,8 @@ UniValue CCurrencyState::ToUniValue() const
             {
                 UniValue currencyObj(UniValue::VOBJ);
                 currencyObj.pushKV("currencyid", EncodeDestination(CIdentityID(currencies[i])));
-                currencyObj.push_back(Pair("weight", ValueFromAmount(i < weights.size() ? weights[i] : 0)));
-                currencyObj.push_back(Pair("reserves", ValueFromAmount(i < reserves.size() ? reserves[i] : 0)));
+                currencyObj.pushKV("weight", ValueFromAmount(i < weights.size() ? weights[i] : 0));
+                currencyObj.pushKV("reserves", ValueFromAmount(i < reserves.size() ? reserves[i] : 0));
                 currencyObj.pushKV("priceinreserve", ValueFromAmount(PriceInReserve(i)));
                 currencyArr.push_back(currencyObj);
             }
@@ -421,8 +421,8 @@ UniValue CCurrencyState::ToUniValue() const
             {
                 UniValue currencyObj(UniValue::VOBJ);
                 currencyObj.pushKV("currencyid", EncodeDestination(CIdentityID(currencies[i])));
-                currencyObj.push_back(Pair("weight", ValueFromAmount(i < weights.size() ? weights[i] : 0)));
-                currencyObj.push_back(Pair("reserves", ValueFromAmount(i < reserves.size() ? reserves[i] : 0)));
+                currencyObj.pushKV("weight", ValueFromAmount(i < weights.size() ? weights[i] : 0));
+                currencyObj.pushKV("reserves", ValueFromAmount(i < reserves.size() ? reserves[i] : 0));
                 currencyObj.pushKV("priceinreserve", ValueFromAmount(PriceInReserve(i)));
                 currencyArr.push_back(currencyObj);
             }
@@ -846,7 +846,7 @@ bool CPBaaSNotarization::SetMirror(bool setTrue)
 UniValue CPBaaSNotarization::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
-    obj.push_back(Pair("version", (int32_t)nVersion));
+    obj.pushKV("version", (int32_t)nVersion);
     if (IsDefinitionNotarization())
     {
         obj.pushKV("isdefinition", true);
@@ -900,11 +900,11 @@ UniValue CPBaaSNotarization::ToUniValue() const
     obj.pushKV("proposer", proposer.ToUniValue());
 
     obj.pushKV("currencyid", EncodeDestination(CIdentityID(currencyID)));
-    obj.push_back(Pair("notarizationheight", (int64_t)notarizationHeight));
+    obj.pushKV("notarizationheight", (int64_t)notarizationHeight);
     obj.pushKV("currencystate", currencyState.ToUniValue());
     obj.pushKV("prevnotarizationtxid", prevNotarization.hash.GetHex());
-    obj.push_back(Pair("prevnotarizationout", (int64_t)prevNotarization.n));
-    obj.push_back(Pair("prevheight", (int64_t)prevHeight));
+    obj.pushKV("prevnotarizationout", (int64_t)prevNotarization.n);
+    obj.pushKV("prevheight", (int64_t)prevHeight);
     obj.pushKV("hashprevcrossnotarization", hashPrevCrossNotarization.GetHex());
 
     // now get states and roots, of which there may be multiple
@@ -936,7 +936,7 @@ UniValue CPBaaSNotarization::ToUniValue() const
 UniValue CTokenOutput::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
-    ret.push_back(Pair("version", (int64_t)nVersion));
+    ret.pushKV("version", (int64_t)nVersion);
     ret.pushKV("currencyvalues", reserveValues.ToUniValue());
     return ret;
 }
@@ -944,7 +944,7 @@ UniValue CTokenOutput::ToUniValue() const
 UniValue CReserveDeposit::ToUniValue() const
 {
     UniValue ret = ((CTokenOutput *)this)->ToUniValue();
-    ret.push_back(Pair("controllingcurrencyid", controllingCurrencyID.IsNull() ? "NULL" : EncodeDestination(CIdentityID(controllingCurrencyID))));
+    ret.pushKV("controllingcurrencyid", controllingCurrencyID.IsNull() ? "NULL" : EncodeDestination(CIdentityID(controllingCurrencyID)));
     return ret;
 }
 
@@ -996,28 +996,28 @@ UniValue CTransferDestination::ToUniValue() const
             CETHNFTAddress oneAddr;
             bool success = false;
             ::FromVector(destination, oneAddr, &success);
-            destVal.push_back(Pair("address", success ? oneAddr.ToUniValue() : UniValue(UniValue::VOBJ)));
+            destVal.pushKV("address", success ? oneAddr.ToUniValue() : UniValue(UniValue::VOBJ));
             break;
         }
 
         case CTransferDestination::DEST_FULLID:
-            destVal.push_back(Pair("identity", CIdentity(destination).ToUniValue()));
-            destVal.push_back(Pair("serializeddata", HexBytes(&(destination[0]), destination.size())));
+            destVal.pushKV("identity", CIdentity(destination).ToUniValue());
+            destVal.pushKV("serializeddata", HexBytes(&(destination[0]), destination.size()));
             break;
 
         case CTransferDestination::DEST_REGISTERCURRENCY:
         {
-            destVal.push_back(Pair("currency", CCurrencyDefinition(destination).ToUniValue()));
-            destVal.push_back(Pair("serializeddata", HexBytes(&(destination[0]), destination.size())));
+            destVal.pushKV("currency", CCurrencyDefinition(destination).ToUniValue());
+            destVal.pushKV("serializeddata", HexBytes(&(destination[0]), destination.size()));
             break;
         }
 
         case CTransferDestination::DEST_RAW:
-            destVal.push_back(Pair("address", HexBytes(&(destination[0]),destination.size())));
+            destVal.pushKV("address", HexBytes(&(destination[0]),destination.size()));
             break;
 
         case CTransferDestination::DEST_NESTEDTRANSFER:
-            destVal.push_back(Pair("nestedtransfer", CReserveTransfer(destination).ToUniValue()));
+            destVal.pushKV("nestedtransfer", CReserveTransfer(destination).ToUniValue());
             break;
 
         default:
@@ -1069,7 +1069,7 @@ UniValue CReserveTransfer::ToUniValue() const
 {
     UniValue ret(((CTokenOutput *)this)->ToUniValue());
 
-    ret.push_back(Pair("flags", (int32_t)flags));
+    ret.pushKV("flags", (int32_t)flags);
 
     if (IsCrossSystem())
     {
@@ -1116,12 +1116,12 @@ UniValue CReserveTransfer::ToUniValue() const
 UniValue CCrossChainExport::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
-    obj.push_back(Pair("version", (int32_t)nVersion));
-    obj.push_back(Pair("flags", (int32_t)flags));
+    obj.pushKV("version", (int32_t)nVersion);
+    obj.pushKV("flags", (int32_t)flags);
     if (!this->IsSupplemental())
     {
-        obj.push_back(Pair("sourceheightstart", (int64_t)sourceHeightStart));
-        obj.push_back(Pair("sourceheightend", (int64_t)sourceHeightEnd));
+        obj.pushKV("sourceheightstart", (int64_t)sourceHeightStart);
+        obj.pushKV("sourceheightend", (int64_t)sourceHeightEnd);
         obj.pushKV("sourcesystemid", EncodeDestination(CIdentityID(sourceSystemID)));
         obj.pushKV("destinationsystemid", EncodeDestination(CIdentityID(destSystemID)));
         obj.pushKV("destinationcurrencyid", EncodeDestination(CIdentityID(destCurrencyID)));
@@ -1152,14 +1152,14 @@ UniValue CCrossChainExport::ToUniValue() const
 UniValue CCrossChainImport::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
-    obj.push_back(Pair("version", (int32_t)nVersion));
-    obj.push_back(Pair("flags", (int32_t)flags));
+    obj.pushKV("version", (int32_t)nVersion);
+    obj.pushKV("flags", (int32_t)flags);
     obj.pushKV("sourcesystemid", EncodeDestination(CIdentityID(sourceSystemID)));
-    obj.push_back(Pair("sourceheight", (int64_t)sourceSystemHeight));
+    obj.pushKV("sourceheight", (int64_t)sourceSystemHeight);
     obj.pushKV("importcurrencyid", EncodeDestination(CIdentityID(importCurrencyID)));
     obj.pushKV("valuein", importValue.ToUniValue());
     obj.pushKV("tokensout", totalReserveOutMap.ToUniValue());
-    obj.push_back(Pair("numoutputs", (int32_t)numOutputs));
+    obj.pushKV("numoutputs", (int32_t)numOutputs);
     obj.pushKV("hashtransfers", hashReserveTransfers.GetHex());
     obj.pushKV("exporttxid", exportTxId.GetHex());
     obj.pushKV("exporttxout", exportTxOutNum);
@@ -1170,7 +1170,7 @@ UniValue CUTXORef::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("txid", hash.GetHex());
-    obj.push_back(Pair("voutnum", (int64_t)n));
+    obj.pushKV("voutnum", (int64_t)n);
     return obj;
 }
 
@@ -1337,13 +1337,13 @@ UniValue CObjectFinalization::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
     ret.pushKV("finalizationtype", finalizationType);
-    ret.push_back(Pair("status", IsConfirmed() ?
+    ret.pushKV("status", IsConfirmed() ?
                                     "confirmed" :
                                     IsRejected() ?
                                         "rejected" :
                                         IsChallenge() ?
                                             "challenge" :
-                                            "pending"));
+                                            "pending");
     if (evidenceInputs.size())
     {
         UniValue inputsUni(UniValue::VARR);
@@ -1370,8 +1370,8 @@ UniValue CObjectFinalization::ToUniValue() const
 UniValue CPrincipal::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
-    obj.push_back(Pair("version", (int32_t)nVersion));
-    obj.push_back(Pair("flags", (int32_t)flags));
+    obj.pushKV("version", (int32_t)nVersion);
+    obj.pushKV("flags", (int32_t)flags);
 
     UniValue primaryAddressesUni(UniValue::VARR);
     for (int i = 0; i < primaryAddresses.size(); i++)
@@ -1509,8 +1509,8 @@ UniValue CMMRProof::ToUniValue() const
             case CMerkleBranchBase::BRANCH_BTC:
             {
                 CBTCMerkleBranch &branch = *(CBTCMerkleBranch *)(proof);
-                retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_BTC));
-                retObj.push_back(Pair("index", (int64_t)(branch.nIndex)));
+                retObj.pushKV("branchtype", (int)CMerkleBranchBase::BRANCH_BTC);
+                retObj.pushKV("index", (int64_t)(branch.nIndex));
                 for (auto &oneHash : branch.branch)
                 {
                     branchArray.push_back(oneHash.GetHex());
@@ -1521,9 +1521,9 @@ UniValue CMMRProof::ToUniValue() const
             case CMerkleBranchBase::BRANCH_MMRBLAKE_NODE:
             {
                 CMMRNodeBranch &branch = *(CMMRNodeBranch *)(proof);
-                retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_MMRBLAKE_NODE));
-                retObj.push_back(Pair("index", (int64_t)(branch.nIndex)));
-                retObj.push_back(Pair("mmvsize", (int64_t)(branch.nSize)));
+                retObj.pushKV("branchtype", (int)CMerkleBranchBase::BRANCH_MMRBLAKE_NODE);
+                retObj.pushKV("index", (int64_t)(branch.nIndex));
+                retObj.pushKV("mmvsize", (int64_t)(branch.nSize));
                 for (auto &oneHash : branch.branch)
                 {
                     branchArray.push_back(oneHash.GetHex());
@@ -1534,9 +1534,9 @@ UniValue CMMRProof::ToUniValue() const
             case CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE:
             {
                 CMMRPowerNodeBranch &branch = *(CMMRPowerNodeBranch *)(proof);
-                retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE));
-                retObj.push_back(Pair("index", (int64_t)(branch.nIndex)));
-                retObj.push_back(Pair("mmvsize", (int64_t)(branch.nSize)));
+                retObj.pushKV("branchtype", (int)CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE);
+                retObj.pushKV("index", (int64_t)(branch.nIndex));
+                retObj.pushKV("mmvsize", (int64_t)(branch.nSize));
                 for (auto &oneHash : branch.branch)
                 {
                     branchArray.push_back(oneHash.GetHex());
@@ -1547,10 +1547,10 @@ UniValue CMMRProof::ToUniValue() const
             case CMerkleBranchBase::BRANCH_ETH:
             {
                 CETHPATRICIABranch &branch = *(CETHPATRICIABranch *)(proof);
-                retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_ETH));
+                retObj.pushKV("branchtype", (int)CMerkleBranchBase::BRANCH_ETH);
                 // univalue of ETH proof is just hex of whole object
                 std::vector<unsigned char> serBytes(::AsVector(*this));
-                retObj.push_back(Pair("data", HexBytes(&(serBytes[0]), serBytes.size())));
+                retObj.pushKV("data", HexBytes(&(serBytes[0]), serBytes.size()));
             }
         };
     }
@@ -1562,7 +1562,7 @@ UniValue CNameReservation::ToUniValue() const
     UniValue ret(UniValue::VOBJ);
     ret.pushKV("name", name);
     ret.pushKV("salt", salt.GetHex());
-    ret.push_back(Pair("referral", referral.IsNull() ? "" : EncodeDestination(referral)));
+    ret.pushKV("referral", referral.IsNull() ? "" : EncodeDestination(referral));
 
     if (_IsVerusActive())
     {
@@ -1572,14 +1572,14 @@ UniValue CNameReservation::ToUniValue() const
         }
         else
         {
-            ret.push_back(Pair("parent", EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID()))));
+            ret.pushKV("parent", EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID())));
         }
         ret.pushKV("nameid", EncodeDestination(DecodeDestination(name + "@")));
     }
     else
     {
-        ret.push_back(Pair("parent", EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID()))));
-        ret.push_back(Pair("nameid", EncodeDestination(DecodeDestination(name + "." + ConnectedChains.ThisChain().name + "@"))));
+        ret.pushKV("parent", EncodeDestination(CIdentityID(ConnectedChains.ThisChain().GetID())));
+        ret.pushKV("nameid", EncodeDestination(DecodeDestination(name + "." + ConnectedChains.ThisChain().name + "@")));
     }
 
     return ret;
@@ -1588,11 +1588,11 @@ UniValue CNameReservation::ToUniValue() const
 UniValue CAdvancedNameReservation::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
-    ret.push_back(Pair("version", (uint64_t)version));
+    ret.pushKV("version", (uint64_t)version);
     ret.pushKV("name", name);
     ret.pushKV("parent", EncodeDestination(CIdentityID(parent)));
     ret.pushKV("salt", salt.GetHex());
-    ret.push_back(Pair("referral", referral.IsNull() ? "" : EncodeDestination(referral)));
+    ret.pushKV("referral", referral.IsNull() ? "" : EncodeDestination(referral));
     uint160 ParentID = parent;
     ret.pushKV("nameid", EncodeDestination(CIdentity::GetID(name, ParentID)));
     return ret;
@@ -1803,7 +1803,7 @@ UniValue CIdentity::ToUniValue() const
     UniValue hashes(UniValue::VOBJ);
     for (auto &entry : contentMap)
     {
-        hashes.push_back(Pair(entry.first.GetHex(), entry.second.GetHex()));
+        hashes.pushKV(entry.first.GetHex(), entry.second.GetHex());
     }
     obj.pushKV("contentmap", hashes);
 
@@ -1850,7 +1850,7 @@ UniValue CIdentity::ToUniValue() const
         obj.pushKV("privateaddress", EncodePaymentAddress(privateAddresses[0]));
     }
 
-    obj.push_back(Pair("timelock", (int32_t)unlockAfter));
+    obj.pushKV("timelock", (int32_t)unlockAfter);
 
     return obj;
 }
@@ -2255,7 +2255,7 @@ void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fInclud
         UniValue reserveBal(UniValue::VOBJ);
         for (auto &oneBalance : tokensOut.valueMap)
         {
-            reserveBal.push_back(make_pair(ConnectedChains.GetCachedCurrency(oneBalance.first).name, ValueFromAmount(oneBalance.second)));
+            reserveBal.pushKV(ConnectedChains.GetCachedCurrency(oneBalance.first).name, ValueFromAmount(oneBalance.second));
         }
         if (reserveBal.size())
         {
@@ -2281,7 +2281,7 @@ void ScriptPubKeyToUniv(const CScript& scriptPubKey, UniValue& out, bool fInclud
 
     if (fIncludeHex)
     {
-        out.push_back(Pair("hex", HexStr(scriptPubKey.begin(), scriptPubKey.end())));
+        out.pushKV("hex", HexStr(scriptPubKey.begin(), scriptPubKey.end()));
     }
 }
 

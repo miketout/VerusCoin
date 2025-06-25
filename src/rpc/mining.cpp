@@ -176,7 +176,7 @@ UniValue getgenerate(const UniValue& params, bool fHelp)
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("staking",          VERUS_MINTBLOCKS);
     obj.pushKV("generate",         GetBoolArg("-gen", false));
-    obj.push_back(Pair("numthreads",       (int64_t)KOMODO_MININGTHREADS));
+    obj.pushKV("numthreads",       (int64_t)KOMODO_MININGTHREADS);
     return obj;
 }
 
@@ -497,11 +497,11 @@ UniValue getmininginfo(const UniValue& params, bool fHelp)
     }
 
     UniValue obj(UniValue::VOBJ);
-    obj.push_back(Pair("blocks",           (int)height));
-    obj.push_back(Pair("currentblocksize", (uint64_t)nLastBlockSize));
-    obj.push_back(Pair("currentblocktx",   (uint64_t)nLastBlockTx));
+    obj.pushKV("blocks",           (int)height);
+    obj.pushKV("currentblocksize", (uint64_t)nLastBlockSize);
+    obj.pushKV("currentblocktx",   (uint64_t)nLastBlockTx);
     obj.pushKV("averageblockfees", ValueFromAmount(avgBlockFees));
-    obj.push_back(Pair("difficulty",       (double)GetNetworkDifficulty()));
+    obj.pushKV("difficulty",       (double)GetNetworkDifficulty());
     if (!estimatedStakingSupply && totalChainStake != 0)
     {
         obj.pushKV("stakingsupply", totalChainStake.ToString());
@@ -511,7 +511,7 @@ UniValue getmininginfo(const UniValue& params, bool fHelp)
         obj.pushKV("stakingsupply", ValueFromAmount(estimatedStakingSupply));
     }
     obj.pushKV("errors",           GetWarnings("statusbar"));
-    obj.push_back(Pair("genproclimit",     (int)GetArg("-genproclimit", -1)));
+    obj.pushKV("genproclimit",     (int)GetArg("-genproclimit", -1));
     if (ASSETCHAINS_ALGO == ASSETCHAINS_EQUIHASH)
     {
         obj.pushKV("localsolps"  , getlocalsolps(params, false));
@@ -519,12 +519,12 @@ UniValue getmininginfo(const UniValue& params, bool fHelp)
     }
     else
     {
-        obj.push_back(Pair("localhashps"  , GetBoolArg("-gen", false) ? getlocalsolps(params, false) : (double)0.0));
+        obj.pushKV("localhashps"  , GetBoolArg("-gen", false) ? getlocalsolps(params, false) : (double)0.0);
     }
     obj.pushKV("networkhashps",    getnetworksolps(params, false));
-    obj.push_back(Pair("pooledtx",         (uint64_t)mempool.size()));
+    obj.pushKV("pooledtx",         (uint64_t)mempool.size());
     obj.pushKV("testnet",          PBAAS_TESTMODE);
-    obj.push_back(Pair("chain",            Params().NetworkIDString()));
+    obj.pushKV("chain",            Params().NetworkIDString());
 #ifdef ENABLE_MINING
     bool mining = GetBoolArg("-gen", false);
     obj.pushKV("generate",         mining);
@@ -533,7 +533,7 @@ UniValue getmininginfo(const UniValue& params, bool fHelp)
     auto chains = ConnectedChains.GetMergeMinedChains();
     bool mergeMining = mining && (!IsVerusActive() || (IsVerusActive() && chains.size()));
     int numChains = mergeMining ? (IsVerusActive() ? chains.size() + 1 : 1) : 0;
-    obj.push_back(Pair("numthreads",       (int64_t)KOMODO_MININGTHREADS));
+    obj.pushKV("numthreads",       (int64_t)KOMODO_MININGTHREADS);
     obj.pushKV("mergemining",      numChains);
     if (numChains)
     {
@@ -1001,7 +1001,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
             // Show founders' reward if it is required
             //if (pblock->vtx[0].vout.size() > 1) {
                 // Correct this if GetBlockTemplate changes the order
-            //    entry.push_back(Pair("foundersreward", (int64_t)tx.vout[1].nValue));
+            //    entry.pushKV("foundersreward", (int64_t)tx.vout[1].nValue);
             //}
             CAmount nReward = GetBlockSubsidy(chainActive.LastTip()->GetHeight()+1, Params().GetConsensus());
             entry.pushKV("coinbasevalue", nReward);
@@ -1012,7 +1012,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
     }
 
     UniValue aux(UniValue::VOBJ);
-    aux.push_back(Pair("flags", HexStr(COINBASE_FLAGS.begin(), COINBASE_FLAGS.end())));
+    aux.pushKV("flags", HexStr(COINBASE_FLAGS.begin(), COINBASE_FLAGS.end()));
 
     arith_uint256 hashTarget = arith_uint256().SetCompact(pblock->nBits);
 
@@ -1032,7 +1032,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
 
     if (CConstVerusSolutionVector::Version(pblock->nSolution) >= CActivationHeight::ACTIVATE_VERUSHASH2_1)
     {
-        result.push_back(Pair("solution", HexBytes(pblock->nSolution.data(), pblock->nSolution.size())));
+        result.pushKV("solution", HexBytes(pblock->nSolution.data(), pblock->nSolution.size()));
     }
     result.pushKV("transactions", transactions);
     if (coinbasetxn) {
@@ -1040,28 +1040,28 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
         result.pushKV("coinbasetxn", txCoinbase);
     } else {
         result.pushKV("coinbaseaux", aux);
-        result.push_back(Pair("coinbasevalue", (int64_t)pblock->vtx[0].vout[0].nValue));
+        result.pushKV("coinbasevalue", (int64_t)pblock->vtx[0].vout[0].nValue);
     }
-    result.push_back(Pair("longpollid", chainActive.LastTip()->GetBlockHash().GetHex() + i64tostr(nTransactionsUpdatedLast)));
+    result.pushKV("longpollid", chainActive.LastTip()->GetBlockHash().GetHex() + i64tostr(nTransactionsUpdatedLast));
     if ( ASSETCHAINS_STAKED != 0 )
     {
         arith_uint256 POWtarget; int32_t PoSperc;
         POWtarget = komodo_PoWtarget(&PoSperc,hashTarget,(int32_t)(pindexPrev->GetHeight()+1),ASSETCHAINS_STAKED);
         result.pushKV("target", POWtarget.GetHex());
-        result.push_back(Pair("PoSperc", (int64_t)PoSperc));
-        result.push_back(Pair("ac_staked", (int64_t)ASSETCHAINS_STAKED));
+        result.pushKV("PoSperc", (int64_t)PoSperc);
+        result.pushKV("ac_staked", (int64_t)ASSETCHAINS_STAKED);
         result.pushKV("origtarget", hashTarget.GetHex());
     } else result.pushKV("target", hashTarget.GetHex());
-    result.push_back(Pair("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1));
+    result.pushKV("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1);
     result.pushKV("mutable", aMutable);
     result.pushKV("noncerange", "00000000ffffffff");
-    result.push_back(Pair("sigoplimit", (int64_t)MAX_BLOCK_SIGOPS));
-    result.push_back(Pair("sizelimit", (int64_t)MAX_BLOCK_SIZE));
+    result.pushKV("sigoplimit", (int64_t)MAX_BLOCK_SIGOPS);
+    result.pushKV("sizelimit", (int64_t)MAX_BLOCK_SIZE);
     result.pushKV("curtime", pblock->GetBlockTime());
     result.pushKV("bits", strprintf("%08x", pblock->nBits));
     result.pushKV("mergeminebits", strprintf("%08x", ConnectedChains.saveBits));
-    result.push_back(Pair("nonce", pblock->nNonce.GetHex().c_str()));
-    result.push_back(Pair("height", (int64_t)(pindexPrev->GetHeight()+1)));
+    result.pushKV("nonce", pblock->nNonce.GetHex().c_str());
+    result.pushKV("height", (int64_t)(pindexPrev->GetHeight()+1));
 
     //fprintf(stderr,"return complete template\n");
     return result;

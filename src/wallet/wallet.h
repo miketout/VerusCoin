@@ -1534,7 +1534,7 @@ public:
 };
 
 /** Error status printout */
-#define ERR_RESULT(x) result.push_back(Pair("result", "error")) , result.push_back(Pair("error", x));
+#define ERR_RESULT(x) result.pushKV("result", "error") , result.pushKV("error", x);
 
 //
 // Shielded key and address generalizations

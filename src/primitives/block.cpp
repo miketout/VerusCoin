@@ -761,14 +761,14 @@ uint256 CBlockHeaderAndProof::ValidateBlockMMRRoot(const uint256 &checkHash, int
 UniValue BlockHeaderToUni(const CBlockHeader &block)
 {
     UniValue result(UniValue::VOBJ);
-    result.push_back(Pair("hash", block.GetHash().GetHex()));
+    result.pushKV("hash", block.GetHash().GetHex());
 
     if (block.IsVerusPOSBlock())
     {
         result.pushKV("validationtype", "stake");
         arith_uint256 posTarget;
         posTarget.SetCompact(block.GetVerusPOSTarget());
-        result.push_back(Pair("postarget", ArithToUint256(posTarget).GetHex()));
+        result.pushKV("postarget", ArithToUint256(posTarget).GetHex());
         CPOSNonce scratchNonce(block.nNonce);
     }
     else
@@ -780,7 +780,7 @@ UniValue BlockHeaderToUni(const CBlockHeader &block)
     result.pushKV("version", block.nVersion);
     result.pushKV("merkleroot", block.hashMerkleRoot.GetHex());
     result.pushKV("finalsaplingroot", block.hashFinalSaplingRoot.GetHex());
-    result.push_back(Pair("time", (int64_t)block.nTime));
+    result.pushKV("time", (int64_t)block.nTime);
     result.pushKV("nonce", block.nNonce.GetHex());
     result.pushKV("solution", HexStr(block.nSolution));
     result.pushKV("bits", strprintf("%08x", block.nBits));
@@ -793,7 +793,7 @@ UniValue BlockHeaderToUni(const CBlockHeader &block)
     }
     result.pushKV("previousblockhash", block.hashPrevBlock.GetHex());
     std::vector<unsigned char> hexBytes = ::AsVector(block);
-    result.push_back(Pair("hex", HexBytes(&(hexBytes[0]), hexBytes.size())));
+    result.pushKV("hex", HexBytes(&(hexBytes[0]), hexBytes.size()));
     return result;
 }
 

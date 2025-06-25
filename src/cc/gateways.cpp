@@ -391,7 +391,7 @@ UniValue GatewaysInfo(uint256 bindtxid)
                 for (i=0; i<N; i++)
                     a.push_back(pubkey33_str(str,(uint8_t *)&pubkeys[i]));
                 result.pushKV("pubkeys",a);
-            } else result.push_back(Pair("pubkey",pubkey33_str(str,(uint8_t *)&pubkeys[0])));
+            } else result.pushKV("pubkey",pubkey33_str(str,(uint8_t *)&pubkeys[0]));
             result.pushKV("coin",coin);
             result.pushKV("oracletxid",uint256_str(str,oracletxid));
             result.pushKV("taddr",taddr);

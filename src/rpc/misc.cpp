@@ -121,7 +121,7 @@ UniValue getinfo(const UniValue& params, bool fHelp)
     obj.pushKV("chainid", EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID)));
     if (ConnectedChains.FirstNotaryChain().IsValid())
     {
-        obj.push_back(Pair("notarychainid", EncodeDestination(CIdentityID(ConnectedChains.FirstNotaryChain().GetID()))));
+        obj.pushKV("notarychainid", EncodeDestination(CIdentityID(ConnectedChains.FirstNotaryChain().GetID())));
     }
     obj.pushKV("name", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID));
     if (confirmedRoot.IsValid())
@@ -135,24 +135,24 @@ UniValue getinfo(const UniValue& params, bool fHelp)
     }
 #endif
     //fprintf(stderr,"after wallet %u\n",(uint32_t)time(NULL));
-    obj.push_back(Pair("blocks",        (int)chainActive.Height()));
+    obj.pushKV("blocks",        (int)chainActive.Height());
     if ( (longestchain = KOMODO_LONGESTCHAIN) == 0 || chainActive.Height() > longestchain )
         longestchain = chainActive.Height();
     //fprintf(stderr,"after longestchain %u\n",(uint32_t)time(NULL));
     obj.pushKV("longestchain",  longestchain);
     obj.pushKV("timeoffset",    GetTimeOffset());
     if ( chainActive.LastTip() != 0 )
-        obj.push_back(Pair("tiptime", (int)chainActive.LastTip()->nTime));
-    obj.push_back(Pair("nextblocktime", (int64_t)ConnectedChains.GetNextBlockTime(chainActive.LastTip())));
-    obj.push_back(Pair("connections",   (int)vNodes.size()));
-    obj.push_back(Pair("proxy",         (proxy.IsValid() ? proxy.proxy.ToStringIPPort() : string())));
-    obj.push_back(Pair("difficulty",    (double)GetDifficulty()));
+        obj.pushKV("tiptime", (int)chainActive.LastTip()->nTime);
+    obj.pushKV("nextblocktime", (int64_t)ConnectedChains.GetNextBlockTime(chainActive.LastTip()));
+    obj.pushKV("connections",   (int)vNodes.size());
+    obj.pushKV("proxy",         (proxy.IsValid() ? proxy.proxy.ToStringIPPort() : string()));
+    obj.pushKV("difficulty",    (double)GetDifficulty());
     obj.pushKV("testnet",       PBAAS_TESTMODE);
 #ifdef ENABLE_WALLET
     if (pwalletMain) {
         LOCK(pwalletMain->cs_wallet);
         obj.pushKV("keypoololdest", pwalletMain->GetOldestKeyPoolTime());
-        obj.push_back(Pair("keypoolsize",   (int)pwalletMain->GetKeyPoolSize()));
+        obj.pushKV("keypoolsize",   (int)pwalletMain->GetKeyPoolSize());
     }
     if (pwalletMain && pwalletMain->IsCrypted())
         obj.pushKV("unlocked_until", nWalletUnlockTime);
@@ -187,16 +187,16 @@ UniValue getinfo(const UniValue& params, bool fHelp)
         }
     }
     if ( ASSETCHAINS_CC != 0 )
-        obj.push_back(Pair("CCid",        (int)ASSETCHAINS_CC));
+        obj.pushKV("CCid",        (int)ASSETCHAINS_CC);
     if ( ASSETCHAINS_SYMBOL[0] != 0 )
     {
         //obj.pushKV("name",        ASSETCHAINS_SYMBOL);
         obj.pushKV("p2pport",        ASSETCHAINS_P2PPORT);
         obj.pushKV("rpcport",        ASSETCHAINS_RPCPORT);
-        obj.push_back(Pair("magic",          (int)ASSETCHAINS_MAGIC));
+        obj.pushKV("magic",          (int)ASSETCHAINS_MAGIC);
         if (LogAcceptCategory("magicnumber"))
         {
-            obj.push_back(Pair("calculatedmagic",(int)ConnectedChains.ThisChain().MagicNumber()));
+            obj.pushKV("calculatedmagic",(int)ConnectedChains.ThisChain().MagicNumber());
         }
 
         obj.pushKV("premine",        ASSETCHAINS_SUPPLY);
@@ -244,7 +244,7 @@ UniValue getinfo(const UniValue& params, bool fHelp)
             if (isFractional)
             {
                 obj.pushKV("fractional", "true");
-                obj.push_back(Pair("currencystate", ConnectedChains.GetCurrencyState((int)chainActive.Height()).ToUniValue()));
+                obj.pushKV("currencystate", ConnectedChains.GetCurrencyState((int)chainActive.Height()).ToUniValue());
             }
         }
 
@@ -299,7 +299,7 @@ public:
             int nRequired;
             ExtractDestinations(subscript, whichType, addresses, nRequired);
             obj.pushKV("script", GetTxnOutputType(whichType));
-            obj.push_back(Pair("hex", HexStr(subscript.begin(), subscript.end())));
+            obj.pushKV("hex", HexStr(subscript.begin(), subscript.end()));
             UniValue a(UniValue::VARR);
             for (const CTxDestination& addr : addresses) {
                 a.push_back(EncodeDestination(addr));
@@ -389,7 +389,7 @@ UniValue coinsupply(const UniValue& params, bool fHelp)
         {
             result.pushKV("result", "success");
             result.pushKV("coin", ASSETCHAINS_SYMBOL[0] == 0 ? "KMD" : ASSETCHAINS_SYMBOL);
-            result.push_back(Pair("height", (int)height));
+            result.pushKV("height", (int)height);
             result.pushKV("supply", ValueFromAmount(supply));
             result.pushKV("immature", ValueFromAmount(immature));
             result.pushKV("zfunds", ValueFromAmount(zfunds));
@@ -500,13 +500,13 @@ UniValue validateaddress(const UniValue& params, bool fHelp)
         ret.pushKV("address", currentAddress);
 
         CScript scriptPubKey = GetScriptForDestination(dest);
-        ret.push_back(Pair("scriptPubKey", HexStr(scriptPubKey.begin(), scriptPubKey.end())));
-        ret.push_back(Pair("segid", (int32_t)komodo_segid32((char *)params[0].get_str().c_str()) & 0x3f));
+        ret.pushKV("scriptPubKey", HexStr(scriptPubKey.begin(), scriptPubKey.end()));
+        ret.pushKV("segid", (int32_t)komodo_segid32((char *)params[0].get_str().c_str()) & 0x3f);
 #ifdef ENABLE_WALLET
         isminetype mine = pwalletMain ? IsMine(*pwalletMain, dest) : ISMINE_NO;
-        ret.push_back(Pair("ismine", (mine & ISMINE_SPENDABLE) ? true : false));
-        ret.push_back(Pair("issharedownership", (mine & ISMINE_SHARED) ? true : false));
-        ret.push_back(Pair("iswatchonly", (mine & ISMINE_WATCH_ONLY) ? true: false));
+        ret.pushKV("ismine", (mine & ISMINE_SPENDABLE) ? true : false);
+        ret.pushKV("issharedownership", (mine & ISMINE_SHARED) ? true : false);
+        ret.pushKV("iswatchonly", (mine & ISMINE_WATCH_ONLY) ? true: false);
         UniValue detail = boost::apply_visitor(DescribeAddressVisitor(), dest);
         ret.pushKVs(detail);
         if (pwalletMain && pwalletMain->mapAddressBook.count(dest))
@@ -529,7 +529,7 @@ public:
         obj.pushKV("transmissionkey", zaddr.pk_enc.GetHex());
 #ifdef ENABLE_WALLET
         if (pwalletMain) {
-            obj.push_back(Pair("ismine", HaveSpendingKeyForPaymentAddress(pwalletMain)(zaddr)));
+            obj.pushKV("ismine", HaveSpendingKeyForPaymentAddress(pwalletMain)(zaddr));
         }
 #endif
         return obj;
@@ -542,7 +542,7 @@ public:
         obj.pushKV("diversifiedtransmissionkey", zaddr.pk_d.GetHex());
 #ifdef ENABLE_WALLET
         if (pwalletMain) {
-            obj.push_back(Pair("ismine", HaveSpendingKeyForPaymentAddress(pwalletMain)(zaddr)));
+            obj.pushKV("ismine", HaveSpendingKeyForPaymentAddress(pwalletMain)(zaddr));
         }
 #endif
         return obj;
@@ -697,7 +697,7 @@ UniValue createmultisig(const UniValue& params, bool fHelp)
 
     UniValue result(UniValue::VOBJ);
     result.pushKV("address", EncodeDestination(innerID));
-    result.push_back(Pair("redeemScript", HexStr(inner.begin(), inner.end())));
+    result.pushKV("redeemScript", HexStr(inner.begin(), inner.end()));
 
     return result;
 }
@@ -1546,8 +1546,8 @@ UniValue verifysignature(const UniValue& params, bool fHelp)
             ret.pushKV("address", EncodeDestination(identity.GetID()));
             ret.pushKV("hashtype", hashTypeStr);
             ret.pushKV("hash", msgHash.GetHex());
-            ret.push_back(Pair("height", (int64_t)nHeight));
-            ret.push_back(Pair("signatureheight", (int64_t)identitySig.blockHeight));
+            ret.pushKV("height", (int64_t)nHeight);
+            ret.pushKV("signatureheight", (int64_t)identitySig.blockHeight);
             if (vdxfKeys.size())
             {
                 ret.pushKV("vdxfkeys", vdxfKeys);
@@ -1770,7 +1770,7 @@ void CurrencyValuesAndNames(UniValue &output, bool spending, const CScript &scri
             for (auto &oneBalance : reserves.valueMap)
             {
                 std::string name = EncodeDestination(CIdentityID(oneBalance.first));
-                currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
+                currencyBal.pushKV(name, ValueFromAmount(oneBalance.second));
                 if (friendlyNames)
                 {
                     currencyNames.pushKV(name, ConnectedChains.GetFriendlyCurrencyName(oneBalance.first));
@@ -1837,42 +1837,42 @@ void GetDeltaOutputDetails(UniValue &delta, const CTransaction &curTx)
                     {
                         case EVAL_RESERVE_TRANSFER:
                         {
-                            functions.push_back(Pair("reservetransfer", CReserveTransfer(p.vData[0]).ToUniValue()));
+                            functions.pushKV("reservetransfer", CReserveTransfer(p.vData[0]).ToUniValue());
                             break;
                         }
                         case EVAL_IDENTITY_ADVANCEDRESERVATION:
                         {
-                            functions.push_back(Pair("identityregistration", CAdvancedNameReservation(p.vData[0]).ToUniValue()));
+                            functions.pushKV("identityregistration", CAdvancedNameReservation(p.vData[0]).ToUniValue());
                             break;
                         }
                         case EVAL_RESERVE_DEPOSIT:
                         {
-                            functions.push_back(Pair("reservedeposit", CReserveDeposit(p.vData[0]).ToUniValue()));
+                            functions.pushKV("reservedeposit", CReserveDeposit(p.vData[0]).ToUniValue());
                             break;
                         }
                         case EVAL_CROSSCHAIN_IMPORT:
                         {
-                            functions.push_back(Pair("crosschainimport", CCrossChainImport(p.vData[0]).ToUniValue()));
+                            functions.pushKV("crosschainimport", CCrossChainImport(p.vData[0]).ToUniValue());
                             break;
                         }
                         case EVAL_CROSSCHAIN_EXPORT:
                         {
-                            functions.push_back(Pair("crosschainexport", CCrossChainExport(p.vData[0]).ToUniValue()));
+                            functions.pushKV("crosschainexport", CCrossChainExport(p.vData[0]).ToUniValue());
                             break;
                         }
                         case EVAL_IDENTITY_COMMITMENT:
                         {
-                            functions.push_back(Pair("identitycommitment", CCommitmentHash(p.vData[0]).ToUniValue()));
+                            functions.pushKV("identitycommitment", CCommitmentHash(p.vData[0]).ToUniValue());
                             break;
                         }
                         case EVAL_IDENTITY_PRIMARY:
                         {
-                            functions.push_back(Pair("identity", CIdentity(p.vData[0]).ToUniValue()));
+                            functions.pushKV("identity", CIdentity(p.vData[0]).ToUniValue());
                             break;
                         }
                         case EVAL_IDENTITY_RESERVATION:
                         {
-                            functions.push_back(Pair("identityregistration", CNameReservation(p.vData[0]).ToUniValue()));
+                            functions.pushKV("identityregistration", CNameReservation(p.vData[0]).ToUniValue());
                             break;
                         }
                     }
@@ -1946,9 +1946,9 @@ UniValue AddressMemPoolUni(const std::vector<std::pair<uint160, int>> &addresses
         UniValue delta(UniValue::VOBJ);
         delta.pushKV("address", address);
         delta.pushKV("txid", it->first.txhash.GetHex());
-        delta.push_back(Pair("index", (int)it->first.index));
+        delta.pushKV("index", (int)it->first.index);
         delta.pushKV("satoshis", it->second.amount);
-        delta.push_back(Pair("spending", (bool)it->first.spending));
+        delta.pushKV("spending", (bool)it->first.spending);
         if (!it->first.txhash.IsNull() && (it->first.txhash == curTx.GetHash() || mempool.lookup(it->first.txhash, curTx)))
         {
             CurrencyValuesAndNames(delta, it->first.spending, curTx, it->first.index, it->second.amount, friendlyNames);
@@ -1960,7 +1960,7 @@ UniValue AddressMemPoolUni(const std::vector<std::pair<uint160, int>> &addresses
         delta.pushKV("timestamp", it->second.time);
         if (it->second.amount < 0) {
             delta.pushKV("prevtxid", it->second.prevhash.GetHex());
-            delta.push_back(Pair("prevout", (int)it->second.prevout));
+            delta.pushKV("prevout", (int)it->second.prevout);
         }
         result.push_back(delta);
     }
@@ -2114,9 +2114,9 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
 
         output.pushKV("address", address);
         output.pushKV("txid", it->first.txhash.GetHex());
-        output.push_back(Pair("outputIndex", (int)it->first.index));
+        output.pushKV("outputIndex", (int)it->first.index);
         output.pushKV("isspendable", it->second.script.IsSpendableOutputType(p));
-        output.push_back(Pair("script", HexStr(it->second.script.begin(), it->second.script.end())));
+        output.pushKV("script", HexStr(it->second.script.begin(), it->second.script.end()));
         if (p.IsValid())
         {
             CurrencyValuesAndNames(output, false, it->second.script, it->second.satoshis, friendlyNames);
@@ -2135,8 +2135,8 @@ UniValue getaddressutxos(const UniValue& params, bool fHelp)
         result.pushKV("utxos", utxos);
 
         LOCK(cs_main);
-        result.push_back(Pair("hash", chainActive.LastTip()->GetBlockHash().GetHex()));
-        result.push_back(Pair("height", (int)chainActive.Height()));
+        result.pushKV("hash", chainActive.LastTip()->GetBlockHash().GetHex());
+        result.pushKV("height", (int)chainActive.Height());
         return result;
     } else {
         return utxos;
@@ -2237,8 +2237,8 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
             UniValue delta(UniValue::VOBJ);
             delta.pushKV("satoshis", it->second);
             delta.pushKV("txid", it->first.txhash.GetHex());
-            delta.push_back(Pair("index", (int)it->first.index));
-            delta.push_back(Pair("blockindex", (int)it->first.txindex));
+            delta.pushKV("index", (int)it->first.index);
+            delta.pushKV("blockindex", (int)it->first.txindex);
             delta.pushKV("height", it->first.blockHeight);
             delta.pushKV("spending", it->first.spending);
             delta.pushKV("address", address);
@@ -2276,10 +2276,10 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
         UniValue startInfo(UniValue::VOBJ);
         UniValue endInfo(UniValue::VOBJ);
 
-        startInfo.push_back(Pair("hash", startIndex->GetBlockHash().GetHex()));
+        startInfo.pushKV("hash", startIndex->GetBlockHash().GetHex());
         startInfo.pushKV("height", start);
 
-        endInfo.push_back(Pair("hash", endIndex->GetBlockHash().GetHex()));
+        endInfo.pushKV("hash", endIndex->GetBlockHash().GetHex());
         endInfo.pushKV("height", end);
 
         result.pushKV("deltas", deltas);
@@ -2389,7 +2389,7 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
             for (auto &oneBalance : reserveBalance.valueMap)
             {
                 std::string name = EncodeDestination(CIdentityID(oneBalance.first));
-                currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
+                currencyBal.pushKV(name, ValueFromAmount(oneBalance.second));
             }
             result.pushKV("currencybalance", currencyBal);
         }
@@ -2400,10 +2400,10 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
             for (auto &oneBalance : reserveReceived.valueMap)
             {
                 std::string name = EncodeDestination(CIdentityID(oneBalance.first));
-                currencyBal.push_back(make_pair(name, ValueFromAmount(oneBalance.second)));
+                currencyBal.pushKV(name, ValueFromAmount(oneBalance.second));
                 if (friendlyNames)
                 {
-                    currencyNames.push_back(make_pair(name, ConnectedChains.GetFriendlyCurrencyName(oneBalance.first)));
+                    currencyNames.pushKV(name, ConnectedChains.GetFriendlyCurrencyName(oneBalance.first));
                 }
             }
             result.pushKV("currencyreceived", currencyBal);
@@ -2463,7 +2463,7 @@ UniValue getsnapshot(const UniValue& params, bool fHelp)
     }
     result = komodo_snapshot(top);
     if ( result.size() > 0 ) {
-        result.push_back(Pair("end_time", (int) time(NULL)));
+        result.pushKV("end_time", (int) time(NULL));
     } else {
 	result.pushKV("error", "no addressindex");
     }
@@ -2593,7 +2593,7 @@ UniValue getspentinfo(const UniValue& params, bool fHelp)
     }
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("txid", value.txid.GetHex());
-    obj.push_back(Pair("index", (int)value.inputIndex));
+    obj.pushKV("index", (int)value.inputIndex);
     obj.pushKV("height", value.blockHeight);
 
     return obj;

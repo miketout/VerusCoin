@@ -558,14 +558,14 @@ static bool rest_getutxos(HTTPRequest* req, const std::string& strURIPart)
         // pack in some essentials
         // use more or less the same output as mentioned in Bip64
         objGetUTXOResponse.pushKV("chainHeight", chainActive.Height());
-        objGetUTXOResponse.push_back(Pair("chaintipHash", chainActive.LastTip()->GetBlockHash().GetHex()));
+        objGetUTXOResponse.pushKV("chaintipHash", chainActive.LastTip()->GetBlockHash().GetHex());
         objGetUTXOResponse.pushKV("bitmap", bitmapStringRepresentation);
 
         UniValue utxos(UniValue::VARR);
         BOOST_FOREACH (const CCoin& coin, outs) {
             UniValue utxo(UniValue::VOBJ);
-            utxo.push_back(Pair("txvers", (int32_t)coin.nTxVer));
-            utxo.push_back(Pair("height", (int32_t)coin.nHeight));
+            utxo.pushKV("txvers", (int32_t)coin.nTxVer);
+            utxo.pushKV("height", (int32_t)coin.nHeight);
             utxo.pushKV("value", ValueFromAmount(coin.out.nValue));
 
             // include the script in a json output

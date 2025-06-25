@@ -434,7 +434,7 @@ UniValue CBlockTreeDB::Snapshot(int top)
     std::map <std::string, CAmount> addressAmounts;
     std::vector <std::pair<CAmount, std::string>> vaddr;
     UniValue result(UniValue::VOBJ);
-    result.push_back(Pair("start_time", (int) time(NULL)));
+    result.pushKV("start_time", (int) time(NULL));
 
     std::map <std::string,int> ignoredMap = {
 	{"RReUxSs5hGE39ELU23DfydX8riUuzdrHAE", 1},
@@ -524,10 +524,10 @@ UniValue CBlockTreeDB::Snapshot(int top)
     int topN = 0;
     for (std::vector<std::pair<CAmount, std::string>>::iterator it = vaddr.begin(); it!=vaddr.end(); ++it) {
 	UniValue obj(UniValue::VOBJ);
-	obj.push_back( make_pair("addr", it->second.c_str() ) );
+	obj.pushKV("addr", it->second.c_str());
 	char amount[32];
 	sprintf(amount, "%.8f", (double) it->first / COIN);
-	obj.push_back( make_pair("amount", amount) );
+	obj.pushKV("amount", amount);
 	total += it->first;
 	addressesSorted.push_back(obj);
 	topN++;
@@ -541,22 +541,22 @@ UniValue CBlockTreeDB::Snapshot(int top)
 
     if (totalAddresses > 0) {
 	// Array of all addreses with balances
-        result.push_back(make_pair("addresses", addressesSorted));
+        result.pushKV("addresses", addressesSorted);
 	// Total amount in this snapshot, which is less than circulating supply if top parameter is used
-        result.push_back(make_pair("total", (double) total / COIN ));
+        result.pushKV("total", (double) total / COIN);
 	// Average amount in each address of this snapshot
-        result.push_back(make_pair("average",(double) (total/COIN) / totalAddresses ));
+        result.pushKV("average",(double) (total/COIN) / totalAddresses);
     }
     // Total number of utxos processed in this snaphot
-    result.push_back(make_pair("utxos", utxos));
+    result.pushKV("utxos", utxos);
     // Total number of addresses in this snaphot
-    result.push_back(make_pair("total_addresses", totalAddresses));
+    result.pushKV("total_addresses", totalAddresses);
     // Total number of ignored addresses in this snaphot
-    result.push_back(make_pair("ignored_addresses", ignoredAddresses));
+    result.pushKV("ignored_addresses", ignoredAddresses);
     // The snapshot began at this block height
-    result.push_back(make_pair("start_height", startingHeight));
+    result.pushKV("start_height", startingHeight);
     // The snapshot finished at this block height
-    result.push_back(make_pair("ending_height", chainActive.Height()));
+    result.pushKV("ending_height", chainActive.Height());
     return(result);
 }
 

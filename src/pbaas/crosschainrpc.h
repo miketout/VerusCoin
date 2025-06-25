@@ -1482,43 +1482,43 @@ public:
     UniValue ToUniValue() const
     {
         UniValue retObj(UniValue::VOBJ);
-        retObj.push_back(Pair("version", version));
-        retObj.push_back(Pair("blockheight", (int64_t)blockHeight));
+        retObj.pushKV("version", version);
+        retObj.pushKV("blockheight", (int64_t)blockHeight);
         switch (hashType)
         {
             case CCurrencyDefinition::EHashTypes::HASH_BLAKE2BMMR:
             case CCurrencyDefinition::EHashTypes::HASH_BLAKE2BMMR2:
             {
-                retObj.push_back(Pair("hashtype", "blake2b"));
+                retObj.pushKV("hashtype", "blake2b");
                 break;
             }
             case CCurrencyDefinition::EHashTypes::HASH_SHA256:
             {
-                retObj.push_back(Pair("hashtype", "sha256"));
+                retObj.pushKV("hashtype", "sha256");
                 break;
             }
             case CCurrencyDefinition::EHashTypes::HASH_KECCAK:
             {
-                retObj.push_back(Pair("hashtype", "keccak"));
+                retObj.pushKV("hashtype", "keccak");
                 break;
             }
             case CCurrencyDefinition::EHashTypes::HASH_SHA256D:
             {
-                retObj.push_back(Pair("hashtype", "sha256D"));
+                retObj.pushKV("hashtype", "sha256D");
                 break;
             }
             default:
             {
-                retObj.push_back(Pair("hashtype", "unknown"));
+                retObj.pushKV("hashtype", "unknown");
             }
         }
-        retObj.push_back(Pair("blockheight", (int64_t)blockHeight));
+        retObj.pushKV("blockheight", (int64_t)blockHeight);
         UniValue sigs(UniValue::VARR);
         for (auto &oneSig : signatures)
         {
             sigs.push_back(HexBytes(&(oneSig[0]), oneSig.size()));
         }
-        retObj.push_back(Pair("signatures", sigs));
+        retObj.pushKV("signatures", sigs);
         return retObj;
     }
 
