@@ -696,9 +696,9 @@ verus_tx_SOURCES += bitcoin-tx-res.rc
 endif
 
 verus_tx_LDADD = \
-  $(LIBUNIVALUE) \
   $(BOOST_LIBS) \
   $(LIBBITCOIN_COMMON) \
+  $(LIBUNIVALUE) \
   $(LIBBITCOIN_UTIL) \
   $(EVENT_LIBS) \
   $(LIBSECP256K1) \
