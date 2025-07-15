@@ -1104,7 +1104,7 @@ CSignatureData::CSignatureData(const UniValue &uni) :
     {
         for (int i = 0; i < vdxfKeyNamesUni.size(); i++)
         {
-            vdxfKeyNames.push_back(uni_get_str(vdxfKeysUni[i]));
+            vdxfKeyNames.push_back(uni_get_str(vdxfKeyNamesUni[i]));
         }
     }
 
