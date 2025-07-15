@@ -8,7 +8,7 @@ $(package)_config_opts=--with-openssl --disable-shared --enable-static --prefix=
 $(package)_config_opts_linux=--host=$(HOST)
 $(package)_config_opts_mingw32=--enable-mingw --host=x86_64-w64-mingw32
 $(package)_config_opts_darwin=--without-libidn2 --without-zstd --without-nghttp2 --without-librtmp --without-brotli
-$(package)_cflags_darwin=-mmacosx-version-min=$(OSX_MIN_VERSION)
+$(package)_cflags_darwin=-mmacos-version-min=$(OSX_MIN_VERSION)
 $(package)_conf_tool=./configure
 
 ifeq ($(build_os),darwin)
@@ -33,7 +33,7 @@ endef
 
 ifeq ($(build_os),darwin)
 define $(package)_build_cmds
-  $(MAKE) CPPFLAGS="-I$(host_prefix)/include -fPIC" CFLAGS="-mmacosx-version-min=$(OSX_MIN_VERSION)"
+  $(MAKE) CPPFLAGS="-I$(host_prefix)/include -fPIC" CFLAGS="-mmacos-version-min=$(OSX_MIN_VERSION)"
 endef
 else
 define $(package)_build_cmds
