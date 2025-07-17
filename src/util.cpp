@@ -136,6 +136,15 @@ bool _IsVerusMainnetActive()
     return (strcmp(ASSETCHAINS_SYMBOL, "VRSC") == 0);
 }
 
+bool _IsCurrentChainID(const uint160 &CID)
+{
+    if (!CID.IsNull() && GetDestinationID(DecodeDestination(std::string(ASSETCHAINS_SYMBOL) + "@")) == CID)
+    {
+        return true;
+    }
+    return false;
+}
+
 /** Init OpenSSL library multithreading support */
 static CCriticalSection** ppmutexOpenSSL;
 void locking_callback(int mode, int i, const char* file, int line) NO_THREAD_SAFETY_ANALYSIS

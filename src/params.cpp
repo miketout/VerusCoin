@@ -1,6 +1,7 @@
 
 #include "params.h"
 #include "ui_interface.h"
+#include "pbaas/vdxf.h"
 #include <fstream>
 
 std::map<std::string, ParamFile> mapParams;
@@ -90,6 +91,24 @@ static int xferinfo(void *p,
     return 0;
 }
 
+uint160 vARRRChainID()
+{
+    static uint160 vARRRID = CVDXF::GetID("vARRR.vrsc.@");
+    return vARRRID;
+}
+
+uint160 vDEXChainID()
+{
+    static uint160 vARRRID = CVDXF::GetID("vDEX.vrsc.@");
+    return vARRRID;
+}
+
+uint160 ChipsChainID()
+{
+    static uint160 ChipsID = CVDXF::GetID("chips.vrsc.@");
+    return ChipsID;
+}
+
 void initalizeMapParamBootstrap() {
     mapParams.clear();
 
@@ -106,6 +125,22 @@ void initalizeMapParamBootstrap() {
         bootSigFile.URL = "https://bootstrap.verustest.net/vrsctest-bootstrap.tar.gz.verusid";
         bootSigFile.path = GetDataDir() / "verustest-bootstrap.tar.gz.verusid";
     }
+    else if (_IsCurrentChainID(vARRRChainID()))
+    {
+        bootSigFile.URL = "https://bootstrap.dexstats.info/VARRR-bootstrap.tar.gz.verusid";
+        bootSigFile.path = GetDataDir() / "VARRR-bootstrap.tar.gz.verusid";
+    }
+    else if (_IsCurrentChainID(vDEXChainID()))
+    {
+        bootSigFile.URL = "https://bootstrap.dexstats.info/VDEX-bootstrap.tar.gz.verusid";
+        bootSigFile.path = GetDataDir() / "VDEX-bootstrap.tar.gz.verusid";
+    }
+    else if (_IsCurrentChainID(ChipsChainID()))
+    {
+        bootSigFile.URL = "https://bootstrap.dexstats.info/CHIPS-bootstrap.tar.gz.verusid";
+        bootSigFile.path = GetDataDir() / "CHIPS-bootstrap.tar.gz.verusid";
+    }
+
     bootSigFile.dlnow = 0;
     bootSigFile.dltotal = 0;
     mapParams[bootSigFile.URL] = bootSigFile;
@@ -123,6 +158,22 @@ void initalizeMapParamBootstrap() {
         bootFile.URL = "https://bootstrap.verustest.net/vrsctest-bootstrap.tar.gz";
         bootFile.path = GetDataDir() / "verustest-bootstrap.tar.gz";
     }
+    else if (_IsCurrentChainID(vARRRChainID()))
+    {
+        bootFile.URL = "https://bootstrap.dexstats.info/VARRR-bootstrap.tar.gz";
+        bootFile.path = GetDataDir() / "VARRR-bootstrap.tar.gz";
+    }
+    else if (_IsCurrentChainID(vDEXChainID()))
+    {
+        bootFile.URL = "https://bootstrap.dexstats.info/VDEX-bootstrap.tar.gz";
+        bootFile.path = GetDataDir() / "VDEX-bootstrap.tar.gz";
+    }
+    else if (_IsCurrentChainID(ChipsChainID()))
+    {
+        bootFile.URL = "https://bootstrap.dexstats.info/CHIPS-bootstrap.tar.gz";
+        bootFile.path = GetDataDir() / "CHIPS-bootstrap.tar.gz";
+    }
+
     bootFile.dlnow = 0;
     bootFile.dltotal = 0;
     mapParams[bootFile.URL] = bootFile;

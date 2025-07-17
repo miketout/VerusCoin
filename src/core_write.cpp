@@ -1216,6 +1216,7 @@ CIdentityMultimapRef::CIdentityMultimapRef(const UniValue &uni) :
     version(uni_get_int64(find_value(uni, "version"), CVDXF_Data::DEFAULT_VERSION)),
     flags(uni_get_int64(find_value(uni, "flags"))),
     key(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "vdxfkey"))))),
+    idID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "identityid"))))),
     heightStart(uni_get_int64(find_value(uni, "startheight"))),
     heightEnd(uni_get_int64(find_value(uni, "endheight"))),
     dataHash(uint256S(uni_get_str(find_value(uni, "datahash")))),
@@ -1230,6 +1231,7 @@ UniValue CIdentityMultimapRef::ToUniValue() const
     obj.pushKV("version", (int64_t)version);
     obj.pushKV("flags", (int64_t)flags);
     obj.pushKV("vdxfkey", EncodeDestination(CIdentityID(key)));
+    obj.pushKV("identityid", EncodeDestination(CIdentityID(idID)));
     if (HasDataHash())
     {
         obj.pushKV("datahash", dataHash.GetHex());
@@ -1477,6 +1479,25 @@ UniValue CRating::ToUniValue() const
     return retVal;
 }
 
+UniValue CCredential::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+    int64_t Flags = CalcFlags();
+
+    ret.pushKV("version", (int64_t)version);
+    ret.pushKV("flags", Flags);
+    ret.pushKV("credentialkey", EncodeDestination(CIdentityID(credentialKey)));
+
+    ret.pushKV("credential", credential);
+    ret.pushKV("scopes", scopes);
+
+    if (HasLabel()) {
+        ret.pushKV("label", TrimSpaces(label, true, ""));
+    }
+
+    return ret;
+}
+
 UniValue CMMRProof::ToUniValue() const
 {
     UniValue retObj(UniValue::VOBJ);
@@ -1610,6 +1631,18 @@ template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bo
             {
                 objectUni = UniValue(UniValue::VOBJ);
                 objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), oneRatingObj.ToUniValue());
+            }
+        }
+        else if (checkVal == CVDXF_Data::DataCredentialKey())
+        {
+            CCredential oneCredentialObj;
+            ss >> VARINT(version);
+            ss >> COMPACTSIZE(objSize);
+            ss >> oneCredentialObj;
+            if (oneCredentialObj.IsValid())
+            {
+                objectUni = UniValue(UniValue::VOBJ);
+                objectUni.pushKV(EncodeDestination(CIdentityID(checkVal)), oneCredentialObj.ToUniValue());
             }
         }
         else if (checkVal == CVDXF_Data::DataTransferDestinationKey())

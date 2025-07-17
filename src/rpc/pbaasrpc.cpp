@@ -8130,16 +8130,19 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
 
                 preTx = preResult.GetTxOrThrow();
 
-                bool relayTx;
+                bool relayTx = false;
                 CValidationState state;
                 {
                     LOCK2(smartTransactionCS, mempool.cs);
-                    relayTx = myAddtomempool(preTx, &state);
+                    relayTx = relayTx ? false : myAddtomempool(preTx, &state);
                 }
 
                 if (!relayTx)
                 {
-                    throw JSONRPCError(RPC_TRANSACTION_REJECTED, "Unable to prepare offer tx for identity: " + state.GetRejectReason());
+                    UniValue jsonTx(UniValue::VOBJ);
+                    extern void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry);
+                    TxToUniv(preTx, uint256(), jsonTx);
+                    throw JSONRPCError(RPC_TRANSACTION_REJECTED, "Unable to relay offer tx for identity: " + state.GetRejectReason() + "\n" + jsonTx.write(1,2));
                 }
                 else
                 {
@@ -8403,6 +8406,16 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
         // now, the offer tx is complete, and we need to sign its input with SIGHASH_SINGLE
         auto consensusBranchId = CurrentEpochBranchId(height, Params().consensus);
 
+        bool showOffer = false;
+        if (showOffer)
+        {
+            CValidationState state;
+            UniValue jsonTx(UniValue::VOBJ);
+            extern void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry);
+            TxToUniv(preTx, uint256(), jsonTx);
+            printf("Offer transaction being posted: %s\n", jsonTx.write(1,2).c_str());
+        }
+
         if (offerTx.vShieldedOutput.size())
         {
             // has for SIGHASH_SINGLE | SIGHASH_ANYONECANPAY binding signature for
@@ -8473,6 +8486,11 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
                 throw JSONRPCError(RPC_TRANSACTION_ERROR, "Unable to make offer transaction on chain, try with returnhex as false");
             }
             TransactionBuilder tb(Params().consensus, height + 1, pwalletMain);
+
+            // set expiry of the transaction holding the actual offer to max one day out and not more than the offer is valid
+            uint32_t oneDayInBlocks = chainActive.Height() + (86400 / ConnectedChains.ThisChain().blockTime);
+            tb.SetExpiryHeight(offerTx.nExpiryHeight > oneDayInBlocks ? oneDayInBlocks : offerTx.nExpiryHeight);
+
             for (auto &oneIn : postedOfferIns)
             {
                 tb.AddTransparentInput(COutPoint(oneIn.txIn.prevout.hash, oneIn.txIn.prevout.n), oneIn.scriptPubKey, oneIn.nValue);
@@ -12755,7 +12773,7 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
         }
         UniValue entry(UniValue::VOBJ);
         entry.push_back(Pair("height", i));
-        entry.push_back(Pair("blocktime", (uint64_t)chainActive.LastTip()->nTime));
+        entry.push_back(Pair("blocktime", importIt->first.second <= chainActive.Height() ? (uint64_t)(chainActive[importIt->first.second]->nTime) : (uint64_t)(chainActive.LastTip()->nTime)));
         entry.push_back(Pair("currencystate", currencyState.ToUniValue()));
 
         if (pairVolumePrice.size())
@@ -16027,7 +16045,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
     }
 
     // if fee offer was not specified, calculate
-    if (!feeOffer)
+    if (!feeOffer && !returnTx)
     {
         // calculate total fee required to update based on content in content maps
         // as of PBaaS, standard contentMaps cost an extra standard fee per entry
@@ -16071,7 +16089,7 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
             success = true;
         }
     }
-    else
+    else if (feeOffer)
     {
         success = find_utxos(from_taddress, vCoins) &&
                 pwalletMain->SelectCoinsMinConf(feeOffer, 0, 0, vCoins, setCoinsRet, totalFound);

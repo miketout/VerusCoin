@@ -1677,8 +1677,12 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     if (GetBoolArg("-bootstrap", false)) {
         useBootstrap = true;
     }
+    bool hasBootstrap = IsVerusActive() ||
+        ConnectedChains.vARRRChainID() == ASSETCHAINS_CHAINID ||
+        ConnectedChains.vDEXChainID() == ASSETCHAINS_CHAINID ||
+        ConnectedChains.ChipsChainID() == ASSETCHAINS_CHAINID;
 
-    if (IsVerusActive() && useBootstrap) {
+    if (hasBootstrap && useBootstrap) {
         fReindex = false;
         //wipe transactions from wallet to create a clean slate
         OverrideSetArg("-zappwallettxes","2");

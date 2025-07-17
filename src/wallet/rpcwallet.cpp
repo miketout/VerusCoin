@@ -1365,22 +1365,43 @@ UniValue signfile(const UniValue& params, bool fHelp)
     }
 }
 
-int FileToVector(const std::string &filepath, std::vector<unsigned char> &dataVec, int maxBytes)
+std::size_t FileToVector(const std::string &filepath, std::vector<unsigned char> &dataVec, std::size_t maxBytes)
 {
-    ifstream ifs = ifstream(filepath, std::ios::binary | std::ios::in);
-    int readNum = 0;
-    if (ifs.is_open() && !ifs.eof())
+    if (!boost::filesystem::exists(filepath))
     {
-        dataVec.resize(maxBytes);
-        readNum = ifs.readsome((char *)(&dataVec[0]), maxBytes);
-        dataVec.resize(readNum);
-        if (maxBytes == readNum && !ifs.eof())
-        {
-            ifs.close();
-            throw JSONRPCError(RPC_INVALID_PARAMS, "File too large " + filepath);
-        }
-        ifs.close();
+        throw JSONRPCError(RPC_INVALID_PARAMS, "File does not exist: " + filepath);
     }
+
+    std::ifstream ifs(filepath, std::ios::binary | std::ios::ate);
+    if (!ifs.is_open())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "Failed to open file: " + filepath);
+    }
+
+    std::size_t fileSize = static_cast<std::size_t>(ifs.tellg());
+    if (fileSize == 0)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "File is empty: " + filepath);
+    }
+
+    if (fileSize > maxBytes)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "File too large: " + filepath +
+                           ", size = " + std::to_string(fileSize) + " bytes, max allowed = " +
+                           std::to_string(maxBytes) + " bytes.");
+    }
+
+    dataVec.resize(fileSize);
+
+    ifs.seekg(0, std::ios::beg);
+    ifs.read(reinterpret_cast<char*>(dataVec.data()), fileSize);
+    std::size_t readNum = static_cast<std::size_t>(ifs.gcount());
+
+    if (ifs.bad() || readNum != fileSize)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMS, "Failed to read file completely: " + filepath);
+    }
+
     return readNum;
 }
 
@@ -1389,15 +1410,25 @@ size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vect
 {
     auto strFileName = uni_get_str(find_value(uni, "filename"));
     auto messageUni = find_value(uni, "message");
+    auto hexUni = find_value(uni, "serializedhex");
+    auto base64Uni = find_value(uni, "serializedbase64");
     auto vdxfUni = find_value(uni, "vdxfdata");
     auto strDataHash = uni_get_str(find_value(uni, "datahash"));
 
     if (!strDataHash.empty())
     {
         uint256 dataHash;
+        const std::vector<unsigned char> hashAsVec = ParseHex(strDataHash);
+
+        // Check to make sure the hash is 32 bytes whatever the endianness
+        if (hashAsVec.size() != 32)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Hash must be 32 bytes");
+        }
+
         if (hashType == CVDXF::EHashTypes::HASH_SHA256)
         {
-            dataHash = uint256(ParseHex(strDataHash));
+            dataHash = uint256(hashAsVec);
         }
         else
         {
@@ -1410,16 +1441,17 @@ size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vect
     {
         dataVec = VectorEncodeVDXFUni(vdxfUni);
     }
+    else if (!hexUni.isNull())
+    {
+        dataVec = VectorEncodeVDXFUni(uni);
+    }
+    else if (!base64Uni.isNull())
+    {
+        dataVec = VectorEncodeVDXFUni(uni);
+    }
     else if (!messageUni.isNull())
     {
-        if (messageUni.isStr())
-        {
-            dataVec = VectorEncodeVDXFUni(uni);
-        }
-        else
-        {
-            dataVec = VectorEncodeVDXFUni(messageUni);
-        }
+        dataVec = VectorEncodeVDXFUni(messageUni.isStr() ? uni : messageUni);
     }
     else if (!strFileName.empty())
     {
@@ -1427,7 +1459,7 @@ size_t GetDataMessage(const UniValue &uni, CVDXF::EHashTypes hashType, std::vect
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + strFileName + " for data output");
         }
-        int bytesRead = FileToVector(strFileName, dataVec, MAX_TX_SIZE_AFTER_SAPLING >> 1);
+        std::size_t bytesRead = FileToVector(strFileName, dataVec,  static_cast<std::size_t>(MAX_TX_SIZE_AFTER_SAPLING >> 1));
         if (!bytesRead)
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + strFileName + " for data output");
@@ -2178,10 +2210,18 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
             "\n"
             "\nArguments:\n"
             "{\n"
-            "    \"datadescriptor\": {}                                           (object, required) Encrypted data descriptor to decrypt, uses wallet keys included in descriptor\n"
-            "    \"evk\":\"Sapling extended full viewing key\"                      (evk, optional) if known, an extended viewing key to use for decoding that may not be in the descriptor\n"
-            "    \"ivk\":\"Sapling incoming viewing key hex\"                       (ivk, optional) if known, an incoming viewing key to use for decoding\n"
-            "    \"txid\":\"hex\",                                                  (txid, optional) if data is from a tx and retrieve is true, this may be needed when the data is on the same tx as the link\n"
+            "    \"datadescriptor\": {}                                           (object, optional) Either datadescriptor or iddata required. Data descriptor to decrypt, uses keys included in descriptor & wallet\n"
+            "    \"iddata\":                                                      (object, optional) Identity, VDXF key, metadata to limit query, and keys to decrypt\n"
+            "        {\n"
+            "           \"identityid\":\"id@\",\n"
+            "           \"vdxfkey\":\"i-vdxfkey\",\n"
+            "           \"startheight\":n,\n"
+            "           \"endheight\":n,\n"
+            "           \"getlast\":bool\n"
+            "        }\n"
+            "    \"evk\":\"Sapling extended full viewing key\"                    (evk, optional) if known, an extended viewing key to use for decoding that may not be in the descriptor\n"
+            "    \"ivk\":\"Sapling incoming viewing key hex\"                     (ivk, optional) if known, an incoming viewing key to use for decoding\n"
+            "    \"txid\":\"hex\",                                                (txid, optional) if data is from a tx and retrieve is true, this may be needed when the data is on the same tx as the link\n"
             "    \"retrieve\": bool                                               (bool, optional) Defaults to false. If true and the data passed is an encrypted or unencrypted reference\n"
             "                                                                                          on this chain, it retrieves the data from its reference and decrypts if it can\n"
             "}\n\n"
@@ -3647,10 +3687,20 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
     string strAccount = "*";
     if (params.size() > 0)
     {
-        strAccount = uni_get_str(params[0]);
+        reportQuery = params[0];
+        if (!reportQuery.isObject())
+        {
+            strAccount = uni_get_str(reportQuery);
+            if (!strAccount.empty())
+            {
+                if (!reportQuery.read(strAccount) && reportQuery.isObject())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid JSON parameter");
+                }
+            }
+        }
 
-        if (((reportQuery = params[0]).isObject() || (!strAccount.empty() && reportQuery.read(strAccount))) &&
-            reportQuery.isObject())
+        if (reportQuery.isObject())
         {
             strAccount = uni_get_str(find_value(reportQuery, "account"), "*");
 
@@ -3708,6 +3758,37 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
 
             fromBlock = uni_get_int64(find_value(reportQuery, "fromblock"), fromBlock);
             toBlock = uni_get_int64(find_value(reportQuery, "toblock"), toBlock);
+
+            // if native prices are not present. create a price list if possible and toBlock is at least 2 days away from tip
+            if (nativePricesUni.isNull() && IsVerusMainnetActive() && fromBlock > 2856975 && fromBlock < toBlock && (toBlock + 2880) < ((uint32_t)chainActive.Height()))
+            {
+                uint32_t currentBlock = fromBlock;
+                uint160 priceCurID = CVDXF::GetID("bridge.veth.vrsc@");
+                // start calculating prices from 10 minutes after first block move forward 1440 blocks at a time and look for the closest time
+                // to one day each time within 10 minute error
+                for (int64_t i = chainActive[fromBlock]->nTime + 600; i <= ((int64_t)chainActive[toBlock]->nTime + 86400); i += 86400, currentBlock += 1440)
+                {
+                    int64_t timeError = ((int64_t)chainActive[currentBlock]->nTime) - i;
+                    while (timeError > 600)
+                    {
+                        currentBlock--;
+                        timeError = ((int64_t)chainActive[currentBlock]->nTime - i);
+                    }
+                    while (timeError < 600)
+                    {
+                        currentBlock++;
+                        timeError = ((int64_t)chainActive[currentBlock]->nTime - i);
+                    }
+                    CCoinbaseCurrencyState state1 = ConnectedChains.GetCurrencyState(priceCurID, currentBlock);
+                    uint32_t midBlock = std::min(currentBlock + 720, ((uint32_t)chainActive.Height()));
+                    CCoinbaseCurrencyState state2 = ConnectedChains.GetCurrencyState(priceCurID, midBlock);
+
+                    CCurrencyValueMap prices1 = state1.TargetConversionPrices(ASSETCHAINS_CHAINID);
+                    CCurrencyValueMap prices2 = state2.TargetConversionPrices(ASSETCHAINS_CHAINID);
+
+                    nativePriceMap.insert({DateTimeStrFormat("%Y-%m-%d", i), (prices1.valueMap[CVDXF::GetID("dai.veth.vrsc@")] + prices2.valueMap[CVDXF::GetID("dai.veth.vrsc@")]) >> 1});
+                }
+            }
 
             // look for object specification of report parameters,
             //
@@ -3844,6 +3925,10 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
     }
 
     summaryRet.pushKV("offchaintransfers", offChainTransfers);
+    if (!nativePriceMap.size())
+    {
+        summaryRet.pushKV("warning", "invalidpricelist");
+    }
     summaryRet.pushKV("aggregateearnings", aggregateEarnings.ToUniValue());
 
     return summaryRet;
