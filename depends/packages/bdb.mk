@@ -11,6 +11,7 @@ $(package)_config_opts_mingw32=--enable-mingw
 $(package)_config_opts_linux=--with-pic
 $(package)_config_opts_aarch64=--disable-atomicsupport
 $(package)_cxxflags+=-std=c++17
+$(package)_cflags+=-Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration
 endef
 
 define $(package)_preprocess_cmds

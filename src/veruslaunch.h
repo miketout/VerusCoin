@@ -7,6 +7,7 @@
 #define VERUS_LAUNCH_H
 
 #include <string>
+#include <cstdint>
 
 #define WHITELIST_COUNT 704
 
