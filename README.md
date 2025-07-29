@@ -5,7 +5,7 @@ Arguably the world's most advanced technology, zero knowledge privacy enabled, m
 
 [VerusCoin web site](https://verus.io/) and [VerusCoin Explorer](https://explorer.verus.io/).
 
-[Our Vision](https://verus.io/downloads/VerusVision.pdf).
+[Our Vision](https://verus.io/papers/VerusVision.pdf).
 
 ## VerusCoin
 This software is the VerusCoin p2p node and client. Generally, you will use this if you want to mine VRSC or setup a full node. When you run the wallet it launches verusd automatically. On first launch it downloads Zcash parameters, roughly 1GB, which is relatively slow.
