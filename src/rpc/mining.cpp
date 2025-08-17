@@ -442,8 +442,7 @@ UniValue getmininginfo(const UniValue& params, bool fHelp)
             CBlockIndex &index = *chainActive[i];
             CBlock block;
 
-            int kmdBlockLoad = -1;
-            if (avgBlockFeesValid && (kmdBlockLoad = komodo_blockload(block, &index)) != 0)
+            if (avgBlockFeesValid && komodo_blockload(block, &index) != 0)
             {
                 avgBlockFeesValid = false;
                 LogPrintf("%s: failed to estimate average block fees\n", __func__);
