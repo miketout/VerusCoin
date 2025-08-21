@@ -391,6 +391,7 @@ public:
     // Set of transaction ids we still have to announce.
     // They are sorted by the mempool before relay, so the order is not important.
     std::set<uint256> setInventoryTxToSend;
+
     // List of block ids we still have to announce.
     // There is no final sorting before sending, as they are always sent immediately
     // and in the order requested.
