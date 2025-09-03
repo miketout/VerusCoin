@@ -12248,7 +12248,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             totalOutput += get<3>(oneOut).ReserveOutValue();
             if (get<1>(oneOut))
             {
-                totalOutput.valueMap[ASSETCHAINS_CHAINID] = get<1>(oneOut);
+                totalOutput.valueMap[ASSETCHAINS_CHAINID] += get<1>(oneOut);
             }
         }
         returnTxUni.pushKV("outputtotals", totalOutput.ToUniValue());
