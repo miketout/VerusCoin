@@ -30,7 +30,7 @@ extern "C" {
 
 #define BUF_SIZE 5120
 
-if defined(__STDC_VERSION__) && (__STDC_VERSION__ < 202311L)
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ < 202311L)
 // C99–C17: provide bool via <stdbool.h>
 #include <stdbool.h>
 #endif
