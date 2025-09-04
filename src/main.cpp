@@ -10002,6 +10002,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                 // A heap is used so that not all items need sorting if only a few are being sent.
                 CompareInvMempoolOrder compareInvMempoolOrder(&mempool);
                 std::make_heap(vInvTx.begin(), vInvTx.end(), compareInvMempoolOrder);
+
                 // No reason to drain out at many times the network's capacity,
                 // especially since we have many peers and some will draw much shorter delays.
                 unsigned int nRelayedTransactions = 0;
@@ -10036,27 +10037,32 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                     // on a mempool transaction that the filter doesn't have, we go deeper. if the filter has the dependency already and
                     // we haven't put it in relayedThisRound, it does not prevent us from putting the current transaction in
                     std::vector<std::tuple<int, bool, uint256, CTransaction>> dependencyStack;   // position in the input vector of the tx at current depth
-                    std::map<uint256, CTransaction> toRelayThisRound;
+                    std::vector<std::pair<uint256, CTransaction>> toRelayThisRound;
+
                     do
                     {
                         if (!dependencyStack.size())
                         {
-                            dependencyStack.push_back({-1, true, hash, txForInv});
+                            dependencyStack.push_back({-1, true, hash, txForInv});  // if we have nothing yet, put a placeholder of this transaction at top level
                         }
+
+                        // get the transaction at the current level as the tx we are currently evaluating
                         CTransaction curTx = std::get<3>(dependencyStack.back());
+
+                        // increment the current horizontal position, possibly from -1 to 0 or to the next input
+                        // then see if we have gone past the number of inputs
                         if (++std::get<0>(dependencyStack.back()) >= curTx.vin.size())
                         {
                             if (std::get<1>(dependencyStack.back()))
                             {
-                                if (!relayedThisRound.count(std::get<2>(dependencyStack.back())) && !dependentThisRound.count(std::get<2>(dependencyStack.back())))
+                                if (!relayedThisRound.count(std::get<2>(dependencyStack.back())))
                                 {
-                                    toRelayThisRound.insert({std::get<2>(dependencyStack.back()), curTx});
+                                    toRelayThisRound.push_back({std::get<2>(dependencyStack.back()), curTx});
                                     relayedThisRound.insert(std::get<2>(dependencyStack.back()));
                                 }
-                                // if we have a parent, do not relay it
+                                // if we have a parent, still add as a dependent
                                 if (dependencyStack.size() > 1)
                                 {
-                                    std::get<1>(dependencyStack[dependencyStack.size() - 2]) = false;
                                     dependentThisRound.insert(std::get<2>(dependencyStack[dependencyStack.size() - 2]));
                                 }
                             }
@@ -10064,19 +10070,20 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                         }
                         else
                         {
+                            // evaluate a valid input at the current level
                             CTransaction dependencyTx;
 
                             // if we already put this dependency in the dependencies for relay this round, move to the next input at this level
                             // we will not send this transaction or need to go deeper
-                            if (relayedThisRound.count(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash) || dependentThisRound.count(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash))
+                            if (relayedThisRound.count(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash))
                             {
                                 std::get<1>(dependencyStack.back()) = false;
                                 dependentThisRound.insert(std::get<2>(dependencyStack.back()));
                             }
-                            // if we find one that isn't relayed this round, and is in the mempool, we will go deeper, and this one won't be relayed
+                            // if we find one that isn't relayed this round, and is in the mempool, we will go deeper, and this one will be relayed //, and this one won't be relayed
                             else if (!pto->HasKnownTxId(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash) && mempool.lookup(curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash, dependencyTx))
                             {
-                                std::get<1>(dependencyStack.back()) = false;
+                                // std::get<1>(dependencyStack.back()) = false;
                                 dependentThisRound.insert(std::get<2>(dependencyStack.back()));
                                 // we need to go deeper and check the dependencies on this transaction as well
                                 dependencyStack.push_back({-1, true, curTx.vin[std::get<0>(dependencyStack.back())].prevout.hash, dependencyTx});
@@ -10084,11 +10091,11 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                         }
                     } while (dependencyStack.size());
 
-                    // now, we have all dependencies in our map, if we have any dependencies to relay first,
+                    // now, we have all dependencies in our map, if we have already relayed it,
                     // don't relay our initial intended tx
-                    if (!dependentThisRound.count(hash))
+                    if (!relayedThisRound.count(hash))
                     {
-                        toRelayThisRound.insert({hash, txForInv});
+                        toRelayThisRound.push_back({hash, txForInv});
                         relayedThisRound.insert(hash);
                     }
 

@@ -7350,6 +7350,46 @@ std::string CConnectedChains::GetFriendlyIdentityName(const CIdentity &identity,
     return GetFriendlyIdentityName(identity.name, identity.parent, addVerus);
 }
 
+// this should only do something when we're seeing dups in the mempool that spend the same prior due to a reorg
+// if we confirm that, cleanup the mempool and the vector as well
+void CleanupExportOutDups(std::vector<std::pair<int, CInputDescriptor>> &exportOuts)
+{
+    if (exportOuts.size() > 1)
+    {
+        // if there is more than one unspent export, that means that only one can be valid, since
+        // all should be in the mempool and spending the same prior export.
+        // first, confirm that all are spending a shared prior UTXO.
+        // if not, we may return more than one
+        std::shared_ptr<const CTransaction> pMempoolTx = mempool.get(exportOuts.back().second.txIn.prevout.hash);
+
+        // if not in the mempool, we'll just return what we have, otherwise, cleanup
+        // in any legitimate case caused by a reorg that isn't catastrophic, this should be true and cleanup to one value in the vector
+        if (pMempoolTx)
+        {
+            std::list<CTransaction> removedTxes;
+            std::set<uint256> removedHashes;
+            // we would expect all except the one we are checking to be removed
+            // remove those removed from mempool from our return list
+            mempool.removeConflicts(*pMempoolTx, removedTxes);
+            for (auto &oneTx : removedTxes)
+            {
+                removedHashes.insert(oneTx.GetHash());
+            }
+
+            std::vector<std::pair<int, CInputDescriptor>> newOuts = {exportOuts.back()};
+
+            for (auto &oneOut : exportOuts)
+            {
+                if (!removedHashes.count(oneOut.second.txIn.prevout.hash))
+                {
+                    newOuts.push_back(oneOut);
+                }
+            }
+            exportOuts = newOuts;
+        }
+    }
+}
+
 // returns all unspent chain exports for a specific chain/currency
 bool CConnectedChains::GetUnspentSystemExports(const CCoinsViewCache &view,
                                                const uint160 systemID,
@@ -7376,6 +7416,7 @@ bool CConnectedChains::GetUnspentSystemExports(const CCoinsViewCache &view,
                 exportOuts.push_back(std::make_pair(oneOutput.second, oneOutput.first));
             }
         }
+        CleanupExportOutDups(exportOuts);
     }
     return exportOuts.size() != 0;
 }
@@ -7406,6 +7447,7 @@ bool CConnectedChains::GetUnspentCurrencyExports(const CCoinsViewCache &view,
                 exportOuts.push_back(std::make_pair(oneOutput.second, oneOutput.first));
             }
         }
+        CleanupExportOutDups(exportOuts);
     }
     return exportOuts.size() != 0;
 }

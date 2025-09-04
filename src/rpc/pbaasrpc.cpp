@@ -6698,9 +6698,12 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     // get all currencies that contain all specified reserves in our fractionalsFound set
     // use latest notarizations of the currencies to do so
     std::vector<CAddressUnspentDbEntry> activeFractionals;
+    {
+        LOCK(cs_main);
+        activeFractionals = GetFractionalNotarizationsForReserve(toCurID);
+    }
     std::set<int32_t> toRemove;
-    if ((activeFractionals = GetFractionalNotarizationsForReserve(toCurID)).size() &&
-        reserves.size())
+    if (activeFractionals.size() && reserves.size())
     {
         auto resIt = reserves.begin();
         for (int i = 0; i < activeFractionals.size(); i++)
@@ -6752,7 +6755,11 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
         }
     }
 
-    CCoinbaseCurrencyState toState = ConnectedChains.GetCurrencyState(toCurID, chainActive.Height(), true);
+    CCoinbaseCurrencyState toState;
+    {
+        LOCK(cs_main);
+        toState = ConnectedChains.GetCurrencyState(toCurID, chainActive.Height(), true);
+    }
     if (toCurrencyDef.systemID == ASSETCHAINS_CHAINID && !(toState.IsValid() && toState.IsLaunchConfirmed()))
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot get converters for pre-launch or refunded currency " + EncodeDestination(CIdentityID(toCurID)));
@@ -6787,6 +6794,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     // if any reserve currency is fractional and contains tuCurrency and other reserves to check, add it as well
     for (auto &oneReserve : reserves)
     {
+        LOCK(cs_main);
         if (oneReserve.second.first.IsFractional())
         {
             CCoinbaseCurrencyState oneState = ConnectedChains.GetCurrencyState(oneReserve.first, chainActive.Height(), true);
@@ -6832,6 +6840,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
 
     for (int i = 0; i < activeFractionals.size(); i++)
     {
+        LOCK(cs_main);
         CPBaaSNotarization pbn(activeFractionals[i].second.script);
         CCurrencyDefinition oneCur;
         // if we already have it, move on
@@ -6863,6 +6872,7 @@ UniValue getcurrencyconverters(const UniValue& params, bool fHelp)
     {
         for (auto &oneConverter : converterCurrencyOptions)
         {
+            LOCK(cs_main);
             // only include currencies on the current chain
             if (std::get<0>((oneConverter.second)).systemID != ASSETCHAINS_CHAINID)
             {
@@ -12238,7 +12248,7 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             totalOutput += get<3>(oneOut).ReserveOutValue();
             if (get<1>(oneOut))
             {
-                totalOutput.valueMap[ASSETCHAINS_CHAINID] = get<1>(oneOut);
+                totalOutput.valueMap[ASSETCHAINS_CHAINID] += get<1>(oneOut);
             }
         }
         returnTxUni.pushKV("outputtotals", totalOutput.ToUniValue());

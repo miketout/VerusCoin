@@ -16,13 +16,13 @@
  * unstructured data that can be located unambiguously via an URL, which implicitly
  * provides both location and decoding information, enabling applications to use such
  * data, in whole or in part, if they know how, or even ignore parts of the data, while
- * remaining compatible with those parts they understand. VDXF typee keys are globally
+ * remaining compatible with those parts they understand. VDXF type keys are globally
  * unique identifiers, which are defined as human readable names along with a
  * specification of how to define and convert unlimited length, human readable type
  * names into collison-free 20 byte IDs, which can be used as type keys associated with
  * content or location values in various forms of data records. These data records,
  * which may have application specific structures or no structure at all, besides
- * length form the basis of an interoperable data exchange format across decentralized
+ * length, form the basis of an interoperable data exchange format across decentralized
  * applications.
  *
  * Definition of VDXF types
@@ -47,24 +47,9 @@
  * on any blockchain or uniquely named system that becomes recognized via a consensus-
  * based bridge on the Verus network. Currently, to be recognized as a unique
  * namespace, the easiest way is to base it on a VerusID, registered on the Verus
- * blockchain network. While there is not a defined way of creating bridges to other
- * external networks, there is work on an Ethereum bridge in progress, and this will
- * detail the naming mechanism of an externally bridged system and how it deals with
- * naming conventions for VDXF interoperability, if not the technical details of how
- * to register and implement such a bridge.
- *
- * Generally, one may think of two types of VerusIDs, those defined on the Verus
- * network or on independent PBaaS (Public Blockchains as a Service) blockchains
- * spawned originally from and registered on the Verus blockchain network, or
- * VerusIDs, which may also exist on fully external systems that may have been
- * created without any registration on the Verus network initially. In order for an
- * externally created VerusID to be recognizable on the Verus blockchain network or
- * by applications using the VDXF that are compatible with the Verus blockchain
- * network that external system must provide a recognized bridge to the Verus
- * blockchain. At present, the first such bridge, expected to be available along
- * with or shortly after the Verus DeFi network release, is the Ethereum blockchain
- * bridge, which will be used as the example of an externally recognized VerusID
- * system for the purpose of this explanation.
+ * blockchain network. Since Verus names are easily resolvable at any scale worldwide,
+ * one may think of these namespaces as an alternate form of fast, unlimited scale,
+ * decentralized DNS, though Unicode enabled and much richer in nature of data records.
  *
  * First, it is important to understand the requirements of registered VerusID
  * identity names, which will also inform how externally generated VerusIDs are
