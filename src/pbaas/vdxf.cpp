@@ -1022,9 +1022,24 @@ UniValue CDataDescriptor::ToUniValue() const
     if (isText &&
         find_value(processedObject, EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey()))).isNull())
     {
-        UniValue objectDataUni(UniValue::VOBJ);
-        objectDataUni.pushKV("message", std::string(objectData.begin(), objectData.end()));
-        ret.pushKV("objectdata", objectDataUni);
+        // Create a string from the binary data
+        std::string messageStr(objectData.begin(), objectData.end());
+        
+        // Test if UniValue can parse a JSON object containing this string
+        UniValue testObj(UniValue::VOBJ);
+        testObj.pushKV("message", messageStr);
+        std::string testJson = testObj.write();
+        UniValue parseTest;
+        
+        if (parseTest.read(testJson)) {
+            // Safe to use as a message string - JSON parsing succeeded
+            UniValue objectDataUni(UniValue::VOBJ);
+            objectDataUni.pushKV("message", messageStr);
+            ret.pushKV("objectdata", objectDataUni);
+        } else {
+            // Fall back to hex encoding if JSON parsing fails
+            ret.pushKV("objectdata", processedObject);
+        }
     }
     else
     {
