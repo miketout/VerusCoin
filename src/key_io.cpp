@@ -21,6 +21,7 @@
 #include <assert.h>
 #include <string.h>
 #include <algorithm>
+#include <utf8.h>
 
 extern uint160 VERUS_CHAINID;
 extern std::string VERUS_CHAINNAME;
@@ -1005,18 +1006,13 @@ std::vector<unsigned char> VectorEncodeVDXFUni(const UniValue &_obj)
     std::string serializedMessage = uni_get_str(find_value(obj, "message"));
     if (!serializedMessage.empty())
     {
-        // Test if this message string would cause JSON parsing issues when used later
-        // by creating a test JSON object and seeing if UniValue can parse it
-        UniValue testObj(UniValue::VOBJ);
-        testObj.pushKV("message", serializedMessage);
-        std::string testJson = testObj.write();
-        UniValue parseTest;
-        
-        if (!parseTest.read(testJson)) {
+        if (utf8valid(serializedMessage.c_str()) != 0)
+        {
             // If the message causes JSON parsing to fail, reject it
             LogPrint("contentmap", "%s: message contains characters that would break JSON parsing, rejecting: %s\n", __func__, serializedMessage.substr(0, 100).c_str());
             return std::vector<unsigned char>();
-        }        
+        }
+            
         return std::vector<unsigned char>(serializedMessage.begin(), serializedMessage.end());
     }
 
