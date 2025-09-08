@@ -1025,13 +1025,7 @@ UniValue CDataDescriptor::ToUniValue() const
         // Create a string from the binary data
         std::string messageStr(objectData.begin(), objectData.end());
         
-        // Test JSON round-trip to ensure the string won't break RPC client parsing
-        UniValue testObj(UniValue::VOBJ);
-        testObj.pushKV("message", messageStr);
-        std::string testJson = testObj.write();
-        UniValue parseTest;
-        
-        if (parseTest.read(testJson)) {
+        if (utf8valid(messageStr.c_str()) == 0) {
             // Safe to use as a message string - JSON round-trip succeeded
             UniValue objectDataUni(UniValue::VOBJ);
             objectDataUni.pushKV("message", messageStr);
