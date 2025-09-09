@@ -14,7 +14,7 @@
 #include "primitives/solutiondata.h"
 #include "mmr.h"
 #include "utf8.h"
-
+#include <curl/curl.h>
 // does not check for height / sapling upgrade, etc. this should not be used to get block proofs
 // on a pre-VerusPoP chain
 arith_uint256 GetCompactPower(const uint256 &nNonce, uint32_t nBits, int32_t version=CPOSNonce::VERUS_V2);
@@ -2648,15 +2648,17 @@ public:
 
     bool IsValid() const
     {
-        bool basicValid = version >= FIRST_VERSION && version <= LAST_VERSION && !url.empty();
+        bool valid = version >= FIRST_VERSION && version <= LAST_VERSION && !url.empty();
         
-        // Validate UTF-8 in URL field
-        if (basicValid && utf8valid(url.c_str()) != 0)
+        if (valid)
         {
-            return false;
+            // Validate url using libcurl
+            CURLU *h = curl_url();
+
+            valid &= (curl_url_set(h, CURLUPART_URL, url.c_str(), 0) == CURLUE_OK);
+            curl_url_cleanup(h);
         }
-        
-        return basicValid;
+        return valid;
     }
 
     // returns false if hash is null
