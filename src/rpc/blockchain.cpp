@@ -24,6 +24,7 @@
 #include "script/standard.h"
 #include "wallet/wallet.h"
 #include "pbaas/pbaas.h"
+#include "pbaas/notarization.h"
 
 #include <stdint.h>
 
@@ -549,6 +550,21 @@ UniValue getrawmempool(const UniValue& params, bool fHelp)
     return mempoolToJSON(fVerbose);
 }
 
+extern LRUCache<CUTXORef, std::tuple<uint256, CTransaction, std::vector<std::pair<CObjectFinalization, CNotaryEvidence>>>> finalizationEvidenceCache;
+extern LRUCache<std::pair<uint256, uint32_t>, std::tuple<uint256, CInputDescriptor, CReserveTransfer>> reserveTransferCache;
+extern LRUCache<std::tuple<int, uint256, uint160>, std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>>> OfferMapCache;
+extern LRUCache<std::tuple<uint160, uint256, uint32_t>, std::vector<CInputDescriptor>> chainTransferCache;
+extern LRUCache<std::tuple<uint256, uint32_t, uint32_t, CUTXORef, uint160, uint160>, CCurrencyValueMap> priorConversionCache;
+
+void ClearMainCaches()
+{
+    finalizationEvidenceCache.Clear();
+    reserveTransferCache.Clear();
+    OfferMapCache.Clear();
+    chainTransferCache.Clear();
+    priorConversionCache.Clear();
+}
+
 UniValue clearrawmempool(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() > 0)
@@ -568,6 +584,7 @@ UniValue clearrawmempool(const UniValue& params, bool fHelp)
     LOCK(cs_main);
 
     mempool.clear();
+    ClearMainCaches();
     return NullUniValue;
 }
 
