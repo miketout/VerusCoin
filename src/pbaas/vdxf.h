@@ -142,6 +142,7 @@
 #include "zcash/Address.hpp"
 #include "zcash/address/zip32.h"
 #include <boost/algorithm/string.hpp>
+#include "utf8.h"
 
 extern std::string VERUS_CHAINNAME;
 extern uint160 VERUS_CHAINID;
@@ -1129,7 +1130,28 @@ public:
 
     bool IsValid() const
     {
-        return version >= FIRST_VERSION && version <= LAST_VERSION && (flags & ~FLAG_MASK) == 0;
+        bool basicValidation = version >= FIRST_VERSION && version <= LAST_VERSION && (flags & ~FLAG_MASK) == 0;
+        
+        // Additional validation: ensure the label contains valid UTF-8
+        if (basicValidation && HasLabel())
+        {
+            if (utf8valid(label.c_str()) != 0)
+            {
+                LogPrint("contentmap", "%s: data descriptor label contains invalid UTF-8: %s\n", __func__, label.substr(0, 50).c_str());
+                return false;
+            }
+        }
+
+        if (basicValidation && HasMIME())
+        {
+            if (utf8valid(mimeType.c_str()) != 0)
+            {
+                LogPrint("contentmap", "%s: data descriptor MIME type contains invalid UTF-8: %s\n", __func__, mimeType.substr(0, 50).c_str());
+                return false;
+            }
+        }
+        
+        return basicValidation;
     }
 
     UniValue ToUniValue() const;

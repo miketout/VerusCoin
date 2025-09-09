@@ -13,6 +13,7 @@
 #include "arith_uint256.h"
 #include "primitives/solutiondata.h"
 #include "mmr.h"
+#include "utf8.h"
 
 // does not check for height / sapling upgrade, etc. this should not be used to get block proofs
 // on a pre-VerusPoP chain
@@ -2647,7 +2648,15 @@ public:
 
     bool IsValid() const
     {
-        return version >= FIRST_VERSION && version <= LAST_VERSION && !url.empty();
+        bool basicValid = version >= FIRST_VERSION && version <= LAST_VERSION && !url.empty();
+        
+        // Validate UTF-8 in URL field
+        if (basicValid && utf8valid(url.c_str()) != 0)
+        {
+            return false;
+        }
+        
+        return basicValid;
     }
 
     // returns false if hash is null

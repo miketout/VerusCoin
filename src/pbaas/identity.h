@@ -28,6 +28,7 @@
 #include "crosschainrpc.h"
 #include "zcash/Address.hpp"
 #include "script/script.h"
+#include "utf8.h"
 #include "script/standard.h"
 #include "primitives/transaction.h"
 #include "arith_uint256.h"
@@ -1421,7 +1422,18 @@ public:
 
     bool IsValid()
     {
-        return (version >= VERSION_FIRST && version <= VERSION_LAST) && credentialKey != uint160();
+        bool basicValid = (version >= VERSION_FIRST && version <= VERSION_LAST) && credentialKey != uint160();
+        
+        // Validate UTF-8 in label field
+        if (basicValid && !label.empty())
+        {
+            if (utf8valid(label.c_str()) != 0)
+            {
+                return false;
+            }
+        }
+        
+        return basicValid;
     }
 
     UniValue ToUniValue() const;

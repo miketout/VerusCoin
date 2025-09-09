@@ -753,7 +753,7 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
         {
             return;
         }
-        objectData = VectorEncodeVDXFUni(objUni);
+        objectData = mapBytesValue;
     }
     else
     {
@@ -1022,9 +1022,18 @@ UniValue CDataDescriptor::ToUniValue() const
     if (isText &&
         find_value(processedObject, EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey()))).isNull())
     {
-        UniValue objectDataUni(UniValue::VOBJ);
-        objectDataUni.pushKV("message", std::string(objectData.begin(), objectData.end()));
-        ret.pushKV("objectdata", objectDataUni);
+        // Create a string from the binary data
+        std::string messageStr(objectData.begin(), objectData.end());
+        
+        if (utf8valid(messageStr.c_str()) == 0) {
+            // Safe to use as a message string - JSON round-trip succeeded
+            UniValue objectDataUni(UniValue::VOBJ);
+            objectDataUni.pushKV("message", messageStr);
+            ret.pushKV("objectdata", objectDataUni);
+        } else {
+            // Fall back to hex encoding if JSON round-trip fails
+            ret.pushKV("objectdata", processedObject);
+        }
     }
     else
     {
