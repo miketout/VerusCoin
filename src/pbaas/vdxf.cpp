@@ -1026,12 +1026,12 @@ UniValue CDataDescriptor::ToUniValue() const
         std::string messageStr(objectData.begin(), objectData.end());
         
         if (utf8valid(messageStr.c_str()) == 0) {
-            // Safe to use as a message string - JSON round-trip succeeded
+            // Safe to use as a message string
             UniValue objectDataUni(UniValue::VOBJ);
             objectDataUni.pushKV("message", messageStr);
             ret.pushKV("objectdata", objectDataUni);
         } else {
-            // Fall back to hex encoding if JSON round-trip fails
+            // Fall back to hex encoding if utf8 is not valid
             ret.pushKV("objectdata", processedObject);
         }
     }
