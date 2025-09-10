@@ -426,7 +426,7 @@ extern uint64_t ASSETCHAINS_TIMELOCKGTE;
 int64_t komodo_block_unlocktime(uint32_t nHeight);
 extern LRUCache<CUTXORef, std::tuple<uint256, CTransaction, std::vector<std::pair<CObjectFinalization, CNotaryEvidence>>>> finalizationEvidenceCache;
 extern LRUCache<std::pair<uint160, uint256>, std::pair<CChainNotarizationData, std::vector<std::pair<CTransaction, uint256>>>> crossChainNotarizationDataCache;
-extern LRUCache<std::pair<uint256, uint32_t>, std::tuple<uint256, CInputDescriptor, CReserveTransfer>> reserveTransferCache;
+extern LRUCache<std::tuple<uint256, uint32_t, uint32_t, CUTXORef, uint160, uint160>, CCurrencyValueMap> priorConversionCache;
 
 void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMemPoolHeight, int flags)
 {
@@ -436,7 +436,7 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
 
     finalizationEvidenceCache.Clear();
     crossChainNotarizationDataCache.Clear();
-    reserveTransferCache.Clear();
+    priorConversionCache.Clear();
 
     // Remove transactions spending a coinbase which are now immature and no-longer-final transactions
     LOCK(cs);
