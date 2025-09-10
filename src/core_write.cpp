@@ -1771,15 +1771,15 @@ UniValue CIdentity::VDXFDataToUniValue(const std::vector<unsigned char> &dataVch
     {
         bool objOut = false;
         UniValue objectUni = VDXFDataToUniValue(ss, &objOut);
-        bytesLeft = ss.size();
         if (objOut)
         {
+            bytesLeft = ss.size();
             entryArr.push_back(objectUni);
         }
         else
         {
             // add the remaining data as a hex string
-            entryArr.push_back(HexBytes(dataVch.data() + (dataVch.size() - (bytesLeft + sizeof(uint160))), bytesLeft + sizeof(uint160)));
+            entryArr.push_back(HexBytes(dataVch.data() + (dataVch.size() - (bytesLeft)), bytesLeft));
             bytesLeft = 0;
             break;
         }
