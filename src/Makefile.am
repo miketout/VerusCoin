@@ -48,7 +48,8 @@ BITCOIN_INCLUDES += -I$(srcdir)/cryptoconditions/src
 BITCOIN_INCLUDES += -I$(srcdir)/cryptoconditions/src/asn
 BITCOIN_INCLUDES += -I$(srcdir)/univalue/include
 
-LIBBITCOIN_SERVER=libbitcoin_server.a -lcurl -larchive
+LIBCURL=-lcurl
+LIBBITCOIN_SERVER=libbitcoin_server.a $(LIBCURL) -larchive
 LIBBITCOIN_WALLET=libbitcoin_wallet.a
 LIBBITCOIN_COMMON=libbitcoin_common.a
 LIBBITCOIN_CLI=libbitcoin_cli.a
@@ -447,7 +448,7 @@ crypto_libbitcoin_crypto_a_SOURCES = \
   crypto/haraka.h \
   crypto/haraka_portable.h \
   crypto/verus_hash.h \
-  crypto/verus_hash.cpp 
+  crypto/verus_hash.cpp
 
 if ENABLE_MINING
 EQUIHASH_TROMP_SOURCES = \
@@ -670,7 +671,8 @@ if ENABLE_WALLET
 wallet_utility_LDADD = \
 	$(LIBBITCOIN_WALLET) \
 	$(LIBBITCOIN_COMMON) \
-  $(LIBUNIVALUE) \
+	$(LIBCURL) \
+    $(LIBUNIVALUE) \
 	$(LIBBITCOIN_CRYPTO) \
 	$(LIBVERUS_CRYPTO) \
 	$(LIBVERUS_PORTABLE_CRYPTO) \
@@ -710,7 +712,7 @@ verus_tx_LDADD = \
   $(LIBZCASH_LIBS) \
   $(LIBCRYPTOCONDITIONS)
 
-verus_tx_LDADD += $(BOOST_LIBS) $(CRYPTO_LIBS)
+verus_tx_LDADD += $(BOOST_LIBS) $(CRYPTO_LIBS) $(LIBCURL)
 #
 
 # zcash protocol primitives #
