@@ -1908,13 +1908,9 @@ void ThreadMessageHandler()
 
             // Send messages
             {
-                TRY_LOCK(cs_vNodes, lockNodes);
-                if (lockNodes)
-                {
-                    TRY_LOCK(pnode->cs_vSend, lockSend);
-                    if (lockSend)
-                        g_signals.SendMessages(pnode, pnode == pnodeTrickle || pnode->fWhitelisted);
-                }
+                TRY_LOCK(pnode->cs_vSend, lockSend);
+                if (lockSend)
+                    g_signals.SendMessages(pnode, pnode == pnodeTrickle || pnode->fWhitelisted);
             }
             boost::this_thread::interruption_point();
         }
