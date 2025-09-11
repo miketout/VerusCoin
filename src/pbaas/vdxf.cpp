@@ -999,6 +999,32 @@ bool CDataDescriptor::UnwrapEncryption(const std::vector<unsigned char> &decrypt
     return true;
 }
 
+bool CDataDescriptor::IsValid() const
+{
+    bool basicValidation = version >= FIRST_VERSION && version <= LAST_VERSION && (flags & ~FLAG_MASK) == 0;
+    
+    // Additional validation: ensure the label contains valid UTF-8
+    if (basicValidation && HasLabel())
+    {
+        if (utf8valid(label.c_str()) != 0)
+        {
+            LogPrint("contentmap", "%s: data descriptor label contains invalid UTF-8: %s\n", __func__, label.substr(0, 50).c_str());
+            return false;
+        }
+    }
+
+    if (basicValidation && HasMIME())
+    {
+        if (utf8valid(mimeType.c_str()) != 0)
+        {
+            LogPrint("contentmap", "%s: data descriptor MIME type contains invalid UTF-8: %s\n", __func__, mimeType.substr(0, 50).c_str());
+            return false;
+        }
+    }
+
+    return basicValidation;
+}
+
 UniValue CDataDescriptor::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);

@@ -13,7 +13,6 @@
 #include "arith_uint256.h"
 #include "primitives/solutiondata.h"
 #include "mmr.h"
-#include "utf8.h"
 #include <curl/curl.h>
 // does not check for height / sapling upgrade, etc. this should not be used to get block proofs
 // on a pre-VerusPoP chain

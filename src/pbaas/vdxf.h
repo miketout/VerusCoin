@@ -142,7 +142,6 @@
 #include "zcash/Address.hpp"
 #include "zcash/address/zip32.h"
 #include <boost/algorithm/string.hpp>
-#include "utf8.h"
 
 extern std::string VERUS_CHAINNAME;
 extern uint160 VERUS_CHAINID;
@@ -958,11 +957,14 @@ public:
         FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT = 0x10,
         FLAG_LABEL_PRESENT = 0x20,
         FLAG_MIME_TYPE_PRESENT = 0x40,
-        FLAG_MASK = (FLAG_ENCRYPTED_DATA + FLAG_SALT_PRESENT + FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT + FLAG_INCOMING_VIEWING_KEY_PRESENT + FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT + FLAG_LABEL_PRESENT + FLAG_MIME_TYPE_PRESENT)
+        FLAG_VDXF_KEY_PRESENT = 0x80,
+        FLAG_MASK = (FLAG_ENCRYPTED_DATA + FLAG_SALT_PRESENT + FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT + FLAG_INCOMING_VIEWING_KEY_PRESENT +
+                     FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT + FLAG_LABEL_PRESENT + FLAG_MIME_TYPE_PRESENT + FLAG_VDXF_KEY_PRESENT)
     };
 
     uint32_t version;
     uint32_t flags;
+    uint160 vdxfKey;
     std::vector<unsigned char> objectData; // either direct data or serialized UTXORef +offset, length, and/or other type of info for different links
     std::string label;                  // label associated with this data
     std::string mimeType;               // optional mime type
@@ -991,8 +993,9 @@ public:
                     const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
                     const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
                     uint32_t Flags=0,
+                    const uint160 &VdxfKey=uint160(),
                     uint32_t Version=DEFAULT_VERSION) :
-        version(Version), flags(Flags), objectData(ObjectData), label(Label), mimeType(MimeType), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
+        version(Version), flags(Flags), vdxfKey(VdxfKey), objectData(ObjectData), label(Label), mimeType(MimeType), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
     {
         SetFlags();
     }
@@ -1007,6 +1010,10 @@ public:
         }
         READWRITE(VARINT(version));
         READWRITE(VARINT(flags));
+        if (HasVDXFKey())
+        {
+            READWRITE(vdxfKey);
+        }
         READWRITE(objectData);
         if (HasLabel())
         {
@@ -1056,6 +1063,11 @@ public:
         return false;
     }
 
+    bool HasVDXFKey() const
+    {
+        return flags & FLAG_VDXF_KEY_PRESENT;
+    }
+
     bool HasSalt() const
     {
         return flags & FLAG_SALT_PRESENT;
@@ -1089,6 +1101,7 @@ public:
     uint32_t CalcFlags() const
     {
         return (flags & FLAG_ENCRYPTED_DATA) +
+               (!vdxfKey.IsNull() ? FLAG_VDXF_KEY_PRESENT : 0) +
                (label.size() ? FLAG_LABEL_PRESENT : 0) +
                (mimeType.size() ? FLAG_MIME_TYPE_PRESENT : 0) +
                (salt.size() ? FLAG_SALT_PRESENT : 0) +
@@ -1128,31 +1141,7 @@ public:
 
     bool UnwrapEncryption(const std::vector<unsigned char> &decryptionKey, bool sskOnly=false);
 
-    bool IsValid() const
-    {
-        bool basicValidation = version >= FIRST_VERSION && version <= LAST_VERSION && (flags & ~FLAG_MASK) == 0;
-        
-        // Additional validation: ensure the label contains valid UTF-8
-        if (basicValidation && HasLabel())
-        {
-            if (utf8valid(label.c_str()) != 0)
-            {
-                LogPrint("contentmap", "%s: data descriptor label contains invalid UTF-8: %s\n", __func__, label.substr(0, 50).c_str());
-                return false;
-            }
-        }
-
-        if (basicValidation && HasMIME())
-        {
-            if (utf8valid(mimeType.c_str()) != 0)
-            {
-                LogPrint("contentmap", "%s: data descriptor MIME type contains invalid UTF-8: %s\n", __func__, mimeType.substr(0, 50).c_str());
-                return false;
-            }
-        }
-        
-        return basicValidation;
-    }
+    bool IsValid() const;
 
     UniValue ToUniValue() const;
 };
@@ -1229,8 +1218,9 @@ public:
                         const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
                         const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
                         uint32_t Flags=0,
+                        const uint160 &VdxfKey=uint160(),
                         uint32_t Version=DEFAULT_VERSION) :
-        dataDescriptor(ObjectData, Label, MimeType, Salt, EPK, IVK, SSK, Flags, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
+        dataDescriptor(ObjectData, Label, MimeType, Salt, EPK, IVK, SSK, Flags, VdxfKey, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
     {
     }
 

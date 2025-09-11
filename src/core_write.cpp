@@ -10,6 +10,7 @@
 #include "script/standard.h"
 #include "serialize.h"
 #include "streams.h"
+#include "utf8.h"
 #include "univalue.h"
 #include "util.h"
 #include "utilmoneystr.h"
@@ -1477,6 +1478,22 @@ UniValue CRating::ToUniValue() const
         retVal.pushKV("ratingsmap", ratingsMapUni);
     }
     return retVal;
+}
+
+bool CCredential::IsValid() const
+{
+    bool basicValid = (version >= VERSION_FIRST && version <= VERSION_LAST) && credentialKey != uint160();
+    
+    // Validate UTF-8 in label field
+    if (basicValid && !label.empty())
+    {
+        if (utf8valid(label.c_str()) != 0)
+        {
+            return false;
+        }
+    }
+    
+    return basicValid;
 }
 
 UniValue CCredential::ToUniValue() const
