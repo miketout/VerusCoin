@@ -1645,3 +1645,39 @@ UniValue CVDXFMMRDescriptor::ToUniValue() const
     obj.pushKV("mmr", mmrDescriptor.ToUniValue());
     return obj;
 }
+
+bool CCredential::IsValid() const
+{
+    bool basicValid = (version >= VERSION_FIRST && version <= VERSION_LAST) && credentialKey != uint160();
+    
+    // Validate UTF-8 in label field
+    if (basicValid && !label.empty())
+    {
+        if (utf8valid(label.c_str()) != 0)
+        {
+            return false;
+        }
+    }
+    
+    return basicValid;
+}
+
+UniValue CCredential::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+    int64_t Flags = CalcFlags();
+
+    ret.pushKV("version", (int64_t)version);
+    ret.pushKV("flags", Flags);
+    ret.pushKV("credentialkey", EncodeDestination(CIdentityID(credentialKey)));
+
+    ret.pushKV("credential", credential);
+    ret.pushKV("scopes", scopes);
+
+    if (HasLabel()) {
+        ret.pushKV("label", TrimSpaces(label, true, ""));
+    }
+
+    return ret;
+}
+
