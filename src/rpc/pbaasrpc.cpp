@@ -7993,8 +7993,6 @@ UniValue makeoffer(const UniValue& params, bool fHelp)
             TransactionBuilderResult preResult = tb.Build();
             preTx = preResult.GetTxOrThrow();
 
-            LOCK2(smartTransactionCS, mempool.cs);
-
             bool relayTx;
             CValidationState state;
             {

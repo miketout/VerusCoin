@@ -1036,6 +1036,10 @@ UniValue z_getencryptionaddress(const UniValue& params, bool fHelp)
     {
         hw << fromID;
     }
+    else
+    {
+        hw << (uint8_t)0;
+    }
     if (!toID.IsNull())
     {
         hw << toID;

@@ -753,7 +753,7 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
         {
             return;
         }
-        objectData = VectorEncodeVDXFUni(objUni);
+        objectData = mapBytesValue;
     }
     else
     {
@@ -999,6 +999,32 @@ bool CDataDescriptor::UnwrapEncryption(const std::vector<unsigned char> &decrypt
     return true;
 }
 
+bool CDataDescriptor::IsValid() const
+{
+    bool basicValidation = version >= FIRST_VERSION && version <= LAST_VERSION && (flags & ~FLAG_MASK) == 0;
+    
+    // Additional validation: ensure the label contains valid UTF-8
+    if (basicValidation && HasLabel())
+    {
+        if (utf8valid(label.c_str()) != 0)
+        {
+            LogPrint("contentmap", "%s: data descriptor label contains invalid UTF-8: %s\n", __func__, label.substr(0, 50).c_str());
+            return false;
+        }
+    }
+
+    if (basicValidation && HasMIME())
+    {
+        if (utf8valid(mimeType.c_str()) != 0)
+        {
+            LogPrint("contentmap", "%s: data descriptor MIME type contains invalid UTF-8: %s\n", __func__, mimeType.substr(0, 50).c_str());
+            return false;
+        }
+    }
+
+    return basicValidation;
+}
+
 UniValue CDataDescriptor::ToUniValue() const
 {
     UniValue ret(UniValue::VOBJ);
@@ -1022,9 +1048,18 @@ UniValue CDataDescriptor::ToUniValue() const
     if (isText &&
         find_value(processedObject, EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey()))).isNull())
     {
-        UniValue objectDataUni(UniValue::VOBJ);
-        objectDataUni.pushKV("message", std::string(objectData.begin(), objectData.end()));
-        ret.pushKV("objectdata", objectDataUni);
+        // Create a string from the binary data
+        std::string messageStr(objectData.begin(), objectData.end());
+        
+        if (utf8valid(messageStr.c_str()) == 0) {
+            // Safe to use as a message string
+            UniValue objectDataUni(UniValue::VOBJ);
+            objectDataUni.pushKV("message", messageStr);
+            ret.pushKV("objectdata", objectDataUni);
+        } else {
+            // Fall back to hex encoding if utf8 is not valid
+            ret.pushKV("objectdata", processedObject);
+        }
     }
     else
     {
@@ -1610,3 +1645,39 @@ UniValue CVDXFMMRDescriptor::ToUniValue() const
     obj.pushKV("mmr", mmrDescriptor.ToUniValue());
     return obj;
 }
+
+bool CCredential::IsValid() const
+{
+    bool basicValid = (version >= VERSION_FIRST && version <= VERSION_LAST) && credentialKey != uint160();
+    
+    // Validate UTF-8 in label field
+    if (basicValid && !label.empty())
+    {
+        if (utf8valid(label.c_str()) != 0)
+        {
+            return false;
+        }
+    }
+    
+    return basicValid;
+}
+
+UniValue CCredential::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+    int64_t Flags = CalcFlags();
+
+    ret.pushKV("version", (int64_t)version);
+    ret.pushKV("flags", Flags);
+    ret.pushKV("credentialkey", EncodeDestination(CIdentityID(credentialKey)));
+
+    ret.pushKV("credential", credential);
+    ret.pushKV("scopes", scopes);
+
+    if (HasLabel()) {
+        ret.pushKV("label", TrimSpaces(label, true, ""));
+    }
+
+    return ret;
+}
+

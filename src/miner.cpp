@@ -2510,10 +2510,12 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                 }
                                 else
                                 {
-                                    CCurrencyValueMap totalTxFees;
-                                    totalTxFees.valueMap[ConnectedChains.FirstNotaryChain().chainDefinition.GetID()] = CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE;
-                                    notarizationBuilder.SetReserveFee(totalTxFees);
-                                    notarizationBuilder.SetFee(0);
+                                    // first try to pay with native currency, then the notary chain's currency
+                                    CCurrencyValueMap totalTxFees({ConnectedChains.FirstNotaryChain().chainDefinition.GetID(), ASSETCHAINS_CHAINID},
+                                                                   {CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE, CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE});
+                                    nativeValueOut = CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE;
+                                    notarizationBuilder.SetReserveFee(CCurrencyValueMap());
+                                    notarizationBuilder.SetFee(nativeValueOut);
                                     pwalletMain->AvailableReserveCoins(vCoins,
                                                                     false,
                                                                     nullptr,
@@ -2523,8 +2525,8 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                                                     &totalTxFees,
                                                                     false);
 
-                                    success = pwalletMain->SelectReserveCoinsMinConf(totalTxFees,
-                                                                                    0,
+                                    success = pwalletMain->SelectReserveCoinsMinConf(CCurrencyValueMap(),
+                                                                                    nativeValueOut,
                                                                                     0,
                                                                                     1,
                                                                                     vCoins,
@@ -2532,21 +2534,21 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                                                                     reserveValueOut,
                                                                                     nativeValueOut);
 
-                                    // if we don't have vrsctest
+                                    // if we don't have enough native currency, use notary chain's
                                     if (!success)
                                     {
-                                        nativeValueOut = totalTxFees.valueMap[ConnectedChains.FirstNotaryChain().chainDefinition.GetID()];
-                                        totalTxFees.valueMap.erase(ConnectedChains.FirstNotaryChain().chainDefinition.GetID());
-                                        notarizationBuilder.SetReserveFee(CCurrencyValueMap());
-                                        notarizationBuilder.SetFee(nativeValueOut);
+                                        nativeValueOut = 0;
+                                        totalTxFees.valueMap.erase(ASSETCHAINS_CHAINID);
+                                        notarizationBuilder.SetReserveFee(totalTxFees);
+                                        notarizationBuilder.SetFee(0);
                                         success = pwalletMain->SelectReserveCoinsMinConf(totalTxFees,
-                                                                                        nativeValueOut,
-                                                                                        0,
-                                                                                        1,
-                                                                                        vCoins,
-                                                                                        setCoinsRet,
-                                                                                        reserveValueOut,
-                                                                                        nativeValueOut);
+                                                                                         nativeValueOut,
+                                                                                         0,
+                                                                                         1,
+                                                                                         vCoins,
+                                                                                         setCoinsRet,
+                                                                                         reserveValueOut,
+                                                                                         nativeValueOut);
                                     }
                                 }
                             }

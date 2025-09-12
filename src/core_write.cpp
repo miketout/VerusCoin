@@ -1479,25 +1479,6 @@ UniValue CRating::ToUniValue() const
     return retVal;
 }
 
-UniValue CCredential::ToUniValue() const
-{
-    UniValue ret(UniValue::VOBJ);
-    int64_t Flags = CalcFlags();
-
-    ret.pushKV("version", (int64_t)version);
-    ret.pushKV("flags", Flags);
-    ret.pushKV("credentialkey", EncodeDestination(CIdentityID(credentialKey)));
-
-    ret.pushKV("credential", credential);
-    ret.pushKV("scopes", scopes);
-
-    if (HasLabel()) {
-        ret.pushKV("label", TrimSpaces(label, true, ""));
-    }
-
-    return ret;
-}
-
 UniValue CMMRProof::ToUniValue() const
 {
     UniValue retObj(UniValue::VOBJ);
@@ -1771,15 +1752,15 @@ UniValue CIdentity::VDXFDataToUniValue(const std::vector<unsigned char> &dataVch
     {
         bool objOut = false;
         UniValue objectUni = VDXFDataToUniValue(ss, &objOut);
-        bytesLeft = ss.size();
         if (objOut)
         {
+            bytesLeft = ss.size();
             entryArr.push_back(objectUni);
         }
         else
         {
             // add the remaining data as a hex string
-            entryArr.push_back(HexBytes(dataVch.data() + (dataVch.size() - (bytesLeft + sizeof(uint160))), bytesLeft + sizeof(uint160)));
+            entryArr.push_back(HexBytes(dataVch.data() + (dataVch.size() - (bytesLeft)), bytesLeft));
             bytesLeft = 0;
             break;
         }

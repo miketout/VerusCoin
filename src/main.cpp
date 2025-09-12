@@ -10131,9 +10131,9 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                     }
                 }
             }
+            if (!vInv.empty())
+                pto->PushMessage("inv", vInv);
         }
-        if (!vInv.empty())
-            pto->PushMessage("inv", vInv);
 
         // Detect whether we're stalling
         if (!pto->fDisconnect && state.nStallingSince && state.nStallingSince < nNow - 1000000 * BLOCK_STALLING_TIMEOUT) {

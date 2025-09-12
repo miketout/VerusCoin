@@ -957,11 +957,14 @@ public:
         FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT = 0x10,
         FLAG_LABEL_PRESENT = 0x20,
         FLAG_MIME_TYPE_PRESENT = 0x40,
-        FLAG_MASK = (FLAG_ENCRYPTED_DATA + FLAG_SALT_PRESENT + FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT + FLAG_INCOMING_VIEWING_KEY_PRESENT + FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT + FLAG_LABEL_PRESENT + FLAG_MIME_TYPE_PRESENT)
+        FLAG_VDXF_KEY_PRESENT = 0x80,
+        FLAG_MASK = (FLAG_ENCRYPTED_DATA + FLAG_SALT_PRESENT + FLAG_ENCRYPTION_PUBLIC_KEY_PRESENT + FLAG_INCOMING_VIEWING_KEY_PRESENT +
+                     FLAG_SYMMETRIC_ENCRYPTION_KEY_PRESENT + FLAG_LABEL_PRESENT + FLAG_MIME_TYPE_PRESENT + FLAG_VDXF_KEY_PRESENT)
     };
 
     uint32_t version;
     uint32_t flags;
+    uint160 vdxfKey;
     std::vector<unsigned char> objectData; // either direct data or serialized UTXORef +offset, length, and/or other type of info for different links
     std::string label;                  // label associated with this data
     std::string mimeType;               // optional mime type
@@ -990,8 +993,9 @@ public:
                     const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
                     const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
                     uint32_t Flags=0,
+                    const uint160 &VdxfKey=uint160(),
                     uint32_t Version=DEFAULT_VERSION) :
-        version(Version), flags(Flags), objectData(ObjectData), label(Label), mimeType(MimeType), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
+        version(Version), flags(Flags), vdxfKey(VdxfKey), objectData(ObjectData), label(Label), mimeType(MimeType), salt(Salt), epk(EPK), ivk(IVK), ssk(SSK)
     {
         SetFlags();
     }
@@ -1006,6 +1010,10 @@ public:
         }
         READWRITE(VARINT(version));
         READWRITE(VARINT(flags));
+        if (HasVDXFKey())
+        {
+            READWRITE(vdxfKey);
+        }
         READWRITE(objectData);
         if (HasLabel())
         {
@@ -1055,6 +1063,11 @@ public:
         return false;
     }
 
+    bool HasVDXFKey() const
+    {
+        return flags & FLAG_VDXF_KEY_PRESENT;
+    }
+
     bool HasSalt() const
     {
         return flags & FLAG_SALT_PRESENT;
@@ -1088,6 +1101,7 @@ public:
     uint32_t CalcFlags() const
     {
         return (flags & FLAG_ENCRYPTED_DATA) +
+               (!vdxfKey.IsNull() ? FLAG_VDXF_KEY_PRESENT : 0) +
                (label.size() ? FLAG_LABEL_PRESENT : 0) +
                (mimeType.size() ? FLAG_MIME_TYPE_PRESENT : 0) +
                (salt.size() ? FLAG_SALT_PRESENT : 0) +
@@ -1127,10 +1141,7 @@ public:
 
     bool UnwrapEncryption(const std::vector<unsigned char> &decryptionKey, bool sskOnly=false);
 
-    bool IsValid() const
-    {
-        return version >= FIRST_VERSION && version <= LAST_VERSION && (flags & ~FLAG_MASK) == 0;
-    }
+    bool IsValid() const;
 
     UniValue ToUniValue() const;
 };
@@ -1207,8 +1218,9 @@ public:
                         const std::vector<unsigned char> &IVK=std::vector<unsigned char>(),
                         const std::vector<unsigned char> &SSK=std::vector<unsigned char>(),
                         uint32_t Flags=0,
+                        const uint160 &VdxfKey=uint160(),
                         uint32_t Version=DEFAULT_VERSION) :
-        dataDescriptor(ObjectData, Label, MimeType, Salt, EPK, IVK, SSK, Flags, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
+        dataDescriptor(ObjectData, Label, MimeType, Salt, EPK, IVK, SSK, Flags, VdxfKey, Version), CVDXF_Data(CVDXF_Data::DataDescriptorKey(), std::vector<unsigned char>(), Version)
     {
     }
 
@@ -1617,6 +1629,116 @@ public:
     {
         return std::vector<unsigned char>();
     }
+};
+
+class CCredential
+{
+
+public:
+    enum ECredentialTypes
+    {
+        VERSION_INVALID = 0,
+        VERSION_FIRST = 1,
+        VERSION_LAST = 1,
+        VERSION_CURRENT = 1,
+
+        FLAG_LABEL_PRESENT = 1,
+    };
+
+    uint32_t version;
+    uint32_t flags;
+    uint160 credentialKey;
+    UniValue credential;
+    UniValue scopes;              // who is receiving the credential, normally an app ID or service URL
+    std::string label;            // optional label to include
+
+    // The max length that the credential or scopes should be when their UniValue is stringified.
+    // For a plain login (username and password):
+    // - An average length email is around 30 characters
+    // - A 15 word password from the eff long wordlist is around 120 characters
+    // - The brackets, quotes and commas needed for the string are 7 characters. 
+    // The total of 157 characters fits easily into 512 characters and has space
+    // for larger fields that future credential types may have.
+    static const size_t MAX_JSON_STRING_LENGTH = 512;
+
+    CCredential(uint32_t Version=VERSION_INVALID,
+                uint32_t Flags=0,
+                const uint160 &CredentialKey=uint160(),
+                const UniValue &Credential=UniValue(UniValue::VSTR),
+                const UniValue &Scopes=UniValue(UniValue::VSTR),
+                const std::string &Label=std::string()) :
+        version(Version), flags(Flags), credentialKey(CredentialKey), credential(Credential), scopes(Scopes), label(Label)
+    {
+        std::string credStr = credential.write();
+        std::string scopesStr = scopes.write();
+        if (credStr.size() > MAX_JSON_STRING_LENGTH || scopesStr.size() > MAX_JSON_STRING_LENGTH) {
+            version = VERSION_INVALID;
+        }
+
+        SetFlags();
+    }
+
+    CCredential(const std::vector<unsigned char> &vch)
+    {
+        bool success;
+        ::FromVector(vch, *this, &success);
+        if (!success)
+        {
+            version = VERSION_INVALID;
+            flags = 0;
+            credentialKey = uint160();
+        }
+    }
+
+    CCredential(const UniValue uni);
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(VARINT(version));
+        READWRITE(VARINT(flags));
+        READWRITE(credentialKey);
+
+        if (ser_action.ForRead()) {
+            std::string credStr;
+            READWRITE(LIMITED_STRING(credStr, MAX_JSON_STRING_LENGTH));
+            credential.read(credStr);
+
+            std::string scopesStr;
+            READWRITE(LIMITED_STRING(scopesStr, MAX_JSON_STRING_LENGTH));
+            scopes.read(scopesStr);
+        } else {
+            std::string credStr = credential.write();
+            READWRITE(LIMITED_STRING(credStr, MAX_JSON_STRING_LENGTH));
+
+            std::string scopesStr = scopes.write();
+            READWRITE(LIMITED_STRING(scopesStr, MAX_JSON_STRING_LENGTH));
+        }
+
+        if (HasLabel()) {
+            READWRITE(LIMITED_STRING(label, 512));
+        }
+    }
+
+    bool HasLabel() const
+    {
+        return flags & FLAG_LABEL_PRESENT;
+    }
+
+    uint32_t CalcFlags() const
+    {
+        return (label.size() ? FLAG_LABEL_PRESENT : 0);
+    }
+
+    uint32_t SetFlags()
+    {
+        return flags = CalcFlags();
+    }
+
+    bool IsValid() const;
+
+    UniValue ToUniValue() const;
 };
 
 // standard name parsing functions
