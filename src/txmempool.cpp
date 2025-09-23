@@ -437,6 +437,7 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
     finalizationEvidenceCache.Clear();
     crossChainNotarizationDataCache.Clear();
     priorConversionCache.Clear();
+    reserveTransferCache.Clear();
 
     // Remove transactions spending a coinbase which are now immature and no-longer-final transactions
     LOCK(cs);

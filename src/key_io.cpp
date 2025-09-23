@@ -183,9 +183,17 @@ UniValue getvdxfid_internal(const UniValue& params)
         boundData.pushKV("uint256", hash256KeyKeyInput.GetHex());
         boundData.pushKV("indexnum", hashInputNum);
     }
-    else if (!hashUniValue.isNull() || !numUniValue.isNull())
+    else if (!hashUniValue.isNull() && numUniValue.isNull())
     {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot specify hash or numeric index without additional vdxf key or hash");
+        isIndexKey = true;
+        vdxfID = CCrossChainRPCData::GetConditionID(vdxfID, hash256KeyKeyInput);
+        boundData.pushKV("uint256", hash256KeyKeyInput.GetHex());
+    }
+    else if (hashUniValue.isNull() && !numUniValue.isNull())
+    {
+        isIndexKey = true;
+        vdxfID = CCrossChainRPCData::GetConditionID(vdxfID, hashInputNum);
+        boundData.pushKV("indexnum", hashInputNum);
     }
 
     UniValue result(UniValue::VOBJ);
