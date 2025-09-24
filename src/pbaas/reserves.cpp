@@ -1131,27 +1131,33 @@ CCrossChainImport CCrossChainImport::GetPriorImport(const CTransaction &tx,
     CCrossChainImport cci;
     for (auto &oneIn : tx.vin)
     {
-        CTransaction _priorTx;
-        int32_t _priorOutNum;
-        uint256 _priorTxBlockHash;
-        CTransaction &priorTx = ppriorTx ? *ppriorTx : _priorTx;
-        int32_t &priorOutNum = ppriorOutNum ? *ppriorOutNum : _priorOutNum;
-        uint256 &priorTxBlockHash = ppriorTxBlockHash ? *ppriorTxBlockHash : _priorTxBlockHash;
+        CTransaction priorTx;
+        uint256 priorTxBlockHash;
 
         COptCCParams p;
         if (!IsDefinitionImport() &&
-            (myGetTransaction(oneIn.prevout.hash, _priorTx, priorTxBlockHash)))
+            (myGetTransaction(oneIn.prevout.hash, priorTx, priorTxBlockHash)))
         {
-            if (_priorTx.vout.size() > oneIn.prevout.n &&
-                _priorTx.vout[oneIn.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
+            if (priorTx.vout.size() > oneIn.prevout.n &&
+                priorTx.vout[oneIn.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
                 p.IsValid() &&
                 p.evalCode == EVAL_CROSSCHAIN_IMPORT &&
                 p.vData.size() &&
                 (cci = CCrossChainImport(p.vData[0])).IsValid() &&
                 cci.importCurrencyID == importCurrencyID)
             {
-                priorTx = _priorTx;
-                priorOutNum = oneIn.prevout.n;
+                if (ppriorTx)
+                {
+                    *ppriorTx = priorTx;
+                }
+                if (ppriorOutNum)
+                {
+                    *ppriorOutNum = oneIn.prevout.n;
+                }
+                if (ppriorTxBlockHash)
+                {
+                    *ppriorTxBlockHash = priorTxBlockHash;
+                }
                 break;
             }
             else
