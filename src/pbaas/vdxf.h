@@ -570,14 +570,14 @@ public:
         return key;
     }
 
-    static std::string CredentialsKeyName()
+    static std::string CredentialKeyName()
     {
-        return "vrsc::identity.credentials";
+        return "vrsc::identity.credential";
     }
-    static uint160 CredentialsKey()
+    static uint160 CredentialKey()
     {
         static uint160 nameSpace;
-        static uint160 key = GetDataKey(CredentialsKeyName(), nameSpace);
+        static uint160 key = GetDataKey(CredentialKeyName(), nameSpace);
         return key;
     }
 
