@@ -1967,7 +1967,6 @@ UniValue signdata(const UniValue& params, bool fHelp)
 
         msgHash = mmrRoot;
         mmrDescriptor = CMMRDescriptor(hashType, mmrHashType, mmrRoot, CDataDescriptor(mmrHashes), mmrObjects);
-        libzcash::SaplingIncomingViewingKey incomingViewingKey;
 
         if (encryptToAddress)
         {
