@@ -9878,6 +9878,10 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
     std::string strTxId;
     params.push_back(lastConfirmedNotarization.ToUniValue());
     params.push_back(allEvidence.ToUniValue());
+    if (!VERUS_NOTARYID.IsNull())
+    {
+        params.push_back(EncodeDestination(VERUS_NOTARYID));
+    }
 
     LogPrint("notarization", "submitting notarization with parameters:\n%s\n%s\n", params[0].write(1,2).c_str(), params[1].write(1,2).c_str());
 

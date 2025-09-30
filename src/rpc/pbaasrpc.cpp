@@ -6173,23 +6173,24 @@ bool FundTransparentTransactionBuilder(CWallet *pwallet, TransactionBuilder &tb,
 
 UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
 {
-    if (fHelp || params.size() != 2)
+    if (fHelp || params.size() < 2 || params.size() > 3)
     {
         throw runtime_error(
-            "submitacceptednotarization \"{earnednotarization}\" \"{notaryevidence}\"\n"
+            "submitacceptednotarization \"{earnednotarization}\" \"{notaryevidence}\" sourceoffunds\n"
             "\nFinishes an almost complete notarization transaction based on the notary chain and the current wallet or pubkey.\n"
             "If successful in submitting the transaction based on all rules, a transaction ID is returned, otherwise, NULL.\n"
 
             "\nArguments\n"
             "\"earnednotarization\"             (object, required) notarization earned on the other system, which is the basis for this\n"
             "\"notaryevidence\"                 (object, required) evidence and notary signatures validating the notarization\n"
+            "\"sourceoffunds\"                  (string, optional) any valid source of funds to enable privacy when notarizing multiple PBaaS chains\n"
 
             "\nResult:\n"
             "txid                               (hexstring) transaction ID of submitted transaction\n"
 
             "\nExamples:\n"
-            + HelpExampleCli("submitacceptednotarization", "\"{earnednotarization}\" \"{notaryevidence}\"")
-            + HelpExampleRpc("submitacceptednotarization", "\"{earnednotarization}\" \"{notaryevidence}\"")
+            + HelpExampleCli("submitacceptednotarization", "\"{earnednotarization}\" \"{notaryevidence}\" \"sourceoffunds\"")
+            + HelpExampleRpc("submitacceptednotarization", "\"{earnednotarization}\" \"{notaryevidence}\" \"sourceoffunds\"")
         );
     }
 
@@ -6207,6 +6208,17 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
     CNotaryEvidence evidence;
     CCurrencyDefinition chainDef;
     int32_t chainDefHeight;
+
+    CTxDestination fromDest(VERUS_NOTARYID);
+    if (params.size() == 3)
+    {
+        CTxDestination sourceOfFunds = DecodeDestination(uni_get_str(params[2]));
+        if (sourceOfFunds.which() != COptCCParams::ADDRTYPE_PKH && sourceOfFunds.which() != COptCCParams::ADDRTYPE_ID)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. If sourceoffunds is present must be transparent address or identity");
+        }
+        fromDest = sourceOfFunds;
+    }
 
     /* CPBaaSNotarization checkPbn(params[0]);
     printf("%s: checknotarization before:\n%s\n", __func__, checkPbn.ToUniValue().write(1,2).c_str());
@@ -6254,7 +6266,6 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
             //printf("%s: unable to create accepted notarization: %s\n", __func__, state.GetRejectReason().c_str());
             throw JSONRPCError(RPC_INVALID_PARAMETER, state.GetRejectReason());
         }
-        CTxDestination fromDest(VERUS_NOTARYID);
         if (fromDest.which() == COptCCParams::ADDRTYPE_INVALID ||
             !FundTransparentTransactionBuilder(pwalletMain, tb, &fromDest))
         {

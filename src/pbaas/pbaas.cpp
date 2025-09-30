@@ -811,7 +811,14 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                             uint256 blockHash;
                             if (!myGetTransaction(cci.exportTxId, exportTx, blockHash))
                             {
-                                return state.Error("Can't get export for import: " + cci.ToUniValue().write(1,2));
+                                if (LogAcceptCategory("crosschainimports"))
+                                {
+                                    return state.Error("Can't get export for import: " + cci.ToUniValue().write(1,2));
+                                }
+                                else
+                                {
+                                    return state.Error("Can't get export for import. Missing export: " + cci.exportTxId.GetHex());
+                                }
                             }
 
                             haveExportTx = true;
@@ -1626,7 +1633,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                 LogPrintf("%s: mismatch transfer sizes: ccx.reserveTransfers.size(): %ld, reserveTransfers.size(): %ld, txInputVec.size(): %ld\n",
                        __func__, ccx.reserveTransfers.size(), reserveTransfers.size(), txInputVec.size());
             }
-            return state.Error("Export is not exporting cross chain transfers correctly as required by protocol");
+            return state.Error("Export is not exporting cross chain transfers correctly as required by protocol, hash: " + tx.GetHash().GetHex());
         }
 
         std::set<std::pair<uint256, int>> utxos;
