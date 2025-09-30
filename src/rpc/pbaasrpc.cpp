@@ -6213,11 +6213,26 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
     if (params.size() == 3)
     {
         CTxDestination sourceOfFunds = DecodeDestination(uni_get_str(params[2]));
-        if (sourceOfFunds.which() != COptCCParams::ADDRTYPE_PKH && sourceOfFunds.which() != COptCCParams::ADDRTYPE_ID)
+        std::pair<CIdentityMapKey, CIdentityMapValue> idResult;
+        idResult.first.flags = 0;
+        if (sourceOfFunds.which() == COptCCParams::ADDRTYPE_ID)
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. If sourceoffunds is present must be transparent address or identity");
+            LOCK(pwalletMain->cs_wallet);
+            pwalletMain->GetIdentity(GetDestinationID(sourceOfFunds), idResult);
         }
-        fromDest = sourceOfFunds;
+        if ((idResult.first.flags & idResult.first.CAN_SPEND) || sourceOfFunds.which() == COptCCParams::ADDRTYPE_PKH)
+        {
+            fromDest = sourceOfFunds;
+        }
+    }
+
+    if (fromDest.which() == COptCCParams::ADDRTYPE_INVALID)
+    {
+        if (LogAcceptCategory("notarization"))
+        {
+            LogPrintf("No valid sourceoffunds for notarization transaction\n");
+        }
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Set \"-notaryid=idname@\" on startup to submit and earn from notarization transactions");
     }
 
     /* CPBaaSNotarization checkPbn(params[0]);
@@ -6295,6 +6310,7 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
             TxToUniv(tb.mtx, uint256(), jsonTx);
             LogPrintf("Failure to build and sign notarization transaction: %s\n", jsonTx.write(1,2).c_str());
         }
+        LogPrintf("Accepted notarization build error: %s\n", buildResult.GetError().c_str());
         throw JSONRPCError(RPC_INVALID_PARAMETER, buildResult.GetError());
     }
 
