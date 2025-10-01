@@ -1626,14 +1626,19 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
              reserveTransfers.size() != txInputVec.size() ||
              ccx.IsClearLaunch() != isClearLaunchExport))
         {
-            if (LogAcceptCategory("crosschainexports"))
+            if (LogAcceptCategory("crosschainexports") || LogAcceptCategory("mevattack"))
             {
                 printf("%s: mismatch transfer sizes: ccx.reserveTransfers.size(): %ld, reserveTransfers.size(): %ld, txInputVec.size(): %ld\n",
                        __func__, ccx.reserveTransfers.size(), reserveTransfers.size(), txInputVec.size());
                 LogPrintf("%s: mismatch transfer sizes: ccx.reserveTransfers.size(): %ld, reserveTransfers.size(): %ld, txInputVec.size(): %ld\n",
                        __func__, ccx.reserveTransfers.size(), reserveTransfers.size(), txInputVec.size());
+                printf("height: %u, currencyname: %s, ccx: %s\n", height, thisDef.name.c_str(), ccx.ToUniValue().write(1,2).c_str());
+                LogPrintf("height: %u, currencyname: %s, ccx: %s\n", height, thisDef.name.c_str(), ccx.ToUniValue().write(1,2).c_str());
+                printf("firsinput: %s\n", CUTXORef(tx.vin[0].prevout).ToUniValue().write().c_str());
+                LogPrintf("firsinput: %s\n", CUTXORef(tx.vin[0].prevout).ToUniValue().write().c_str());
             }
-            return state.Error("Export is not exporting cross chain transfers correctly as required by protocol, hash: " + tx.GetHash().GetHex());
+            return state.Error("Export is not exporting cross chain transfers correctly as required by protocol, currencyid: " + 
+                                EncodeDestination(CIdentityID(ccx.destCurrencyID)) + " hash: " + tx.GetHash().GetHex());
         }
 
         std::set<std::pair<uint256, int>> utxos;
