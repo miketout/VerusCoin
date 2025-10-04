@@ -6276,7 +6276,7 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
         // but can be verified with the cross-chain signatures and evidence
 
         CValidationState state;
-        if (!pbn.CreateAcceptedNotarization(chainDef, pbn, evidence, state, tb))
+        if (!pbn.CreateAcceptedNotarization(chainDef, pbn, evidence, state, tb, fromDest))
         {
             //printf("%s: unable to create accepted notarization: %s\n", __func__, state.GetRejectReason().c_str());
             throw JSONRPCError(RPC_INVALID_PARAMETER, state.GetRejectReason());

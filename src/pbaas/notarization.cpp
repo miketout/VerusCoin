@@ -4707,7 +4707,8 @@ bool CPBaaSNotarization::CreateAcceptedNotarization(const CCurrencyDefinition &e
                                                     const CPBaaSNotarization &earnedNotarization,
                                                     const CNotaryEvidence &notaryEvidence,
                                                     CValidationState &state,
-                                                    TransactionBuilder &txBuilder)
+                                                    TransactionBuilder &txBuilder,
+                                                    const CTxDestination &fromDest)
 {
     std::string errorPrefix(strprintf("%s: ", __func__));
     uint160 SystemID = externalSystem.GetID();
@@ -4768,22 +4769,7 @@ bool CPBaaSNotarization::CreateAcceptedNotarization(const CCurrencyDefinition &e
     }
 
     // now, we'll want to put our own proposer as the beneficiary of this notarization, if possible
-    if (!VERUS_NOTARYID.IsNull())
-    {
-        newNotarization.proposer.SetAuxDest(DestinationToTransferDestination(VERUS_NOTARYID), 0);
-    }
-    else if (!GetArg("-mineraddress", "").empty())
-    {
-        newNotarization.proposer.SetAuxDest(DestinationToTransferDestination(DecodeDestination(GetArg("-mineraddress", ""))), 0);
-    }
-    else if (!NOTARY_PUBKEY.empty())
-    {
-        newNotarization.proposer.SetAuxDest(DestinationToTransferDestination(CPubKey(ParseHex(NOTARY_PUBKEY))), 0);
-    }
-    else if (!VERUS_DEFAULTID.IsNull())
-    {
-        newNotarization.proposer.SetAuxDest(DestinationToTransferDestination(VERUS_DEFAULTID), 0);
-    }
+    newNotarization.proposer.SetAuxDest(DestinationToTransferDestination(fromDest), 0);
 
     CProofRoot ourRoot = newNotarization.proofRoots[ASSETCHAINS_CHAINID];
 

@@ -692,7 +692,8 @@ public:
                                            const CPBaaSNotarization &notarization,
                                            const CNotaryEvidence &notaryEvidence,
                                            CValidationState &state,
-                                           TransactionBuilder &txBuilder);
+                                           TransactionBuilder &txBuilder,
+                                           const CTxDestination &fromDest);
 
     static bool ConfirmOrRejectNotarizations(CWallet *pWallet,
                                              const CRPCChainData &externalSystem,
