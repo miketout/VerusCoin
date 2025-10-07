@@ -43,8 +43,7 @@ fi
 TRIPLET=`./depends/config.guess`
 PREFIX="$(pwd)/depends/$TRIPLET"
 
-make "$@" -C ./depends/ V=1 NO_QT=1 NO_PROTON=1
-
+make "$@" -C ./depends v=1 NO_PROTON=1 NO_QT=1 HOST=aarch64-apple-darwin
 ./autogen.sh
 
 CXXFLAGS="-g0 -O2 -Wno-unknown-warning-option" \
