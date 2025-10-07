@@ -47,10 +47,6 @@ make "$@" -C ./depends/ V=1 NO_QT=1 NO_PROTON=1
 
 ./autogen.sh
 
-CPPFLAGS="-I$PREFIX/include -arch arm64" LDFLAGS="-L$PREFIX/lib -arch arm64 -Wl,-no_pie" \
-CXXFLAGS="-arch arm64 -I$PREFIX/include -fwrapv -fno-strict-aliasing \
--Wno-deprecated-declarations -Wno-deprecated-builtins -Wno-enum-constexpr-conversion \
--Wno-unknown-warning-option -Werror -Wno-error=attributes -g" \
-./configure --prefix="${PREFIX}" --with-gui=no "$HARDENING_ARG" "$LCOV_ARG" "$DEBUGGING_ARG"
-
-make "$@" NO_GTEST=1 STATIC=1
+CXXFLAGS="-g0 -O2 -Wno-unknown-warning-option" \
+CONFIG_SITE="$PWD/depends/aarch64-apple-darwin/share/config.site" ./configure --disable-tests --disable-bench --with-gui=no --host=aarch64-apple-darwin "$HARDENING_ARG" "$LCOV_ARG" "$DEBUGGING_ARG"
+MACOSX_DEPLOYMENT_TARGET=10.4 make "$@" NO_GTEST=1 STATIC=1
