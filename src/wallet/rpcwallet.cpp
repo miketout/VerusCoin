@@ -2001,9 +2001,10 @@ UniValue signdata(const UniValue& params, bool fHelp)
 
             // if we should create an advanced signature from an object specification do it, otherwise,
             // drop through
+            CIdentitySignature identitySig;
             if (objectSignature)
             {
-                CIdentitySignature identitySig = CIdentitySignature(nHeight, std::set<std::vector<unsigned char>>(), (CCurrencyDefinition::EHashTypes)hashType, CIdentitySignature::VERSION_ETHBRIDGE);
+                identitySig = CIdentitySignature(nHeight, std::set<std::vector<unsigned char>>(), (CCurrencyDefinition::EHashTypes)hashType, CIdentitySignature::VERSION_ETHBRIDGE);
                 if (!strSignature.empty())
                 {
                     std::vector<unsigned char> sigVec;
@@ -2097,7 +2098,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
             {
                 sig = SignMessageHash(identity, msgHash, strSignature, nHeight);
             }
-            CSignatureData mmrSignatureData(ASSETCHAINS_CHAINID, createMMR ? mmrHashType : hashType, std::vector<unsigned char>(msgHash.begin(), msgHash.end()), identity.GetID(), CSignatureData::TYPE_VERUSID_DEFAULT, DecodeBase64(sig.c_str()), vdxfCodes, vdxfCodeNames, statements);
+            CSignatureData mmrSignatureData(ASSETCHAINS_CHAINID, createMMR ? mmrHashType : hashType, std::vector<unsigned char>(msgHash.begin(), msgHash.end()), identity.GetID(), identitySig.version, DecodeBase64(sig.c_str()), vdxfCodes, vdxfCodeNames, statements);
 
             if (encryptToAddress && mmrSignatureData.signatureAsVch.size())
             {
