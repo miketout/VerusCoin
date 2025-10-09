@@ -2150,6 +2150,7 @@ UniValue signdata(const UniValue& params, bool fHelp)
                     ret.push_back(Pair("boundhashes", boundHashes));
                 }
             }
+            ret.pushKV("signatureversion", identitySig.version);
             ret.push_back(Pair("signature", sig));
             return ret;
         }
