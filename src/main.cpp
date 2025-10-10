@@ -2522,7 +2522,6 @@ bool myGetTransaction(const uint256 &hash, CTransaction &txOut, uint256 &hashBlo
 {
     // need a GetTransaction without lock so the validation code for assets can run without deadlock
     {
-        LOCK(mempool.cs);
         //fprintf(stderr,"check mempool\n");
         if (checkMempool && mempool.lookup(hash, txOut))
         {
