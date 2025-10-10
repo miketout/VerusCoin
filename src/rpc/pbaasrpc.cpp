@@ -6173,23 +6173,24 @@ bool FundTransparentTransactionBuilder(CWallet *pwallet, TransactionBuilder &tb,
 
 UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
 {
-    if (fHelp || params.size() != 2)
+    if (fHelp || params.size() < 2 || params.size() > 3)
     {
         throw runtime_error(
-            "submitacceptednotarization \"{earnednotarization}\" \"{notaryevidence}\"\n"
+            "submitacceptednotarization \"{earnednotarization}\" \"{notaryevidence}\" sourceoffunds\n"
             "\nFinishes an almost complete notarization transaction based on the notary chain and the current wallet or pubkey.\n"
             "If successful in submitting the transaction based on all rules, a transaction ID is returned, otherwise, NULL.\n"
 
             "\nArguments\n"
             "\"earnednotarization\"             (object, required) notarization earned on the other system, which is the basis for this\n"
             "\"notaryevidence\"                 (object, required) evidence and notary signatures validating the notarization\n"
+            "\"sourceoffunds\"                  (string, optional) any valid source of funds to enable privacy when notarizing multiple PBaaS chains\n"
 
             "\nResult:\n"
             "txid                               (hexstring) transaction ID of submitted transaction\n"
 
             "\nExamples:\n"
-            + HelpExampleCli("submitacceptednotarization", "\"{earnednotarization}\" \"{notaryevidence}\"")
-            + HelpExampleRpc("submitacceptednotarization", "\"{earnednotarization}\" \"{notaryevidence}\"")
+            + HelpExampleCli("submitacceptednotarization", "\"{earnednotarization}\" \"{notaryevidence}\" \"sourceoffunds\"")
+            + HelpExampleRpc("submitacceptednotarization", "\"{earnednotarization}\" \"{notaryevidence}\" \"sourceoffunds\"")
         );
     }
 
@@ -6207,6 +6208,32 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
     CNotaryEvidence evidence;
     CCurrencyDefinition chainDef;
     int32_t chainDefHeight;
+
+    CTxDestination fromDest(VERUS_NOTARYID);
+    if (params.size() == 3)
+    {
+        CTxDestination sourceOfFunds = DecodeDestination(uni_get_str(params[2]));
+        std::pair<CIdentityMapKey, CIdentityMapValue> idResult;
+        idResult.first.flags = 0;
+        if (sourceOfFunds.which() == COptCCParams::ADDRTYPE_ID)
+        {
+            LOCK(pwalletMain->cs_wallet);
+            pwalletMain->GetIdentity(GetDestinationID(sourceOfFunds), idResult);
+        }
+        if ((idResult.first.flags & idResult.first.CAN_SPEND) || sourceOfFunds.which() == COptCCParams::ADDRTYPE_PKH)
+        {
+            fromDest = sourceOfFunds;
+        }
+    }
+
+    if (fromDest.which() == COptCCParams::ADDRTYPE_INVALID)
+    {
+        if (LogAcceptCategory("notarization"))
+        {
+            LogPrintf("No valid sourceoffunds for notarization transaction\n");
+        }
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Set \"-notaryid=idname@\" on startup to submit and earn from notarization transactions");
+    }
 
     /* CPBaaSNotarization checkPbn(params[0]);
     printf("%s: checknotarization before:\n%s\n", __func__, checkPbn.ToUniValue().write(1,2).c_str());
@@ -6249,12 +6276,11 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
         // but can be verified with the cross-chain signatures and evidence
 
         CValidationState state;
-        if (!pbn.CreateAcceptedNotarization(chainDef, pbn, evidence, state, tb))
+        if (!pbn.CreateAcceptedNotarization(chainDef, pbn, evidence, state, tb, fromDest))
         {
             //printf("%s: unable to create accepted notarization: %s\n", __func__, state.GetRejectReason().c_str());
             throw JSONRPCError(RPC_INVALID_PARAMETER, state.GetRejectReason());
         }
-        CTxDestination fromDest(VERUS_NOTARYID);
         if (fromDest.which() == COptCCParams::ADDRTYPE_INVALID ||
             !FundTransparentTransactionBuilder(pwalletMain, tb, &fromDest))
         {
@@ -6284,6 +6310,7 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
             TxToUniv(tb.mtx, uint256(), jsonTx);
             LogPrintf("Failure to build and sign notarization transaction: %s\n", jsonTx.write(1,2).c_str());
         }
+        LogPrintf("Accepted notarization build error: %s\n", buildResult.GetError().c_str());
         throw JSONRPCError(RPC_INVALID_PARAMETER, buildResult.GetError());
     }
 
