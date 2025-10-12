@@ -6218,7 +6218,7 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
         fromDest = DecodeDestination(uni_get_str(params[2]));
         if (fromDest.which() != COptCCParams::ADDRTYPE_INVALID)
         {
-            LOCK(pwalletMain->cs_wallet);
+            LOCK2(cs_main, pwalletMain->cs_wallet);
             pwalletMain->AvailableReserveCoins(vCoins, false, nullptr, true, true, &fromDest, &nativeCurrency, false);
         }
     }
@@ -6229,7 +6229,7 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
         // if we have a valid notary address, see if it has funds
         if (fromDest.which() != COptCCParams::ADDRTYPE_INVALID)
         {
-            LOCK(pwalletMain->cs_wallet);
+            LOCK2(cs_main, pwalletMain->cs_wallet);
             pwalletMain->AvailableReserveCoins(vCoins, false, nullptr, true, true, &fromDest, &nativeCurrency, false);
         }
     }
@@ -6240,7 +6240,7 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
         // if we have a valid notary address, see if it has funds
         if (fromDest.which() != COptCCParams::ADDRTYPE_INVALID)
         {
-            LOCK(pwalletMain->cs_wallet);
+            LOCK2(cs_main, pwalletMain->cs_wallet);
             pwalletMain->AvailableReserveCoins(vCoins, false, nullptr, true, true, &fromDest, &nativeCurrency, false);
         }
     }
@@ -6251,7 +6251,7 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
         // if we have a valid notary address, see if it has funds
         if (fromDest.which() != COptCCParams::ADDRTYPE_INVALID)
         {
-            LOCK(pwalletMain->cs_wallet);
+            LOCK2(cs_main, pwalletMain->cs_wallet);
             pwalletMain->AvailableReserveCoins(vCoins, false, nullptr, true, true, &fromDest, &nativeCurrency, false);
         }
         if (!vCoins.size())
