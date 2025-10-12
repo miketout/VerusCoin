@@ -47,10 +47,12 @@ make "$@" -C ./depends/ V=1 NO_QT=1 NO_PROTON=1
 
 ./autogen.sh
 
-CPPFLAGS="-I$PREFIX/include -arch x86_64" LDFLAGS="-L$PREFIX/lib -arch x86_64 -Wl,-no_pie" \
+CPPFLAGS="-I$PREFIX/include -arch x86_64" \
+LDFLAGS="-L$PREFIX/lib -L/usr/local/opt/libb2/lib -arch x86_64 -Wl,-no_pie" \
 CXXFLAGS="-arch x86_64 -I$PREFIX/include -fwrapv -fno-strict-aliasing \
 -Wno-deprecated-declarations -Wno-deprecated-builtins -Wno-enum-constexpr-conversion \
 -Wno-unknown-warning-option -Werror -Wno-error=attributes -g" \
 ./configure --prefix="${PREFIX}" --with-gui=no "$HARDENING_ARG" "$LCOV_ARG" "$DEBUGGING_ARG"
+
 
 make "$@" NO_GTEST=1 STATIC=1
