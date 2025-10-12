@@ -54,4 +54,4 @@ export CXXFLAGS="-DSSE2NEON_SUPPRESS_WARNINGS -mcpu=apple-m1 -O2 \
 export CFLAGS="-DSSE2NEON_SUPPRESS_WARNINGS -mcpu=apple-m1 -O2"
 
 CONFIG_SITE="$PWD/depends/aarch64-apple-darwin/share/config.site" ./configure --enable-tests --disable-bench --with-gui=no --host=aarch64-apple-darwin "$HARDENING_ARG" "$LCOV_ARG" "$DEBUGGING_ARG"
-MACOSX_DEPLOYMENT_TARGET=10.4 make "$@" STATIC=1
+MACOSX_DEPLOYMENT_TARGET=10.5 make "$@" STATIC=1
