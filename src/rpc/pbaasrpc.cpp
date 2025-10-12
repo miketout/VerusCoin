@@ -6196,11 +6196,6 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
 
     CheckPBaaSAPIsValid();
 
-    if (VERUS_NOTARYID.IsNull())
-    {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Set \"-notaryid=idname@\" on startup to submit and earn from notarization transactions");
-    }
-
     uint32_t nHeight = chainActive.Height();
 
     // decode the transaction and ensure that it is formatted as expected
@@ -6266,7 +6261,7 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
         {
             LogPrintf("No valid sourceoffunds for notarization transaction\n");
         }
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Set \"-notaryid=idname@\" on startup to submit and earn from notarization transactions");
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "No valid sourceoffunds for accepted notarization transaction. Set \"-notaryid=id@\", \"-defaultid=id@\", or \"-mineraddress=addr\"");
     }
 
     /* CPBaaSNotarization checkPbn(params[0]);
