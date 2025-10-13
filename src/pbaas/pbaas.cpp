@@ -7271,10 +7271,12 @@ CCurrencyDefinition CConnectedChains::GetCachedCurrency(const uint160 &currencyI
     CCurrencyDefinition currencyDef = std::get<2>(specificCurDef);
     if (!currencyDef.IsValid() ||
         (!std::get<0>(specificCurDef) && currencyDef.GetID() != ASSETCHAINS_CHAINID) ||
-        (chainActive.Height() <= std::get<0>(specificCurDef) &&
+        (std::get<0>(specificCurDef) > 0 &&
+         std::get<0>(specificCurDef) <= chainActive.Height() &&
          chainActive[std::get<0>(specificCurDef)]->GetBlockHash() != std::get<1>(specificCurDef)) ||
         ((chainActive.Height() + 1) == std::get<0>(specificCurDef) &&
-          chainActive[std::get<0>(specificCurDef)]->GetBlockHash() != uint256()))
+          std::get<1>(specificCurDef) != uint256()) ||
+        (chainActive.Height() + 1) < std::get<0>(specificCurDef))
     {
         int32_t defHeight;
         if (!GetCurrencyDefinition(currencyID, currencyDef, &defHeight, true))
