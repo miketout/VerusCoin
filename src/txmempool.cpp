@@ -859,6 +859,12 @@ void CTxMemPool::clear()
     mapNextTx.clear();
     mapReserveTransactions.clear();
     mapRecentlyAddedTx.clear();
+    mapAddress.clear();
+    mapAddressInserted.clear();
+    mapSpent.clear();
+    mapSpentInserted.clear();
+    mapSproutNullifiers.clear();
+    mapSaplingNullifiers.clear();
     totalTxSize = 0;
     cachedInnerUsage = 0;
     ++nTransactionsUpdated;
