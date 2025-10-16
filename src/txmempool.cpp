@@ -858,6 +858,7 @@ void CTxMemPool::clear()
     mapTx.clear();
     mapNextTx.clear();
     mapReserveTransactions.clear();
+    mapDeltas.clear();
     mapRecentlyAddedTx.clear();
     mapAddress.clear();
     mapAddressInserted.clear();
