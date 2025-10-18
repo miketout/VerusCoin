@@ -6196,11 +6196,6 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
 
     CheckPBaaSAPIsValid();
 
-    if (VERUS_NOTARYID.IsNull())
-    {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Set \"-notaryid=idname@\" on startup to submit and earn from notarization transactions");
-    }
-
     uint32_t nHeight = chainActive.Height();
 
     // decode the transaction and ensure that it is formatted as expected
@@ -6209,20 +6204,54 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
     CCurrencyDefinition chainDef;
     int32_t chainDefHeight;
 
-    CTxDestination fromDest(VERUS_NOTARYID);
+    CTxDestination fromDest;
+    std::vector<COutput> vCoins;
+    CCurrencyValueMap nativeCurrency = CCurrencyValueMap({ASSETCHAINS_CHAINID}, {CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE});
+
     if (params.size() == 3)
     {
-        CTxDestination sourceOfFunds = DecodeDestination(uni_get_str(params[2]));
-        std::pair<CIdentityMapKey, CIdentityMapValue> idResult;
-        idResult.first.flags = 0;
-        if (sourceOfFunds.which() == COptCCParams::ADDRTYPE_ID)
+        fromDest = DecodeDestination(uni_get_str(params[2]));
+        if (fromDest.which() != COptCCParams::ADDRTYPE_INVALID)
         {
-            LOCK(pwalletMain->cs_wallet);
-            pwalletMain->GetIdentity(GetDestinationID(sourceOfFunds), idResult);
+            LOCK2(cs_main, pwalletMain->cs_wallet);
+            pwalletMain->AvailableReserveCoins(vCoins, false, nullptr, true, true, &fromDest, &nativeCurrency, false);
         }
-        if ((idResult.first.flags & idResult.first.CAN_SPEND) || sourceOfFunds.which() == COptCCParams::ADDRTYPE_PKH)
+    }
+
+    if (!vCoins.size())
+    {
+        fromDest = VERUS_NOTARYID;
+        // if we have a valid notary address, see if it has funds
+        if (fromDest.which() != COptCCParams::ADDRTYPE_INVALID)
         {
-            fromDest = sourceOfFunds;
+            LOCK2(cs_main, pwalletMain->cs_wallet);
+            pwalletMain->AvailableReserveCoins(vCoins, false, nullptr, true, true, &fromDest, &nativeCurrency, false);
+        }
+    }
+
+    if (!vCoins.size())
+    {
+        fromDest = VERUS_DEFAULTID;
+        // if we have a valid notary address, see if it has funds
+        if (fromDest.which() != COptCCParams::ADDRTYPE_INVALID)
+        {
+            LOCK2(cs_main, pwalletMain->cs_wallet);
+            pwalletMain->AvailableReserveCoins(vCoins, false, nullptr, true, true, &fromDest, &nativeCurrency, false);
+        }
+    }
+
+    if (!vCoins.size())
+    {
+        fromDest = DecodeDestination(GetArg("-mineraddress", ""));
+        // if we have a valid notary address, see if it has funds
+        if (fromDest.which() != COptCCParams::ADDRTYPE_INVALID)
+        {
+            LOCK2(cs_main, pwalletMain->cs_wallet);
+            pwalletMain->AvailableReserveCoins(vCoins, false, nullptr, true, true, &fromDest, &nativeCurrency, false);
+        }
+        if (!vCoins.size())
+        {
+            fromDest = CTxDestination();
         }
     }
 
@@ -6232,7 +6261,7 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
         {
             LogPrintf("No valid sourceoffunds for notarization transaction\n");
         }
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Set \"-notaryid=idname@\" on startup to submit and earn from notarization transactions");
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "No valid sourceoffunds for accepted notarization transaction. Set \"-notaryid=id@\", \"-defaultid=id@\", or \"-mineraddress=addr\"");
     }
 
     /* CPBaaSNotarization checkPbn(params[0]);

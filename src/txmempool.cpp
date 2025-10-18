@@ -435,14 +435,15 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
     // 1) transactions spending a coinbase which are now immature
     // 2) exports, notarizations, reserve transfers, and imports that that are no longer valid at the current height
 
+    // Remove transactions spending a coinbase which are now immature and no-longer-final transactions
+    LOCK(cs);
+
     finalizationEvidenceCache.Clear();
     crossChainNotarizationDataCache.Clear();
     priorConversionCache.Clear();
     reserveTransferCache.Clear();
     chainTransferCache.Clear();
 
-    // Remove transactions spending a coinbase which are now immature and no-longer-final transactions
-    LOCK(cs);
     list<CTransaction> transactionsToRemove;
     for (indexed_transaction_set::const_iterator it = mapTx.begin(); it != mapTx.end(); it++) {
         const CTransaction& tx = it->GetTx();
@@ -857,7 +858,14 @@ void CTxMemPool::clear()
     mapTx.clear();
     mapNextTx.clear();
     mapReserveTransactions.clear();
+    mapDeltas.clear();
     mapRecentlyAddedTx.clear();
+    mapAddress.clear();
+    mapAddressInserted.clear();
+    mapSpent.clear();
+    mapSpentInserted.clear();
+    mapSproutNullifiers.clear();
+    mapSaplingNullifiers.clear();
     totalTxSize = 0;
     cachedInnerUsage = 0;
     ++nTransactionsUpdated;
