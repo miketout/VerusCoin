@@ -522,15 +522,18 @@ CIdentity::GetAggregatedIdentityMultimap(const uint160 &idID,
                     for (auto removeItemCursor = removeItemRange.first; removeItemCursor != removeItemRange.second; removeItemCursor++)
                     {
                         CNativeHashWriter hw;
-                        hw.write((char *)&(std::get<0>(removeItemCursor->second)[0]), std::get<0>(removeItemCursor->second).size());
-
-                        uint256 hashVal = hw.GetHash();
-                        if (hashVal == removeAction.valueHash)
+                        if (std::get<0>(removeItemCursor->second).size())
                         {
-                            itemsToRemove.push_back(removeItemCursor);
-                            if (removeAction.action == removeAction.ACTION_REMOVE_ONE_KEYVALUE)
+                            hw.write((char *)&(std::get<0>(removeItemCursor->second)[0]), std::get<0>(removeItemCursor->second).size());
+
+                            uint256 hashVal = hw.GetHash();
+                            if (hashVal == removeAction.valueHash)
                             {
-                                break;
+                                itemsToRemove.push_back(removeItemCursor);
+                                if (removeAction.action == removeAction.ACTION_REMOVE_ONE_KEYVALUE)
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
