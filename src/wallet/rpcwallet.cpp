@@ -8522,7 +8522,6 @@ int32_t ensure_CCrequirements()
     else return(0);
 }
 
-#include "../cc/CCauction.h"
 #include "../cc/CCGateways.h"
 
 UniValue CCaddress(struct CCcontract_info *cp,char *name,std::vector<unsigned char> &pubkey)

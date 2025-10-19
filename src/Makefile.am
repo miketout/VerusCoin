@@ -310,7 +310,6 @@ libbitcoin_server_a_SOURCES = \
   cc/triggers.cpp \
   cc/payments.cpp \
   cc/gateways.cpp \
-  cc/auction.cpp \
   cc/betprotocol.cpp \
   chain.cpp \
   cheatcatcher.h \

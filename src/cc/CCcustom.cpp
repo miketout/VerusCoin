@@ -17,7 +17,6 @@
 #include "key_io.h"
 #include "CCinclude.h"
 #include "CCdice.h"
-#include "CCauction.h"
 #include "CCPegs.h"
 #include "CCTriggers.h"
 #include "CCPayments.h"
