@@ -8522,13 +8522,8 @@ int32_t ensure_CCrequirements()
     else return(0);
 }
 
-#include "../cc/CCassets.h"
-#include "../cc/CCrewards.h"
-#include "../cc/CCfsm.h"
 #include "../cc/CCauction.h"
-#include "../cc/CClotto.h"
 #include "../cc/CCchannels.h"
-#include "../cc/CCOracles.h"
 #include "../cc/CCGateways.h"
 
 UniValue CCaddress(struct CCcontract_info *cp,char *name,std::vector<unsigned char> &pubkey)
@@ -8714,19 +8709,6 @@ UniValue auctionaddress(const UniValue& params, bool fHelp)
     return(CCaddress(cp,(char *)"Auction",pubkey));
 }
 
-UniValue rewardsaddress(const UniValue& params, bool fHelp)
-{
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_REWARDS);
-    if ( fHelp || params.size() > 1 )
-        throw runtime_error("rewardsaddress [pubkey]\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    if ( params.size() == 1 )
-        pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Rewards",pubkey));
-}
-
 UniValue tokenaddress(const UniValue& params, bool fHelp)
 {
     struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
@@ -8852,189 +8834,6 @@ UniValue channelsrefund(const UniValue& params, bool fHelp)
         result.push_back(Pair("hex", hex));
     } else ERR_RESULT("couldnt create channelsrefund transaction");
     return(result);
-}
-
-UniValue rewardscreatefunding(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); char *name; int64_t funds,APR,minseconds,maxseconds,mindeposit; std::string hex;
-    if ( fHelp || params.size() > 6 || params.size() < 2 )
-        throw runtime_error("rewardscreatefunding name amount APR mindays maxdays mindeposit\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    const CKeyStore& keystore = *pwalletMain;
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-   // default to OOT params
-    APR = 5 * COIN;
-    minseconds = maxseconds = 60 * 3600 * 24;
-    mindeposit = 100 * COIN;
-    name = (char *)params[0].get_str().c_str();
-    funds = atof(params[1].get_str().c_str()) * COIN;
-
-    if (!VALID_PLAN_NAME(name)) {
-        ERR_RESULT(strprintf("Plan name can be at most %d ASCII characters",PLAN_NAME_MAX));
-        return(result);
-    }
-
-    if ( funds <= 0 ) {
-        ERR_RESULT("funds must be positive");
-        return result;
-    }
-    if ( params.size() > 2 )
-    {
-        APR = atof(params[2].get_str().c_str()) * COIN;
-        if ( APR > REWARDSCC_MAXAPR )
-        {
-            ERR_RESULT("25% APR is maximum");
-            return result;
-        }
-        if ( params.size() > 3 )
-        {
-            minseconds = atol(params[3].get_str().c_str()) * 3600 * 24;
-            if ( minseconds < 0 ) {
-                ERR_RESULT("mindays must be non-negative");
-                return result;
-            }
-            if ( params.size() > 4 )
-            {
-                maxseconds = atol(params[4].get_str().c_str()) * 3600 * 24;
-                if ( maxseconds <= 0 ) {
-                    ERR_RESULT("maxdays must be positive");
-                    return result;
-                }
-                if ( maxseconds < minseconds ) {
-                    ERR_RESULT("maxdays must be greater than mindays");
-                    return result;
-                }
-                if ( params.size() > 5 )
-                    mindeposit = atof(params[5].get_str().c_str()) * COIN;
-                    if ( mindeposit <= 0 ) {
-                        ERR_RESULT("mindeposit must be positive");
-                        return result;
-                    }
-            }
-        }
-    }
-    hex = RewardsCreateFunding(0,name,funds,APR,minseconds,maxseconds,mindeposit);
-    if ( hex.size() > 0 )
-    {
-        result.push_back(Pair("result", "success"));
-        result.push_back(Pair("hex", hex));
-    } else ERR_RESULT("couldnt create rewards funding transaction");
-    return(result);
-}
-
-UniValue rewardslock(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); char *name; uint256 fundingtxid; int64_t amount; std::string hex;
-    if ( fHelp || params.size() != 3 )
-        throw runtime_error("rewardslock name fundingtxid amount\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    const CKeyStore& keystore = *pwalletMain;
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-    name = (char *)params[0].get_str().c_str();
-    fundingtxid = Parseuint256((char *)params[1].get_str().c_str());
-    amount = atof(params[2].get_str().c_str()) * COIN;
-    hex = RewardsLock(0,name,fundingtxid,amount);
-
-    if (!VALID_PLAN_NAME(name)) {
-            ERR_RESULT(strprintf("Plan name can be at most %d ASCII characters",PLAN_NAME_MAX));
-            return(result);
-    }
-    if ( CCerror != "" ){
-        ERR_RESULT(CCerror);
-    } else if ( amount > 0 ) {
-        if ( hex.size() > 0 )
-        {
-            result.push_back(Pair("result", "success"));
-            result.push_back(Pair("hex", hex));
-        } else ERR_RESULT( "couldnt create rewards lock transaction");
-    } else ERR_RESULT("amount must be positive");
-    return(result);
-}
-
-UniValue rewardsaddfunding(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); char *name; uint256 fundingtxid; int64_t amount; std::string hex;
-    if ( fHelp || params.size() != 3 )
-        throw runtime_error("rewardsaddfunding name fundingtxid amount\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    const CKeyStore& keystore = *pwalletMain;
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-    name = (char *)params[0].get_str().c_str();
-    fundingtxid = Parseuint256((char *)params[1].get_str().c_str());
-    amount = atof(params[2].get_str().c_str()) * COIN;
-    hex = RewardsAddfunding(0,name,fundingtxid,amount);
-
-    if (!VALID_PLAN_NAME(name)) {
-            ERR_RESULT(strprintf("Plan name can be at most %d ASCII characters",PLAN_NAME_MAX));
-            return(result);
-    }
-    if (CCerror != "") {
-        ERR_RESULT(CCerror);
-    } else if (amount > 0) {
-        if ( hex.size() > 0 )
-        {
-            result.push_back(Pair("result", "success"));
-            result.push_back(Pair("hex", hex));
-        } else {
-            result.push_back(Pair("result", "error"));
-            result.push_back(Pair("error", "couldnt create rewards addfunding transaction"));
-        }
-    } else {
-            ERR_RESULT("funding amount must be positive");
-    }
-    return(result);
-}
-
-UniValue rewardsunlock(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); std::string hex; char *name; uint256 fundingtxid,txid;
-    if ( fHelp || params.size() > 3 || params.size() < 2 )
-        throw runtime_error("rewardsunlock name fundingtxid [txid]\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    const CKeyStore& keystore = *pwalletMain;
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-    name = (char *)params[0].get_str().c_str();
-    fundingtxid = Parseuint256((char *)params[1].get_str().c_str());
-
-    if (!VALID_PLAN_NAME(name)) {
-            ERR_RESULT(strprintf("Plan name can be at most %d ASCII characters",PLAN_NAME_MAX));
-            return(result);
-    }
-    if ( params.size() > 2 )
-        txid = Parseuint256((char *)params[2].get_str().c_str());
-    else memset(&txid,0,sizeof(txid));
-    hex = RewardsUnlock(0,name,fundingtxid,txid);
-    if (CCerror != "") {
-        ERR_RESULT(CCerror);
-    } else if ( hex.size() > 0 ) {
-        result.push_back(Pair("result", "success"));
-        result.push_back(Pair("hex", hex));
-    } else ERR_RESULT("couldnt create rewards unlock transaction");
-    return(result);
-}
-
-UniValue rewardslist(const UniValue& params, bool fHelp)
-{
-    if ( fHelp || params.size() > 0 )
-        throw runtime_error("rewardslist\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    return(RewardsList());
-}
-
-UniValue rewardsinfo(const UniValue& params, bool fHelp)
-{
-    uint256 fundingtxid;
-    if ( fHelp || params.size() != 1 )
-        throw runtime_error("rewardsinfo fundingtxid\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    fundingtxid = Parseuint256((char *)params[0].get_str().c_str());
-    return(RewardsInfo(fundingtxid));
 }
 
 UniValue gatewayslist(const UniValue& params, bool fHelp)
