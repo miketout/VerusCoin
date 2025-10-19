@@ -306,11 +306,6 @@ libbitcoin_server_a_SOURCES = \
   cc/CCutils.cpp \
   cc/StakeGuard.cpp \
   cc/StakeGuard.h \
-  cc/pegs.cpp \
-  cc/triggers.cpp \
-  cc/payments.cpp \
-  cc/gateways.cpp \
-  cc/betprotocol.cpp \
   chain.cpp \
   cheatcatcher.h \
   cheatcatcher.cpp \

@@ -8522,8 +8522,6 @@ int32_t ensure_CCrequirements()
     else return(0);
 }
 
-#include "../cc/CCGateways.h"
-
 UniValue CCaddress(struct CCcontract_info *cp,char *name,std::vector<unsigned char> &pubkey)
 {
     UniValue result(UniValue::VOBJ); char destaddr[64],str[64]; CPubKey pk;
