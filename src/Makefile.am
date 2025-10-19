@@ -309,7 +309,6 @@ libbitcoin_server_a_SOURCES = \
   cc/StakeGuard.h \
   cc/assets.cpp \
   cc/rewards.cpp \
-  cc/dice.cpp \
   cc/lotto.cpp \
   cc/fsm.cpp \
   cc/MofN.cpp \
