@@ -4336,6 +4336,10 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
                 // first time through may be null
                 if ((!input.prevout.hash.IsNull() && input.prevout.hash == idTx.GetHash()) || myGetTransaction(input.prevout.hash, idTx, blkHash))
                 {
+                    if (input.prevout.n >= idTx.vout.size())
+                    {
+                        return state.Error("Invalid, malformed transaction 2");
+                    }
                     if (idTx.vout[input.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
                         p.IsValid() &&
                         p.evalCode == EVAL_IDENTITY_PRIMARY &&

@@ -2311,7 +2311,7 @@ bool PrecheckIdentityCommitment(const CTransaction &tx, int32_t outNum, CValidat
         if (tx.vout[outNum].scriptPubKey.IsPayToCryptoCondition(p) &&
             p.IsValid() &&
             p.version >= COptCCParams::VERSION_V3 &&
-            p.vData.size() > 1)
+            p.vData.size() >= 20)
         {
             CCommitmentHash ch(p.vData[0]);
             std::vector<unsigned char> vch;
@@ -2829,6 +2829,10 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
         // first time through may be null
         if ((!input.prevout.hash.IsNull() && input.prevout.hash == inTx.GetHash()) || myGetTransaction(input.prevout.hash, inTx, blkHash))
         {
+            if (input.prevout.n >= inTx.vout.size())
+            {
+                return state.Error("Invalid, malformed transaction");
+            }
             if (inTx.vout[input.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
                 p.IsValid() &&
                 p.evalCode == EVAL_IDENTITY_PRIMARY &&
