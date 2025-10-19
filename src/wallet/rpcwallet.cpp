@@ -8522,7 +8522,6 @@ int32_t ensure_CCrequirements()
     else return(0);
 }
 
-#include "../cc/CCfaucet.h"
 #include "../cc/CCassets.h"
 #include "../cc/CCrewards.h"
 #include "../cc/CCdice.h"
@@ -8727,21 +8726,6 @@ UniValue diceaddress(const UniValue& params, bool fHelp)
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
     return(CCaddress(cp,(char *)"Dice",pubkey));
-}
-
-UniValue faucetaddress(const UniValue& params, bool fHelp)
-{
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    int32_t errnum;
-    cp = CCinit(&C,EVAL_FAUCET);
-    if ( fHelp || params.size() > 1 )
-        throw runtime_error("faucetaddress [pubkey]\n");
-    errnum = ensure_CCrequirements();
-    if ( errnum < 0 )
-        throw runtime_error(strprintf("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet. ERR=%d\n", errnum));
-    if ( params.size() == 1 )
-        pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Faucet",pubkey));
 }
 
 UniValue rewardsaddress(const UniValue& params, bool fHelp)
@@ -9378,54 +9362,6 @@ UniValue FSMinfo(const UniValue& params, bool fHelp)
         throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
     FSMtxid = Parseuint256((char *)params[0].get_str().c_str());
     return(FSMInfo(FSMtxid));
-}
-
-UniValue faucetinfo(const UniValue& params, bool fHelp)
-{
-    uint256 fundingtxid;
-    if ( fHelp || params.size() != 0 )
-        throw runtime_error("faucetinfo\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    return(FaucetInfo());
-}
-
-UniValue faucetfund(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); int64_t funds; std::string hex;
-    if ( fHelp || params.size() > 1 )
-        throw runtime_error("faucetfund amount\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    const CKeyStore& keystore = *pwalletMain;
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-    funds = atof(params[0].get_str().c_str()) * COIN;
-    if (funds > 0) {
-        hex = FaucetFund(0,(uint64_t) funds);
-        if ( hex.size() > 0 )
-        {
-            result.push_back(Pair("result", "success"));
-            result.push_back(Pair("hex", hex));
-        } else ERR_RESULT("couldnt create faucet funding transaction");
-    } else ERR_RESULT( "funding amount must be positive");
-    return(result);
-}
-
-UniValue faucetget(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); std::string hex;
-    if ( fHelp || params.size() > 0 )
-        throw runtime_error("faucetget\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    const CKeyStore& keystore = *pwalletMain;
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-    hex = FaucetGet(0);
-    if ( hex.size() > 0 ) {
-        result.push_back(Pair("result", "success"));
-        result.push_back(Pair("hex", hex));
-    } else ERR_RESULT("couldnt create faucet get transaction");
-    return(result);
 }
 
 UniValue dicefund(const UniValue& params, bool fHelp)
