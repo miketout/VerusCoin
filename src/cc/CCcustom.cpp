@@ -18,7 +18,6 @@
 #include "CCinclude.h"
 #include "CCdice.h"
 #include "CCauction.h"
-#include "CCchannels.h"
 #include "CCPegs.h"
 #include "CCTriggers.h"
 #include "CCPayments.h"

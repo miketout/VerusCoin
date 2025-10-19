@@ -8523,7 +8523,6 @@ int32_t ensure_CCrequirements()
 }
 
 #include "../cc/CCauction.h"
-#include "../cc/CCchannels.h"
 #include "../cc/CCGateways.h"
 
 UniValue CCaddress(struct CCcontract_info *cp,char *name,std::vector<unsigned char> &pubkey)
@@ -8558,120 +8557,6 @@ UniValue CCaddress(struct CCcontract_info *cp,char *name,std::vector<unsigned ch
         result.push_back(Pair("myCCaddress",destaddr));
     if ( Getscriptaddress(destaddr,(CScript() << Mypubkey() << OP_CHECKSIG)) != 0 )
         result.push_back(Pair("myaddress",destaddr));
-    return(result);
-}
-
-UniValue channelsinfo(const UniValue& params, bool fHelp)
-{
-    if ( fHelp || params.size() != 0 )
-        throw runtime_error("channelsinfo\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    return(ChannelsInfo());
-}
-
-UniValue channelsopen(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); int32_t numpayments; int64_t payment; std::vector<unsigned char> destpub; struct CCcontract_info *cp,C; std::string hex;
-    cp = CCinit(&C,EVAL_CHANNELS);
-    if ( fHelp || params.size() != 3 )
-        throw runtime_error("channelsopen destpubkey numpayments payment\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    LOCK(cs_main);
-    destpub = ParseHex(params[0].get_str().c_str());
-    numpayments = atoi(params[1].get_str().c_str());
-    payment = atol(params[2].get_str().c_str());
-    hex = ChannelOpen(0,pubkey2pk(destpub),numpayments,payment);
-    if ( hex.size() > 0 )
-    {
-        result.push_back(Pair("result", "success"));
-        result.push_back(Pair("hex", hex));
-    } else ERR_RESULT("couldnt create channelsopen transaction");
-    return(result);
-}
-
-UniValue channelsstop(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); std::vector<unsigned char> destpub; struct CCcontract_info *cp,C; std::string hex; uint256 origtxid;
-    cp = CCinit(&C,EVAL_CHANNELS);
-    if ( fHelp || params.size() != 2 )
-        throw runtime_error("channelsstop destpubkey origtxid\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    LOCK(cs_main);
-    destpub = ParseHex(params[0].get_str().c_str());
-    origtxid = Parseuint256((char *)params[1].get_str().c_str());
-    hex = ChannelStop(0,pubkey2pk(destpub),origtxid);
-    if ( hex.size() > 0 )
-    {
-        result.push_back(Pair("result", "success"));
-        result.push_back(Pair("hex", hex));
-    } else ERR_RESULT("couldnt create channelsstop transaction");
-    return(result);
-}
-
-UniValue channelspayment(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); struct CCcontract_info *cp,C; std::string hex; uint256 origtxid,prevtxid; int32_t n; int64_t amount;
-    cp = CCinit(&C,EVAL_CHANNELS);
-    if ( fHelp || params.size() != 4 )
-        throw runtime_error("channelspayment prevtxid origtxid n amount\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    LOCK(cs_main);
-    prevtxid = Parseuint256((char *)params[0].get_str().c_str());
-    origtxid = Parseuint256((char *)params[1].get_str().c_str());
-    n = atoi((char *)params[2].get_str().c_str());
-    amount = atoi((char *)params[3].get_str().c_str());
-    hex = ChannelPayment(0,prevtxid,origtxid,n,amount);
-    if ( hex.size() > 0 )
-    {
-        result.push_back(Pair("result", "success"));
-        result.push_back(Pair("hex", hex));
-    } else ERR_RESULT("couldnt create channelspayment transaction");
-    return(result);
-}
-
-UniValue channelscollect(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); struct CCcontract_info *cp,C; std::string hex; uint256 origtxid,paytxid; int32_t n; int64_t amount;
-    cp = CCinit(&C,EVAL_CHANNELS);
-    if ( fHelp || params.size() != 4 )
-        throw runtime_error("channelscollect paytxid origtxid n amount\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    LOCK(cs_main);
-    paytxid = Parseuint256((char *)params[0].get_str().c_str());
-    origtxid = Parseuint256((char *)params[1].get_str().c_str());
-    n = atoi((char *)params[2].get_str().c_str());
-    amount = atoi((char *)params[3].get_str().c_str());
-    hex = ChannelCollect(0,paytxid,origtxid,n,amount);
-    if ( hex.size() > 0 )
-    {
-        result.push_back(Pair("result", "success"));
-        result.push_back(Pair("hex", hex));
-    } else ERR_RESULT("couldnt create channelscollect transaction");
-    return(result);
-}
-
-UniValue channelsrefund(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); struct CCcontract_info *cp,C; std::string hex; uint256 origtxid,stoptxid;
-    cp = CCinit(&C,EVAL_CHANNELS);
-    if ( fHelp || params.size() != 2 )
-        throw runtime_error("channelsrefund stoptxid origtxid\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    LOCK(cs_main);
-    stoptxid = Parseuint256((char *)params[0].get_str().c_str());
-    origtxid = Parseuint256((char *)params[1].get_str().c_str());
-    hex = ChannelRefund(0,stoptxid,origtxid);
-    if ( hex.size() > 0 )
-    {
-        result.push_back(Pair("result", "success"));
-        result.push_back(Pair("hex", hex));
-    } else ERR_RESULT("couldnt create channelsrefund transaction");
     return(result);
 }
 
