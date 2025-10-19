@@ -300,7 +300,6 @@ libbitcoin_server_a_SOURCES = \
   asyncrpcqueue.cpp \
   bloom.cpp \
   cc/eval.cpp \
-  cc/import.cpp \
   cc/CCcustom.cpp \
   cc/CCtx.cpp \
   cc/CCutils.cpp \
