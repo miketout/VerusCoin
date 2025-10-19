@@ -8579,19 +8579,6 @@ UniValue channelsaddress(const UniValue& params, bool fHelp)
     return(result);
 }
 
-UniValue oraclesaddress(const UniValue& params, bool fHelp)
-{
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_ORACLES);
-    if ( fHelp || params.size() > 1 )
-        throw runtime_error("oraclesaddress [pubkey]\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    if ( params.size() == 1 )
-        pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Oracles",pubkey));
-}
-
 UniValue pricesaddress(const UniValue& params, bool fHelp)
 {
     struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
@@ -8834,47 +8821,6 @@ UniValue channelsrefund(const UniValue& params, bool fHelp)
         result.push_back(Pair("hex", hex));
     } else ERR_RESULT("couldnt create channelsrefund transaction");
     return(result);
-}
-
-UniValue FSMcreate(const UniValue& params, bool fHelp)
-{
-    UniValue result(UniValue::VOBJ); std::string name,states,hex;
-    if ( fHelp || params.size() != 2 )
-        throw runtime_error("FSMcreate name states\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    const CKeyStore& keystore = *pwalletMain;
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-    name = params[0].get_str();
-    states = params[1].get_str();
-    hex = FSMCreate(0,name,states);
-    if ( hex.size() > 0 )
-    {
-        result.push_back(Pair("result", "success"));
-        result.push_back(Pair("hex", hex));
-    } else result.push_back(Pair("error", "couldnt create FSM transaction"));
-    return(result);
-}
-
-UniValue FSMlist(const UniValue& params, bool fHelp)
-{
-    uint256 tokenid;
-    if ( fHelp || params.size() > 0 )
-        throw runtime_error("FSMlist\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    return(FSMList());
-}
-
-UniValue FSMinfo(const UniValue& params, bool fHelp)
-{
-    uint256 FSMtxid;
-    if ( fHelp || params.size() != 1 )
-        throw runtime_error("FSMinfo fundingtxid\n");
-    if ( ensure_CCrequirements() < 0 )
-        throw runtime_error("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet\n");
-    FSMtxid = Parseuint256((char *)params[0].get_str().c_str());
-    return(FSMInfo(FSMtxid));
 }
 
 UniValue tokenlist(const UniValue& params, bool fHelp)
