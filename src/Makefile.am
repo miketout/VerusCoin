@@ -402,7 +402,6 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/paymentdisclosuredb.cpp \
   wallet/rpcdisclosure.cpp \
   wallet/rpcdump.cpp \
-  cc/CCassetstx.cpp \
   cc/CCtx.cpp \
   wallet/rpcwallet.cpp \
   wallet/wallet.cpp \
