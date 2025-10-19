@@ -307,7 +307,6 @@ libbitcoin_server_a_SOURCES = \
   cc/StakeGuard.cpp \
   cc/StakeGuard.h \
   cc/rewards.cpp \
-  cc/MofN.cpp \
   cc/oracles.cpp \
   cc/prices.cpp \
   cc/pegs.cpp \
