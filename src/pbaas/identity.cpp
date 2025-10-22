@@ -2314,7 +2314,8 @@ bool PrecheckIdentityCommitment(const CTransaction &tx, int32_t outNum, CValidat
         if (tx.vout[outNum].scriptPubKey.IsPayToCryptoCondition(p) &&
             p.IsValid() &&
             p.version >= COptCCParams::VERSION_V3 &&
-            p.vData.size() >= 20)
+            p.vData.size() > 1 &&
+            p.vData[0].size() >= 20)
         {
             CCommitmentHash ch(p.vData[0]);
             std::vector<unsigned char> vch;
