@@ -10,11 +10,11 @@ $0 --help
   Show this help message and exit.
 
 $0 [ --enable-lcov ] [ --enable-debug ] [ MAKEARGS... ]
-  Build Komodo and most of its transitive dependencies from
-  source. MAKEARGS are applied to both dependencies and Komodo itself. 
-  If --enable-lcov is passed, Komodo is configured to add coverage
+  Build Verus and most of its transitive dependencies from
+  source. MAKEARGS are applied to both dependencies and Verus itself. 
+  If --enable-lcov is passed, Verus is configured to add coverage
   instrumentation, thus enabling "make cov" to work.
-  If --enable-debug is passed, Komodo is built with debugging information. It
+  If --enable-debug is passed, Verus is built with debugging information. It
   must be passed after the previous arguments, if present.
 EOF
     exit 0
