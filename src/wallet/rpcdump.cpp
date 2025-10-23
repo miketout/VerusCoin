@@ -100,6 +100,21 @@ UniValue convertpassphrase(const UniValue& params, bool fHelp)
     ret.push_back(Pair("walletpassphrase", strAgamaPassphrase));
 
     CKey tempkey = DecodeSecret(strAgamaPassphrase);
+
+    // if we have a check here, print out additional information - do not remove this block
+    // this also seems to compensate for a hard to reproduce compiler/CPU issue only affecting Windows 11 on non-English versions
+    if (LogAcceptCategory("windowspassphrasecheck"))
+    {
+        ret.push_back(Pair("iscodedsecret", tempkey.IsValid()));
+        std::string rawChars;
+        for (int i = 0; i < strAgamaPassphrase.length(); i++)
+        {
+            char ch = strAgamaPassphrase.c_str()[i];
+            rawChars = rawChars + std::to_string((unsigned char)ch);
+        }
+        ret.push_back(Pair("rawcharvalues", rawChars));
+    }
+
     /* first we should check if user pass wif to method, instead of passphrase */
     if (!tempkey.IsValid()) {
         /* it's a passphrase, not wif */
@@ -720,6 +735,11 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
             "2. rescan               (string, optional, default=\"whenkeyisnew\") Rescan the wallet for transactions - can be \"yes\", \"no\" or \"whenkeyisnew\"\n"
             "3. startHeight          (numeric, optional, default=0) Block height to start rescan from\n"
             "\nNote: This call can take minutes to complete if rescan is true.\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"type\" : \"xxxx\",                         (string) \"sprout\" or \"sapling\"\n"
+            "  \"address\" : \"address|DefaultAddress\",    (string) The address corresponding to the spending key (for Sapling, this is the default address).\n"
+            "}\n"
             "\nExamples:\n"
             "\nExport a zkey\n"
             + HelpExampleCli("z_exportkey", "\"myaddress\"") +
@@ -777,11 +797,192 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
         if (IsHex(strSecret))
         {
             std::vector<unsigned char> data = ParseHex(strSecret);
+
+            // if we should be deserializing an extended spending key, do it
+            if (data.size() == 169)
+            {
+                libzcash::SaplingExtendedSpendingKey sxSK;
+                ::FromVector(data, sxSK);
+                memory_cleanse(data.data(), data.size());
+                spendingkey = sxSK;
+            }
+            else
+            {
+                std::vector<unsigned char, secure_allocator<unsigned char>> vch(data.begin(), data.end());
+                memory_cleanse(data.data(), data.size());
+
+                if (vch.size() != 32 && vch.size() != 64)
+                {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid hex spending key");
+                }
+
+                HDSeed seed(vch);
+
+                // Derive the address for Sapling account 0
+                auto m = libzcash::SaplingExtendedSpendingKey::Master(seed);
+                uint32_t bip44CoinType = Params().BIP44CoinType();
+
+                // We use a fixed keypath scheme of m/32'/coin_type'/account'
+                // Derive m/32'
+                auto m_32h = m.Derive(32 | ZIP32_HARDENED_KEY_LIMIT);
+
+                // Derive m/32'/coin_type'
+                auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
+
+                // Derive m/32'/coin_type'/0'
+                libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(0 | ZIP32_HARDENED_KEY_LIMIT);
+                spendingkey = xsk;
+            }
+        }
+        else
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid spending key");
+        }
+    }
+
+    auto addrInfo = boost::apply_visitor(libzcash::AddressInfoFromSpendingKey{}, spendingkey);
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("type", addrInfo.first);
+    result.pushKV("address", EncodePaymentAddress(addrInfo.second));
+
+    // Sapling support
+    auto addResult = boost::apply_visitor(AddSpendingKeyToWallet(pwalletMain, Params().GetConsensus()), spendingkey);
+    if (addResult == KeyAlreadyExists && fIgnoreExistingKey) {
+        return result;
+    }
+    pwalletMain->MarkDirty();
+    if (addResult == KeyNotAdded) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Error adding spending key to wallet");
+    }
+
+    // whenever a key is imported, we need to scan the whole chain
+    pwalletMain->nTimeFirstKey = 1; // 0 would be considered 'no value'
+
+    // We want to scan for transactions and notes
+    if (fRescan) {
+        pwalletMain->ScanForWalletTransactions(chainActive[nRescanHeight], true);
+    }
+
+    return result;
+}
+
+UniValue z_getencryptionaddress(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1 || !params[0].isObject())
+        throw runtime_error(
+            "z_getencryptionaddress '{(\"address\":\"zaddress present in wallet\" | \"seed\":\"wallet seed for address\", \"hdindex\":n - address to derive from seed | \"rootkey\":\"extended private key\"),\n"
+            "                          \"fromid\":\"id@ or i-address\",\n"
+            "                          \"toid\":\"id@ or i-address\",\n"
+            "                          \"returnsecret\": true | false}'\n"
+            "\nReturns z-address, viewing key, and optionally an extended secret key.\n"
+            "\nArguments:\n"
+            "   \"address\"          (string, optional) z-address that is present in this wallet\n"
+            "   \"seed\"             (string, optional) raw wallet seed\n"
+            "   \"hdindex\"          (number, optional) address to derive from seed (default=0)\n"
+            "   \"rootkey\"          (string, optional) extended private key\n"
+            "   \"fromid\"           (string, optional) a key to be used between the fromid and the toid\n"
+            "   \"toid\"             (string, optional) a key to be used between the fromid and the toid\n"
+            "   \"encryptionindex\"  (number, optional) can be used as an index to derive the final encryption HD address from the derived seed (default=0)\n"
+            "   \"returnsecret\"     (bool, optional) if true, returns extended private key - defaults to false\n"
+            "\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"extendedviewingkey\" : \"evk\",            (string) \"sapling\" extended viewing key\n"
+            "  \"address\" : \"encryptionaddress\",         (string) The encryption address derived\n"
+            "  \"extendedspendingkey\" : \"encryptionaddress\", (string) Spending key for the address, if requested\n"
+            "}\n"
+            "\nExamples:\n"
+            "\nExample1 description\n"
+            + HelpExampleCli("z_getencryptionaddress", "'{\"address\":\"localzaddress\",\"fromid\":\"bob@\",\"toid\":\"alice@\"}") +
+            "\nExample2 description\n"
+            + HelpExampleCli("z_getencryptionaddress", "'{\"address\":\"localzaddress\",\"fromid\":\"bob@\",\"toid\":\"alice@\"}") +
+            "\nExample3 description\n"
+            + HelpExampleCli("z_getencryptionaddress", "'{\"address\":\"localzaddress\",\"fromid\":\"bob@\",\"toid\":\"alice@\"}") +
+            "\nExample4 description\n"
+            + HelpExampleRpc("z_getencryptionaddress", "'{\"address\":\"localzaddress\",\"fromid\":\"bob@\",\"toid\":\"alice@\"}")
+        );
+
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+
+    // parse parameters
+    std::string strAddress = uni_get_str(find_value(params[0], "address"));
+    std::string strSeed = uni_get_str(find_value(params[0], "seed"));
+    std::string strRootkey = uni_get_str(find_value(params[0], "rootkey"));
+    int64_t hdIndex = uni_get_int64(find_value(params[0], "hdindex"));
+    int64_t encryptionIndex = uni_get_int64(find_value(params[0], "encryptionindex"));
+
+    std::string fromIDStr = uni_get_str(find_value(params[0], "fromid"));
+    CTxDestination fromIDDest = DecodeDestination(fromIDStr);
+    CIdentityID fromID = GetDestinationID(fromIDDest);
+
+    std::string toIDStr = uni_get_str(find_value(params[0], "toid"));
+    CTxDestination toIDDest = DecodeDestination(toIDStr);
+    CIdentityID toID = GetDestinationID(toIDDest);
+
+    bool returnSecret = uni_get_bool(find_value(params[0], "returnsecret"));
+
+    if ((!fromIDStr.empty() && fromIDDest.which() != COptCCParams::ADDRTYPE_ID) ||
+        (!toIDStr.empty() && toIDDest.which() != COptCCParams::ADDRTYPE_ID))
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "If fromid or toid parameters are provided, they must be valid identity specifications or i-addresses");
+    }
+
+    if (((int)strAddress.empty() + (int)strSeed.empty() + (int)strRootkey.empty()) != 2)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Must provide one and only one of either a valid Sapling address from this wallet, a valid wallet seed, or a root Sapling extended key to use as a base for the encryption address");
+    }
+
+    if (hdIndex != 0 && strSeed.empty())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "if \"hdindex\" is present, seed must be an HD wallet seed for which \"hdindex\" represents a valid address index" + to_string(ZIP32_HARDENED_KEY_LIMIT - 1));
+    }
+
+    if (encryptionIndex < 0 || encryptionIndex >= ZIP32_HARDENED_KEY_LIMIT)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "if present, \"encryptionindex\" must be an index between 0 and " + to_string(ZIP32_HARDENED_KEY_LIMIT - 1));
+    }
+
+    libzcash::SaplingExtendedSpendingKey baseSpendingKey;
+    libzcash::SaplingSpendingKey encryptionSpendingKey;
+    libzcash::SaplingPaymentAddress encryptionAddress;
+    libzcash::SaplingExtendedFullViewingKey viewingKey;
+
+    // if we are expected to get the secret key from a local wallet, make sure we have access to it
+    if (!strAddress.empty())
+    {
+        EnsureWalletIsAvailable(false);
+        EnsureWalletIsUnlocked();
+
+        // get the secret extended key from the wallet
+        libzcash::PaymentAddress address;
+        pwalletMain->GetAndValidateSaplingZAddress(strAddress, address, true);
+        encryptionAddress = boost::get<libzcash::SaplingPaymentAddress>(address);
+    
+        if (!pwalletMain->GetSaplingExtendedSpendingKey(encryptionAddress, baseSpendingKey))
+        {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Wallet does not hold private zkey for the specified address");
+        }
+    }
+    else if (!strSeed.empty())
+    {
+        if (hdIndex < 0 || hdIndex >= ZIP32_HARDENED_KEY_LIMIT)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "if present, \"hdindex\" must be an index between 0 and " + to_string(ZIP32_HARDENED_KEY_LIMIT - 1));
+        }
+        else
+        {
+            if (!IsHex(strSeed))
+            {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Seed for encryption address must be in hex and represent a 32 or 64 byte value");
+            }
+
+            std::vector<unsigned char> data = ParseHex(strSeed);
             std::vector<unsigned char, secure_allocator<unsigned char>> vch(data.begin(), data.end());
             memory_cleanse(data.data(), data.size());
+
             if (vch.size() != 32 && vch.size() != 64)
             {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid hex spending key");
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid hex spending key - must represent a 32 or 64 byte value");
             }
 
             HDSeed seed(vch);
@@ -798,128 +999,193 @@ UniValue z_importkey(const UniValue& params, bool fHelp)
             auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
 
             // Derive m/32'/coin_type'/0'
-            libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(0 | ZIP32_HARDENED_KEY_LIMIT);
-            spendingkey = xsk;
+            baseSpendingKey = m_32h_cth.Derive((uint32_t)hdIndex | ZIP32_HARDENED_KEY_LIMIT);
+        }
+    }
+    else
+    {
+        libzcash::SpendingKey genericSpendingKey;
+        genericSpendingKey = DecodeSpendingKey(strRootkey);
+        if (!IsValidSpendingKey(genericSpendingKey)) {
+            bool success = false;
+            if (IsHex(strRootkey))
+            {
+                std::vector<unsigned char> data = ParseHex(strRootkey);
+                bool success = false;
+
+                // if we should be deserializing an extended spending key, do it
+                if (data.size() == 169)
+                {
+                    ::FromVector(data, baseSpendingKey, &success);
+                    memory_cleanse(data.data(), data.size());
+                }
+                if (!success)
+                {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid hex root key");
+                }
+            }
+            else
+            {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid root key");
+            }
         }
         else
         {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid spending key");
+            libzcash::SpendingKey testWhich = baseSpendingKey;
+            if (genericSpendingKey.which() != testWhich.which())
+            {
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Root key must be valid Sapling spending key");
+            }
+            baseSpendingKey = boost::get<libzcash::SaplingExtendedSpendingKey>(genericSpendingKey);
         }
     }
 
-    // Sapling support
-    auto addResult = boost::apply_visitor(AddSpendingKeyToWallet(pwalletMain, Params().GetConsensus()), spendingkey);
-    if (addResult == KeyAlreadyExists && fIgnoreExistingKey) {
+    // now use the base spending key along with from and to addresses to derive encryption key
+    uint256 derivedEncryptionSeed;
+
+    CHashWriterSHA256 hw(SER_GETHASH, PROTOCOL_VERSION);
+    hw << baseSpendingKey;
+    if (!fromID.IsNull())
+    {
+        hw << fromID;
+    }
+    else
+    {
+        hw << (uint8_t)0;
+    }
+    if (!toID.IsNull())
+    {
+        hw << toID;
+    }
+    derivedEncryptionSeed = hw.GetHash();
+
+    libzcash::SaplingExtendedSpendingKey esk;
+
+    std::vector<unsigned char, secure_allocator<unsigned char>> vch(derivedEncryptionSeed.begin(), derivedEncryptionSeed.end());
+    memory_cleanse(derivedEncryptionSeed.begin(), derivedEncryptionSeed.size());
+
+    HDSeed seed(vch);
+
+    // Derive the address for Sapling account 0
+    auto m = libzcash::SaplingExtendedSpendingKey::Master(seed);
+    uint32_t bip44CoinType = Params().BIP44CoinType();
+
+    // We use a fixed keypath scheme of m/32'/coin_type'/account'
+    // Derive m/32'
+    auto m_32h = m.Derive(32 | ZIP32_HARDENED_KEY_LIMIT);
+
+    // Derive m/32'/coin_type'
+    auto m_32h_cth = m_32h.Derive(bip44CoinType | ZIP32_HARDENED_KEY_LIMIT);
+
+    // Derive m/32'/coin_type'/0'
+    libzcash::SaplingExtendedSpendingKey xsk = m_32h_cth.Derive(encryptionIndex | ZIP32_HARDENED_KEY_LIMIT);
+
+    UniValue result(UniValue::VOBJ);
+
+    result.pushKV("address", EncodePaymentAddress(xsk.DefaultAddress()));
+    result.pushKV("extendedviewingkey", EncodeViewingKey(xsk.ToXFVK()));
+    auto ivk =  xsk.ToXFVK().fvk.in_viewing_key();
+    std::vector<unsigned char> ivkVec = std::vector<unsigned char>(ivk.begin(), ivk.end());
+    result.pushKV("ivk", HexBytes(ivkVec.data(), ivkVec.size()));
+    if (returnSecret)
+    {
+        result.pushKV("extendedspendingkey", EncodeSpendingKey(xsk));
+    }
+    return result;
+}
+
+UniValue z_importviewingkey(const UniValue& params, bool fHelp)
+{
+    if (!EnsureWalletIsAvailable(fHelp))
         return NullUniValue;
+
+    if (fHelp || params.size() < 1 || params.size() > 3)
+        throw runtime_error(
+            "z_importviewingkey \"vkey\" ( rescan startHeight )\n"
+            "\nAdds a viewing key (as returned by z_exportviewingkey) to your wallet.\n"
+            "\nArguments:\n"
+            "1. \"vkey\"             (string, required) The viewing key (see z_exportviewingkey)\n"
+            "2. rescan             (string, optional, default=\"whenkeyisnew\") Rescan the wallet for transactions - can be \"yes\", \"no\" or \"whenkeyisnew\"\n"
+            "3. startHeight        (numeric, optional, default=0) Block height to start rescan from\n"
+            "\nNote: This call can take minutes to complete if rescan is true.\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"type\" : \"xxxx\",                         (string) \"sprout\" or \"sapling\"\n"
+            "  \"address\" : \"address|DefaultAddress\",    (string) The address corresponding to the viewing key (for Sapling, this is the default address).\n"
+            "}\n"
+            "\nExamples:\n"
+            "\nImport a viewing key\n"
+            + HelpExampleCli("z_importviewingkey", "\"vkey\"") +
+            "\nImport the viewing key without rescan\n"
+            + HelpExampleCli("z_importviewingkey", "\"vkey\", no") +
+            "\nImport the viewing key with partial rescan\n"
+            + HelpExampleCli("z_importviewingkey", "\"vkey\" whenkeyisnew 30000") +
+            "\nRe-import the viewing key with longer partial rescan\n"
+            + HelpExampleCli("z_importviewingkey", "\"vkey\" yes 20000") +
+            "\nAs a JSON-RPC call\n"
+            + HelpExampleRpc("z_importviewingkey", "\"vkey\", \"no\"")
+        );
+
+    LOCK2(cs_main, pwalletMain->cs_wallet);
+
+    EnsureWalletIsUnlocked();
+
+    // Whether to perform rescan after import
+    bool fRescan = true;
+    bool fIgnoreExistingKey = true;
+    if (params.size() > 1) {
+        auto rescan = params[1].get_str();
+        if (rescan.compare("whenkeyisnew") != 0) {
+            fIgnoreExistingKey = false;
+            if (rescan.compare("no") == 0) {
+                fRescan = false;
+            } else if (rescan.compare("yes") != 0) {
+                throw JSONRPCError(
+                    RPC_INVALID_PARAMETER,
+                    "rescan must be \"yes\", \"no\" or \"whenkeyisnew\"");
+            }
+        }
+    }
+
+    // Height to rescan from
+    int nRescanHeight = 0;
+    if (params.size() > 2) {
+        nRescanHeight = params[2].get_int();
+    }
+    if (nRescanHeight < 0 || nRescanHeight > chainActive.Height()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
+    }
+
+    string strVKey = params[0].get_str();
+    auto viewingkey = DecodeViewingKey(strVKey);
+    if (!IsValidViewingKey(viewingkey)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid viewing key");
+    }
+
+    auto addrInfo = boost::apply_visitor(libzcash::AddressInfoFromViewingKey{}, viewingkey);
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("type", addrInfo.first);
+    result.pushKV("address", EncodePaymentAddress(addrInfo.second));
+
+    auto addResult = boost::apply_visitor(AddViewingKeyToWallet(pwalletMain), viewingkey);
+    if (addResult == SpendingKeyExists) {
+        throw JSONRPCError(
+            RPC_WALLET_ERROR,
+            "The wallet already contains the private key for this viewing key");
+    } else if (addResult == KeyAlreadyExists && fIgnoreExistingKey) {
+        return result;
     }
     pwalletMain->MarkDirty();
     if (addResult == KeyNotAdded) {
-        throw JSONRPCError(RPC_WALLET_ERROR, "Error adding spending key to wallet");
+        throw JSONRPCError(RPC_WALLET_ERROR, "Error adding viewing key to wallet");
     }
-
-    // whenever a key is imported, we need to scan the whole chain
-    pwalletMain->nTimeFirstKey = 1; // 0 would be considered 'no value'
 
     // We want to scan for transactions and notes
     if (fRescan) {
         pwalletMain->ScanForWalletTransactions(chainActive[nRescanHeight], true);
     }
 
-    return NullUniValue;
-}
-
-UniValue z_importviewingkey(const UniValue& params, bool fHelp)
-{
-  if (!EnsureWalletIsAvailable(fHelp))
-      return NullUniValue;
-
-  if (fHelp || params.size() < 1 || params.size() > 3)
-      throw runtime_error(
-          "z_importviewingkey \"vkey\" ( rescan startHeight )\n"
-          "\nAdds a viewing key (as returned by z_exportviewingkey) to your wallet.\n"
-          "\nArguments:\n"
-          "1. \"vkey\"             (string, required) The viewing key (see z_exportviewingkey)\n"
-          "2. rescan             (string, optional, default=\"whenkeyisnew\") Rescan the wallet for transactions - can be \"yes\", \"no\" or \"whenkeyisnew\"\n"
-          "3. startHeight        (numeric, optional, default=0) Block height to start rescan from\n"
-          "\nNote: This call can take minutes to complete if rescan is true.\n"
-          "\nResult:\n"
-          "{\n"
-          "  \"type\" : \"xxxx\",                         (string) \"sprout\" or \"sapling\"\n"
-          "  \"address\" : \"address|DefaultAddress\",    (string) The address corresponding to the viewing key (for Sapling, this is the default address).\n"
-          "}\n"
-          "\nExamples:\n"
-          "\nImport a viewing key\n"
-          + HelpExampleCli("z_importviewingkey", "\"vkey\"") +
-          "\nImport the viewing key without rescan\n"
-          + HelpExampleCli("z_importviewingkey", "\"vkey\", no") +
-          "\nImport the viewing key with partial rescan\n"
-          + HelpExampleCli("z_importviewingkey", "\"vkey\" whenkeyisnew 30000") +
-          "\nRe-import the viewing key with longer partial rescan\n"
-          + HelpExampleCli("z_importviewingkey", "\"vkey\" yes 20000") +
-          "\nAs a JSON-RPC call\n"
-          + HelpExampleRpc("z_importviewingkey", "\"vkey\", \"no\"")
-      );
-
-  LOCK2(cs_main, pwalletMain->cs_wallet);
-
-  EnsureWalletIsUnlocked();
-
-  // Whether to perform rescan after import
-  bool fRescan = true;
-  bool fIgnoreExistingKey = true;
-  if (params.size() > 1) {
-      auto rescan = params[1].get_str();
-      if (rescan.compare("whenkeyisnew") != 0) {
-          fIgnoreExistingKey = false;
-          if (rescan.compare("no") == 0) {
-              fRescan = false;
-          } else if (rescan.compare("yes") != 0) {
-              throw JSONRPCError(
-                  RPC_INVALID_PARAMETER,
-                  "rescan must be \"yes\", \"no\" or \"whenkeyisnew\"");
-          }
-      }
-  }
-
-  // Height to rescan from
-  int nRescanHeight = 0;
-  if (params.size() > 2) {
-      nRescanHeight = params[2].get_int();
-  }
-  if (nRescanHeight < 0 || nRescanHeight > chainActive.Height()) {
-      throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
-  }
-
-  string strVKey = params[0].get_str();
-  auto viewingkey = DecodeViewingKey(strVKey);
-  if (!IsValidViewingKey(viewingkey)) {
-      throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid viewing key");
-  }
-
-  auto addrInfo = boost::apply_visitor(libzcash::AddressInfoFromViewingKey{}, viewingkey);
-  UniValue result(UniValue::VOBJ);
-  result.pushKV("type", addrInfo.first);
-  result.pushKV("address", EncodePaymentAddress(addrInfo.second));
-
-  auto addResult = boost::apply_visitor(AddViewingKeyToWallet(pwalletMain), viewingkey);
-  if (addResult == SpendingKeyExists) {
-      throw JSONRPCError(
-          RPC_WALLET_ERROR,
-          "The wallet already contains the private key for this viewing key");
-  } else if (addResult == KeyAlreadyExists && fIgnoreExistingKey) {
-      return result;
-  }
-  pwalletMain->MarkDirty();
-  if (addResult == KeyNotAdded) {
-      throw JSONRPCError(RPC_WALLET_ERROR, "Error adding viewing key to wallet");
-  }
-
-  // We want to scan for transactions and notes
-  if (fRescan) {
-      pwalletMain->ScanForWalletTransactions(chainActive[nRescanHeight], true);
-  }
-
-  return result;
+    return result;
 }
 
 UniValue z_exportkey(const UniValue& params, bool fHelp)
@@ -950,6 +1216,13 @@ UniValue z_exportkey(const UniValue& params, bool fHelp)
     string strAddress = params[0].get_str();
 
     auto address = DecodePaymentAddress(strAddress);
+
+    libzcash::PaymentAddress zaddress;
+    if (pwalletMain->GetAndValidateSaplingZAddress(strAddress, zaddress))
+    {
+        address = zaddress;
+    }
+
     if (!IsValidPaymentAddress(address)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid zaddr");
     }
@@ -1004,6 +1277,13 @@ UniValue z_exportviewingkey(const UniValue& params, bool fHelp)
     string strAddress = params[0].get_str();
 
     auto address = DecodePaymentAddress(strAddress);
+
+    libzcash::PaymentAddress zaddress;
+    if (pwalletMain->GetAndValidateSaplingZAddress(strAddress, zaddress))
+    {
+        address = zaddress;
+    }
+
     if (!IsValidPaymentAddress(address)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid zaddr");
     }

@@ -167,7 +167,7 @@ int32_t komodo_parsestatefile(struct komodo_state *sp,FILE *fp,char *symbol,char
                 errs++;
             if ( fread(&olen,1,sizeof(olen),fp) != sizeof(olen) )
                 errs++;
-            if ( olen < sizeof(opret) )
+            if ( olen <= sizeof(opret) - 1)
             {
                 if ( fread(opret,1,olen,fp) != olen )
                     errs++;
@@ -307,7 +307,7 @@ int32_t komodo_parsestatefiledata(struct komodo_state *sp,uint8_t *filedata,long
                 errs++;
             if ( memread(&olen,sizeof(olen),filedata,&fpos,datalen) != sizeof(olen) )
                 errs++;
-            if ( olen < sizeof(opret) )
+            if ( olen <= sizeof(opret) - 1)
             {
                 if ( memread(opret,olen,filedata,&fpos,datalen) != olen )
                     errs++;
@@ -320,10 +320,10 @@ int32_t komodo_parsestatefiledata(struct komodo_state *sp,uint8_t *filedata,long
                 komodo_eventadd_opreturn(sp,symbol,ht,txid,ovalue,v,opret,olen); // global shared state -> global PAX
             } else
             {
-                int32_t i;
-                for (i=0; i<olen; i++)
-                    filedata[fpos++];
-                //printf("illegal olen.%u\n",olen);
+                // int32_t i;
+                // for (i=0; i<olen; i++)
+                //     filedata[fpos++];
+                printf("illegal olen.%u\n",olen);
             }
         }
         else if ( func == 'D' )

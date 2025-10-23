@@ -191,7 +191,15 @@ public:
         ) const;
 };
 
+#define NOTEENCRYPTION_CIPHER_KEYSIZE 32
+
 }
+
+void KDF_Sapling(
+    unsigned char K[NOTEENCRYPTION_CIPHER_KEYSIZE],
+    const uint256 &dhsecret,
+    const uint256 &epk
+);
 
 typedef libzcash::NoteEncryption<ZC_NOTEPLAINTEXT_SIZE> ZCNoteEncryption;
 typedef libzcash::NoteDecryption<ZC_NOTEPLAINTEXT_SIZE> ZCNoteDecryption;

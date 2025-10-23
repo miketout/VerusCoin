@@ -95,7 +95,7 @@ void acceptTxFail(const CTransaction tx)
 bool acceptTx(const CTransaction tx, CValidationState &state)
 {
     LOCK(cs_main);
-    return AcceptToMemoryPool(mempool, state, tx, false, NULL);
+    return AcceptToMemoryPool(mempool, state, tx, false, false, NULL);
 }
 
 

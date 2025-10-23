@@ -51,19 +51,9 @@ extern string PBAAS_USERPASS;
 extern int32_t PBAAS_PORT;
 extern std::string VERUS_CHAINNAME;
 
-uint32_t PBAAS_TESTFORK2_TIME = 1684281600;
-uint32_t PBAAS_TESTFORK3_TIME = 1685379600;
-uint32_t PBAAS_TESTFORK4_TIME = 1686416400;
-uint32_t PBAAS_TESTFORK5_TIME = 1687042800;
-uint32_t PBAAS_TESTFORK6_TIME = 1687994100;
-uint32_t PBAAS_TESTFORK7_TIME = 1688799600;
-uint32_t PBAAS_TESTFORK8_TIME = 1690304400;
-uint32_t PBAAS_TESTFORK9_TIME = 1701240000;
-uint32_t PBAAS_TESTFORK10_TIME = 1703844000;
-
 uint32_t PBAAS_MAINDEFI3_HEIGHT = 2553500;
 uint32_t PBAAS_CLEARCONVERT_HEIGHT = 2588590;
-uint32_t PBAAS_LASTKNOWNCLEARORACLE_HEIGHT = 2597525;
+uint32_t PBAAS_LASTKNOWNCLEARORACLE_HEIGHT = 3210000;
 uint32_t PBAAS_ENFORCE_CORRECT_EVIDENCE_TIME = 1684359650;
 uint32_t PBAAS_OPTIMIZE_ETH_HEIGHT = 2805000;
 
@@ -1229,7 +1219,15 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             }
 
             blockTime = uni_get_int64(find_value(obj, "blocktime"), DEFAULT_BLOCKTIME_TARGET);
-            powAveragingWindow = uni_get_int64(find_value(obj, "powaveragingwindow"), DEFAULT_AVERAGING_WINDOW);
+            powAveragingWindow = uni_get_int64(find_value(obj, "powaveragingwindow"),
+                                   std::min(
+                                       (int64_t)CCurrencyDefinition::MAX_AVERAGING_WINDOW,
+                                       std::max(
+                                           (int64_t)CCurrencyDefinition::MIN_AVERAGING_WINDOW, ((int64_t)(CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET * (int64_t)CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW) / blockTime)
+                                           )
+                                       )
+                                   );
+
             blockNotarizationModulo = uni_get_int64(find_value(obj, "notarizationperiod"),
                                                     std::max((int64_t)(DEFAULT_BLOCK_NOTARIZATION_TIME / blockTime), (int64_t)MIN_BLOCK_NOTARIZATION_PERIOD));
 
@@ -1351,7 +1349,7 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
             UniValue uniEra1(UniValue::VOBJ);
             uniEra1.pushKV("reward", 600000000);
             uniEra1.pushKV("decay", 0);
-            uniEra1.pushKV("halving", 1051922);
+            uniEra1.pushKV("halving", 1051924);
             uniEra1.pushKV("eraend", 0);
             uniEras.push_back(uniEra1);
 

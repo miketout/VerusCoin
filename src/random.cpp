@@ -14,7 +14,6 @@
 #include "util.h"             // for LogPrint()
 #include "utilstrencodings.h" // for GetTime()
 
-#include <limits>
 
 #ifndef _WIN32
 #include <fcntl.h>

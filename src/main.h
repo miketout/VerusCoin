@@ -56,7 +56,6 @@ class PrecomputedTransactionData;
 
 struct CNodeStateStats;
 #define DEFAULT_MEMPOOL_EXPIRY 1
-#define _COINBASE_MATURITY 100
 
 /** Default for -blockmaxsize and -blockminsize, which control the range of sizes the mining code will create **/
 static const unsigned int DEFAULT_BLOCK_MAX_SIZE = MAX_BLOCK_SIZE;
@@ -68,7 +67,7 @@ static const bool DEFAULT_ALERTS = true;
 /** Minimum alert priority for enabling safe mode. */
 static const int ALERT_PRIORITY_SAFE_MODE = 4000;
 /** Maximum reorg length we will accept before we shut down and alert the user. */
-static const unsigned int MAX_REORG_LENGTH = _COINBASE_MATURITY - 1;
+extern unsigned int MAX_REORG_LENGTH;
 /** Maximum number of signature check operations in an IsStandard() P2SH script */
 static const unsigned int MAX_P2SH_SIGOPS = 15;
 /** The maximum number of sigops we're willing to relay/mine in a single tx */
@@ -77,9 +76,13 @@ static const unsigned int MAX_STANDARD_TX_SIGOPS = MAX_BLOCK_SIGOPS/5;
 static const unsigned int DEFAULT_MIN_RELAY_TX_FEE = 100;
 /** Default for -maxorphantx, maximum number of orphan transactions kept in memory */
 static const unsigned int DEFAULT_MAX_ORPHAN_TRANSACTIONS = 100;
+/** Expiration time for orphan transactions in seconds */
+static const int64_t ORPHAN_TX_EXPIRE_TIME = 20 * 60;
+/** Minimum time between orphan transactions expire time checks in seconds */
+static const int64_t ORPHAN_TX_EXPIRE_INTERVAL = 5 * 60;
 /** Default for -txexpirydelta, in number of blocks */
-static const unsigned int DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = 20;
-static const unsigned int DEFAULT_POST_BLOSSOM_TX_EXPIRY_DELTA = DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA * Consensus::BLOSSOM_POW_TARGET_SPACING_RATIO;
+extern unsigned int DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA;
+static const unsigned int DEFAULT_POST_BLOSSOM_TX_EXPIRY_DELTA = 20 * Consensus::BLOSSOM_POW_TARGET_SPACING_RATIO;
 /** The number of blocks within expiry height when a tx is considered to be expiring soon */
 static constexpr uint32_t TX_EXPIRING_SOON_THRESHOLD = 3;
 /** The maximum size of a blk?????.dat file (since 0.8) */
@@ -165,6 +168,7 @@ extern bool fReindex;
 extern int nScriptCheckThreads;
 extern bool fTxIndex;
 extern bool fIdIndex;
+extern bool fConversionIndex;
 
 // START insightexplorer
 extern bool fInsightExplorer;
@@ -317,9 +321,9 @@ void FlushStateToDisk();
 void PruneAndFlush();
 
 /** (try to) add transaction to memory pool **/
-bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
+bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree, bool fLimitDust,
                         bool* pfMissingInputs, bool fRejectAbsurdFee=false, int dosLevel=-1);
-bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
+bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree, bool fLimitDust,
                            bool* pfMissingInputs, bool fRejectAbsurdFee=false, int dosLevel=-1, int32_t simHeight = 0,
                            int expireThreshold=TX_EXPIRING_SOON_THRESHOLD);
 
@@ -396,7 +400,7 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
 /** Check for standard transaction types
  * @return True if all outputs (scriptPubKeys) use only standard transaction forms
  */
-bool IsStandardTx(const CTransaction& tx, std::string& reason, const CChainParams& chainparams, int nHeight = 0);
+bool IsStandardTx(const CTransaction& tx, std::string& reason, bool fLimitDust, const CChainParams& chainparams, int nHeight = 0);
 
 namespace Consensus {
 
@@ -588,6 +592,8 @@ CMutableTransaction CreateNewContextualCMutableTransaction(const Consensus::Para
  * actually increasing the available supply.
  */
 bool IsBlockBoundTransaction(const CTransaction &tx, const uint256 &cbHash);
+
+extern LRUCache<std::pair<uint256, uint32_t>, std::tuple<uint256, CInputDescriptor, CReserveTransfer>> reserveTransferCache;
 
 /**
  * Sets the premine from chain definition

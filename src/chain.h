@@ -340,7 +340,7 @@ public:
     unsigned int nTime;
     unsigned int nBits;
     uint256 nNonce;
-    std::vector<unsigned char> nSolution;
+    CCompactSolutionVector nSolution;
 
     //! (memory only) Sequential id assigned to distinguish order in which blocks are received.
     uint32_t nSequenceId;
@@ -376,7 +376,7 @@ public:
         nTime          = 0;
         nBits          = 0;
         nNonce         = uint256();
-        nSolution.clear();
+        nSolution = CCompactSolutionVector();
     }
 
     CBlockIndex()
@@ -436,7 +436,7 @@ public:
         block.nTime          = nTime;
         block.nBits          = nBits;
         block.nNonce         = nNonce;
-        block.nSolution      = nSolution;
+        block.nSolution      = nSolution.nSolution();
         return block;
     }
 
@@ -521,7 +521,7 @@ public:
     {
         if (nVersion == CBlockHeader::VERUS_V2)
         {
-            CPBaaSSolutionDescriptor descr = CConstVerusSolutionVector::GetDescriptor((nSolution));
+            CPBaaSSolutionDescriptor descr = CConstVerusSolutionVector::GetDescriptor((nSolution.nSolution()));
             if (descr.version >= CActivationHeight::ACTIVATE_PBAAS)
             {
                 return descr.hashBlockMMRRoot;
@@ -534,7 +534,7 @@ public:
     {
         if (nVersion == CBlockHeader::VERUS_V2)
         {
-            CPBaaSSolutionDescriptor descr = CConstVerusSolutionVector::GetDescriptor(nSolution);
+            CPBaaSSolutionDescriptor descr = CConstVerusSolutionVector::GetDescriptor(nSolution.nSolution());
             if (descr.version >= CActivationHeight::ACTIVATE_PBAAS)
             {
                 return descr.hashPrevMMRRoot;
@@ -638,7 +638,26 @@ public:
         READWRITE(nTime);
         READWRITE(nBits);
         READWRITE(nNonce);
-        READWRITE(nSolution);
+
+        if (CCompactSolutionVector::IsCompressionOn())
+        {
+            std::vector<unsigned char> tmpSolution;
+            if (ser_action.ForRead())
+            {
+                READWRITE(tmpSolution);
+                nSolution = tmpSolution;
+            }
+            else
+            {
+                tmpSolution = nSolution.nSolution();
+                READWRITE(tmpSolution);
+            }
+        }
+        else
+        {
+            READWRITE(nSolution.vch);
+            nSolution._size = nSolution.vch.size();
+        }
 
         // Only read/write nSproutValue if the client version used to create
         // this index was storing them.
@@ -666,7 +685,7 @@ public:
         block.nTime           = nTime;
         block.nBits           = nBits;
         block.nNonce          = nNonce;
-        block.nSolution       = nSolution;
+        block.nSolution       = nSolution.nSolution();
         return block.GetHash();
     }
 
@@ -682,11 +701,11 @@ public:
         block.nTime           = nTime;
         block.nBits           = nBits;
         block.nNonce          = nNonce;
-        block.nSolution       = nSolution;
+        block.nSolution       = nSolution.nSolution();
         CPBaaSPreHeader preBlock(block);
 
         str += strprintf("block.nVersion=%x\npprev=%p\nnHeight=%d\nhashBlock=%s\nblock.hashPrevBlock=%s\nblock.hashMerkleRoot=%s\nblock.nBits=%d\nblock.nNonce=%s\nblock.nSolution=%s\npreBlock.hashPrevMMRRoot=%s\npreBlock.hashBlockMMRRoot=%s\n",
-            this->nVersion, pprev, this->chainPower.nHeight, GetBlockHash().ToString(), hashPrev.ToString(), hashMerkleRoot.ToString(), nBits, nNonce.ToString(), HexBytes(nSolution.data(), nSolution.size()), preBlock.hashPrevMMRRoot.ToString(), preBlock.hashBlockMMRRoot.ToString());
+            this->nVersion, pprev, this->chainPower.nHeight, GetBlockHash().ToString(), hashPrev.ToString(), hashMerkleRoot.ToString(), nBits, nNonce.ToString(), HexBytes(nSolution.nSolution().data(), nSolution.size()), preBlock.hashPrevMMRRoot.ToString(), preBlock.hashBlockMMRRoot.ToString());
 
         return str;
     }

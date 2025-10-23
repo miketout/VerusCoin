@@ -1152,7 +1152,7 @@ UniValue CCurrencyDefinition::ToUniValue() const
 CTransferDestination CTransferDestination::GetAuxDest(int destNum) const
 {
     CTransferDestination retVal;
-    if (auxDests.size() < destNum)
+    if (destNum >= 0 && destNum < auxDests.size())
     {
         ::FromVector(auxDests[destNum], retVal);
         if (retVal.type & FLAG_DEST_AUX || retVal.auxDests.size())
@@ -1539,6 +1539,21 @@ CNodeData::CNodeData(std::string netAddr, std::string paymentAddr) :
 {
 }
 
+// returns 1 object or none if no valid, recognize object at front of stream
+template <typename Stream> UniValue CIdentity::VDXFDataToUniValue(Stream &ss, bool *pSuccess)
+{
+    if (pSuccess)
+    {
+        *pSuccess = false;
+    }
+    return UniValue(UniValue::VNULL);
+}
+
+UniValue CIdentity::VDXFDataToUniValue(const std::vector<unsigned char> &dataVch)
+{
+    return UniValue(UniValue::VNULL);
+}
+
 CIdentityID CIdentity::GetID(const std::string &Name, uint160 &parent)
 {
     std::string cleanName = CleanName(Name, parent);
@@ -1739,6 +1754,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "kvsearch", 1 },
     { "kvupdate", 4 },
     { "z_importkey", 2 },
+    { "z_getencryptionaddress", 0 },
     { "z_importviewingkey", 2 },
     { "z_getpaymentdisclosure", 1},
     { "z_getpaymentdisclosure", 2},
@@ -1775,6 +1791,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "setidentitytimelock", 1},
     { "recoveridentity", 0},
     { "signdata", 0},
+    { "decryptdata", 0},
     { "verifysignature", 0},
     { "getidentitieswithaddress", 0},
     { "getidentitieswithrevocation", 0},

@@ -140,7 +140,7 @@ public:
     {
         arith_uint256 work = Work() + nRight.Work();
         arith_uint256 stake = Stake() + nRight.Stake();
-        assert(work << 128 >> 128 == work && stake << 128 >> 128 == stake);
+        assert((work << 128 >> 128) == work && (stake << 128 >> 128) == stake);
 
         uint256 nodePower = ArithToUint256(stake << 128 | work);
 
@@ -490,6 +490,7 @@ class CRLPProof
 public:
     std::vector<std::vector <unsigned char>> proof_branch;
     CRLPProof() {}
+    CRLPProof(const std::vector<std::vector<unsigned char>>& data) : proof_branch(data) {}
 
     ADD_SERIALIZE_METHODS;
 
@@ -551,8 +552,11 @@ public:
     CRLPProof storageProof; 
     uint160 address;
     CPATRICIABranch() : CMerkleBranchBase(BRANCH_ETH) {}
-    CPATRICIABranch(std::vector<std::vector<unsigned char>> a, std::vector<std::vector<unsigned char>> b) : CMerkleBranchBase(BRANCH_ETH), accountProof(a), storageProof(b) {}
-    
+    CPATRICIABranch(
+        const std::vector<std::vector<unsigned char>>& a,
+        const std::vector<std::vector<unsigned char>>& b
+    ) : CMerkleBranchBase(BRANCH_ETH), accountProof(a), storageProof(b) {}
+
     CPATRICIABranch& operator<<(CPATRICIABranch append)
     {
         //TODO

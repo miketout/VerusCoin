@@ -257,7 +257,7 @@ public:
     static const uint8_t VERSION_VERUSID = 1;
     static const uint8_t VERSION_VAULT = 2;
     static const uint8_t VERSION_PBAAS = 3;
-    static const uint8_t VERSION_CURRENT = VERSION_VAULT;
+    static const uint8_t VERSION_CURRENT = VERSION_PBAAS;
     static const uint8_t VERSION_FIRSTVALID = 1;
     static const uint8_t VERSION_LASTVALID = 3;
 
@@ -357,7 +357,7 @@ public:
     bool IsPrimaryMutation(const CPrincipal &newPrincipal, uint32_t currentVersion) const // post PBaaS, version is checked elsewhere
     {
         if ((currentVersion < VERSION_PBAAS && newPrincipal.nVersion != nVersion) ||
-            minSigs != minSigs ||
+            minSigs != newPrincipal.minSigs ||
             primaryAddresses.size() != newPrincipal.primaryAddresses.size())
         {
             return true;
@@ -597,6 +597,12 @@ public:
 
     UniValue ToUniValue() const;
 
+    template <typename Stream>
+    static UniValue VDXFDataToUniValue(Stream &ss, bool *pSuccess);
+
+    // returns multiple objects if they are consecutive in the data
+    static UniValue VDXFDataToUniValue(const std::vector<unsigned char> &dataVch);
+
     void UpgradeVersion(uint32_t height)
     {
         // to make the code simpler, these are just done in order, and more than one may be done if an ID
@@ -670,6 +676,12 @@ public:
         }
     }
 
+    void ClearLock()
+    {
+        flags &= ~FLAG_LOCKED;
+        unlockAfter = 0;
+    }
+
     // This only returns the state of the lock flag. Note that an ID stays locked from spending or
     // signing until the height it was unlocked plus the time lock applied when it was locked.
     bool IsLocked() const
@@ -680,12 +692,7 @@ public:
     // consider the unlockAfter height as well
     // this continues to return that it is locked after it is unlocked
     // until passed the parameter of the height at which it was unlocked, plus the time lock
-    bool IsLocked(uint32_t height) const
-    {
-        return nVersion >= VERSION_VAULT &&
-               (IsLocked() || unlockAfter >= height) &&
-               !IsRevoked();
-    }
+    bool IsLocked(uint32_t height) const;
 
     int32_t UnlockHeight() const
     {
@@ -1061,7 +1068,7 @@ public:
         ret.pushKV("action", (int64_t)action);
         if (action != ACTION_CLEAR_MAP)
         {
-            ret.pushKV("entrykey", entryKey.GetHex());
+            ret.pushKV("entrykey", EncodeDestination(CIdentityID(entryKey)));
             if (action != ACTION_REMOVE_ALL_KEY)
             {
                 ret.pushKV("valuehash", valueHash.GetHex());

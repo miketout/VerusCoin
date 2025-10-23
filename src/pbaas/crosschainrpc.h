@@ -233,12 +233,17 @@ public:
                          std::vector<unsigned char> Destination,
                          const uint160 &GatewayID=uint160(),
                          const uint160 &GatewayCode=uint160(),
-                         int64_t Fees=0) :
+                         int64_t Fees=0,
+                         const std::vector<std::vector<unsigned char>> &AuxDests=std::vector<std::vector<unsigned char>>()) :
                          type(Type),
                          destination(Destination),
                          gatewayID(GatewayID),
                          gatewayCode(GatewayCode),
-                         fees(Fees) {}
+                         fees(Fees),
+                         auxDests(AuxDests)
+    {
+        type |= ((auxDests.size() > 0 && auxDests[0].size() > 0) ? FLAG_DEST_AUX : 0) + (gatewayID.IsNull() ? 0 : FLAG_DEST_GATEWAY);
+    }
 
     ADD_SERIALIZE_METHODS;
 
@@ -439,8 +444,6 @@ public:
 class CCurrencyDefinition
 {
 public:
-    static const int64_t DEFAULT_ID_REGISTRATION_AMOUNT = 10000000000;
-
     enum EVersion
     {
         VERSION_INVALID = 0,
@@ -459,6 +462,7 @@ public:
         IDENTITY_REGISTRATION_FEE = 10000000000,    // 100 full price to register an identity
         IDENTITY_IMPORT_FEE = 2000000,              // 0.02 in native currency to import an identity
         EXTRA_Z_OUTPUT_FEE = (TRANSACTION_TRANSFER_FEE >> 1), // 2 or more z-outputs accompanied by t-outputs on a transaction
+        DEFAULT_STORAGE_OUTPUT_FACTOR = 6,          // default multiplier times the export fee to equal the cost of 6K of storage output
         MIN_CURRENCY_LIFE = 480,                    // 8 hour minimum lifetime, which gives 8 hours of minimum billing to notarize conclusion
         DEFAULT_OUTPUT_VALUE = 0,                   // 0 VRSC default output value
         DEFAULT_ID_REFERRAL_LEVELS = 3,
@@ -478,6 +482,10 @@ public:
         MAX_ETH_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 0,
         MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK = 50,
         MAX_ETH_TRANSFER_EXPORTS_SIZE_PER_BLOCK = 50000,
+        MIN_DEFAULT_TX_EXPIRY = 20,                 // minimum blocks for transaction expiry
+        MAX_DEFAULT_TX_EXPIRY = 60,                 // maximum blocks for transaction expiry
+        MIN_AVERAGING_WINDOW = 20,                  // min averaging window
+        MAX_AVERAGING_WINDOW = 180,                 // max averaging window
         DEFAULT_BLOCK_NOTARIZATION_TIME = 600,      // default target time for block notarizations
         MIN_BLOCK_NOTARIZATION_PERIOD = 5,          // minimum target blocks for notarization period
         MAX_NOTARIZATION_CONVERSION_PRICING_INTERVAL = 100,  // there must be a notarization with conversion at least 100 blocks before reserve transfer
@@ -485,12 +493,12 @@ public:
         MIN_BLOCKTIME_TARGET = 10,                  // min 10 seconds in first version of PBaaS
         MAX_BLOCKTIME_TARGET = 120,                 // max 2 minutes in first version of PBaaS
         DEFAULT_AVERAGING_WINDOW = 45,              // default target spacing (blocks) for difficulty adjustment
-        MIN_AVERAGING_WINDOW = 20,                  // min averaging window
-        MAX_AVERAGING_WINDOW = 200,                 // max averaging window
         BLOCK_NOTARIZATION_MODULO = (DEFAULT_BLOCK_NOTARIZATION_TIME / DEFAULT_BLOCKTIME_TARGET), // default min notarization spacing (10 minutes)
         MIN_EARNED_FOR_AUTO = 4,
         MIN_BLOCKS_TO_SIGNCONFIRM = 15,
         MIN_BLOCKS_TO_AUTOCONFIRM = 150,
+        MIN_COINBASE_MATURITY = 100,                // minimum blocks to spend coinbase transaction outputs
+        MAX_COINBASE_MATURITY = 150 - 1,            // maximum blocks to spend coinbase transaction outputs, equal to mininum confirmations to stake minus 1
     };
 
     enum ECurrencyOptions
@@ -793,6 +801,10 @@ public:
                 READWRITE(rewardsDecay);
                 READWRITE(halving);
                 READWRITE(eraEnd);
+            }
+            else if (ser_action.ForRead())
+            {
+                blockNotarizationModulo = BLOCK_NOTARIZATION_MODULO;
             }
         }
         else
@@ -1676,6 +1688,9 @@ public:
                     delete state.hw_sha256D;
                     break;
                 }
+                default:
+                // No action needed for HASH_INVALID or HASH_LASTTYPE
+                break;
             }
         }
         state.hw_blake2b = nullptr;
@@ -1733,6 +1748,9 @@ public:
                 state.hw_sha256D->write(pch, size);
                 break;
             }
+            default:
+                // No action for HASH_INVALID or HASH_LASTTYPE
+            break;
         }
         return (*this);
     }
@@ -1763,6 +1781,9 @@ public:
                 result = state.hw_sha256D->GetHash();
                 break;
             }
+            default:
+                // No action for HASH_INVALID or HASH_LASTTYPE
+            break;
         }
         return result;
     }

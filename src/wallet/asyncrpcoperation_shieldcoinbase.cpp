@@ -236,15 +236,16 @@ bool ShieldToAddress::operator()(const libzcash::SproutPaymentAddress &zaddr) co
     m_op->tx_ = CTransaction(mtx);
 
     // Create joinsplit
-    UniValue obj(UniValue::VOBJ);
     ShieldCoinbaseJSInfo info;
     info.vpub_old = sendAmount;
     info.vpub_new = 0;
     JSOutput jso = JSOutput(zaddr, sendAmount);
     info.vjsout.push_back(jso);
-    obj = m_op->perform_joinsplit(info);
+    UniValue obj = m_op->perform_joinsplit(info);
 
-    m_op->sign_send_raw_transaction(obj);
+    auto txAndResult = SignSendRawTransaction(obj, boost::none, m_op->testmode);
+    m_op->tx_ = txAndResult.first;
+    m_op->set_result(txAndResult.second);
     return true;
 }
 
@@ -290,73 +291,6 @@ bool ShieldToAddress::operator()(const libzcash::SaplingPaymentAddress &zaddr) c
 
 bool ShieldToAddress::operator()(const libzcash::InvalidEncoding& no) const {
     return false;
-}
-
-
-/**
- * Sign and send a raw transaction.
- * Raw transaction as hex string should be in object field "rawtxn"
- */
-void AsyncRPCOperation_shieldcoinbase::sign_send_raw_transaction(UniValue obj)
-{
-    // Sign the raw transaction
-    UniValue rawtxnValue = find_value(obj, "rawtxn");
-    if (rawtxnValue.isNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR, "Missing hex data for raw transaction");
-    }
-    std::string rawtxn = rawtxnValue.get_str();
-
-    UniValue params = UniValue(UniValue::VARR);
-    params.push_back(rawtxn);
-    UniValue signResultValue = signrawtransaction(params, false);
-    UniValue signResultObject = signResultValue.get_obj();
-    UniValue completeValue = find_value(signResultObject, "complete");
-    bool complete = completeValue.get_bool();
-    if (!complete) {
-        // TODO: #1366 Maybe get "errors" and print array vErrors into a string
-        throw JSONRPCError(RPC_WALLET_ENCRYPTION_FAILED, "Failed to sign transaction");
-    }
-
-    UniValue hexValue = find_value(signResultObject, "hex");
-    if (hexValue.isNull()) {
-        throw JSONRPCError(RPC_WALLET_ERROR, "Missing hex data for signed transaction");
-    }
-    std::string signedtxn = hexValue.get_str();
-
-    // Send the signed transaction
-    if (!testmode) {
-        params.clear();
-        params.setArray();
-        params.push_back(signedtxn);
-        UniValue sendResultValue = sendrawtransaction(params, false);
-        if (sendResultValue.isNull()) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Send raw transaction did not return an error or a txid.");
-        }
-
-        std::string txid = sendResultValue.get_str();
-
-        UniValue o(UniValue::VOBJ);
-        o.push_back(Pair("txid", txid));
-        set_result(o);
-    } else {
-        // Test mode does not send the transaction to the network.
-
-        CDataStream stream(ParseHex(signedtxn), SER_NETWORK, PROTOCOL_VERSION);
-        CTransaction tx;
-        stream >> tx;
-
-        UniValue o(UniValue::VOBJ);
-        o.push_back(Pair("test", 1));
-        o.push_back(Pair("txid", tx.GetHash().ToString()));
-        o.push_back(Pair("hex", signedtxn));
-        set_result(o);
-    }
-
-    // Keep the signed transaction so we can hash to the same txid
-    CDataStream stream(ParseHex(signedtxn), SER_NETWORK, PROTOCOL_VERSION);
-    CTransaction tx;
-    stream >> tx;
-    tx_ = tx;
 }
 
 

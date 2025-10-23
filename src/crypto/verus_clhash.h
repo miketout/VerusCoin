@@ -43,9 +43,6 @@
 
 #include <boost/thread.hpp>
 #include "tinyformat.h"
-#ifdef __APPLE__
-void __tls_init();
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -75,12 +72,16 @@ struct verusclhash_descr
 
 struct thread_specific_ptr {
     void *ptr;
-    thread_specific_ptr() { ptr = NULL; }
-    void reset(void *newptr = NULL)
+    thread_specific_ptr() { ptr = nullptr; }
+    void reset(void *newptr = nullptr)
     {
         if (ptr && ptr != newptr)
         {
+#if defined(_WIN32)
+            _aligned_free(ptr);
+#else
             std::free(ptr);
+#endif
         }
         ptr = newptr;
 
@@ -199,9 +200,6 @@ struct verusclhasher {
     // align on 256 bit boundary at end
     verusclhasher(uint64_t keysize=VERUSKEYSIZE, int solutionVersion=SOLUTION_VERUSHHASH_V2) : keySizeInBytes((keysize >> 5) << 5)
     {
-#ifdef __APPLE__
-       __tls_init();
-#endif
         if (IsCPUVerusOptimized())
         {
             if (solutionVersion >= SOLUTION_VERUSHHASH_V2_1)
@@ -257,7 +255,7 @@ struct verusclhasher {
             (verusclhasher_key.reset((unsigned char *)alloc_aligned_buffer(keySizeInBytes << 1)), key = verusclhasher_key.get()))
         {
             verusclhash_descr *pdesc;
-            if (verusclhasher_descr.reset(new verusclhash_descr()), pdesc = (verusclhash_descr *)verusclhasher_descr.get())
+            if (verusclhasher_descr.reset((unsigned char *)alloc_aligned_buffer(sizeof(verusclhash_descr))), pdesc = (verusclhash_descr *)verusclhasher_descr.get())
             {
                 pdesc->keySizeInBytes = keySizeInBytes;
             }

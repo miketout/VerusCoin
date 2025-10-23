@@ -78,6 +78,7 @@ extern int32_t KOMODO_LOADINGBLOCKS;
 extern bool VERUS_MINTBLOCKS;
 extern CTxDestination VERUS_DEFAULT_ARBADDRESS;
 extern std::vector<uint160> VERUS_ARBITRAGE_CURRENCIES;
+extern int64_t STORAGE_FEE_FACTOR;
 extern std::string VERUS_DEFAULT_ZADDR;
 
 ZCJoinSplit* pzcashParams = NULL;
@@ -246,6 +247,8 @@ void Shutdown()
         pcoinsdbview = NULL;
         delete pblocktree;
         pblocktree = NULL;
+        delete pnotarisations;
+        pnotarisations = nullptr;
     }
 #ifdef ENABLE_WALLET
     if (pwalletMain)
@@ -367,6 +370,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-loadblock=<file>", _("Imports blocks from external blk000??.dat file") + " " + _("on startup"));
     strUsage += HelpMessageOpt("-maxorphantx=<n>", strprintf(_("Keep at most <n> unconnectable transactions in memory (default: %u)"), DEFAULT_MAX_ORPHAN_TRANSACTIONS));
     strUsage += HelpMessageOpt("-mempooltxinputlimit=<n>", _("[DEPRECATED FROM OVERWINTER] Set the maximum number of transparent inputs in a transaction that the mempool will accept (default: 0 = no limit applied)"));
+    strUsage += HelpMessageOpt("-notarydatadir=<dir>", _("Specify data directory for notary chain"));
     strUsage += HelpMessageOpt("-par=<n>", strprintf(_("Set the number of script verification threads (%u to %d, 0 = auto, <0 = leave that many cores free, default: %d)"),
         -(int)boost::thread::hardware_concurrency(), MAX_SCRIPTCHECK_THREADS, DEFAULT_SCRIPTCHECK_THREADS));
 #ifndef _WIN32
@@ -402,6 +406,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-maxconnections=<n>", strprintf(_("Maintain at most <n> connections to peers (default: %u)"), DEFAULT_MAX_PEER_CONNECTIONS));
     strUsage += HelpMessageOpt("-maxreceivebuffer=<n>", strprintf(_("Maximum per-connection receive buffer, <n>*1000 bytes (default: %u)"), 5000));
     strUsage += HelpMessageOpt("-maxsendbuffer=<n>", strprintf(_("Maximum per-connection send buffer, <n>*1000 bytes (default: %u)"), 1000));
+    strUsage += HelpMessageOpt("-maximumimportrange=<n>", strprintf(_("Maximum number of blocks for an import range query or getcurrencystate with volume, (default: unlimited)")));
     strUsage += HelpMessageOpt("-onion=<ip:port>", strprintf(_("Use separate SOCKS5 proxy to reach peers via Tor hidden services (default: %s)"), "-proxy"));
     strUsage += HelpMessageOpt("-onlynet=<net>", _("Only connect to nodes in network <net> (ipv4, ipv6 or onion)"));
     strUsage += HelpMessageOpt("-permitbaremultisig", strprintf(_("Relay non-P2SH multisig (default: %u)"), 1));
@@ -429,10 +434,14 @@ std::string HelpMessage(HelpMessageMode mode)
 
 #ifdef ENABLE_WALLET
     strUsage += HelpMessageGroup(_("Wallet options:"));
+    strUsage += HelpMessageOpt("-arbitragecurrencies", _("Either a JSON array or a comma separated list of currency names."));
+    strUsage += HelpMessageOpt("-arbitrageaddress", _("A valid wallet address or identity controlled by this wallet that will hold the arbitrage currencies to use."));
+    strUsage += HelpMessageOpt("-storagefeefactor", _("Defaults to 6.0, which is used for 6K outputs to price storage in a currency's TransactionExportFee (ie. 6.0 = 1 TransactionExportFee per K)."));
     strUsage += HelpMessageOpt("-cheatcatcher=<sapling-address>", _("same as \"-defaultzaddr\""));
     strUsage += HelpMessageOpt("-defaultid=<i-address>", _("VerusID used for default change out and staking reward recipient"));
     strUsage += HelpMessageOpt("-defaultzaddr=<sapling-address>", _("sapling address to receive fraud proof rewards and if used with \"-privatechange=1\", z-change address for the sendcurrency command"));
     strUsage += HelpMessageOpt("-disablewallet", _("Do not load the wallet and disable wallet RPC calls"));
+    strUsage += HelpMessageOpt("-fastload", _("If fastload is true, the daemon will load much faster, potentially saving an hour off of load time, and it will also require up to 4GB more RAM for the same tasks"));
     strUsage += HelpMessageOpt("-keypool=<n>", strprintf(_("Set key pool size to <n> (default: %u)"), 100));
     strUsage += HelpMessageOpt("-maxtxfee=<amt>", strprintf(_("Maximum total fees (in %s) to use in a single wallet transaction; setting this too low may abort large transactions (default: %s)"),
         CURRENCY_UNIT, FormatMoney(maxTxFee)));
@@ -1319,6 +1328,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     VERUS_NODEID = nodeIDDest.which() == COptCCParams::ADDRTYPE_ID ? GetDestinationID(nodeIDDest) : uint160();
 
     UniValue arbitrageArr(UniValue::VARR);
+    std::vector<std::string> arbCurrencyNames;
     std::string arbString = GetArg("-arbitragecurrencies", "");
     if (arbitrageArr.read(arbString) && arbitrageArr.isArray() && arbitrageArr.size())
     {
@@ -1327,17 +1337,34 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             uint160 oneCurID = ValidateCurrencyName(uni_get_str(arbitrageArr[i]), false);
             if (oneCurID.IsNull())
             {
-                return InitError(_("If arbitragecurrencies are specified, it must be as an array of currency names"));
+                return InitError(_("If arbitragecurrencies are specified, it must be as an array of currency names or a comma separated string of names"));
+            }
+            VERUS_ARBITRAGE_CURRENCIES.push_back(oneCurID);
+        }
+    }
+    else if (boost::split(arbCurrencyNames, arbString, boost::is_any_of(",")).size() && !arbCurrencyNames[0].empty())
+    {
+        for (int i = 0; i < arbCurrencyNames.size(); i++)
+        {
+            uint160 oneCurID = ValidateCurrencyName(uni_get_str(arbCurrencyNames[i]), false);
+            if (oneCurID.IsNull())
+            {
+                return InitError(_("If arbitragecurrencies are specified, it must be as an array or a comma separated string of valid currency names"));
             }
             VERUS_ARBITRAGE_CURRENCIES.push_back(oneCurID);
         }
     }
     VERUS_DEFAULT_ARBADDRESS = DecodeDestination(GetArg("-arbitrageaddress", ""));
 
+    STORAGE_FEE_FACTOR = GetArg("-storagefeefactor", CCurrencyDefinition::DEFAULT_STORAGE_OUTPUT_FACTOR);
+
+    printf("\nCompression is: %s\n", CCompactSolutionVector::SetCompression(!GetBoolArg("-fastload", !CCompactSolutionVector::IsCompressionOn())) ? "on" : "off");
+
     // if we are supposed to catch stake cheaters, there must be a valid sapling parameter, we need it at
     // initialization, and this is the first time we can get it. store the Sapling address here
     extern boost::optional<libzcash::SaplingPaymentAddress> defaultSaplingDest;
     VERUS_DEFAULT_ZADDR = GetArg("-cheatcatcher", "");
+    VERUS_DEFAULT_ZADDR = GetArg("-stakeguard", VERUS_DEFAULT_ZADDR); // TODO: should separate stakeguard/cheatcatcher from the default change address
     VERUS_DEFAULT_ZADDR = GetArg("-defaultzaddr", VERUS_DEFAULT_ZADDR);
     libzcash::PaymentAddress addr = DecodePaymentAddress(VERUS_DEFAULT_ZADDR);
     if (VERUS_DEFAULT_ZADDR.size() > 0 && IsValidPaymentAddress(addr))
@@ -1650,8 +1677,12 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     if (GetBoolArg("-bootstrap", false)) {
         useBootstrap = true;
     }
+    bool hasBootstrap = IsVerusActive() ||
+        ConnectedChains.vARRRChainID() == ASSETCHAINS_CHAINID ||
+        ConnectedChains.vDEXChainID() == ASSETCHAINS_CHAINID ||
+        ConnectedChains.ChipsChainID() == ASSETCHAINS_CHAINID;
 
-    if (IsVerusMainnetActive() && useBootstrap) {
+    if (hasBootstrap && useBootstrap) {
         fReindex = false;
         //wipe transactions from wallet to create a clean slate
         OverrideSetArg("-zappwallettxes","2");
@@ -1759,6 +1790,17 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             fReindex = true;
         }
 
+        /* 
+        pblocktree->ReadFlag("conversionindex", checkval);
+        fConversionIndex = GetBoolArg("-conversionindex", checkval);
+        if ( checkval != fConversionIndex )
+        {
+            pblocktree->WriteFlag("conversionindex", fConversionIndex);
+            fprintf(stderr,"set convrsionindex, will reindex. sorry will take a while.\n");
+            fReindex = true;
+        }
+        */
+
         pblocktree->ReadFlag("insightexplorer", checkval);
         fInsightExplorer = GetBoolArg("-insightexplorer", checkval);
         if ( checkval != fInsightExplorer )
@@ -1839,6 +1881,14 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                     strLoadError = _("You need to rebuild the database using -reindex to change -idindex");
                     break;
                 }
+
+                /*
+                pblocktree->ReadFlag("conversionindex", fConversionIndex);
+                if (!fReindex && fConversionIndex != GetBoolArg("-conversionindex", fConversionIndex) ) {
+                    strLoadError = _("You need to rebuild the database using -reindex to change -conversionindex");
+                    break;
+                }
+                */
 
                 // Check for changed -insightexplorer state
                 pblocktree->ReadFlag("insightexplorer", fInsightExplorer);
@@ -2063,6 +2113,9 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                 pwalletMain->GenerateNewSeed();
             }
         }
+
+        // Set sapling migration status
+        pwalletMain->fSaplingMigrationEnabled = GetBoolArg("-migration", false);
 
         if (fFirstRun)
         {

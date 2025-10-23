@@ -148,7 +148,7 @@ bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height,
     return false;
 }
 
-LRUCache<std::pair<uint256, CIdentityID>, std::tuple<CIdentity, uint32_t, CTxIn>> CIdentity::IdentityLookupCache(2000);
+LRUCache<std::pair<uint256, CIdentityID>, std::tuple<CIdentity, uint32_t, CTxIn>> CIdentity::IdentityLookupCache(6000);
 
 CIdentity CIdentity::LookupIdentity(const CIdentityID &nameID, uint32_t height, uint32_t *pHeightOut, CTxIn *pIdTxIn, bool checkMempool)
 {
@@ -522,15 +522,18 @@ CIdentity::GetAggregatedIdentityMultimap(const uint160 &idID,
                     for (auto removeItemCursor = removeItemRange.first; removeItemCursor != removeItemRange.second; removeItemCursor++)
                     {
                         CNativeHashWriter hw;
-                        hw.write((char *)&(std::get<0>(removeItemCursor->second)[0]), std::get<0>(removeItemCursor->second).size());
-
-                        uint256 hashVal = hw.GetHash();
-                        if (hashVal == removeAction.valueHash)
+                        if (std::get<0>(removeItemCursor->second).size())
                         {
-                            itemsToRemove.push_back(removeItemCursor);
-                            if (removeAction.action == removeAction.ACTION_REMOVE_ONE_KEYVALUE)
+                            hw.write((char *)&(std::get<0>(removeItemCursor->second)[0]), std::get<0>(removeItemCursor->second).size());
+
+                            uint256 hashVal = hw.GetHash();
+                            if (hashVal == removeAction.valueHash)
                             {
-                                break;
+                                itemsToRemove.push_back(removeItemCursor);
+                                if (removeAction.action == removeAction.ACTION_REMOVE_ONE_KEYVALUE)
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -581,6 +584,13 @@ CIdentity::GetIdentityContentByKey(const uint160 &idID,
         retVec.push_back(oneEntry.second);
     }
     return retVec;
+}
+
+bool CIdentity::IsLocked(uint32_t height) const
+{
+    return nVersion >= VERSION_VAULT &&
+            (IsLocked() || (!ConnectedChains.IdentityLockOverride(*this, height) && unlockAfter >= height)) &&
+            !IsRevoked();
 }
 
 CIdentity CIdentity::LookupIdentity(const std::string &name, uint32_t height, uint32_t *pHeightOut, CTxIn *idTxIn)
@@ -1027,7 +1037,6 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
 {
     // CHECK #1 - there is only one reservation output, and there is also one identity output that matches the reservation.
     //            the identity output must come first and have from 0 to 3 referral outputs between it and the reservation.
-    int numReferrers = 0;
     int identityCount = 0;
     int reservationCount = 0;
     CIdentity newIdentity;
@@ -1634,47 +1643,51 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
 
         if (heightOut != 1)
         {
-            for (auto &txout : referralTx.vout)
+            if (ConnectedChains.IsUpgrade01Active(height - 1) ||
+                checkReferrers.size() < issuingParent.IDReferralLevels())
             {
-                COptCCParams p;
-                if (txout.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.version >= p.VERSION_V3)
+                for (auto &txout : referralTx.vout)
                 {
-                    if (p.evalCode == EVAL_IDENTITY_PRIMARY)
+                    COptCCParams p;
+                    if (txout.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.version >= p.VERSION_V3)
                     {
-                        afterPrimary = true;
-                    }
-                    else if (afterPrimary &&
-                             !isReferral &&
-                             issuingParent.IDReferrals() &&
-                             issuingParent.IDReferralLevels() &&
-                             ((issuingParent.proofProtocol != issuingParent.PROOF_CHAINID && p.evalCode == EVAL_RESERVE_TRANSFER) ||
-                              (issuingParent.proofProtocol == issuingParent.PROOF_CHAINID && (p.evalCode == EVAL_RESERVE_OUTPUT || p.evalCode == EVAL_NONE))))
-                    {
-                        isReferral = true;
-                        continue;
-                    }
-                    else if (p.evalCode == EVAL_IDENTITY_RESERVATION || p.evalCode == EVAL_IDENTITY_ADVANCEDRESERVATION)
-                    {
-                        break;
-                    }
-                    else if (isReferral || (afterPrimary &&
-                                            issuerID == ASSETCHAINS_CHAINID &&
-                                            issuingParent.proofProtocol != issuingParent.PROOF_CHAINID &&
-                                            issuingParent.IDReferrals() &&
-                                            issuingParent.IDReferralLevels()))
-                    {
-                        isReferral = true;
-                        if (p.vKeys.size() != 1 || p.vKeys[0].which() != COptCCParams::ADDRTYPE_ID)
+                        if (p.evalCode == EVAL_IDENTITY_PRIMARY)
                         {
-                            // invalid referral
-                            return state.Error("Invalid identity registration referral outputs");
+                            afterPrimary = true;
                         }
-                        else
+                        else if (afterPrimary &&
+                                !isReferral &&
+                                issuingParent.IDReferrals() &&
+                                issuingParent.IDReferralLevels() &&
+                                ((issuingParent.proofProtocol != issuingParent.PROOF_CHAINID && p.evalCode == EVAL_RESERVE_TRANSFER) ||
+                                (issuingParent.proofProtocol == issuingParent.PROOF_CHAINID && (p.evalCode == EVAL_RESERVE_OUTPUT || p.evalCode == EVAL_NONE))))
                         {
-                            checkReferrers.push_back(p.vKeys[0]);
-                            if (checkReferrers.size() == issuingParent.IDReferralLevels())
+                            isReferral = true;
+                            continue;
+                        }
+                        else if (p.evalCode == EVAL_IDENTITY_RESERVATION || p.evalCode == EVAL_IDENTITY_ADVANCEDRESERVATION)
+                        {
+                            break;
+                        }
+                        else if (isReferral || (afterPrimary &&
+                                                issuerID == ASSETCHAINS_CHAINID &&
+                                                issuingParent.proofProtocol != issuingParent.PROOF_CHAINID &&
+                                                issuingParent.IDReferrals() &&
+                                                issuingParent.IDReferralLevels()))
+                        {
+                            isReferral = true;
+                            if (p.vKeys.size() != 1 || p.vKeys[0].which() != COptCCParams::ADDRTYPE_ID)
                             {
-                                break;
+                                // invalid referral
+                                return state.Error("Invalid identity registration referral outputs");
+                            }
+                            else
+                            {
+                                checkReferrers.push_back(p.vKeys[0]);
+                                if (checkReferrers.size() == issuingParent.IDReferralLevels())
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1821,7 +1834,6 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
     uint160 parentID = issuingCurrency.GetID();
     uint160 issuerID = parentID;
 
-    int numReferrers = 0;
     int identityCount = 0;
     int reservationCount = 0;
     CIdentity newIdentity;
@@ -2302,7 +2314,8 @@ bool PrecheckIdentityCommitment(const CTransaction &tx, int32_t outNum, CValidat
         if (tx.vout[outNum].scriptPubKey.IsPayToCryptoCondition(p) &&
             p.IsValid() &&
             p.version >= COptCCParams::VERSION_V3 &&
-            p.vData.size() > 1)
+            p.vData.size() > 1 &&
+            p.vData[0].size() >= 20)
         {
             CCommitmentHash ch(p.vData[0]);
             std::vector<unsigned char> vch;
@@ -2820,6 +2833,10 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
         // first time through may be null
         if ((!input.prevout.hash.IsNull() && input.prevout.hash == inTx.GetHash()) || myGetTransaction(input.prevout.hash, inTx, blkHash))
         {
+            if (input.prevout.n >= inTx.vout.size())
+            {
+                return state.Error("Invalid, malformed transaction");
+            }
             if (inTx.vout[input.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
                 p.IsValid() &&
                 p.evalCode == EVAL_IDENTITY_PRIMARY &&
@@ -2839,30 +2856,44 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
             // for block one IDs, ensure they are valid as per the launch parameters
             if (tx.IsCoinBase())
             {
-                // we only check coinbase on the first identity
-                int i;
-                for (i = 0; i < tx.vout.size(); i++)
+                if (ASSETCHAINS_CHAINID == GetDestinationID(DecodeDestination("iExBJfZYK7KREDpuhj6PzZBzqMAKaFg7d2")))
                 {
-                    if (CIdentity(tx.vout[i].scriptPubKey).IsValid())
-                    {
-                        break;
-                    }
-                }
-                if (i == outNum)
-                {
-                    if (ConnectedChains.FirstNotaryChain().IsValid() &&
-                        IsValidBlockOneCoinbase(tx.vout, ConnectedChains.FirstNotaryChain(), ConnectedChains.ThisChain(), state))
+                    if (tx.GetHash() == uint256S("9986facba28a68bc7d06095b536873f2cd31b0a45b574fa73a994b7a89cba1da"))
                     {
                         return true;
                     }
                     else
                     {
-                        return state.Error("Invalid block 1 coinbase");
+                        return state.Error("Invalid block one coinbase");
                     }
                 }
                 else
                 {
-                    return true;
+                    // we only check coinbase on the first identity
+                    int i;
+                    for (i = 0; i < tx.vout.size(); i++)
+                    {
+                        if (CIdentity(tx.vout[i].scriptPubKey).IsValid())
+                        {
+                            break;
+                        }
+                    }
+                    if (i == outNum)
+                    {
+                        if (ConnectedChains.FirstNotaryChain().IsValid() &&
+                            IsValidBlockOneCoinbase(tx.vout, ConnectedChains.FirstNotaryChain(), ConnectedChains.ThisChain(), state))
+                        {
+                            return true;
+                        }
+                        else
+                        {
+                            return state.Error("Invalid block 1 coinbase");
+                        }
+                    }
+                    else
+                    {
+                        return true;
+                    }
                 }
             }
             else

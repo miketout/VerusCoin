@@ -164,7 +164,7 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int &
     uint32_t nHeight = pindexPrev->GetHeight() + 1;
     bool isPBaaS = CConstVerusSolutionVector::GetVersionByHeight(nHeight) >= CActivationHeight::ACTIVATE_PBAAS;
     bool isPoS = pblock->IsVerusPOSBlock();
-    bool posSourceInfo = (isPBaaS && (!PBAAS_TESTMODE || pblock->nTime >= PBAAS_TESTFORK2_TIME));
+    bool posSourceInfo = isPBaaS;
 
     // Update nExtraNonce
     static uint256 hashPrevBlock;
@@ -777,7 +777,7 @@ bool DecodeOneExport(const UniValue obj, CCrossChainExport &ccx,
         exportTx.vout.size() <= outNum ||
         !exportTx.vout[outNum].scriptPubKey.IsPayToCryptoCondition(p) ||
         !p.IsValid() ||
-        !p.evalCode == EVAL_CROSSCHAIN_EXPORT ||
+        p.evalCode != EVAL_CROSSCHAIN_EXPORT ||
         (outputValue = exportTx.vout[outNum].nValue) == -1)
     {
         //UniValue jsonTxOut(UniValue::VOBJ);
@@ -1041,7 +1041,7 @@ bool AddOneCurrencyImport(const CCurrencyDefinition &newCurrency,
             debugTxOut.vout.insert(debugTxOut.vout.end(), importOutputs.begin(), importOutputs.end());
             UniValue jsonTxOut(UniValue::VOBJ);
             TxToUniv(debugTxOut, uint256(), jsonTxOut);
-            printf("%s: launch outputs: %s\nlast notarization: %s\nnew notarization: %s\n", __func__,
+            LogPrint("notarization", "%s: launch outputs: %s\nlast notarization: %s\nnew notarization: %s\n", __func__,
                                                                                             jsonTxOut.write(1,2).c_str(),
                                                                                             lastNotarization.ToUniValue().write(1,2).c_str(),
                                                                                             newNotarization.ToUniValue().write(1,2).c_str());
@@ -2042,8 +2042,9 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             {
                 UniValue scriptUni(UniValue::VOBJ);
                 ScriptPubKeyToUniv(output.scriptPubKey, scriptUni, true, true);
-                printf("%s, \"shareratio\": %ld, \"total\": %ld\n", scriptUni.write(1,2).c_str(), output.nValue, shareCheck);
-                LogPrintf("%s, \"shareratio\": %ld, \"total\": %ld\n", scriptUni.write(1,2).c_str(), output.nValue, shareCheck);
+                printf("%s, \"shareratio\": %" PRId64 ", \"total\": %" PRId64 "\n", scriptUni.write(1, 2).c_str(), output.nValue, shareCheck);
+                LogPrintf("%s, \"shareratio\": %" PRId64 ", \"total\": %" PRId64 "\n", scriptUni.write(1, 2).c_str(), output.nValue, shareCheck);
+
                 if (shareCheck > INT_MAX)
                 {
                     printf("OVERFLOW, value greater than %d\n", INT_MAX);
@@ -2490,37 +2491,42 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                             {
                                 LOCK2(cs_main, pwalletMain->cs_wallet);
                                 std::vector<COutput> vCoins;
+                                CTxDestination notaryDest(VERUS_NOTARYID);
                                 if (IsVerusActive())
                                 {
-                                    nativeValueOut = CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE;
-                                    pwalletMain->AvailableCoins(vCoins,
-                                                                false,
-                                                                nullptr,
-                                                                false,
-                                                                true,
-                                                                true,
-                                                                false,
-                                                                false);
-                                    success = pwalletMain->SelectCoinsMinConf(CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE, 0, 0, vCoins, setCoinsRet, nativeValueOut);
-                                    notarizationBuilder.SetFee(CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE);
-                                }
-                                else
-                                {
                                     CCurrencyValueMap totalTxFees;
-                                    totalTxFees.valueMap[ConnectedChains.FirstNotaryChain().chainDefinition.GetID()] = CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE;
-                                    notarizationBuilder.SetReserveFee(totalTxFees);
-                                    notarizationBuilder.SetFee(0);
+                                    totalTxFees.valueMap[ASSETCHAINS_CHAINID] = CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE;
+                                    nativeValueOut = CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE;
                                     pwalletMain->AvailableReserveCoins(vCoins,
                                                                     false,
                                                                     nullptr,
                                                                     true,
                                                                     true,
+                                                                    &notaryDest,
+                                                                    &totalTxFees,
+                                                                    false);
+                                    success = pwalletMain->SelectCoinsMinConf(CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE, 0, 0, vCoins, setCoinsRet, nativeValueOut);
+                                    notarizationBuilder.SetFee(CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE);
+                                }
+                                else
+                                {
+                                    // first try to pay with native currency, then the notary chain's currency
+                                    CCurrencyValueMap totalTxFees({ConnectedChains.FirstNotaryChain().chainDefinition.GetID(), ASSETCHAINS_CHAINID},
+                                                                   {CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE, CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE});
+                                    nativeValueOut = CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE;
+                                    notarizationBuilder.SetReserveFee(CCurrencyValueMap());
+                                    notarizationBuilder.SetFee(nativeValueOut);
+                                    pwalletMain->AvailableReserveCoins(vCoins,
+                                                                    false,
                                                                     nullptr,
+                                                                    true,
+                                                                    true,
+                                                                    &notaryDest,
                                                                     &totalTxFees,
                                                                     false);
 
-                                    success = pwalletMain->SelectReserveCoinsMinConf(totalTxFees,
-                                                                                    0,
+                                    success = pwalletMain->SelectReserveCoinsMinConf(CCurrencyValueMap(),
+                                                                                    nativeValueOut,
                                                                                     0,
                                                                                     1,
                                                                                     vCoins,
@@ -2528,21 +2534,21 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                                                                     reserveValueOut,
                                                                                     nativeValueOut);
 
-                                    // if we don't have vrsctest
+                                    // if we don't have enough native currency, use notary chain's
                                     if (!success)
                                     {
-                                        nativeValueOut = totalTxFees.valueMap[ConnectedChains.FirstNotaryChain().chainDefinition.GetID()];
-                                        totalTxFees.valueMap.erase(ConnectedChains.FirstNotaryChain().chainDefinition.GetID());
-                                        notarizationBuilder.SetReserveFee(CCurrencyValueMap());
-                                        notarizationBuilder.SetFee(nativeValueOut);
+                                        nativeValueOut = 0;
+                                        totalTxFees.valueMap.erase(ASSETCHAINS_CHAINID);
+                                        notarizationBuilder.SetReserveFee(totalTxFees);
+                                        notarizationBuilder.SetFee(0);
                                         success = pwalletMain->SelectReserveCoinsMinConf(totalTxFees,
-                                                                                        nativeValueOut,
-                                                                                        0,
-                                                                                        1,
-                                                                                        vCoins,
-                                                                                        setCoinsRet,
-                                                                                        reserveValueOut,
-                                                                                        nativeValueOut);
+                                                                                         nativeValueOut,
+                                                                                         0,
+                                                                                         1,
+                                                                                         vCoins,
+                                                                                         setCoinsRet,
+                                                                                         reserveValueOut,
+                                                                                         nativeValueOut);
                                     }
                                 }
                             }
@@ -3058,6 +3064,9 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                         LogPrintf("ERROR: mempool transaction missing input\n");
                         LogPrint("mempool", "mempool transaction missing input");
                         fMissingInputs = true;
+
+                        txesToRemove.push_back(tx);
+        
                         if (porphan)
                         {
                             for (int inNumStart = 0; inNumStart < inNum; inNumStart++)
@@ -3722,7 +3731,6 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             COptCCParams stakeP;
             if (!IsVerusActive() &&
                 verusFees &&
-                (!PBAAS_TESTMODE || pblock->nTime >= PBAAS_TESTFORK3_TIME) &&
                 coinbaseTx.vout[0].scriptPubKey.IsPayToCryptoCondition(stakeP) &&
                 stakeP.IsValid())
             {
@@ -4484,7 +4492,7 @@ void static BitcoinMiner_noeq()
 
                     bool tryAgain = true;
                     int retryCount = 0;
-                    while (tryAgain && retryCount++ < 2)
+                    while (tryAgain && retryCount++ < 5)
                     {
                         tryAgain = false;
                         params.push_back(EncodeHexBlk(*pblock));
@@ -4496,8 +4504,8 @@ void static BitcoinMiner_noeq()
                         {
                             ConnectedChains.lastSubmissionFailed = false;
                             params = RPCCallRoot("addmergedblock", params);
-                            params = find_value(params, "result");
                             error = find_value(params, "error");
+                            params = find_value(params, "result");
                         } catch (std::exception e)
                         {
                             LogPrintf("Failed to connect to %s chain\n", ConnectedChains.FirstNotaryChain().chainDefinition.name.c_str());
@@ -4528,7 +4536,8 @@ void static BitcoinMiner_noeq()
                         }
                         continue;
                     }
-                    if (mergeMining = (params.isNull() && error.isNull()))
+                    mergeMining = (params.isNull() && error.isNull());
+                    if (mergeMining)
                     {
                         printf("Merge mining %s with %s as the hashing chain\n", ASSETCHAINS_SYMBOL, ConnectedChains.FirstNotaryChain().chainDefinition.name.c_str());
                         LogPrintf("Merge mining with %s as the hashing chain\n", ConnectedChains.FirstNotaryChain().chainDefinition.name.c_str());
@@ -4791,11 +4800,7 @@ void static BitcoinMiner_noeq()
                 uint64_t hashesPerNonceMask = ASSETCHAINS_NONCEMASK[ASSETCHAINS_ALGO] >> 3;
                 if (!(totalDone < hashesPerNonceMask))
                 {
-#ifdef _WIN32
-                    printf("%llu mega hashes complete - working\n", (hashesPerNonceMask + 1) / 1048576);
-#else
-                    printf("%lu mega hashes complete - working\n", (hashesPerNonceMask + 1) / 1048576);
-#endif
+                    printf("%" PRIu64 " mega hashes complete - working\n", (hashesPerNonceMask + 1) / 1048576);
                 }
                 break;
 

@@ -44,8 +44,24 @@ class TransactionBuilder;
 
 static const uint32_t PBAAS_NODESPERNOTARIZATION = 2;       // number of nodes to reference in each notarization
 static const int64_t PBAAS_MINNOTARIZATIONOUTPUT = 10000;   // enough for one fee worth to finalization and notarization thread
-static const int32_t PBAAS_MINSTARTBLOCKDELTA = 50;         // minimum number of blocks to wait for starting a chain after definition
+static const int32_t PBAAS_MINSTARTBLOCKDELTA = 20;         // minimum number of blocks to wait for starting a chain after definition
 static const int32_t PBAAS_MAXPRIORBLOCKS = 16;             // maximum prior block commitments to include in prior blocks chain object
+static const uint32_t PBAAS_CROSS_CHAIN_PROOF_FIX_HEIGHT = 3143920;
+static const uint32_t PBAAS_BLOCK_ONE_ID_UPGRADE_FIX_HEIGHT = 3173198;
+static const uint32_t PBAAS_PROMOTE_EXCHANGE_RATE_HEIGHT = 3173568;
+static const uint32_t PBAAS_PROMOTE_EXCHANGE_RATE_TEST_HEIGHT = 171274;
+static const uint32_t PBAAS_NOTARIZATION_ORDER_HEIGHT = 3227685;
+static const uint32_t PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT = 238210;
+static const uint32_t PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT = 68730;
+static const uint32_t PBAAS_SCHEDULED_PROTOCOL_UPGRADE_01 = 1731002400;
+static const uint32_t PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_01 = 1730228400;
+static const uint32_t PBAAS_SCHEDULED_PROTOCOL_UPGRADE_02 = 1732471200; // (GMT): Sunday, November 24, 2024 6:00:00 PM
+static const uint32_t PBAAS_SCHEDULED_PROTOCOL_TESTNET_UPGRADE_02 = 1731373200; // (GMT): Tuesday, November 12, 2024 1:00:00 AM
+static const uint32_t PBAAS_LAUNCH_REFUND_FIX_UPGRADE = 1740679200; // GMT: Thursday, Feb 27, 2025 6:00:00 PM
+static const uint32_t PBAAS_LAUNCH_REFUND_FIX_TESTNET_UPGRADE_02 = 1740679200; // GMT: Thursday, Feb 27, 2025 6:00:00 PM
+static const uint32_t PBAAS_CHIPS_NOTARIZATION_FIX_UPGRADE = 1741798800; // GMT: Wednesday, March 12, 2025 5:00:00 PM
+static const uint32_t PBAAS_ALLCHAINS_NOTARIZATION_FIX_UPGRADE = 1743440400; // GMT: Monday, March 31, 2025 5:00:00 PM
+static const uint32_t PBAAS_ALLCHAINS_NOTARIZATION_FIX_TESTNET_UPGRADE = 1741798800; // GMT: Wednesday, March 12, 2025 5:00:00 PM
 
 class CUpgradeDescriptor
 {
@@ -239,7 +255,7 @@ public:
         VERSION_CURRENT = 2,
         FINAL_CONFIRMATIONS = 9,
         DEFAULT_NOTARIZATION_FEE = 10000,               // default notarization fee when entering a signature for a notarization
-        DEFAULT_ACCEPTED_EVIDENCE_FEE = 100000,         // price of each evidence output when entering a notarization
+        DEFAULT_ACCEPTED_EVIDENCE_FEE = 100000,         // minimum price of each evidence output when entering a notarization
         MAX_NODES = 2,                                  // only provide 2 nodes per notarization
         MIN_NOTARIZATION_OUTPUT = 0,                    // minimum amount for notarization output
 
@@ -657,7 +673,8 @@ public:
     bool FindEarnedNotarizations(std::vector<CObjectFinalization> &finalization, std::vector<CAddressIndexDbEntry>  *pEarnedNotarizationIndex=nullptr) const;
     static bool FindFinalizedIndexByVDXFKey(const uint160 &notarizationIdxKey,
                                             CObjectFinalization &confirmedFinalization,
-                                            CAddressIndexDbEntry &earnedNotarizationIndex);
+                                            CAddressIndexDbEntry &earnedNotarizationIndex,
+                                            bool selectLast=false);
     static bool FindFinalizedIndexesByVDXFKey(const uint160 &notarizationIdxKey,
                                               std::vector<CObjectFinalization> &confirmedFinalizations,
                                               std::vector<CAddressIndexDbEntry> &earnedNotarizationIndex);
@@ -675,7 +692,8 @@ public:
                                            const CPBaaSNotarization &notarization,
                                            const CNotaryEvidence &notaryEvidence,
                                            CValidationState &state,
-                                           TransactionBuilder &txBuilder);
+                                           TransactionBuilder &txBuilder,
+                                           const CTxDestination &fromDest);
 
     static bool ConfirmOrRejectNotarizations(CWallet *pWallet,
                                              const CRPCChainData &externalSystem,
@@ -952,7 +970,7 @@ public:
 
     std::map<uint160, CUpgradeDescriptor> activeUpgradesByKey;
 
-    LRUCache<uint160, CCurrencyDefinition> currencyDefCache;        // protected by cs_main, so doesn't need sync
+    LRUCache<uint160, std::tuple<uint32_t, uint256, CCurrencyDefinition>> currencyDefCache;  // protected by cs_main, so doesn't need sync
     LRUCache<std::tuple<uint160, uint256, bool>, CCoinbaseCurrencyState> currencyStateCache; // cached currency states @ heights + updated flag
 
     // make earned notarizations for one or more notary chains
@@ -1220,7 +1238,30 @@ public:
     bool DiscernBlockOneLaunchInfo(uint32_t height) const;
     uint32_t AutoArbitrageEnabledHeight(bool getVerusHeight) const;
     bool AutoArbitrageEnabled(uint32_t height) const;
+    uint32_t vARRRUpdateHeight(bool getVerusHeight) const;
+    bool vARRRUpdateEnabled(uint32_t height) const;
+    uint160 vARRRChainID() const;
+    uint160 vDEXChainID() const;
+    uint160 KaijuCurrencyID() const;
+    uint160 Chips777TestnetChainID() const;
+    uint160 ChipsChainID() const;
+    bool ForceIdentityUpgrade(uint32_t height) const;
+    bool ForceIdentityUnlock(uint32_t height) const;
+    bool IdentityLockOverride(const CIdentity &identity, uint32_t height) const;
+    bool DoPreconvertReserveTransferPrecheck(uint32_t height) const;
+    bool DoImportPreconvertReserveTransferPrecheck(uint32_t height) const;
+    bool IsEnhancedDustCheck(uint32_t height) const;
+    bool IsEnhancedNotarizationOrder(uint32_t height) const;
+    bool CrossChainPBaaSProofFix(const uint160 &sysID, uint32_t height) const;
+    bool BlockOneIDUpgrade() const;
+    bool IsPromoteExchangeRate(uint32_t height) const;
+    int CheckPastRealTime(uint32_t nTime, int64_t height=0) const;
+    bool IsUpgrade01Active(int64_t height=0) const;
+    bool IsUpgrade02Active(int64_t height=0) const;
+    bool IsPBaaSRefundFixActive(int64_t height=0) const;
+    bool IsPBaaSNotarizationFix01Active(int64_t height) const;
 
+    uint32_t GetChainBranchId(const uint160 &sysID, int nHeight, const Consensus::Params& params) const;
 
     std::vector<CCurrencyDefinition> GetMergeMinedChains()
     {
@@ -1304,6 +1345,54 @@ public:
         return key;
     }
 
+    static std::string ForceIdentityUpgradeKeyName()
+    {
+        return "vrsc::system.upgradedata.forceidentityupgrade";
+    }
+
+    static uint160 ForceIdentityUpgradeKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(ForceIdentityUpgradeKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string ForceIdentityUnlockKeyName()
+    {
+        return "vrsc::system.upgradedata.forceidentityunlock";
+    }
+
+    static uint160 ForceIdentityUnlockKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(ForceIdentityUnlockKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string PreconvertReserveTransferPrecheckKeyName()
+    {
+        return "vrsc::system.upgradedata.preconvertreservetransferprecheck";
+    }
+
+    static uint160 PreconvertReserveTransferPrecheckKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(PreconvertReserveTransferPrecheckKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string ImportPreconvertReserveTransferPrecheckKeyName()
+    {
+        return "vrsc::system.upgradedata.importpreconvertreservetransferprecheck";
+    }
+
+    static uint160 ImportPreconvertReserveTransferPrecheckKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(ImportPreconvertReserveTransferPrecheckKeyName(), nameSpace);
+        return key;
+    }
+
     static std::string DisablePBaaSCrossChainKeyName()
     {
         return "vrsc::system.upgradedata.disablepbaascrosschain";
@@ -1349,6 +1438,18 @@ public:
     {
         static uint160 nameSpace;
         static uint160 key = CVDXF_Data::GetDataKey(PBaaSUpgradeKeyName(), nameSpace);
+        return key;
+    }
+
+    static std::string PBaaSCrossChainProofUpgradeKeyName()
+    {
+        return "vrsc::system.upgradedata.pbaascrosschainproofupgrade";
+    }
+
+    static uint160 PBaaSCrossChainProofUpgradeKey()
+    {
+        static uint160 nameSpace;
+        static uint160 key = CVDXF_Data::GetDataKey(PBaaSCrossChainProofUpgradeKeyName(), nameSpace);
         return key;
     }
 };
@@ -1429,9 +1530,9 @@ CTxOut MakeCC1of2Vout(uint8_t evalcode, CAmount nValue, CPubKey pk1, CPubKey pk2
     vout = CTxOut(nValue,CCPubKey(payoutCond));
     cc_free(payoutCond);
 
-    std::vector<CPubKey> vpk({pk1, pk2});
+    std::vector<CTxDestination> vdest({CTxDestination(pk1), CTxDestination(pk2)});
     std::vector<std::vector<unsigned char>> vvch({::AsVector((const TOBJ)obj)});
-    COptCCParams vParams = COptCCParams(COptCCParams::VERSION_V2, evalcode, 1, 2, vpk, vvch);
+    COptCCParams vParams = COptCCParams(COptCCParams::VERSION_V2, evalcode, 1, 2, vdest, vvch);
 
     // add the object to the end of the script
     vout.scriptPubKey << vParams.AsVector() << OP_DROP;

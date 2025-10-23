@@ -1,11 +1,13 @@
+// Copyright (c) 2016-2020 The Zcash developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
+
 #ifndef ZC_ADDRESS_SAPLING_H_
 #define ZC_ADDRESS_SAPLING_H_
 
-#include "uint256.h"
 #include "serialize.h"
+#include "uint256.h"
 #include "zcash/Zcash.h"
-
-#include <boost/variant.hpp>
 
 namespace libzcash {
 
@@ -35,6 +37,11 @@ public:
 
     //! Get the 256-bit SHA256d hash of this payment address.
     uint256 GetHash() const;
+
+    //! Salted hash of this payment address with the following organization:
+    //!   low 64 bits - truncated sha256 of hash
+    //!   high 96 bits - the same high 96 bits of the uint160 salt parameter used for hash, original low 64 bits are unused
+    uint160 ShortSaltedFingerprint(const uint160 &saltOrFingerPrint) const;
 
     friend inline bool operator==(const SaplingPaymentAddress& a, const SaplingPaymentAddress& b) {
         return a.d == b.d && a.pk_d == b.pk_d;
@@ -129,10 +136,10 @@ public:
     SaplingExpandedSpendingKey expanded_spending_key() const;
     SaplingFullViewingKey full_viewing_key() const;
 
-    // Can derive Sapling addr from default diversifier
+    // Can derive Sapling addr from default diversifier 
     SaplingPaymentAddress default_address() const;
 };
 
 } // namespace libzcash
 
-#endif // ZC_ADDRESS_SAPLING_H
+#endif // ZC_ADDRESS_SAPLING_H_

@@ -581,4 +581,114 @@ class CVerusSolutionVector
         }
 };
 
+// Simple RLE compression for solutions to reduce memory footprint of active chain
+class CCompactSolutionVector
+{
+    private:
+        static bool useCompression;
+        std::vector<std::pair<uint16_t,uint16_t>>  ofsAndRepeat;
+
+        enum Constants {
+            MIN_RLE_LEN = 6
+        };
+
+    public:
+        std::vector<unsigned char> vch;
+        uint16_t _size;
+
+        CCompactSolutionVector(const std::vector<unsigned char> &_vch) : _size(_vch.size())
+        {
+            if (!useCompression)
+            {
+                vch = _vch;
+                return;
+            }
+            std::vector<unsigned char> tVch;
+            if (!_size)
+            {
+                return;
+            }
+            tVch.reserve(_size);
+            tVch.push_back(_vch[0]);
+
+            int lastPos = 0;
+            int i = 0;
+            for (i = 1; i < _vch.size(); i++)
+            {
+                bool isSame = tVch.back() == _vch[i];
+                if (isSame && (i - lastPos) == MIN_RLE_LEN)
+                {
+                    // keep the char we will repeat, remove the rest
+                    tVch.resize(tVch.size() - (MIN_RLE_LEN - 1));
+                }
+                else if ((i - lastPos) > MIN_RLE_LEN)
+                {
+                    // if we've got a different character, close off the compression
+                    if (!isSame)
+                    {
+                        tVch.push_back(_vch[i]);
+                        ofsAndRepeat.push_back({lastPos, (i - lastPos) - 1});
+                        lastPos = i;
+                    }
+                }
+                else
+                {
+                    tVch.push_back(_vch[i]);
+                    if (!isSame)
+                    {
+                        lastPos = i;
+                    }
+                }
+            }
+            // if we left a compression open, close it
+            if ((i - lastPos) > MIN_RLE_LEN)
+            {
+                ofsAndRepeat.push_back({lastPos, ((i - lastPos) - 1)});
+            }
+            vch = tVch;
+        }
+
+        CCompactSolutionVector() : _size(0) {}
+
+        CCompactSolutionVector &operator=(const std::vector<unsigned char> &_vch)
+        {
+            CCompactSolutionVector newVec(_vch);
+            *this = newVec;
+            // LogPrint("compactsolution", "Original vector:\n%s\nnewVec:\n%s\n", HexBytes(_vch.data(), _vch.size()), HexBytes(this->nSolution().data(), this->nSolution().size()));
+            return *this;
+        }
+
+        size_t size() const
+        {
+            return _size;
+        }
+
+        std::vector<unsigned char> nSolution() const
+        {
+            if (!ofsAndRepeat.size())
+            {
+                return vch;
+            }
+            std::vector<unsigned char> tVch;
+            tVch.reserve(_size);
+            tVch.insert(tVch.begin(), vch.begin(), vch.end());
+            for (int i = 0; i < ofsAndRepeat.size(); i++)
+            {
+                tVch.insert(tVch.begin() + (int)(ofsAndRepeat[i].first), ofsAndRepeat[i].second, tVch[ofsAndRepeat[i].first]);
+            }
+            return tVch;
+        }
+
+        static bool IsCompressionOn()
+        {
+            return useCompression;
+        }
+
+        static bool SetCompression(bool setOn)
+        {
+            useCompression = setOn;
+            return useCompression;
+        }
+};
+
 #endif // BITCOIN_PRIMITIVES_SOLUTIONDATA_H

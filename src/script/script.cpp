@@ -19,6 +19,9 @@
 
 using namespace std;
 
+extern bool fIdIndex;
+extern bool fConversionIndex;
+
 namespace {
     inline std::string ValueString(const std::vector<unsigned char>& vch)
     {
@@ -174,6 +177,8 @@ const char* GetOpName(opcodetype opcode)
         return "OP_UNKNOWN";
     }
 }
+
+int64_t STORAGE_FEE_FACTOR;
 
 uint160 GetConditionID(uint160 cid, int32_t condition)
 {
@@ -956,6 +961,7 @@ bool CScript::IsCheckLockTimeVerify(int64_t *unlockTime) const
     if (this->GetOp2(it, op, &unlockTimeParam))
     {
         if (unlockTimeParam.size() >= 0 && unlockTimeParam.size() < 6 &&
+            this->size() > (unlockTimeParam.size() + 1) &&
             (*this)[unlockTimeParam.size() + 1] == OP_CHECKLOCKTIMEVERIFY)
         {
             int i = unlockTimeParam.size() - 1;
@@ -1175,9 +1181,6 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                        notarization.IsLaunchConfirmed() &&
                        notarization.currencyState.IsLaunchClear()))))
                 {
-                    // TODO: POST HARDENING confirm that the final prelaunch notarization is coming through here to index the block one
-                    // notarization of a PBaaS chain
-
                     CPBaaSNotarization checkNotarization = notarization;
                     if (checkNotarization.SetMirror(false))
                     {
@@ -1489,7 +1492,6 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
                 }
 
                 // if we are maintaining an ID index, add keys for primary addresses, revocation, and recovery
-                extern bool fIdIndex;
                 if (fIdIndex)
                 {
                     for (auto &oneDest : identity.primaryAddresses)

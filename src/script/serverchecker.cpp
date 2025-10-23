@@ -24,6 +24,28 @@ extern uint32_t KOMODO_STOPAT;
 extern int32_t VERUS_MIN_STAKEAGE;
 extern CChain chainActive;
 
+static const uint32_t SC_PBAAS_NOTARIZATION_ORDER_HEIGHT = 3227685;
+static const uint32_t SC_PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT = 238210;
+static const uint32_t SC_PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT = 68730;
+
+static uint160 _vARRRChainID() 
+{
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
+    return vARRRID;
+}
+
+static uint160 _vDEXChainID()
+{
+    static uint160 vARRRID = GetDestinationID(DecodeDestination("vDEX@"));
+    return vARRRID;
+}
+
+static bool _IsEnhancedNotarizationOrder(uint32_t height)
+{
+    uint32_t triggerHeight = _IsVerusMainnetActive() ? SC_PBAAS_NOTARIZATION_ORDER_HEIGHT : (_vARRRChainID() == ASSETCHAINS_CHAINID ? SC_PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT : (_vDEXChainID() == ASSETCHAINS_CHAINID ? SC_PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT : 0));
+    return height >= triggerHeight;
+}
+
 namespace {
 
 /**
@@ -155,14 +177,28 @@ std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> Serve
                             }
                             idAddresses[destId] = make_pair(id.minSigs, idAddrBytes);
                         }
-                        else if (!id.IsValid())
+                        else
                         {
                             uint32_t idHeightDef;
-                            if ((id = CIdentity::LookupFirstIdentity(destId, &idHeightDef)).IsValid())
+                            if (!id.IsValid() && (id = CIdentity::LookupFirstIdentity(destId, &idHeightDef)).IsValid())
                             {
                                 LogPrintf("%s: ERROR - ACTION REQUIRED: Corrupt Index, should not move forward as a node. Please bootstrap, sync from scratch, or reindex to continue\n", __func__);
                                 printf("%s: ERROR - ACTION REQUIRED: Corrupt Index, should not move forward as a node. Please bootstrap, sync from scratch, or reindex to continue\n", __func__);
                                 KOMODO_STOPAT = chainActive.Height();
+                            }
+                            if (!_IsVerusMainnetActive() || _IsEnhancedNotarizationOrder(spendHeight))
+                            {
+                                std::vector<unsigned char> randAddr(20);
+                                std::vector<std::vector<unsigned char>> idAddrBytes;
+                                if (!id.IsValid())
+                                {
+                                    randAddr = GetDestinationBytes(dest);
+                                }
+                                else
+                                {
+                                    GetRandBytes(&(randAddr[0]), 20);
+                                }
+                                idAddresses[destId] = make_pair(1, std::vector<std::vector<unsigned char>>({randAddr}));
                             }
                         }
                     }

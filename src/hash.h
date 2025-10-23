@@ -9,14 +9,11 @@
 #include "crypto/ripemd160.h"
 #include "crypto/sha256.h"
 #include "crypto/verus_hash.h"
-#include "crypto/keccak.h"
-#include "crypto/sph_types.h"
-#include "crypto/sph_keccak.h"
 #include "prevector.h"
 #include "serialize.h"
 #include "uint256.h"
 #include "version.h"
-
+#include <openssl/evp.h>
 #include "sodium.h"
 
 #include <vector>
@@ -31,9 +28,9 @@ public:
     static const size_t OUTPUT_SIZE = CSHA256::OUTPUT_SIZE;
 
     void Finalize(unsigned char hash[OUTPUT_SIZE]) {
-        unsigned char buf[sha.OUTPUT_SIZE];
+        unsigned char buf[CSHA256::OUTPUT_SIZE];
         sha.Finalize(buf);
-        sha.Reset().Write(buf, sha.OUTPUT_SIZE).Finalize(hash);
+        sha.Reset().Write(buf, CSHA256::OUTPUT_SIZE).Finalize(hash);
     }
 
     CHash256& Write(const unsigned char *data, size_t len) {
@@ -55,9 +52,9 @@ public:
     static const size_t OUTPUT_SIZE = CRIPEMD160::OUTPUT_SIZE;
 
     void Finalize(unsigned char hash[OUTPUT_SIZE]) {
-        unsigned char buf[sha.OUTPUT_SIZE];
+        unsigned char buf[CSHA256::OUTPUT_SIZE];
         sha.Finalize(buf);
-        CRIPEMD160().Write(buf, sha.OUTPUT_SIZE).Finalize(hash);
+        CRIPEMD160().Write(buf, CSHA256::OUTPUT_SIZE).Finalize(hash);
     }
 
     CHash160& Write(const unsigned char *data, size_t len) {
@@ -378,36 +375,62 @@ public:
     }
 };
 
+#define PAD_BYTE_OFFSET (25 * sizeof(uint64_t) + 3 * sizeof(size_t) + 1600/8 - 32)
+
+/* OPENSSL 3.1 */
+#if OPENSSL_VERSION_NUMBER >= 0x31000000L
+#define SET_PAD_BYTE
+
+/* OPENSSL 3.0 */
+#elif OPENSSL_VERSION_NUMBER >= 0x30000000L
+#define GET_CTX(ctx) (*(((uint8_t **) ctx) + 7))
+#define SET_PAD_BYTE (((uint8_t *) GET_CTX(ctx))[PAD_BYTE_OFFSET] = 0x01)
+
+/* OPENSSL 1.1 */
+#elif OPENSSL_VERSION_NUMBER >= 0x10100000L
+#define GET_CTX(ctx) ((uint8_t *) EVP_MD_CTX_md_data(ctx))
+#define SET_PAD_BYTE (GET_CTX(ctx)[PAD_BYTE_OFFSET] = 0x01)
+
+#endif
 /** A writer stream (for serialization) that computes a 256-bit Keccack256 hash */
 class CKeccack256Writer
 {
 private:
-    sph_keccak256_context ctx_keccak;
-
+    EVP_MD_CTX *ctx;
+    const EVP_MD *md;
 public:
   
-    CKeccack256Writer(int nTypeIn,  int nVersionIn)
+    CKeccack256Writer(int nTypeIn = 0, int nVersionIn = 0)
     {
-        sph_keccak256_init(&ctx_keccak); 
+        ctx = EVP_MD_CTX_new();
+        md = EVP_get_digestbyname("SHA3-256");
+        EVP_DigestInit_ex(ctx, md, NULL);
+        SET_PAD_BYTE;
     }
 
-    CKeccack256Writer() { sph_keccak256_init(&ctx_keccak); }
+    ~CKeccack256Writer() {
+        EVP_MD_CTX_free(ctx);
+    }
 
-    void Reset() { sph_keccak256_init(&ctx_keccak); }
+    void Reset() {     
+        EVP_DigestInit_ex(ctx, NULL, NULL);
+        SET_PAD_BYTE; 
+    }
 
     CKeccack256Writer& write(const char *pch, size_t size) {
-        sph_keccak256 (&ctx_keccak, pch, size);
+        EVP_DigestUpdate(ctx, pch, size);
         return (*this);
     }
 
     // invalidates the object for further writing
     uint256 GetHash() {
         uint256 result;
-        sph_keccak256_close(&ctx_keccak, ((unsigned char*)&result));;
+        unsigned int dstlen = 0;
+        EVP_DigestFinal_ex(ctx, (unsigned char*)&result, &dstlen);
         return result;
     }
 
-    sph_keccak256_context &GetState() { return ctx_keccak; }
+    EVP_MD_CTX *GetState() { return ctx; }
 
     template<typename T>
     CKeccack256Writer& operator<<(const T& obj) {

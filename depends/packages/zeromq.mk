@@ -7,7 +7,8 @@ $(package)_sha256_hash=c593001a89f5a85dd2ddf564805deb860e02471171b3f204944857336
 define $(package)_set_vars
   $(package)_config_opts=--without-docs --disable-shared --disable-curve
   $(package)_config_opts_linux=--with-pic
-  $(package)_cxxflags=-std=c++11
+  $(package)_cxxflags_darwin+=-Wno-deprecated-declarations
+  $(package)_cxxflags+=-std=c++17
 endef
 
 define $(package)_config_cmds

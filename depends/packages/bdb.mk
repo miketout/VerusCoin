@@ -10,7 +10,8 @@ $(package)_config_opts=--disable-shared --enable-cxx --disable-replication
 $(package)_config_opts_mingw32=--enable-mingw
 $(package)_config_opts_linux=--with-pic
 $(package)_config_opts_aarch64=--disable-atomicsupport
-$(package)_cxxflags=-std=c++11
+$(package)_cxxflags+=-std=c++17
+$(package)_cflags+=-Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration
 endef
 
 define $(package)_preprocess_cmds
@@ -26,7 +27,9 @@ endef
 
 ifeq ($(build_os),darwin)
 define $(package)_preprocess_cmds
-   sed -i -e "s/WinIoCtl.h/winioctl.h/g" src/dbinc/win_db.h
+   sed -i -e "s/WinIoCtl.h/winioctl.h/g" src/dbinc/win_db.h && \
+   sed -i.old 's/__atomic_compare_exchange\\(/__atomic_compare_exchange_db(/' src/dbinc/atomic.h && \
+   sed -i.old 's/atomic_init/atomic_init_db/' src/dbinc/atomic.h src/mp/mp_region.c src/mp/mp_mvcc.c src/mp/mp_fget.c src/mutex/mut_method.c src/mutex/mut_tas.c
 endef
 else ifeq ($(host_os),mingw32)
 define $(package)_preprocess_cmds

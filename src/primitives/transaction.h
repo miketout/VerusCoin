@@ -1518,7 +1518,7 @@ public:
     std::vector<unsigned char> signature;
 
     CSmartTransactionSignature() : sigType(SIGTYPE_NONE) {}
-    CSmartTransactionSignature(uint8_t sType, const std::vector<unsigned char> &pkData, const std::vector<unsigned char> &sig) : sigType(sType), pubKeyData(pubKeyData), signature(sig) {}
+    CSmartTransactionSignature(uint8_t sType, const std::vector<unsigned char> &pkData, const std::vector<unsigned char> &sig) : sigType(sType), pubKeyData(pkData), signature(sig) {}
     CSmartTransactionSignature(uint8_t sType, const CPubKey &pk, const std::vector<unsigned char> &sig) : sigType(sType), pubKeyData(pk.begin(), pk.end()), signature(sig) {}
     CSmartTransactionSignature(const std::vector<unsigned char> &asVector)
     {
@@ -1701,18 +1701,6 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(*(COutPoint *)this);
-    }
-
-    static std::string UtxoReferenceKeyName()
-    {
-        return "vrsc::system.utxo.reference";
-    }
-
-    static uint160 UtxoReferenceKey()
-    {
-        static uint160 nameSpace;
-        static uint160 signatureKey = CVDXF::GetDataKey(UtxoReferenceKeyName(), nameSpace);
-        return signatureKey;
     }
 
     bool IsValid() const

@@ -19,6 +19,7 @@ uint160 VERUS_CHAINID;
 std::string VERUS_CHAINNAME;
 const uint32_t PBAAS_PREMAINNET_ACTIVATION = 1679072400;
 const uint32_t PBAAS_TESTFORK_TIME = 1683561600;
+unsigned int DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = 20;
 bool PARAMS_LOADED;
 int64_t MAX_MONEY = 200000000 * 100000000LL;
 int64_t MAX_SUPPLY = 50000000000LL * 100000000LL;
@@ -49,8 +50,11 @@ CCurrencyDefinition CConnectedChains::GetCachedCurrency(const uint160 &currencyI
 {
     return CCurrencyDefinition();
 }
+
 // unused in client, but here for linking
 bool fIdIndex;
+bool fConversionIndex;
+
 uint160 CIdentity::IdentityPrimaryAddressKey(const CTxDestination &dest)
 {
     assert(false);

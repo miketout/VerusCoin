@@ -10,7 +10,6 @@
 #include "streams.h"
 #include "support/allocators/secure.h"
 #include "zcash/Address.hpp"
-#include "zcash/address/zip32.h"
 
 class uint256;
 
@@ -20,13 +19,13 @@ const unsigned int WALLET_CRYPTO_SALT_SIZE = 8;
 /**
  * Private key encryption is done based on a CMasterKey,
  * which holds a salt and random encryption key.
- *
+ * 
  * CMasterKeys are encrypted using AES-256-CBC using a key
  * derived using derivation method nDerivationMethod
  * (0 == EVP_sha512()) and derivation iterations nDeriveIterations.
  * vchOtherDerivationParameters is provided for alternative algorithms
  * which may require more parameters (such as scrypt).
- *
+ * 
  * Wallet Private Keys are then encrypted using AES-256-CBC
  * with the double-sha256 of the public key as the IV, and the
  * master key's key as the encryption key (see keystore.[ch]).
@@ -161,19 +160,14 @@ public:
 
     bool IsCrypted() const
     {
+        LOCK(cs_KeyStore);
         return fUseCrypto;
     }
 
     bool IsLocked() const
     {
-        if (!IsCrypted())
-            return false;
-        bool result;
-        {
-            LOCK(cs_KeyStore);
-            result = vMasterKey.empty();
-        }
-        return result;
+        LOCK(cs_KeyStore);
+        return fUseCrypto && vMasterKey.empty();
     }
 
     bool Lock();
@@ -187,19 +181,17 @@ public:
     bool AddKeyPubKey(const CKey& key, const CPubKey &pubkey);
     bool HaveKey(const CKeyID &address) const
     {
-        {
-            LOCK(cs_KeyStore);
-            if (!IsCrypted())
-                return CBasicKeyStore::HaveKey(address);
-            return mapCryptedKeys.count(address) > 0;
-        }
-        return false;
+        LOCK(cs_KeyStore);
+        if (!fUseCrypto)
+            return CBasicKeyStore::HaveKey(address);
+        return mapCryptedKeys.count(address) > 0;
     }
     bool GetKey(const CKeyID &address, CKey& keyOut) const;
     bool GetPubKey(const CKeyID &address, CPubKey& vchPubKeyOut) const;
     void GetKeys(std::set<CKeyID> &setAddress) const
     {
-        if (!IsCrypted())
+        LOCK(cs_KeyStore);
+        if (!fUseCrypto)
         {
             CBasicKeyStore::GetKeys(setAddress);
             return;
@@ -219,18 +211,16 @@ public:
     bool AddSproutSpendingKey(const libzcash::SproutSpendingKey &sk);
     bool HaveSproutSpendingKey(const libzcash::SproutPaymentAddress &address) const
     {
-        {
-            LOCK(cs_SpendingKeyStore);
-            if (!IsCrypted())
-                return CBasicKeyStore::HaveSproutSpendingKey(address);
-            return mapCryptedSproutSpendingKeys.count(address) > 0;
-        }
-        return false;
+        LOCK(cs_KeyStore);
+        if (!fUseCrypto)
+            return CBasicKeyStore::HaveSproutSpendingKey(address);
+        return mapCryptedSproutSpendingKeys.count(address) > 0;
     }
     bool GetSproutSpendingKey(const libzcash::SproutPaymentAddress &address, libzcash::SproutSpendingKey &skOut) const;
     void GetSproutPaymentAddresses(std::set<libzcash::SproutPaymentAddress> &setAddress) const
     {
-        if (!IsCrypted())
+        LOCK(cs_KeyStore);
+        if (!fUseCrypto)
         {
             CBasicKeyStore::GetSproutPaymentAddresses(setAddress);
             return;
@@ -243,27 +233,26 @@ public:
             mi++;
         }
     }
-    //! Sapling
+    //! Sapling 
     virtual bool AddCryptedSaplingSpendingKey(
         const libzcash::SaplingExtendedFullViewingKey &extfvk,
         const std::vector<unsigned char> &vchCryptedSecret);
-    bool AddSaplingSpendingKey(
-        const libzcash::SaplingExtendedSpendingKey &sk);
+    bool AddSaplingSpendingKey(const libzcash::SaplingExtendedSpendingKey &sk);
     bool HaveSaplingSpendingKey(const libzcash::SaplingExtendedFullViewingKey &extfvk) const
     {
-        {
-            LOCK(cs_SpendingKeyStore);
-            if (!IsCrypted())
-                return CBasicKeyStore::HaveSaplingSpendingKey(extfvk);
-            for (auto entry : mapCryptedSaplingSpendingKeys) {
-                if (entry.first == extfvk) {
-                    return true;
-                }
+        LOCK(cs_KeyStore);
+        if (!fUseCrypto)
+            return CBasicKeyStore::HaveSaplingSpendingKey(extfvk);
+        for (auto entry : mapCryptedSaplingSpendingKeys) {
+            if (entry.first == extfvk) {
+                return true;
             }
         }
         return false;
     }
-    bool GetSaplingSpendingKey(const libzcash::SaplingExtendedFullViewingKey &extfvk, libzcash::SaplingExtendedSpendingKey &skOut) const;
+    bool GetSaplingSpendingKey(
+        const libzcash::SaplingExtendedFullViewingKey &extfvk,
+        libzcash::SaplingExtendedSpendingKey &skOut) const;
 
 
     /**

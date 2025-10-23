@@ -18,6 +18,7 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include "primitives/nonce.h"
+#include "consensus/consensus.h"
 #include "consensus/params.h"
 #include "komodo_defs.h"
 #include "script/standard.h"
@@ -1736,7 +1737,7 @@ bool GetCoinSupply(int64_t &transparentSupply, int64_t *pzsupply, int64_t *pimma
         {
             if ( pIndex->newcoins == 0 && pIndex->zfunds == 0 )
             {
-                if ( !komodo_blockload(block, pIndex) == 0 || !GetNewCoins(pIndex->newcoins, &pIndex->zfunds, &immatureBlockAmounts, block, pIndex->maturity, pIndex->immature, curHeight) )
+                if ( komodo_blockload(block, pIndex) != 0 || !GetNewCoins(pIndex->newcoins, &pIndex->zfunds, &immatureBlockAmounts, block, pIndex->maturity, pIndex->immature, curHeight) )
                 {
                     fprintf(stderr,"error loading block.%d\n", pIndex->GetHeight());
                     return false;

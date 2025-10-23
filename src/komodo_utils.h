@@ -873,7 +873,7 @@ int32_t decode_hex(uint8_t *bytes,int32_t n,char *hex)
     }
     if ( hex[n-1] == '\n' || hex[n-1] == '\r' )
         hex[--n] = 0;
-    if ( n == 0 || (hex[n*2+1] == 0 && hex[n*2] != 0) )
+    if ( n == 0 || (strlen(hex) > n * 2 && hex[n*2+1] == 0 && hex[n*2] != 0) )
     {
         if ( n > 0 )
         {
@@ -1048,7 +1048,7 @@ uint64_t komodo_block_prg(uint32_t nHeight)
     {
         int i;
         uint8_t hashSrc[8];
-        uint64_t result, hashSrc64 = (uint64_t)ASSETCHAINS_MAGIC << 32 + nHeight;
+        uint64_t result, hashSrc64 = ((uint64_t)ASSETCHAINS_MAGIC << 32) + nHeight;
         bits256 hashResult;
 
         for ( i = 0; i < sizeof(hashSrc); i++ )
@@ -1325,7 +1325,7 @@ void iguana_initQ(queue_t *Q,char *name)
 
 uint16_t _komodo_userpass(char *username,char *password, FILE *fp)
 {
-    char *rpcuser,*rpcpassword,*str,line[8192]; uint16_t port = 0;
+    char *rpcuser,*rpcpassword,*rpcportstr,*str,line[8192]; uint16_t rpcport = 0;
     rpcuser = rpcpassword = 0;
     username[0] = password[0] = 0;
     while ( fgets(line,sizeof(line),fp) != 0 )
@@ -1337,11 +1337,8 @@ uint16_t _komodo_userpass(char *username,char *password, FILE *fp)
             rpcuser = parse_conf_line(str,(char *)"rpcuser");
         else if ( (str= strstr(line,(char *)"rpcpassword")) != 0 )
             rpcpassword = parse_conf_line(str,(char *)"rpcpassword");
-        else if ( (str= strstr(line,(char *)"rpcport")) != 0 )
-        {
-            port = atoi(parse_conf_line(str,(char *)"rpcport"));
-            //fprintf(stderr,"rpcport.%u in file\n",port);
-        }
+        else if ((str = strstr(line, (char *)"rpcport")) != 0)
+            rpcportstr = parse_conf_line(str, (char *)"rpcport");
     }
     if ( rpcuser != 0 && rpcpassword != 0 )
     {
@@ -1353,7 +1350,10 @@ uint16_t _komodo_userpass(char *username,char *password, FILE *fp)
         free(rpcuser);
     if ( rpcpassword != 0 )
         free(rpcpassword);
-    return(port);
+    if ( rpcportstr != 0 )
+        rpcport = (uint16_t)atoi(rpcportstr);
+        free(rpcportstr);
+    return(rpcport);
 }
 
 // create a config file. if this is a PBaaS chain, we assume that the loaded CCurrencyDefinition is complete, which may not
@@ -1949,13 +1949,13 @@ void komodo_args(char *argv0)
                 UniValue params(UniValue::VARR);
                 params.push_back(name);
 
-                UniValue result;
+                UniValue reply, result;
                 try
                 {
                     CCurrencyDefinition thisCurrency;
-                    result = RPCCallRoot("getcurrency", params);
+                    reply = RPCCallRoot("getcurrency", params);
                     // set local parameters
-                    result = find_value(result, "result");
+                    result = find_value(reply, "result");
                     if (result.isNull() || !SetThisChain(result, &thisCurrency))
                     {
                         throw error("Cannot find blockchain data");
@@ -2186,7 +2186,6 @@ void komodo_args(char *argv0)
         if ( ASSETCHAINS_SYMBOL[0] != 0 )
         {
             int32_t komodo_baseid(char *origbase);
-            extern int COINBASE_MATURITY;
             if ( (port = komodo_userpass(ASSETCHAINS_USERPASS, ASSETCHAINS_SYMBOL)) != 0 )
             {
                 ASSETCHAINS_RPCPORT = port;
@@ -2195,14 +2194,6 @@ void komodo_args(char *argv0)
             {
                 komodo_configfile(ASSETCHAINS_SYMBOL, ASSETCHAINS_P2PPORT + 1);
                 komodo_userpass(ASSETCHAINS_USERPASS, ASSETCHAINS_SYMBOL);      // make sure we set user and password on first load
-            }
-
-            // TODO: REMOVE THE SPECIAL CASE FOR ANDROMEDA ON ANY TESTNET RESET
-            if (ASSETCHAINS_LASTERA == 0 &&
-                ASSETCHAINS_REWARD[0] == 0 &&
-                (PBAAS_TESTMODE && boost::to_lower_copy(std::string(ASSETCHAINS_SYMBOL)) == "andromeda"))
-            {
-                COINBASE_MATURITY = 1;
             }
 
             //fprintf(stderr,"ASSETCHAINS_RPCPORT (%s) %u\n",ASSETCHAINS_SYMBOL,ASSETCHAINS_RPCPORT);

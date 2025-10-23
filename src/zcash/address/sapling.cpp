@@ -1,23 +1,38 @@
+// Copyright (c) 2016-2020 The Zcash developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
+
 #include "zcash/address/sapling.hpp"
 
 #include "hash.h"
 #include "streams.h"
 #include "zcash/NoteEncryption.hpp"
 #include "zcash/prf.h"
+#include "pbaas/crosschainrpc.h"
 
 #include <librustzcash.h>
 
 namespace libzcash {
 
 const unsigned char ZCASH_SAPLING_FVFP_PERSONALIZATION[crypto_generichash_blake2b_PERSONALBYTES] =
-      {'Z', 'c', 'a', 's', 'h', 'S', 'a', 'p', 'l', 'i', 'n', 'g', 'F', 'V', 'F', 'P'};
-
+    {'Z', 'c', 'a', 's', 'h', 'S', 'a', 'p', 'l', 'i', 'n', 'g', 'F', 'V', 'F', 'P'};
 
 //! Sapling
 uint256 SaplingPaymentAddress::GetHash() const {
     CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
     ss << *this;
     return Hash(ss.begin(), ss.end());
+}
+
+uint160 SaplingPaymentAddress::ShortSaltedFingerprint(const uint160 &saltOrFingerprint) const
+{
+    CHashWriterSHA256 hw(SER_GETHASH, PROTOCOL_VERSION);
+
+    std::vector<unsigned char> saltVec = std::vector<unsigned char>(saltOrFingerprint.begin(), saltOrFingerprint.end());
+    saltVec.insert(saltVec.end() - 12, (size_t)12, 0);
+    uint160 salt = CCrossChainRPCData::GetConditionID(uint160(saltVec), GetHash());
+    saltVec.insert(saltVec.end() - 12, salt.end() - 12, salt.end());
+    return uint160(saltVec);
 }
 
 boost::optional<SaplingPaymentAddress> SaplingIncomingViewingKey::address(diversifier_t d) const {

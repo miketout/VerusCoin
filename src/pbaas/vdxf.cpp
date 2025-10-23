@@ -12,6 +12,11 @@
 #include "crosschainrpc.h"
 #include "utf8.h"
 #include "util.h"
+#include "sodium.h"
+#include "zcash/NoteEncryption.hpp"
+#include "librustzcash.h"
+#include "key_io.h"
+#include "pbaas/identity.h"
 
 std::string CVDXF::DATA_KEY_SEPARATOR = "::";
 
@@ -498,5 +503,1181 @@ VDXFData DeserializeVDXFData(const std::vector<unsigned char> &sourceVector)
 std::vector<unsigned char> SerializeVDXFData(const VDXFData &vdxfData)
 {
     return boost::apply_visitor(CSerializeVDXFData(), vdxfData);
+}
+
+CVDXF::CVDXF(const UniValue &uni) : version(uni_get_int64(find_value(uni, "version"), DEFAULT_VERSION)), key(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "key")))))
+{}
+
+UniValue CVDXF::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+
+    ret.pushKV("key", EncodeDestination(CIdentityID(key)));
+    ret.pushKV("version", (int64_t)version);
+    return ret;
+}
+
+CVDXF_Data::CVDXF_Data(const UniValue &uni) : CVDXF(uni), data(VectorEncodeVDXFUni(find_value(uni, "data"))) {}
+
+uint256 CVDXF_Data::GetHash(CNativeHashWriter &hw) const
+{
+    hw.write((const char *)&(data[0]), data.size());
+    return hw.GetHash();
+}
+
+CVDXFEncryptor::CVDXFEncryptor(const UniValue &uni) :
+        CVDXF_Data(uni), encType(uni_get_int(find_value(uni, "encryption"))), keyData(VectorEncodeVDXFUni(find_value(uni, "keydata"))), cipherData(VectorEncodeVDXFUni(find_value(uni, "cipherdata"))) {}
+
+bool CVDXFEncryptor::GetDecryptionKey(const libzcash::SaplingIncomingViewingKey &ivk, std::vector<unsigned char> &decryptionKey)
+{
+    uint256 dhsecret;
+    uint256 pk(keyData);
+
+    if (cipherData.size() <= CHACHA20POLY1305_CIPHEROVERHEAD ||
+        !librustzcash_sapling_ka_agree(pk.begin(), ivk.begin(), dhsecret.begin())) {
+        return false;
+    }
+
+    // Construct the symmetric key
+    unsigned char K[NOTEENCRYPTION_CIPHER_KEYSIZE];
+
+    KDF_Sapling(K, dhsecret, pk);
+    decryptionKey = std::vector<unsigned char>(K, K + NOTEENCRYPTION_CIPHER_KEYSIZE);
+    return true;
+}
+
+bool CVDXFEncryptor::Decrypt(const libzcash::SaplingIncomingViewingKey &ivk, std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk)
+{
+    uint256 dhsecret;
+    uint256 pk(keyData);
+
+    if (encType != ENCRYPTION_CHACHA20POLY1305 || 
+        cipherData.size() <= CHACHA20POLY1305_CIPHEROVERHEAD ||
+        !librustzcash_sapling_ka_agree(pk.begin(), ivk.begin(), dhsecret.begin())) {
+        return false;
+    }
+
+    // Construct the symmetric key
+    unsigned char K[NOTEENCRYPTION_CIPHER_KEYSIZE];
+
+    KDF_Sapling(K, dhsecret, pk);
+
+    // The nonce is zero because we never reuse keys
+    unsigned char cipher_nonce[crypto_aead_chacha20poly1305_IETF_NPUBBYTES] = {};
+
+    plainText.resize(cipherData.size() - CHACHA20POLY1305_CIPHEROVERHEAD);
+
+    if (crypto_aead_chacha20poly1305_ietf_decrypt(
+        plainText.data(), NULL,
+        NULL,
+        cipherData.data(), cipherData.size(),
+        NULL,
+        0,
+        cipher_nonce, K) != 0)
+    {
+        return false;
+    }
+
+    if (pSsk)
+    {
+        *pSsk = std::vector<unsigned char>(K, K + NOTEENCRYPTION_CIPHER_KEYSIZE);
+    }
+
+    return true;
+}
+
+bool CVDXFEncryptor::Decrypt(const std::vector<unsigned char> &decryptionKey, std::vector<unsigned char> &plainText)
+{
+    if (encType != ENCRYPTION_CHACHA20POLY1305 || 
+        cipherData.size() <= CHACHA20POLY1305_CIPHEROVERHEAD) {
+        return false;
+    }
+
+    // The nonce is zero because we never reuse keys
+    unsigned char cipher_nonce[crypto_aead_chacha20poly1305_IETF_NPUBBYTES] = {};
+
+    plainText.resize(cipherData.size() - CHACHA20POLY1305_CIPHEROVERHEAD);
+
+    if (crypto_aead_chacha20poly1305_ietf_decrypt(
+        plainText.data(), NULL,
+        NULL,
+        cipherData.data(), cipherData.size(),
+        NULL,
+        0,
+        cipher_nonce, decryptionKey.data()) != 0)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool CVDXFEncryptor::Encrypt(const libzcash::SaplingPaymentAddress &saplingAddress, const std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk)
+{
+    uint256 dhsecret;
+
+    uint256 esk;
+    uint256 pk;
+
+    // Pick random esk
+    librustzcash_sapling_generate_r(esk.begin());
+
+    if (encType != ENCRYPTION_CHACHA20POLY1305 || 
+        !librustzcash_sapling_ka_derivepublic(saplingAddress.d.begin(), esk.begin(), pk.begin())) {
+        return false;
+    }
+
+    if (!librustzcash_sapling_ka_agree(saplingAddress.pk_d.begin(), esk.begin(), dhsecret.begin())) {
+        return false;
+    }
+
+    // Construct the symmetric key
+    unsigned char K[NOTEENCRYPTION_CIPHER_KEYSIZE];
+    KDF_Sapling(K, dhsecret, pk);
+
+    if (pSsk)
+    {
+        *pSsk = std::vector<unsigned char>(K, K + NOTEENCRYPTION_CIPHER_KEYSIZE);
+    }
+
+    // The nonce is zero because we never reuse keys
+    unsigned char cipher_nonce[crypto_aead_chacha20poly1305_IETF_NPUBBYTES] = {};
+
+    cipherData.resize(plainText.size() + CHACHA20POLY1305_CIPHEROVERHEAD);
+
+    crypto_aead_chacha20poly1305_ietf_encrypt(
+        cipherData.data(), NULL,
+        plainText.data(), plainText.size(),
+        NULL, 0, // no "additional data"
+        NULL, cipher_nonce, K
+    );
+
+    keyData = std::vector<unsigned char>(pk.begin(), pk.end());
+    return true;
+}
+
+UniValue CVDXFEncryptor::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+
+    ret = ((CVDXF *)this)->ToUniValue();
+    ret.pushKV("encryption", encType);
+    ret.pushKV("keydata", HexBytes(keyData.data(), keyData.size()));
+    ret.pushKV("cipherdata", HexBytes(cipherData.data(), cipherData.size()));
+    return ret;
+}
+
+CSaltedData::CSaltedData(const UniValue &uni) :
+    CVDXF_Data(uni), salt(uint256S(uni_get_str(find_value(uni, "salt"))))
+{}
+
+uint256 CSaltedData::FreshSalt()
+{
+    uint256 retVal;
+    randombytes(retVal.begin(), sizeof(retVal));
+    return retVal;
+}
+
+uint256 CSaltedData::GetHash(CNativeHashWriter &hw) const
+{
+    hw.write((const char *)&(data[0]), data.size());
+    hw.write((const char *)salt.begin(), salt.size());
+    return hw.GetHash();
+}
+
+UniValue CSaltedData::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+
+    ret = ((CVDXF_Data *)this)->ToUniValue();
+    ret.pushKV("salt", salt.GetHex());
+    return ret;
+}
+
+CDataDescriptor::CDataDescriptor(const UniValue &uni) :
+    version(uni_get_int64(find_value(uni, "version"))),
+    flags(uni_get_int64(find_value(uni, "flags"))),
+    label(TrimSpaces(uni_get_str(find_value(uni, "label")), true, "")),
+    mimeType(TrimSpaces(uni_get_str(find_value(uni, "mimetype")), true, "")),
+    salt(ParseHex(uni_get_str(find_value(uni, "salt")))),
+    epk(ParseHex(uni_get_str(find_value(uni, "epk")))),
+    ivk(ParseHex(uni_get_str(find_value(uni, "ivk")))),
+    ssk(ParseHex(uni_get_str(find_value(uni, "ssk"))))
+{
+    if (uni.isNull())
+    {
+        version = VERSION_INVALID;
+        return;
+    }
+    if (label.size() > 64)
+    {
+        label.resize(64);
+    }
+    if (mimeType.size() > 128)
+    {
+        mimeType.resize(128);
+    }
+    SetFlags();
+    
+    UniValue objUni = find_value(uni, "objectdata");
+
+    if (objUni.isArray())
+    {
+        for (int j = 0; j < objUni.size(); j++)
+        {
+            CDataStream ss(PROTOCOL_VERSION, SER_DISK);
+            for (int i = 0; i < objUni.size(); i++)
+            {
+                std::vector<unsigned char> vec = VectorEncodeVDXFUni(objUni[i]);
+                ss.write((const char *)vec.data(), vec.size());
+            }
+            objectData = std::vector<unsigned char>(ss.begin(), ss.end());
+        }
+    }
+    else if (objUni.isStr())
+    {
+        std::string valueString;
+        if (IsHex(valueString = uni_get_str(objUni)))
+        {
+            objectData = VectorEncodeVDXFUni(objUni);
+        }
+        else
+        {
+            objectData = std::vector<unsigned char>();
+        }
+    }
+    else if (objUni.isObject())
+    {
+        std::vector<unsigned char> mapBytesValue = VectorEncodeVDXFUni(objUni);
+        if (!mapBytesValue.size())
+        {
+            return;
+        }
+        objectData = mapBytesValue;
+    }
+    else
+    {
+        objectData = std::vector<unsigned char>();
+    }
+}
+
+std::vector<uint256> CDataDescriptor::DecodeHashVector() const
+{
+    std::vector<uint256> retVal;
+
+    CVDXF_Data linkObject;
+    ::FromVector(objectData, linkObject);
+    if (linkObject.key == CVDXF_Data::VectorUint256Key())
+    {
+        ::FromVector(linkObject.data, retVal);
+    }
+    return retVal;
+}
+
+// encrypts to a specific z-address incoming viewing key
+bool CDataDescriptor::EncryptData(const libzcash::SaplingPaymentAddress &saplingAddress, const std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk)
+{
+    CVDXFEncryptor encryptor;
+    if (!encryptor.Encrypt(saplingAddress, plainText, pSsk))
+    {
+        return false;
+    }
+    flags |= FLAG_ENCRYPTED_DATA;
+    objectData = encryptor.cipherData;
+    uint256 uintEpk = encryptor.GetEPK();
+    salt = std::vector<unsigned char>();
+    epk = std::vector<unsigned char>(uintEpk.begin(), uintEpk.end());
+    ivk = std::vector<unsigned char>();
+    ssk = std::vector<unsigned char>();
+    return true;
+}
+
+// decrypts objectData only if there is a valid key available to decrypt with already present in this object
+bool CDataDescriptor::DecryptData(std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk) const
+{
+    CVDXFEncryptor decryptor;
+    decryptor.cipherData = objectData;
+    // to succeed, we must need to have either an epk and an ivk or just an ssk present
+    if (ssk.size())
+    {
+        if (decryptor.Decrypt(ssk, plainText))
+        {
+            if (pSsk)
+            {
+                *pSsk = ssk;
+            }
+            return true;
+        }
+    }
+    if (!ivk.size() || !epk.size())
+    {
+        return false;
+    }
+    decryptor.keyData = epk;
+
+    return decryptor.Decrypt(libzcash::SaplingIncomingViewingKey(uint256(ivk)), plainText, pSsk);
+}
+
+// decrypts objectData either with the provided viewing key, or if a key is available
+bool CDataDescriptor::DecryptData(const libzcash::SaplingIncomingViewingKey &Ivk, std::vector<unsigned char> &plainText, bool ivkOnly, std::vector<unsigned char> *pSsk) const
+{
+    CVDXFEncryptor decryptor;
+    decryptor.cipherData = objectData;
+
+    bool decrypted = false;
+    if (epk.size())
+    {
+        decryptor.keyData = epk;
+        decrypted = decryptor.Decrypt(Ivk, plainText, pSsk);
+    }
+
+    if (ivkOnly || decrypted)
+    {
+        return decrypted;
+    }
+    return DecryptData(plainText, pSsk);
+}
+
+// decrypts objectData either with the provided specific symmetric encryption key, or if a key is available on the link
+bool CDataDescriptor::DecryptData(const std::vector<unsigned char> &decryptionKey, std::vector<unsigned char> &plainText, bool sskOnly) const
+{
+    CVDXFEncryptor decryptor;
+    decryptor.cipherData = objectData;
+
+    bool decrypted = decryptor.Decrypt(decryptionKey, plainText);
+
+    if (sskOnly || decrypted)
+    {
+        return decrypted;
+    }
+    return DecryptData(plainText);
+}
+
+bool CDataDescriptor::GetSSK(std::vector<unsigned char> &Ssk) const
+{
+    if (ssk.size())
+    {
+        Ssk = ssk;
+        return true;
+    }
+
+    if (!ivk.size() || !epk.size())
+    {
+        return false;
+    }
+
+    CVDXFEncryptor decryptor;
+    decryptor.keyData = epk;
+
+    return decryptor.GetDecryptionKey(libzcash::SaplingIncomingViewingKey(uint256(ivk)), Ssk);
+}
+
+bool CDataDescriptor::GetSSK(const libzcash::SaplingIncomingViewingKey &Ivk, std::vector<unsigned char> &Ssk, bool ivkOnly) const
+{
+    CVDXFEncryptor decryptor;
+    decryptor.cipherData = objectData;
+
+    bool haveKey = false;
+    if (epk.size())
+    {
+        decryptor.keyData = epk;
+        haveKey = decryptor.GetDecryptionKey(Ivk, Ssk);
+    }
+
+    if (ivkOnly || haveKey)
+    {
+        return haveKey;
+    }
+    return GetSSK(Ssk);
+}
+
+bool CDataDescriptor::UnwrapEncryption()
+{
+    if (!HasEncryptedData())
+    {
+        return false;
+    }
+
+    std::vector<unsigned char> innerPlainText;
+    if (!DecryptData(innerPlainText))
+    {
+        return false;
+    }
+
+    // we can only unwrap if the inner object is a wrapped link
+    // that starts from the first 20 bytes being the correct VDXF key
+    if (innerPlainText.size() <= sizeof(uint160))
+    {
+        return false;
+    }
+    uint160 checkVDXFKey(std::vector<unsigned char>(innerPlainText.data(), innerPlainText.data() + 20));
+    if (checkVDXFKey != CVDXF_Data::DataDescriptorKey())
+    {
+        return false;
+    }
+
+    CVDXF_Data unwrappedData;
+    ::FromVector(innerPlainText, unwrappedData);
+    if (!unwrappedData.data.size())
+    {
+        return false;
+    }
+    *this = CDataDescriptor();
+    ::FromVector(unwrappedData.data, *this);
+    return true;
+}
+
+bool CDataDescriptor::UnwrapEncryption(const libzcash::SaplingIncomingViewingKey &Ivk, bool ivkOnly)
+{
+    if (!HasEncryptedData())
+    {
+        return false;
+    }
+
+    std::vector<unsigned char> innerPlainText;
+    if (!DecryptData(Ivk, innerPlainText, ivkOnly))
+    {
+        return false;
+    }
+
+    // we can only unwrap if the inner object is a wrapped link
+    // that starts from the first 20 bytes being the correct VDXF key
+    if (innerPlainText.size() <= sizeof(uint160))
+    {
+        return false;
+    }
+    uint160 checkVDXFKey(std::vector<unsigned char>(innerPlainText.data(), innerPlainText.data() + 20));
+    if (checkVDXFKey != CVDXF_Data::DataDescriptorKey())
+    {
+        return false;
+    }
+
+    CVDXF_Data unwrappedData;
+    ::FromVector(innerPlainText, unwrappedData);
+    if (!unwrappedData.data.size())
+    {
+        return false;
+    }
+    *this = CDataDescriptor();
+    ::FromVector(unwrappedData.data, *this);
+    return true;
+}
+
+bool CDataDescriptor::UnwrapEncryption(const std::vector<unsigned char> &decryptionKey, bool sskOnly)
+{
+    if (!HasEncryptedData())
+    {
+        return false;
+    }
+
+    std::vector<unsigned char> innerPlainText;
+    if (!DecryptData(decryptionKey, innerPlainText, sskOnly))
+    {
+        return false;
+    }
+
+    // we can only unwrap if the inner object is a wrapped link
+    // that starts from the first 20 bytes being the correct VDXF key
+    if (innerPlainText.size() <= sizeof(uint160))
+    {
+        return false;
+    }
+    uint160 checkVDXFKey(std::vector<unsigned char>(innerPlainText.data(), innerPlainText.data() + 20));
+    if (checkVDXFKey != CVDXF_Data::DataDescriptorKey())
+    {
+        return false;
+    }
+
+    CVDXF_Data unwrappedData;
+    ::FromVector(innerPlainText, unwrappedData);
+    if (!unwrappedData.data.size())
+    {
+        return false;
+    }
+    *this = CDataDescriptor();
+    ::FromVector(unwrappedData.data, *this);
+    return true;
+}
+
+bool CDataDescriptor::IsValid() const
+{
+    bool basicValidation = version >= FIRST_VERSION && version <= LAST_VERSION && (flags & ~FLAG_MASK) == 0;
+    
+    // Additional validation: ensure the label contains valid UTF-8
+    if (basicValidation && HasLabel())
+    {
+        if (utf8valid(label.c_str()) != 0)
+        {
+            LogPrint("contentmap", "%s: data descriptor label contains invalid UTF-8: %s\n", __func__, label.substr(0, 50).c_str());
+            return false;
+        }
+    }
+
+    if (basicValidation && HasMIME())
+    {
+        if (utf8valid(mimeType.c_str()) != 0)
+        {
+            LogPrint("contentmap", "%s: data descriptor MIME type contains invalid UTF-8: %s\n", __func__, mimeType.substr(0, 50).c_str());
+            return false;
+        }
+    }
+
+    return basicValidation;
+}
+
+UniValue CDataDescriptor::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+    int64_t Flags = CalcFlags();
+    bool isText = false;
+
+    ret.pushKV("version", (int64_t)version);
+    ret.pushKV("flags", Flags);
+
+    if (HasMIME())
+    {
+        ret.pushKV("mimetype", TrimSpaces(mimeType, true, ""));
+        if (std::string(mimeType.begin(), mimeType.begin() + 5) == std::string("text/"))
+        {
+            isText = true;
+        }
+    }
+
+    UniValue processedObject = CIdentity::VDXFDataToUniValue(objectData);
+
+    if (isText &&
+        find_value(processedObject, EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey()))).isNull())
+    {
+        // Create a string from the binary data
+        std::string messageStr(objectData.begin(), objectData.end());
+        
+        if (utf8valid(messageStr.c_str()) == 0) {
+            // Safe to use as a message string
+            UniValue objectDataUni(UniValue::VOBJ);
+            objectDataUni.pushKV("message", messageStr);
+            ret.pushKV("objectdata", objectDataUni);
+        } else {
+            // Fall back to hex encoding if utf8 is not valid
+            ret.pushKV("objectdata", processedObject);
+        }
+    }
+    else
+    {
+        ret.pushKV("objectdata", processedObject);
+    }
+
+    if (HasLabel())
+    {
+        ret.pushKV("label", TrimSpaces(label, true, ""));
+    }
+    if (HasSalt())
+    {
+        ret.pushKV("salt", HexBytes(salt.data(), salt.size()));
+    }
+    if (HasEPK())
+    {
+        ret.pushKV("epk", HexBytes(epk.data(), epk.size()));
+    }
+    if (HasIVK())
+    {
+        ret.pushKV("ivk", HexBytes(ivk.data(), ivk.size()));
+    }
+    if (HasSSK())
+    {
+        ret.pushKV("ssk", HexBytes(ssk.data(), ssk.size()));
+    }
+    return ret;
+}
+
+CVDXFDataDescriptor::CVDXFDataDescriptor(const UniValue &uni) :
+    CVDXF_Data(uni),
+    dataDescriptor(uni)
+{
+}
+
+UniValue CVDXFDataDescriptor::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+
+    ret = ((CVDXF *)this)->ToUniValue();
+    ret.pushKV("datadescriptor", dataDescriptor.ToUniValue());
+    return ret;
+}
+
+CSignatureData::CSignatureData(const UniValue &uni) :
+    version(uni_get_int64(find_value(uni, "version"))),
+    systemID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "systemid"))))),
+    hashType((CVDXF::EHashTypes)uni_get_int(find_value(uni, "hashtype"))),
+    identityID(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "identityid"))))),
+    sigType(uni_get_int(find_value(uni, "signaturetype"), TYPE_VERUSID_DEFAULT))
+{
+    uint256 dataHash;
+    if (hashType == CVDXF::EHashTypes::HASH_SHA256)
+    {
+        dataHash = uint256(ParseHex(uni_get_str(find_value(uni, "signaturehash"))));
+    }
+    else
+    {
+        dataHash.SetHex(uni_get_str(find_value(uni, "signaturehash")));
+    }
+    signatureHash = std::vector<unsigned char>(dataHash.begin(), dataHash.end());
+
+    std::string sigString = DecodeBase64(uni_get_str(find_value(uni, "signature")));
+    signatureAsVch = std::vector<unsigned char>(sigString.begin(), sigString.end());
+
+    auto vdxfKeysUni = find_value(uni, "vdxfkeys");
+    if (vdxfKeysUni.isArray())
+    {
+        for (int i = 0; i < vdxfKeysUni.size(); i++)
+        {
+            vdxfKeys.push_back(ParseVDXFKey(uni_get_str(vdxfKeysUni[i])));
+        }
+    }
+
+    auto vdxfKeyNamesUni = find_value(uni, "vdxfkeynames");
+    if (vdxfKeyNamesUni.isArray())
+    {
+        for (int i = 0; i < vdxfKeyNamesUni.size(); i++)
+        {
+            vdxfKeyNames.push_back(uni_get_str(vdxfKeyNamesUni[i]));
+        }
+    }
+
+    auto boundHashesUni = find_value(uni, "boundhashes");
+    if (boundHashesUni.isArray())
+    {
+        for (int i = 0; i < boundHashesUni.size(); i++)
+        {
+            boundHashes.push_back(uint256S(uni_get_str(boundHashesUni[i])));
+        }
+    }
+}
+
+UniValue CSignatureData::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+
+    ret.pushKV("version", (int64_t)version);
+    ret.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
+    ret.pushKV("hashtype", hashType);
+    if (hashType == CVDXF::EHashTypes::HASH_SHA256)
+    {
+        ret.pushKV("signaturehash", HexBytes(signatureHash.data(), signatureHash.size()));
+    }
+    else
+    {
+        uint256 hashVal(signatureHash);
+        ret.pushKV("signaturehash", hashVal.GetHex());
+    }
+
+    ret.pushKV("identityid", EncodeDestination(CIdentityID(identityID)));
+    ret.pushKV("signaturetype", (int64_t)sigType);
+    ret.pushKV("signature", EncodeBase64(signatureAsVch.data(), signatureAsVch.size()));
+
+    if (vdxfKeys.size())
+    {
+        UniValue vdxfKeysUni(UniValue::VARR);
+        for (auto &oneKey : vdxfKeys)
+        {
+            vdxfKeysUni.push_back(EncodeDestination(CIdentityID(oneKey)));
+        }
+        ret.pushKV("vdxfkeys", vdxfKeysUni);
+    }
+
+    if (vdxfKeyNames.size())
+    {
+        UniValue vdxfKeyNamesUni(UniValue::VARR);
+        for (auto &oneKeyName : vdxfKeyNames)
+        {
+            vdxfKeyNamesUni.push_back(oneKeyName);
+        }
+        ret.pushKV("vdxfkeynames", vdxfKeyNamesUni);
+    }
+
+    if (boundHashes.size())
+    {
+        UniValue boundHashesUni(UniValue::VARR);
+        for (auto &oneBoundHash : boundHashes)
+        {
+            boundHashesUni.push_back(oneBoundHash.GetHex());
+        }
+        ret.pushKV("boundhashes", boundHashesUni);
+    }
+    return ret;
+}
+
+UniValue CVDXFSignatureData::ToUniValue() const
+{
+    UniValue obj = ((CVDXF_Data *)this)->ToUniValue();
+    obj.pushKV("signature", signature.ToUniValue());
+    return obj;
+}
+
+CMMRDescriptor::CMMRDescriptor(const UniValue &uni) :
+    version(uni_get_int64(find_value(uni, "version"))),
+    objectHashType((CVDXF::EHashTypes)uni_get_int(find_value(uni, "objecthashtype"))),
+    mmrHashType((CVDXF::EHashTypes)uni_get_int(find_value(uni, "mmrhashtype"))),
+    mmrRoot(find_value(uni, "mmrroot")),
+    mmrHashes(find_value(uni, "mmrhashes"))
+{
+    UniValue dataDescriptorsUni = find_value(uni, "datadescriptors");
+    if (dataDescriptorsUni.isArray())
+    {
+        for (int i = 0; i < dataDescriptorsUni.size(); i++)
+        {
+            dataDescriptors.push_back(CDataDescriptor(dataDescriptorsUni[i]));
+        }
+    }
+}
+
+CMMRDescriptor CMMRDescriptor::Encrypt(const libzcash::SaplingPaymentAddress &saplingAddress, bool includeSSKs) const
+{
+    CMMRDescriptor retVal = *this;
+    std::vector<unsigned char> Ssk;
+
+    // encrypt everything and add epks
+    if (!retVal.mmrRoot.WrapEncrypted(saplingAddress, &Ssk))
+    {
+        return CMMRDescriptor();
+    }
+    if (includeSSKs)
+    {
+        retVal.mmrRoot.ssk = Ssk;
+    }
+    if (!retVal.mmrHashes.WrapEncrypted(saplingAddress, &Ssk))
+    {
+        return CMMRDescriptor();
+    }
+    if (includeSSKs)
+    {
+        retVal.mmrHashes.ssk = Ssk;
+    }
+
+    for (int i = 0; i < retVal.dataDescriptors.size(); i++)
+    {
+        auto &oneDescriptor = retVal.dataDescriptors[i];
+        if (!oneDescriptor.WrapEncrypted(saplingAddress, &Ssk))
+        {
+            return CMMRDescriptor();
+        }
+        if (includeSSKs)
+        {
+            oneDescriptor.ssk = Ssk;
+        }
+    }
+
+    return retVal;
+}
+
+bool CMMRDescriptor::WrapEncrypted(const libzcash::SaplingPaymentAddress &saplingAddress, bool includeSSKs)
+{
+    CMMRDescriptor thisCopy = *this;
+    std::vector<unsigned char> Ssk;
+
+    // encrypt everything and add epks
+    if (!thisCopy.mmrRoot.WrapEncrypted(saplingAddress, &Ssk))
+    {
+        return false;
+    }
+    if (includeSSKs)
+    {
+        thisCopy.mmrRoot.ssk = Ssk;
+    }
+    if (!thisCopy.mmrHashes.WrapEncrypted(saplingAddress, &Ssk))
+    {
+        return false;
+    }
+    if (includeSSKs)
+    {
+        thisCopy.mmrHashes.ssk = Ssk;
+    }
+
+    for (int i = 0; i < thisCopy.dataDescriptors.size(); i++)
+    {
+        auto &oneDescriptor = thisCopy.dataDescriptors[i];
+        if (!oneDescriptor.WrapEncrypted(saplingAddress, &Ssk))
+        {
+            return false;
+        }
+        if (includeSSKs)
+        {
+            oneDescriptor.ssk = Ssk;
+        }
+    }
+
+    *this = thisCopy;
+    return true;
+}
+
+CMMRDescriptor CMMRDescriptor::Decrypt() const
+{
+    CMMRDescriptor retVal = *this;
+
+    // decrypt everything we can and add it to retVal
+    // encrypt everything and add epks
+    retVal.mmrRoot.UnwrapEncryption();
+    retVal.mmrHashes.UnwrapEncryption();
+
+    for (int i = 0; i < retVal.dataDescriptors.size(); i++)
+    {
+        retVal.dataDescriptors[i].UnwrapEncryption();
+    }
+
+    return retVal;
+}
+
+CMMRDescriptor CMMRDescriptor::Decrypt(const libzcash::SaplingIncomingViewingKey &ivk) const
+{
+    CMMRDescriptor retVal = *this;
+
+    // decrypt everything and add it to retVal
+    retVal.mmrRoot.UnwrapEncryption(ivk);
+    retVal.mmrHashes.UnwrapEncryption(ivk);
+
+    for (int i = 0; i < retVal.dataDescriptors.size(); i++)
+    {
+        retVal.dataDescriptors[i].UnwrapEncryption(ivk);
+    }
+
+    return retVal;
+}
+
+std::vector<uint256> CMMRDescriptor::DecryptMMRHashes(const libzcash::SaplingIncomingViewingKey &Ivk) const
+{
+    std::vector<uint256> retVal;
+    CDataDescriptor descrCopy = mmrHashes;
+
+    // deserialize unencrypted MMR hashes, encrypted with key present or return nothing
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption(Ivk) && !descrCopy.HasEncryptedData()))
+    {
+        CVDXF_Data linkObject;
+        ::FromVector(descrCopy.objectData, linkObject);
+        if (linkObject.key == CVDXF_Data::VectorUint256Key())
+        {
+            ::FromVector(linkObject.data, retVal);
+        }
+    }
+    return retVal;
+}
+
+std::vector<uint256> CMMRDescriptor::DecryptMMRHashes(const std::vector<unsigned char> &Ssk) const
+{
+    std::vector<uint256> retVal;
+    CDataDescriptor descrCopy = mmrHashes;
+
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption(Ssk) && !descrCopy.HasEncryptedData()))
+    {
+        CVDXF_Data linkObject;
+        ::FromVector(descrCopy.objectData, linkObject);
+        if (linkObject.key == CVDXF_Data::VectorUint256Key())
+        {
+            ::FromVector(linkObject.data, retVal);
+        }
+    }
+    return retVal;
+}
+
+std::vector<uint256> CMMRDescriptor::GetMMRHashes() const
+{
+    std::vector<uint256> retVal;
+    CDataDescriptor descrCopy = mmrHashes;
+
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption() && !descrCopy.HasEncryptedData()))
+    {
+        CVDXF_Data linkObject;
+        ::FromVector(descrCopy.objectData, linkObject);
+        if (linkObject.key == CVDXF_Data::VectorUint256Key())
+        {
+            ::FromVector(linkObject.data, retVal);
+        }
+    }
+    return retVal;
+}
+
+uint256 CMMRDescriptor::DecryptMMRRoot(const libzcash::SaplingIncomingViewingKey &Ivk) const
+{
+    uint256 retVal;
+
+    CDataDescriptor descrCopy = mmrRoot;
+
+    // deserialize unencrypted MMR hashes, encrypted with key present or return nothing
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption(Ivk) && !descrCopy.HasEncryptedData()))
+    {
+        CVDXF_Data linkObject;
+        ::FromVector(descrCopy.objectData, linkObject);
+        if (linkObject.data.size() >= 32)
+        {
+            retVal = uint256(std::vector<unsigned char>(linkObject.data.data(), linkObject.data.data() + 32));
+        }
+    }
+    return retVal;
+}
+
+uint256 CMMRDescriptor::DecryptMMRRoot(const std::vector<unsigned char> &Ssk) const
+{
+    uint256 retVal;
+
+    CDataDescriptor descrCopy = mmrRoot;
+
+    // deserialize unencrypted MMR hashes, encrypted with key present or return nothing
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption(Ssk) && !descrCopy.HasEncryptedData()))
+    {
+        CVDXF_Data linkObject;
+        ::FromVector(descrCopy.objectData, linkObject);
+        if (linkObject.data.size() >= 32)
+        {
+            retVal = uint256(std::vector<unsigned char>(linkObject.data.data(), linkObject.data.data() + 32));
+        }
+    }
+    return retVal;
+}
+
+uint256 CMMRDescriptor::GetMMRRoot() const
+{
+    uint256 retVal;
+
+    CDataDescriptor descrCopy = mmrRoot;
+
+    // deserialize unencrypted MMR hashes, encrypted with key present or return nothing
+    if (!descrCopy.HasEncryptedData() ||
+        (descrCopy.UnwrapEncryption() && !descrCopy.HasEncryptedData()))
+    {
+        CVDXF_Data linkObject;
+        ::FromVector(descrCopy.objectData, linkObject);
+        if (linkObject.data.size() >= 32)
+        {
+            retVal = uint256(std::vector<unsigned char>(linkObject.data.data(), linkObject.data.data() + 32));
+        }
+    }
+    return retVal;
+}
+
+std::vector<CDataDescriptor> CMMRDescriptor::DecryptDataDescriptors(const libzcash::SaplingIncomingViewingKey &ivk) const
+{
+    // decrypt and deserialize descriptors
+    CMMRDescriptor thisCopy = *this;
+    thisCopy.mmrHashes = CDataDescriptor();
+
+    for (int i = 0; i < thisCopy.dataDescriptors.size(); i++)
+    {
+        thisCopy.dataDescriptors[i].UnwrapEncryption(ivk);
+    }
+
+    return thisCopy.dataDescriptors;
+}
+
+std::vector<CDataDescriptor> CMMRDescriptor::GetDataDescriptors() const
+{
+    // decrypt and deserialize descriptors
+    CMMRDescriptor thisCopy = *this;
+    thisCopy.mmrHashes = CDataDescriptor();
+
+    for (int i = 0; i < thisCopy.dataDescriptors.size(); i++)
+    {
+        thisCopy.dataDescriptors[i].UnwrapEncryption();
+    }
+
+    return thisCopy.dataDescriptors;
+}
+
+CDataDescriptor CMMRDescriptor::DecryptDataDescriptor(int idx, const std::vector<unsigned char> &ssk) const
+{
+    // decrypt and deserialize descriptors
+    CDataDescriptor oneDescr;
+    if (idx < dataDescriptors.size())
+    {
+        oneDescr = dataDescriptors[idx];
+        oneDescr.UnwrapEncryption(ssk);
+    }
+    else if (idx == dataDescriptors.size())
+    {
+        oneDescr = mmrRoot;
+        oneDescr.UnwrapEncryption(ssk);
+    }
+    else if (idx == dataDescriptors.size() + 1)
+    {
+        oneDescr = mmrHashes;
+        oneDescr.UnwrapEncryption(ssk);
+    }
+    return oneDescr;
+}
+
+CDataDescriptor CMMRDescriptor::DecryptDataDescriptor(int idx, const libzcash::SaplingIncomingViewingKey &ivk) const
+{
+    // decrypt and deserialize descriptors
+    CDataDescriptor oneDescr;
+    if (idx < dataDescriptors.size())
+    {
+        oneDescr = dataDescriptors[idx];
+        oneDescr.UnwrapEncryption(ivk);
+    }
+    else if (idx == dataDescriptors.size())
+    {
+        oneDescr = mmrRoot;
+        oneDescr.UnwrapEncryption(ivk);
+    }
+    else if (idx == dataDescriptors.size() + 1)
+    {
+        oneDescr = mmrHashes;
+        oneDescr.UnwrapEncryption(ivk);
+    }
+    return oneDescr;
+}
+
+CDataDescriptor CMMRDescriptor::GetDataDescriptor(int idx) const
+{
+    // decrypt and deserialize descriptors
+    CDataDescriptor oneDescr;
+    if (idx < dataDescriptors.size())
+    {
+        oneDescr = dataDescriptors[idx];
+        oneDescr.UnwrapEncryption();
+    }
+    else if (idx == dataDescriptors.size())
+    {
+        oneDescr = mmrRoot;
+        oneDescr.UnwrapEncryption();
+    }
+    else if (idx == dataDescriptors.size() + 1)
+    {
+        oneDescr = mmrHashes;
+        oneDescr.UnwrapEncryption();
+    }
+    return oneDescr;
+}
+
+CMMRDescriptor CMMRDescriptor::AddSymmetricKeys(const libzcash::SaplingIncomingViewingKey &ivk) const
+{
+    CMMRDescriptor retVal = *this;
+
+    retVal.mmrRoot.GetSSK(ivk, retVal.mmrRoot.ssk);
+    retVal.mmrHashes.GetSSK(ivk, retVal.mmrHashes.ssk);
+
+    for (int i = 0; i < retVal.dataDescriptors.size(); i++)
+    {
+        retVal.dataDescriptors[i].GetSSK(ivk, retVal.dataDescriptors[i].ssk);
+    }
+
+    return retVal;
+}
+
+CMMRDescriptor CMMRDescriptor::AddSymmetricKeys(const std::vector<std::pair<int, std::vector<unsigned char>>> &ssks) const
+{
+    CMMRDescriptor retVal = *this;
+
+    if (!ssks.size())
+    {
+        return retVal;
+    }
+
+    for (int i = 0; i < ssks.size(); i++)
+    {
+        if (ssks[i].first == retVal.dataDescriptors.size())
+        {
+            retVal.mmrRoot.ssk = ssks[i].second;
+        }
+        if (ssks[i].first == retVal.dataDescriptors.size() + 1)
+        {
+            retVal.mmrHashes.ssk = ssks[i].second;
+        }
+        else if (ssks[i].first < retVal.dataDescriptors.size())
+        {
+            retVal.dataDescriptors[ssks[i].first].ssk = ssks[i].second;
+        }
+    }
+
+    return retVal;
+}
+
+std::vector<std::pair<int, std::vector<unsigned char>>> CMMRDescriptor::GetSymmetricKeys(const libzcash::SaplingIncomingViewingKey &ivk) const
+{
+    std::vector<std::pair<int, std::vector<unsigned char>>> retVal;
+    std::vector<unsigned char> oneSsk;
+
+    if (mmrRoot.GetSSK(ivk, oneSsk))
+    {
+        retVal.push_back({dataDescriptors.size(), oneSsk});
+    }
+
+    if (mmrHashes.GetSSK(ivk, oneSsk))
+    {
+        retVal.push_back({dataDescriptors.size() + 1, oneSsk});
+    }
+
+    for (int i = 0; i < dataDescriptors.size(); i++)
+    {
+        if (dataDescriptors[i].GetSSK(ivk, oneSsk))
+        {
+            retVal.push_back({i, oneSsk});
+        }
+    }
+
+    return retVal;
+}
+
+UniValue CMMRDescriptor::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+
+    ret.pushKV("version", (int64_t)version);
+    ret.pushKV("objecthashtype", (int32_t)objectHashType);
+    ret.pushKV("mmrhashtype", (int32_t)mmrHashType);
+    ret.pushKV("mmrroot", mmrRoot.ToUniValue());
+    ret.pushKV("mmrhashes", mmrHashes.ToUniValue());
+
+    UniValue dataDescriptorsUni(UniValue::VARR);
+    for (int i = 0; i < dataDescriptors.size(); i++)
+    {
+        dataDescriptorsUni.push_back(dataDescriptors[i].ToUniValue());
+    }
+    ret.pushKV("datadescriptors", dataDescriptorsUni);
+    return ret;
+}
+
+UniValue CVDXFMMRDescriptor::ToUniValue() const
+{
+    UniValue obj = ((CVDXF_Data *)this)->ToUniValue();
+    obj.pushKV("mmr", mmrDescriptor.ToUniValue());
+    return obj;
+}
+
+bool CCredential::IsValid() const
+{
+    bool basicValid = (version >= VERSION_FIRST && version <= VERSION_LAST) && credentialKey != uint160();
+    
+    // Validate UTF-8 in label field
+    if (basicValid && !label.empty())
+    {
+        if (utf8valid(label.c_str()) != 0)
+        {
+            return false;
+        }
+    }
+    
+    return basicValid;
+}
+
+UniValue CCredential::ToUniValue() const
+{
+    UniValue ret(UniValue::VOBJ);
+    int64_t Flags = CalcFlags();
+
+    ret.pushKV("version", (int64_t)version);
+    ret.pushKV("flags", Flags);
+    ret.pushKV("credentialkey", EncodeDestination(CIdentityID(credentialKey)));
+
+    ret.pushKV("credential", credential);
+    ret.pushKV("scopes", scopes);
+
+    if (HasLabel()) {
+        ret.pushKV("label", TrimSpaces(label, true, ""));
+    }
+
+    return ret;
 }
 

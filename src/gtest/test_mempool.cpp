@@ -119,7 +119,7 @@ TEST(Mempool, TxInputLimit) {
     // Check it fails as expected
     CValidationState state1;
     CTransaction tx1(mtx);
-    EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, &missingInputs));
+    EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, false, &missingInputs));
     EXPECT_EQ(state1.GetRejectReason(), "bad-txns-version-too-low");
 
     // Set a limit
@@ -127,7 +127,7 @@ TEST(Mempool, TxInputLimit) {
 
     // Check it still fails as expected
     CValidationState state2;
-    EXPECT_FALSE(AcceptToMemoryPool(pool, state2, tx1, false, &missingInputs));
+    EXPECT_FALSE(AcceptToMemoryPool(pool, state2, tx1, false, false, &missingInputs));
     EXPECT_EQ(state2.GetRejectReason(), "bad-txns-version-too-low");
 
     // Resize the transaction
@@ -136,7 +136,7 @@ TEST(Mempool, TxInputLimit) {
     // Check it now fails due to exceeding the limit
     CValidationState state3;
     CTransaction tx3(mtx);
-    EXPECT_FALSE(AcceptToMemoryPool(pool, state3, tx3, false, &missingInputs));
+    EXPECT_FALSE(AcceptToMemoryPool(pool, state3, tx3, false, false, &missingInputs));
     // The -mempooltxinputlimit check doesn't set a reason
     EXPECT_EQ(state3.GetRejectReason(), "");
 
@@ -145,7 +145,7 @@ TEST(Mempool, TxInputLimit) {
 
     // Check it no longer fails due to exceeding the limit
     CValidationState state4;
-    EXPECT_FALSE(AcceptToMemoryPool(pool, state4, tx3, false, &missingInputs));
+    EXPECT_FALSE(AcceptToMemoryPool(pool, state4, tx3, false, false, &missingInputs));
     EXPECT_EQ(state4.GetRejectReason(), "bad-txns-version-too-low");
 
     // Deactivate Overwinter
@@ -153,7 +153,7 @@ TEST(Mempool, TxInputLimit) {
 
     // Check it now fails due to exceeding the limit
     CValidationState state5;
-    EXPECT_FALSE(AcceptToMemoryPool(pool, state5, tx3, false, &missingInputs));
+    EXPECT_FALSE(AcceptToMemoryPool(pool, state5, tx3, false, false, &missingInputs));
     // The -mempooltxinputlimit check doesn't set a reason
     EXPECT_EQ(state5.GetRejectReason(), "");
 
@@ -162,7 +162,7 @@ TEST(Mempool, TxInputLimit) {
 
     // Check it no longer fails due to exceeding the limit
     CValidationState state6;
-    EXPECT_FALSE(AcceptToMemoryPool(pool, state6, tx3, false, &missingInputs));
+    EXPECT_FALSE(AcceptToMemoryPool(pool, state6, tx3, false, false, &missingInputs));
     EXPECT_EQ(state6.GetRejectReason(), "bad-txns-version-too-low");
 }
 
@@ -182,7 +182,7 @@ TEST(Mempool, OverwinterNotActiveYet) {
     CValidationState state1;
 
     CTransaction tx1(mtx);
-    EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, &missingInputs));
+    EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, false, &missingInputs));
     EXPECT_EQ(state1.GetRejectReason(), "tx-overwinter-not-active");
 
     // Revert to default
@@ -206,7 +206,7 @@ TEST(Mempool, SproutV3TxFailsAsExpected) {
     CValidationState state1;
     CTransaction tx1(mtx);
 
-    EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, &missingInputs));
+    EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, false, &missingInputs));
     EXPECT_EQ(state1.GetRejectReason(), "version");
 }
 
@@ -227,7 +227,7 @@ TEST(Mempool, SproutV3TxWhenOverwinterActive) {
     CValidationState state1;
     CTransaction tx1(mtx);
 
-    EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, &missingInputs));
+    EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, false, &missingInputs));
     EXPECT_EQ(state1.GetRejectReason(), "tx-overwinter-flag-not-set");
 
     // Revert to default
@@ -262,7 +262,7 @@ TEST(Mempool, SproutNegativeVersionTxWhenOverwinterActive) {
         EXPECT_EQ(tx1.nVersion, -3);
 
         CValidationState state1;
-        EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, &missingInputs));
+        EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, false, &missingInputs));
         EXPECT_EQ(state1.GetRejectReason(), "bad-txns-version-too-low");
     }
 
@@ -278,7 +278,7 @@ TEST(Mempool, SproutNegativeVersionTxWhenOverwinterActive) {
         EXPECT_EQ(tx1.nVersion, -2147483645);
 
         CValidationState state1;
-        EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, &missingInputs));
+        EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, false, &missingInputs));
         EXPECT_EQ(state1.GetRejectReason(), "bad-txns-version-too-low");
     }
 
@@ -310,7 +310,7 @@ TEST(Mempool, ExpiringSoonTxRejection) {
         CValidationState state1;
         CTransaction tx1(mtx);
 
-        EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, &missingInputs));
+        EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, false, &missingInputs));
         EXPECT_EQ(state1.GetRejectReason(), "tx-expiring-soon");
     }
 

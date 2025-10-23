@@ -1,6 +1,7 @@
 
 #include "params.h"
 #include "ui_interface.h"
+#include "pbaas/vdxf.h"
 #include <fstream>
 
 std::map<std::string, ParamFile> mapParams;
@@ -74,42 +75,108 @@ static int xferinfo(void *p,
                     curl_off_t dltotal, curl_off_t dlnow,
                     curl_off_t ultotal, curl_off_t ulnow)
 {
-  struct CurlProgress *myp = (struct CurlProgress *)p;
-  CURL *curl = myp->curl;
-  TIMETYPE curtime = 0;
+    struct CurlProgress *myp = (struct CurlProgress *)p;
+    CURL *curl = myp->curl;
+    TIMETYPE curtime = 0;
 
-  char *url = NULL;
-  curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &url);
+    char *url = NULL;
+    curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &url);
 
-  std::map<std::string, ParamFile>::iterator mi = mapParams.find(url);
-  if (mi != mapParams.end()) {
-      mi->second.dlnow = dlnow;
-      mi->second.dltotal = dltotal;
-  }
+    std::map<std::string, ParamFile>::iterator mi = mapParams.find(url);
+    if (mi != mapParams.end()) {
+        mi->second.dlnow = dlnow;
+        mi->second.dltotal = dltotal;
+    }
 
-  return 0;
+    return 0;
+}
+
+uint160 vARRRChainID()
+{
+    static uint160 vARRRID = CVDXF::GetID("vARRR.vrsc.@");
+    return vARRRID;
+}
+
+uint160 vDEXChainID()
+{
+    static uint160 vARRRID = CVDXF::GetID("vDEX.vrsc.@");
+    return vARRRID;
+}
+
+uint160 ChipsChainID()
+{
+    static uint160 ChipsID = CVDXF::GetID("chips.vrsc.@");
+    return ChipsID;
 }
 
 void initalizeMapParamBootstrap() {
-  mapParams.clear();
+    mapParams.clear();
 
-  ParamFile bootSigFile;
-  bootSigFile.name = "bootstrap-signature";
-  bootSigFile.URL = "https://bootstrap.verus.io/VRSC-bootstrap.tar.gz.verusid";
-  bootSigFile.verified = false;
-  bootSigFile.path = GetDataDir() / "VRSC-bootstrap.tar.gz.verusid";
-  bootSigFile.dlnow = 0;
-  bootSigFile.dltotal = 0;
-  mapParams[bootSigFile.URL] = bootSigFile;
+    ParamFile bootSigFile;
+    bootSigFile.name = "bootstrap-signature";
+    bootSigFile.verified = false;
+    if (_IsVerusMainnetActive())
+    {
+        bootSigFile.URL = "https://bootstrap.verus.io/VRSC-bootstrap.tar.gz.verusid";
+        bootSigFile.path = GetDataDir() / "VRSC-bootstrap.tar.gz.verusid";
+    }
+    else if (_IsVerusActive())
+    {
+        bootSigFile.URL = "https://bootstrap.verustest.net/vrsctest-bootstrap.tar.gz.verusid";
+        bootSigFile.path = GetDataDir() / "verustest-bootstrap.tar.gz.verusid";
+    }
+    else if (_IsCurrentChainID(vARRRChainID()))
+    {
+        bootSigFile.URL = "https://bootstrap.dexstats.info/VARRR-bootstrap.tar.gz.verusid";
+        bootSigFile.path = GetDataDir() / "VARRR-bootstrap.tar.gz.verusid";
+    }
+    else if (_IsCurrentChainID(vDEXChainID()))
+    {
+        bootSigFile.URL = "https://bootstrap.dexstats.info/VDEX-bootstrap.tar.gz.verusid";
+        bootSigFile.path = GetDataDir() / "VDEX-bootstrap.tar.gz.verusid";
+    }
+    else if (_IsCurrentChainID(ChipsChainID()))
+    {
+        bootSigFile.URL = "https://bootstrap.dexstats.info/CHIPS-bootstrap.tar.gz.verusid";
+        bootSigFile.path = GetDataDir() / "CHIPS-bootstrap.tar.gz.verusid";
+    }
 
-  ParamFile bootFile;
-  bootFile.name = "bootstrap";
-  bootFile.URL = "https://bootstrap.verus.io/VRSC-bootstrap.tar.gz";
-  bootFile.verified = false;
-  bootFile.path = GetDataDir() / "VRSC-bootstrap.tar.gz";
-  bootFile.dlnow = 0;
-  bootFile.dltotal = 0;
-  mapParams[bootFile.URL] = bootFile;
+    bootSigFile.dlnow = 0;
+    bootSigFile.dltotal = 0;
+    mapParams[bootSigFile.URL] = bootSigFile;
+
+    ParamFile bootFile;
+    bootFile.name = "bootstrap";
+    bootFile.verified = false;
+    if (_IsVerusMainnetActive())
+    {
+        bootFile.URL = "https://bootstrap.verus.io/VRSC-bootstrap.tar.gz";
+        bootFile.path = GetDataDir() / "VRSC-bootstrap.tar.gz";
+    }
+    else if (_IsVerusActive())
+    {
+        bootFile.URL = "https://bootstrap.verustest.net/vrsctest-bootstrap.tar.gz";
+        bootFile.path = GetDataDir() / "verustest-bootstrap.tar.gz";
+    }
+    else if (_IsCurrentChainID(vARRRChainID()))
+    {
+        bootFile.URL = "https://bootstrap.dexstats.info/VARRR-bootstrap.tar.gz";
+        bootFile.path = GetDataDir() / "VARRR-bootstrap.tar.gz";
+    }
+    else if (_IsCurrentChainID(vDEXChainID()))
+    {
+        bootFile.URL = "https://bootstrap.dexstats.info/VDEX-bootstrap.tar.gz";
+        bootFile.path = GetDataDir() / "VDEX-bootstrap.tar.gz";
+    }
+    else if (_IsCurrentChainID(ChipsChainID()))
+    {
+        bootFile.URL = "https://bootstrap.dexstats.info/CHIPS-bootstrap.tar.gz";
+        bootFile.path = GetDataDir() / "CHIPS-bootstrap.tar.gz";
+    }
+
+    bootFile.dlnow = 0;
+    bootFile.dltotal = 0;
+    mapParams[bootFile.URL] = bootFile;
 }
 
 
@@ -441,74 +508,74 @@ bool getBootstrap() {
 
 bool extract(boost::filesystem::path filename) {
 
-  bool extractComplete = true;
+    bool extractComplete = true;
 	struct archive *a;
 	struct archive *ext;
 	struct archive_entry *entry;
 	int r;
 
-  int flags = ARCHIVE_EXTRACT_TIME;
-  flags |= ARCHIVE_EXTRACT_PERM;
-  flags |= ARCHIVE_EXTRACT_ACL;
-  flags |= ARCHIVE_EXTRACT_FFLAGS;
+    int flags = ARCHIVE_EXTRACT_TIME;
+    flags |= ARCHIVE_EXTRACT_PERM;
+    flags |= ARCHIVE_EXTRACT_ACL;
+    flags |= ARCHIVE_EXTRACT_FFLAGS;
 
 	a = archive_read_new();
 	ext = archive_write_disk_new();
 	archive_write_disk_set_options(ext, flags);
-  archive_write_disk_set_standard_lookup(ext);
+    archive_write_disk_set_standard_lookup(ext);
 
 	if (archive_read_support_format_tar(a) != ARCHIVE_OK)
       extractComplete = false;
 
-  if (archive_read_support_filter_gzip(a) != ARCHIVE_OK)
+    if (archive_read_support_filter_gzip(a) != ARCHIVE_OK)
         extractComplete = false;
 
-  r = archive_read_open_filename(a, filename.string().c_str(), 10240);
+    r = archive_read_open_filename(a, filename.string().c_str(), 10240);
 	if (r != ARCHIVE_OK) {
-      LogPrintf("archive_read_open_filename() %s %d\n",archive_error_string(a), r);
-      extractComplete = false;
-  }
+        LogPrintf("archive_read_open_filename() %s %d\n",archive_error_string(a), r);
+        extractComplete = false;
+    }
 
-  if (extractComplete) {
-      for (;;) {
-          r = archive_read_next_header(a, &entry);
-          if (r == ARCHIVE_EOF) {
-              break;
-          }
-          if (r != ARCHIVE_OK) {
-              LogPrintf("archive_read_next_header() %s %d\n",archive_error_string(a), r);
-              extractComplete = false;
-              break;
-          }
+    if (extractComplete) {
+        for (;;) {
+            r = archive_read_next_header(a, &entry);
+            if (r == ARCHIVE_EOF) {
+                break;
+            }
+            if (r != ARCHIVE_OK) {
+                LogPrintf("archive_read_next_header() %s %d\n",archive_error_string(a), r);
+                extractComplete = false;
+                break;
+            }
 
-          const char* currentFile = archive_entry_pathname(entry);
-          std::string path = GetDataDir().string() + "/" + currentFile;
-          std::string uiMessage = "Extracting Bootstrap file ";
-          uiMessage.append(currentFile);
-          uiInterface.InitMessage(_(uiMessage.c_str()));
-          archive_entry_set_pathname(entry, path.c_str());
-          r = archive_write_header(ext, entry);
-          if (r != ARCHIVE_OK) {
-              LogPrintf("archive_write_header() %s %d\n",archive_error_string(ext), r);
-              extractComplete = false;
-              break;
-          } else {
-              copy_data(a, ext);
-              r = archive_write_finish_entry(ext);
-              if (r != ARCHIVE_OK) {
-                  LogPrintf("archive_write_finish_entry() %s %d\n",archive_error_string(ext), r);
-                  extractComplete = false;
-                  break;
-              }
-          }
-      }
-  }
+            const char* currentFile = archive_entry_pathname(entry);
+            std::string path = GetDataDir().string() + "/" + currentFile;
+            std::string uiMessage = "Extracting Bootstrap file ";
+            uiMessage.append(currentFile);
+            uiInterface.InitMessage(_(uiMessage.c_str()));
+            archive_entry_set_pathname(entry, path.c_str());
+            r = archive_write_header(ext, entry);
+            if (r != ARCHIVE_OK) {
+                LogPrintf("archive_write_header() %s %d\n",archive_error_string(ext), r);
+                extractComplete = false;
+                break;
+            } else {
+                copy_data(a, ext);
+                r = archive_write_finish_entry(ext);
+                if (r != ARCHIVE_OK) {
+                    LogPrintf("archive_write_finish_entry() %s %d\n",archive_error_string(ext), r);
+                    extractComplete = false;
+                    break;
+                }
+            }
+        }
+    }
 
 	archive_read_close(a);
 	archive_read_free(a);
 
 	archive_write_close(ext);
-  archive_write_free(ext);
+    archive_write_free(ext);
 
 	return extractComplete;
 }

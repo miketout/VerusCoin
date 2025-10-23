@@ -9,6 +9,8 @@ const int32_t numVersions = 2;
 CActivationHeight CConstVerusSolutionVector::activationHeight = CActivationHeight();
 CConstVerusSolutionVector CVerusSolutionVector::solutionTools;
 
+bool CCompactSolutionVector::useCompression = true;
+
 void CConstVerusSolutionVector::SetPBaaSHeader(std::vector<unsigned char> &vch, const CPBaaSBlockHeader &pbh, int32_t idx)
 {
     if (idx < GetDescriptor(vch).numPBaaSHeaders)

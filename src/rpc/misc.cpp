@@ -31,6 +31,7 @@
 #include <fstream>
 #include <ostream>
 #include <algorithm>
+#include <boost/filesystem.hpp>
 
 using namespace std;
 
@@ -107,8 +108,11 @@ UniValue getinfo(const UniValue& params, bool fHelp)
 
     proxyType proxy;
     GetProxy(NET_IPV4, proxy);
-    notarized_height = komodo_notarized_height(&prevMoMheight,&notarized_hash,&notarized_desttxid);
+
+    //notarized_height = komodo_notarized_height(&prevMoMheight,&notarized_hash,&notarized_desttxid);
     //fprintf(stderr,"after notarized_height %u\n",(uint32_t)time(NULL));
+
+    CProofRoot confirmedRoot = ConnectedChains.FinalizedChainRoot();
 
     UniValue obj(UniValue::VOBJ);
     obj.push_back(Pair("VRSCversion", VERUS_VERSION));
@@ -120,18 +124,11 @@ UniValue getinfo(const UniValue& params, bool fHelp)
         obj.push_back(Pair("notarychainid", EncodeDestination(CIdentityID(ConnectedChains.FirstNotaryChain().GetID()))));
     }
     obj.push_back(Pair("name", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
-    obj.push_back(Pair("notarized", notarized_height));
-    obj.push_back(Pair("prevMoMheight", prevMoMheight));
-    obj.push_back(Pair("notarizedhash", notarized_hash.ToString()));
-    obj.push_back(Pair("notarizedtxid", notarized_desttxid.ToString()));
-    txid_height = notarizedtxid_height(ASSETCHAINS_SYMBOL[0] != 0 ? (char *)"KMD" : (char *)"BTC",(char *)notarized_desttxid.ToString().c_str(),&kmdnotarized_height);
-    if ( txid_height > 0 )
-        obj.push_back(Pair("notarizedtxid_height", txid_height));
-    else obj.push_back(Pair("notarizedtxid_height", "mempool"));
-    if ( ASSETCHAINS_SYMBOL[0] != 0 )
-        obj.push_back(Pair("KMDnotarized_height", kmdnotarized_height));
-    obj.push_back(Pair("notarized_confirms", txid_height < kmdnotarized_height ? (kmdnotarized_height - txid_height + 1) : 0));
-    //fprintf(stderr,"after notarized_confirms %u\n",(uint32_t)time(NULL));
+    if (confirmedRoot.IsValid())
+    {
+        obj.push_back(Pair("notarizedroot", confirmedRoot.ToUniValue()));
+    }
+
 #ifdef ENABLE_WALLET
     if (pwalletMain) {
         obj.push_back(Pair("walletversion", pwalletMain->GetVersion()));
@@ -237,7 +234,9 @@ UniValue getinfo(const UniValue& params, bool fHelp)
                 }
             }
             if (ASSETCHAINS_LASTERA > 0)
-                obj.push_back(Pair("eras", ASSETCHAINS_LASTERA + 1));
+            {
+                obj.pushKV("eras", ((int)ASSETCHAINS_LASTERA) + 1);
+            }
             obj.push_back(Pair("reward", acReward));
             obj.push_back(Pair("halving", acHalving));
             obj.push_back(Pair("decay", acDecay));
@@ -530,7 +529,7 @@ public:
         obj.push_back(Pair("transmissionkey", zaddr.pk_enc.GetHex()));
 #ifdef ENABLE_WALLET
         if (pwalletMain) {
-            obj.push_back(Pair("ismine", pwalletMain->HaveSproutSpendingKey(zaddr)));
+            obj.push_back(Pair("ismine", HaveSpendingKeyForPaymentAddress(pwalletMain)(zaddr)));
         }
 #endif
         return obj;
@@ -543,12 +542,7 @@ public:
         obj.push_back(Pair("diversifiedtransmissionkey", zaddr.pk_d.GetHex()));
 #ifdef ENABLE_WALLET
         if (pwalletMain) {
-            libzcash::SaplingIncomingViewingKey ivk;
-            libzcash::SaplingExtendedFullViewingKey extfvk;
-            bool isMine = pwalletMain->GetSaplingIncomingViewingKey(zaddr, ivk) &&
-                pwalletMain->GetSaplingFullViewingKey(ivk, extfvk) &&
-                pwalletMain->HaveSaplingSpendingKey(extfvk);
-            obj.push_back(Pair("ismine", isMine));
+            obj.push_back(Pair("ismine", HaveSpendingKeyForPaymentAddress(pwalletMain)(zaddr)));
         }
 #endif
         return obj;
@@ -710,29 +704,43 @@ UniValue createmultisig(const UniValue& params, bool fHelp)
 
 uint256 HashFile(const std::string &filepath, CNativeHashWriter &ss)
 {
-    ifstream ifs = ifstream(filepath, std::ios::binary | std::ios::in);
-    if (ifs.is_open() && !ifs.eof())
+    if (!boost::filesystem::exists(filepath))
     {
-        std::vector<char> vch(4096);
-        int readNum = 0;
-        do
-        {
-            readNum = ifs.readsome(&vch[0], vch.size());
-            if (readNum)
-            {
-                ss.write(&vch[0], readNum);
-            }
-        } while (readNum != 0 && !ifs.eof());
-
-        ifs.close();
-
-        return ss.GetHash();
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + filepath);
     }
-    return uint256();
+
+    std::ifstream ifs(filepath, std::ios::binary | std::ios::in);
+    if (!ifs)
+    {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot open file " + filepath);
+    }
+
+    std::vector<char> vch(64 * 1024);
+
+    while (ifs)
+    {
+        ifs.read(vch.data(), vch.size());
+        std::streamsize readNum = ifs.gcount();
+        if (ifs.bad())
+        {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error while reading file " + filepath);
+        }
+        if (readNum > 0)
+        {
+            ss.write(vch.data(), static_cast<size_t>(readNum));
+        }
+   }
+
+    return ss.GetHash();
 }
 
 uint256 HashFile(const std::string &filepath)
 {
+    if (!GetBoolArg("-enablefileencryption", true))
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + filepath + " for data output");
+    }
+
     CNativeHashWriter hw(CCurrencyDefinition::EHashTypes::HASH_SHA256);
     return HashFile(filepath, hw);
 }
@@ -2170,12 +2178,12 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
         );
 
 
-    UniValue startValue = find_value(params[0].get_obj(), "start");
-    UniValue endValue = find_value(params[0].get_obj(), "end");
-
     bool includeChainInfo = uni_get_bool(find_value(params[0].get_obj(), "chaininfo"));
     bool friendlyNames = uni_get_bool(find_value(params[0].get_obj(), "friendlynames"));
     int verbosity = uni_get_bool(find_value(params[0].get_obj(), "verbosity"));
+
+    UniValue startValue = find_value(params[0].get_obj(), "start");
+    UniValue endValue = find_value(params[0].get_obj(), "end");
 
     int start = 0;
     int end = 0;
@@ -2315,13 +2323,14 @@ UniValue getaddressbalance(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
     bool friendlyNames = uni_get_bool(find_value(params[0].get_obj(), "friendlynames"));
+    int32_t asOfBlock = uni_get_int(find_value(params[0].get_obj(), "asofblock"));
 
     std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
 
     LOCK2(cs_main, mempool.cs);
 
     for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
-        if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
+        if (!GetAddressIndex((*it).first, (*it).second, addressIndex, 0, asOfBlock)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
     }

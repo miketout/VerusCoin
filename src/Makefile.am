@@ -48,7 +48,8 @@ BITCOIN_INCLUDES += -I$(srcdir)/cryptoconditions/src
 BITCOIN_INCLUDES += -I$(srcdir)/cryptoconditions/src/asn
 BITCOIN_INCLUDES += -I$(srcdir)/univalue/include
 
-LIBBITCOIN_SERVER=libbitcoin_server.a -lcurl -larchive
+LIBCURL=-lcurl
+LIBBITCOIN_SERVER=libbitcoin_server.a $(LIBCURL) -larchive
 LIBBITCOIN_WALLET=libbitcoin_wallet.a
 LIBBITCOIN_COMMON=libbitcoin_common.a
 LIBBITCOIN_CLI=libbitcoin_cli.a
@@ -130,16 +131,15 @@ LIBZCASH_H = \
   zcash/IncrementalMerkleTree.hpp \
   zcash/NoteEncryption.hpp \
   zcash/Address.hpp \
+  zcash/address/sapling.hpp \
+  zcash/address/sprout.hpp \
+  zcash/address/zip32.h \
   zcash/JoinSplit.hpp \
   zcash/Note.hpp \
   zcash/prf.h \
   zcash/Proof.hpp \
-  zcash/address/sapling.hpp \
-  zcash/address/sprout.hpp \
   zcash/util.h \
-  zcash/Zcash.h \
-  zcash/address/zip32.cpp \
-  zcash/address/zip32.h
+  zcash/Zcash.h
 
 .PHONY: FORCE check-symbols check-security
 # bitcoin core #
@@ -185,10 +185,6 @@ BITCOIN_CORE_H = \
   crypto/haraka_portable.h \
   crypto/verus_clhash.h \
   crypto/verus_hash.h \
-  crypto/sph_keccak.c \
-  crypto/sph_keccak.h \
-  crypto/keccak.c \
-  crypto/keccak.h \
   deprecation.h \
   hash.h \
   httprpc.h \
@@ -267,9 +263,9 @@ BITCOIN_CORE_H = \
   utiltime.h \
   validationinterface.h \
   version.h \
+  wallet/asyncrpcoperation_common.h \
   wallet/asyncrpcoperation_mergetoaddress.h \
-  wallet/asyncrpcoperation_saplingconsolidation.h \
-  wallet/asyncrpcoperation_sweeptoaddress.h \
+  wallet/asyncrpcoperation_saplingmigration.h \
   wallet/asyncrpcoperation_sendmany.h \
   wallet/asyncrpcoperation_shieldcoinbase.h \
   wallet/crypter.h \
@@ -340,10 +336,6 @@ libbitcoin_server_a_SOURCES = \
   crypto/verus_clhash.h \
   crypto/verus_hash.h \
   crypto/verus_hash.cpp \
-  crypto/sph_keccak.c \
-  crypto/sph_keccak.h \
-  crypto/keccak.c \
-  crypto/keccak.h \
   deprecation.cpp \
   httprpc.cpp \
   httpserver.cpp \
@@ -413,8 +405,7 @@ libbitcoin_wallet_a_SOURCES = \
   zcbenchmarks.h \
   wallet/asyncrpcoperation_common.cpp \
   wallet/asyncrpcoperation_mergetoaddress.cpp \
-  wallet/asyncrpcoperation_saplingconsolidation.cpp \
-  wallet/asyncrpcoperation_sweeptoaddress.cpp \
+  wallet/asyncrpcoperation_saplingmigration.cpp \
   wallet/asyncrpcoperation_sendmany.cpp \
   wallet/asyncrpcoperation_shieldcoinbase.cpp \
   wallet/crypter.cpp \
@@ -429,7 +420,6 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/wallet.cpp \
   wallet/wallet_ismine.cpp \
   wallet/walletdb.cpp \
-  zcash/address/zip32.cpp \
   $(BITCOIN_CORE_H) \
   $(LIBZCASH_H)
 
@@ -458,11 +448,7 @@ crypto_libbitcoin_crypto_a_SOURCES = \
   crypto/haraka.h \
   crypto/haraka_portable.h \
   crypto/verus_hash.h \
-  crypto/verus_hash.cpp \
-  crypto/sph_keccak.c \
-  crypto/sph_keccak.h \
-  crypto/keccak.c \
-  crypto/keccak.h
+  crypto/verus_hash.cpp
 
 if ENABLE_MINING
 EQUIHASH_TROMP_SOURCES = \
@@ -481,8 +467,8 @@ if ARCH_ARM
 crypto_libverus_crypto_a_CPPFLAGS = -O3 -g -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 crypto_libverus_crypto_a_CXXFLAGS = -O3 -Wno-error=attributes -Wint-conversion -g -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
 else
-crypto_libverus_crypto_a_CPPFLAGS = -O3 -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -mavx -maes -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_crypto_a_CXXFLAGS = -O3 -Wint-conversion -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -mavx -maes -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
+crypto_libverus_crypto_a_CPPFLAGS = -O3 -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+crypto_libverus_crypto_a_CXXFLAGS = -O3 -Wint-conversion -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
 endif
 
 crypto_libverus_crypto_a_SOURCES = \
@@ -526,10 +512,6 @@ libbitcoin_common_a_SOURCES = \
   crypto/verus_clhash.h \
   crypto/verus_hash.h \
   crypto/verus_hash.cpp \
-  crypto/sph_keccak.c \
-  crypto/sph_keccak.h \
-  crypto/keccak.c \
-  crypto/keccak.h \
   hash.cpp \
   importcoin.cpp \
   key.cpp \
@@ -609,10 +591,6 @@ verusd_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 verusd_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 verusd_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
 
-if TARGET_DARWIN
-verusd_LDFLAGS += -static-libgcc
-endif
-
 if TARGET_WINDOWS
 verusd_SOURCES += bitcoind-res.rc
 endif
@@ -662,10 +640,6 @@ verus_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
 verus_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 verus_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
 
-if TARGET_DARWIN
-verus_LDFLAGS += -static-libgcc
-endif
-
 # wallet-utility binary #
 if ENABLE_WALLET
 wallet_utility_SOURCES = wallet-utility.cpp
@@ -697,7 +671,8 @@ if ENABLE_WALLET
 wallet_utility_LDADD = \
 	$(LIBBITCOIN_WALLET) \
 	$(LIBBITCOIN_COMMON) \
-  $(LIBUNIVALUE) \
+	$(LIBCURL) \
+    $(LIBUNIVALUE) \
 	$(LIBBITCOIN_CRYPTO) \
 	$(LIBVERUS_CRYPTO) \
 	$(LIBVERUS_PORTABLE_CRYPTO) \
@@ -737,7 +712,7 @@ verus_tx_LDADD = \
   $(LIBZCASH_LIBS) \
   $(LIBCRYPTOCONDITIONS)
 
-verus_tx_LDADD += $(BOOST_LIBS) $(CRYPTO_LIBS)
+verus_tx_LDADD += $(BOOST_LIBS) $(CRYPTO_LIBS) $(LIBCURL)
 #
 
 # zcash protocol primitives #
@@ -745,12 +720,13 @@ libzcash_a_SOURCES = \
 	zcash/IncrementalMerkleTree.cpp \
 	zcash/NoteEncryption.cpp \
 	zcash/Address.cpp \
+	zcash/address/sapling.cpp \
+    zcash/address/sprout.cpp \
+    zcash/address/zip32.cpp \
 	zcash/JoinSplit.cpp \
 	zcash/Proof.cpp \
 	zcash/Note.cpp \
 	zcash/prf.cpp \
-	zcash/address/sapling.cpp \
-	zcash/address/sprout.cpp \
 	zcash/util.cpp \
     zcash/address/zip32.cpp
 
@@ -796,7 +772,7 @@ libtls_a_SOURCES = \
     tls/utiltls.cpp\
     tls/tlsmanager.cpp
 
-libtls_a_CPPFLAGS = -DMULTICORE -fopenmp -fPIC -DBINARY_OUTPUT -DCURVE_ALT_BN128 -DBOOST_SPIRIT_THREADSAFE -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS $(HARDENED_CPPFLAGS) -pipe -O2 -g  -Wstack-protector -fstack-protector-all -fPIE -fvisibility=hidden -DSTATIC $(BITCOIN_INCLUDES)
+libtls_a_CPPFLAGS = -DMULTICORE -fPIC -DBINARY_OUTPUT -DCURVE_ALT_BN128 -DBOOST_SPIRIT_THREADSAFE -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS $(HARDENED_CPPFLAGS) -pipe -O2 -g  -Wstack-protector -fstack-protector-all -fPIE -fvisibility=hidden -DSTATIC $(BITCOIN_INCLUDES)
 
 libtls_a_CXXFLAGS = $(HARDENED_CXXFLAGS) -fwrapv -fno-strict-aliasing
 

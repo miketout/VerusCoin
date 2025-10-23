@@ -391,6 +391,7 @@ public:
     // Set of transaction ids we still have to announce.
     // They are sorted by the mempool before relay, so the order is not important.
     std::set<uint256> setInventoryTxToSend;
+
     // List of block ids we still have to announce.
     // There is no final sorting before sending, as they are always sent immediately
     // and in the order requested.
@@ -412,6 +413,8 @@ public:
     std::atomic<int64_t> nMinPingUsecTime;
     // Whether a ping is requested.
     std::atomic<bool> fPingQueued;
+
+    std::set<uint256> orphan_work_set;
 
     CNode(SOCKET hSocketIn, const CAddress &addrIn, const std::string &addrNameIn = "", bool fInboundIn = false, SSL *sslIn = NULL);
     ~CNode();
@@ -730,7 +733,7 @@ public:
         }
     }
 
-    void CloseSocketDisconnect();
+    void CloseSocketDisconnect(bool sendShutDownSSL = true);
 
     // Denial-of-service detection/prevention
     // The idea is to detect peers that are behaving

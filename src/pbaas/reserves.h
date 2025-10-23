@@ -41,16 +41,7 @@ class CPBaaSNotarization;
 extern uint160 ASSETCHAINS_CHAINID;
 
 
-extern uint32_t PBAAS_TESTFORK2_TIME;
 extern uint32_t PBAAS_ENFORCE_CORRECT_EVIDENCE_TIME;
-extern uint32_t PBAAS_TESTFORK3_TIME;
-extern uint32_t PBAAS_TESTFORK4_TIME;
-extern uint32_t PBAAS_TESTFORK5_TIME;
-extern uint32_t PBAAS_TESTFORK6_TIME;
-extern uint32_t PBAAS_TESTFORK7_TIME;
-extern uint32_t PBAAS_TESTFORK8_TIME;
-extern uint32_t PBAAS_TESTFORK9_TIME;
-extern uint32_t PBAAS_TESTFORK10_TIME;
 extern uint32_t PBAAS_MAINDEFI3_HEIGHT;
 extern uint32_t PBAAS_CLEARCONVERT_HEIGHT;
 extern uint32_t PBAAS_LASTKNOWNCLEARORACLE_HEIGHT;
@@ -959,7 +950,7 @@ public:
     std::vector<CReserveTransfer> &reserveTransfers,
     CCurrencyDefinition::EProofProtocol hashType
     */
-    static LRUCache<CUTXORef, std::tuple<int, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol>>
+    static LRUCache<CUTXORef, std::tuple<int, CCrossChainExport, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol>>
         exportInfoCache;
 
     uint16_t nVersion;                          // current version
@@ -1330,7 +1321,7 @@ public:
     template<typename cpp_dec_float_type>
     static bool to_int64(const cpp_dec_float_type &input, int64_t &outval)
     {
-        std::stringstream ss(input.str(0, std::ios_base::fmtflags::_S_fixed));
+        std::stringstream ss(input.str(0, std::ios_base::fixed));
         try
         {
             ss >> outval;
@@ -1355,30 +1346,31 @@ public:
     // convert amounts for multi-reserve fractional reserve currencies
     // one entry in the vector for each currency in and one fractional input for each
     // currency expected as output
-    std::vector<CAmount> ConvertAmounts(const std::vector<CAmount> &inputReserve,    // reserves to convert to fractional
+    std::vector<CAmount> ConvertAmounts(const std::vector<CAmount> &inputReserve,       // reserves to convert to fractional
                                         const std::vector<CAmount> &inputFractional,    // fractional to convert to each reserve
                                         CCurrencyState &newState,
+                                        bool promoteExchangeRate,                       // true to compensate for library issue & false to remain compatible with on-chain data
+                                        bool layerFixActive,                            // true to enable layer calc fix
                                         CValidationState &validationState,
                                         const std::vector<std::vector<CAmount>> *pCrossConversions=nullptr,
                                         std::vector<CAmount> *pViaPrices=nullptr) const;
 
-    CAmount CalculateConversionFee(CAmount inputAmount, bool convertToNative = false, int32_t reserveIndex=0) const;
-    CAmount ReserveFeeToNative(CAmount inputAmount, CAmount outputAmount, int32_t reserveIndex=0) const;
+    CAmount CalculateConversionFee(CAmount inputAmount, bool convertToNative=false, int32_t reserveIndex=0) const;
 
-    CAmount ReserveToNative(CAmount reserveAmount, int32_t reserveIndex) const;
+    CAmount ReserveToNative(CAmount reserveAmount, int32_t reserveIndex, bool promoteExchangeRate=true) const;
     CAmount ReserveToNative(const CCurrencyValueMap &reserveAmounts) const;
 
     static CAmount ReserveToNativeRaw(CAmount reserveAmount, const cpp_dec_float_50 &exchangeRate);
-    static CAmount ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate);
+    static CAmount ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate, bool promoteExchangeRate=true);
     static CAmount ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, const std::vector<uint160> &currencies, const std::vector<CAmount> &exchangeRates);
     static CAmount ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, const std::vector<uint160> &currencies, const std::vector<cpp_dec_float_50> &exchangeRates);
     CAmount ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, const std::vector<CAmount> &exchangeRates) const;
 
     const CCurrencyValueMap &NativeToReserve(std::vector<CAmount> nativeAmount, int32_t reserveIndex=0) const;
-    CAmount NativeToReserve(CAmount nativeAmount, int32_t reserveIndex=0) const;
+    CAmount NativeToReserve(CAmount nativeAmount, int32_t reserveIndex=0, bool promoteExchangeRate=true) const;
     static CAmount NativeToReserveRaw(CAmount nativeAmount, const cpp_dec_float_50 &exchangeRate);
-    static CAmount NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate);
-    static CAmount NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate);
+    static CAmount NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate=true);
+    static CAmount NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate=true);
     CCurrencyValueMap NativeToReserveRaw(const std::vector<CAmount> &, const std::vector<CAmount> &exchangeRates) const;
     CCurrencyValueMap NativeToReserveRaw(const std::vector<CAmount> &, const std::vector<cpp_dec_float_50> &exchangeRates) const;
 
@@ -1750,7 +1742,8 @@ public:
         IS_IDENTITY_DEFINITION=0x400,           // If set, this is an identity definition
         IS_HIGH_FEE=0x800,                      // If set, this may have "absurdly high fees"
         IS_CURRENCY_DEFINITION=0x1000,          // If set, this is a currency definition
-        IS_CHAIN_NOTARIZATION=0x2000            // If set, this is to do with primary chain notarization and connection
+        IS_CHAIN_NOTARIZATION=0x2000,            // If set, this is to do with primary chain notarization and connection
+        IS_EVIDENCE_STORAGE=0x4000              // If set, this is evidence or storage
     };
 
     enum ESubIndexCodes {
@@ -1793,6 +1786,8 @@ public:
     bool IsExport() const { return flags & IS_EXPORT; }
     bool IsCurrencyDefinition() const { return flags & IS_CURRENCY_DEFINITION; }
     bool IsNotaryPrioritized() const { return flags & IS_CHAIN_NOTARIZATION; }
+    bool IsEvidenceOrStorage() const { return flags & IS_EVIDENCE_STORAGE; }
+    bool IsStorage() const { return IsEvidenceOrStorage() && !(IsImport() || IsNotaryPrioritized()); }
     bool IsIdentityDefinition() const { return flags & IS_IDENTITY_DEFINITION; }
     bool IsHighFee() const { return flags & IS_HIGH_FEE; }
 
@@ -1858,6 +1853,72 @@ public:
                                          const CTransferDestination &blockNotarizer=CTransferDestination(),
                                          const uint256 &entropy=uint256(),
                                          bool finalValidityCheck=false);
+};
+
+// FIFO cost basis tracker, could be changed to have FIFO, LIFO, etc.
+// Supports storing and retrieving currencies by a combination of currency and block time, and keeping
+// association with cost basis and amounts
+class CCostBasisTracker
+{
+public:
+    std::multimap<std::pair<uint160,uint32_t>,std::pair<int64_t,int64_t>> costBasisMap;
+
+    CCostBasisTracker() {}
+    CCostBasisTracker(const UniValue &uni);
+    void PutCurrency(const uint160 &currencyID, uint32_t blockTime, int64_t costBasis, int64_t amount);
+    std::vector<std::tuple<uint32_t, int64_t, int64_t>> TakeCurrency(const uint160 &currencyID, int64_t amount, int64_t &amountLeft);
+    UniValue ToUniValue() const;
+
+    static std::string FiatDefaultName()
+    {
+        return "dai.veth";
+    }
+
+    static uint160 FiatDefault();
+
+    int64_t GetNativeCostBasisFiat(const CPBaaSNotarization &importNotarization, const std::map<std::string, int64_t> &nativePriceMap, uint32_t blockTime, uint32_t nHeight, const uint160 &fiatCurrency=FiatDefault()) const;
+
+    int64_t GetConversionCostBasisNative(const CPBaaSNotarization &importNotarization, const uint160 &convertToCurrencyID, uint32_t nHeight) const;
+};
+
+// consider keeping ordered list of:
+// short term transactions
+// long term transactions
+class CEarningsTracker
+{
+public:
+    enum {
+        defaultShortLongTermThresholdSeconds = 31536000
+    };
+    uint160 fiatCurrencyID;
+    uint32_t shortLongTermThresholdSeconds;
+    CCurrencyValueMap validationEarnings;
+    int64_t validationEarningsFiat;
+    int64_t feesInFiat;
+    CCurrencyValueMap shortTermGainLoss;
+    int64_t shortTermGainLossFiat;
+    CCurrencyValueMap longTermGainLoss;
+    int64_t longTermGainLossFiat;
+
+    CEarningsTracker(const uint160 &FiatCurrency=CCostBasisTracker::FiatDefault(), uint32_t ShortLongThresholdSeconds=defaultShortLongTermThresholdSeconds) :
+        fiatCurrencyID(FiatCurrency), shortLongTermThresholdSeconds(ShortLongThresholdSeconds), validationEarningsFiat(0), feesInFiat(0), shortTermGainLossFiat(0), longTermGainLossFiat(0) {}
+
+    CEarningsTracker(const UniValue &uni);
+
+    uint160 FiatCurrencyID() const;
+
+    UniValue ToUniValue() const;
+
+    void AddValidationEarnings(uint160 originalCurrencyIn, int64_t amountOrig, int64_t valueFiat);
+
+    void AddFees(int64_t valueFiat)
+    {
+        feesInFiat += valueFiat;
+    }
+
+    void AddShortTerm(int64_t valueFiat);
+
+    void AddLongTerm(int64_t valueFiat);
 };
 
 struct CCcontract_info;

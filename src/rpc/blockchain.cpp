@@ -24,6 +24,7 @@
 #include "script/standard.h"
 #include "wallet/wallet.h"
 #include "pbaas/pbaas.h"
+#include "pbaas/notarization.h"
 
 #include <stdint.h>
 
@@ -147,7 +148,7 @@ UniValue blockheaderToJSON(const CBlockIndex* blockindex)
     result.push_back(Pair("finalsaplingroot", blockindex->hashFinalSaplingRoot.GetHex()));
     result.push_back(Pair("time", (int64_t)blockindex->nTime));
     result.push_back(Pair("nonce", blockindex->nNonce.GetHex()));
-    result.push_back(Pair("solution", HexStr(blockindex->nSolution)));
+    result.push_back(Pair("solution", HexStr(blockindex->nSolution.nSolution())));
     result.push_back(Pair("bits", strprintf("%08x", blockindex->nBits)));
     result.push_back(Pair("difficulty", GetDifficulty(blockindex)));
     result.push_back(Pair("chainwork", blockindex->chainPower.chainWork.GetHex()));
@@ -404,8 +405,7 @@ UniValue getblockcount(const UniValue& params, bool fHelp)
             + HelpExampleRpc("getblockcount", "")
         );
 
-    LOCK(cs_main);
-    return chainActive.Height();
+    return chainActive.LastTip() ? chainActive.LastTip()->GetHeight() : 0;
 }
 
 UniValue getbestblockhash(const UniValue& params, bool fHelp)
@@ -548,6 +548,44 @@ UniValue getrawmempool(const UniValue& params, bool fHelp)
         fVerbose = params[0].get_bool();
 
     return mempoolToJSON(fVerbose);
+}
+
+extern LRUCache<CUTXORef, std::tuple<uint256, CTransaction, std::vector<std::pair<CObjectFinalization, CNotaryEvidence>>>> finalizationEvidenceCache;
+extern LRUCache<std::pair<uint256, uint32_t>, std::tuple<uint256, CInputDescriptor, CReserveTransfer>> reserveTransferCache;
+extern LRUCache<std::tuple<int, uint256, uint160>, std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>>> OfferMapCache;
+extern LRUCache<std::tuple<uint160, uint256, uint32_t>, std::vector<CInputDescriptor>> chainTransferCache;
+extern LRUCache<std::tuple<uint256, uint32_t, uint32_t, CUTXORef, uint160, uint160>, CCurrencyValueMap> priorConversionCache;
+
+void ClearMainCaches()
+{
+    finalizationEvidenceCache.Clear();
+    reserveTransferCache.Clear();
+    OfferMapCache.Clear();
+    chainTransferCache.Clear();
+    priorConversionCache.Clear();
+}
+
+UniValue clearrawmempool(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() > 0)
+        throw runtime_error(
+            "clearrawmempool\n"
+            "\nClear the mempool of all transactions on this node.\n"
+            "\nArguments:\n"
+            "   none\n"
+            "\nResult:\n"
+            "   none on success\n"
+            "\n"
+            "\nExamples\n"
+            + HelpExampleCli("clearrawmempool", "")
+            + HelpExampleRpc("clearrawmempool", "")
+        );
+
+    LOCK2(cs_main, mempool.cs);
+
+    mempool.clear();
+    ClearMainCaches();
+    return NullUniValue;
 }
 
 UniValue getblockdeltas(const UniValue& params, bool fHelp)
@@ -1985,6 +2023,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "getdifficulty",          &getdifficulty,          true  },
     { "blockchain",         "getmempoolinfo",         &getmempoolinfo,         true  },
     { "blockchain",         "getrawmempool",          &getrawmempool,          true  },
+    { "blockchain",         "clearrawmempool",        &clearrawmempool,        true  },
     { "blockchain",         "gettxout",               &gettxout,               true  },
     { "blockchain",         "gettxoutsetinfo",        &gettxoutsetinfo,        true  },
     { "blockchain",         "verifychain",            &verifychain,            true  },
