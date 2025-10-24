@@ -742,7 +742,7 @@ double CCoinsViewCache::GetPriority(const CTransaction &tx, int nHeight, const C
     // use the maximum priority for all (partially or fully) shielded transactions.
     // (Note that coinbase transactions cannot contain JoinSplits, or Sapling shielded Spends or Outputs.)
 
-    if (tx.vJoinSplit.size() > 0 || tx.vShieldedSpend.size() > 0 || tx.vShieldedOutput.size() > 0 || tx.IsCoinImport()) {
+    if (tx.vJoinSplit.size() > 0 || tx.vShieldedSpend.size() > 0 || tx.vShieldedOutput.size() > 0 ) {
         return MAX_PRIORITY;
     }
 

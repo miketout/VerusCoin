@@ -1049,7 +1049,7 @@ unsigned int GetLegacySigOpCount(const CTransaction& tx)
 
 unsigned int GetP2SHSigOpCount(const CTransaction& tx, const CCoinsViewCache& inputs)
 {
-    if (tx.IsCoinBase() || tx.IsCoinImport())
+    if (tx.IsCoinBase())
         return 0;
 
     unsigned int nSigOps = 0;
@@ -2421,17 +2421,14 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
             mempool.PrioritiseReserveTransaction(txDesc);
         }
 
-        if (!tx.IsCoinImport())
-        {
-            // Add memory address index
-            if (fAddressIndex) {
-                pool.addAddressIndex(entry, view);
-            }
+        // Add memory address index
+        if (fAddressIndex) {
+            pool.addAddressIndex(entry, view);
+        }
 
-            // Add memory spent index
-            if (fSpentIndex) {
-                pool.addSpentIndex(entry, view);
-            }
+        // Add memory spent index
+        if (fSpentIndex) {
+            pool.addSpentIndex(entry, view);
         }
     }
 
