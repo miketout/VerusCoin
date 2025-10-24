@@ -8522,41 +8522,6 @@ int32_t ensure_CCrequirements()
     else return(0);
 }
 
-UniValue CCaddress(struct CCcontract_info *cp,char *name,std::vector<unsigned char> &pubkey)
-{
-    UniValue result(UniValue::VOBJ); char destaddr[64],str[64]; CPubKey pk;
-    pk = GetUnspendable(cp,0);
-    GetCCaddress(cp,destaddr,pk);
-    if ( strcmp(destaddr,cp->unspendableCCaddr) != 0 )
-    {
-        uint8_t priv[32];
-        Myprivkey(priv); // it is assumed the CC's normal address'es -pubkey was used
-        fprintf(stderr,"fix mismatched CCaddr %s -> %s\n",cp->unspendableCCaddr,destaddr);
-        strcpy(cp->unspendableCCaddr,destaddr);
-    }
-    result.push_back(Pair("result", "success"));
-    sprintf(str,"%sCCaddress",name);
-    result.push_back(Pair(str,cp->unspendableCCaddr));
-    sprintf(str,"%smarker",name);
-    result.push_back(Pair(str,cp->normaladdr));
-    result.push_back(Pair("GatewaysPubkey","03ea9c062b9652d8eff34879b504eda0717895d27597aaeb60347d65eed96ccb40"));
-    if ( _GetCCaddress(destaddr,EVAL_ASSETS,pubkey2pk(pubkey)) > 0 )
-    {
-        sprintf(str,"%sCCassets",name);
-        result.push_back(Pair(str,destaddr));
-    }
-    if ( pubkey.size() == 33 )
-    {
-        if ( GetCCaddress(cp,destaddr,pubkey2pk(pubkey)) != 0 )
-            result.push_back(Pair("CCaddress",destaddr));
-    }
-    if ( GetCCaddress(cp,destaddr,pubkey2pk(Mypubkey())) != 0 )
-        result.push_back(Pair("myCCaddress",destaddr));
-    if ( Getscriptaddress(destaddr,(CScript() << Mypubkey() << OP_CHECKSIG)) != 0 )
-        result.push_back(Pair("myaddress",destaddr));
-    return(result);
-}
-
 extern UniValue dumpprivkey(const UniValue& params, bool fHelp); // in rpcdump.cpp
 extern UniValue importprivkey(const UniValue& params, bool fHelp);
 extern UniValue rescanfromheight(const UniValue& params, bool fHelp);
