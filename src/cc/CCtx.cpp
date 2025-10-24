@@ -104,34 +104,3 @@ int64_t CCaddress_balance(char *coinaddr)
     }
     return(sum);
 }
-
-int64_t CCfullsupply(uint256 tokenid)
-{
-    uint256 hashBlock; int32_t numvouts; CTransaction tx; std::vector<uint8_t> origpubkey; std::string name,description;
-    if ( GetTransaction(tokenid,tx,hashBlock,false) != 0 && (numvouts= tx.vout.size()) > 0 )
-    {
-        if ( DecodeAssetCreateOpRet(tx.vout[numvouts-1].scriptPubKey,origpubkey,name,description) > 0 )
-        {
-            return(tx.vout[0].nValue);
-        }
-    }
-    return(0);
-}
-
-int64_t CCtoken_balance(char *coinaddr,uint256 tokenid)
-{
-    int64_t price,sum = 0; int32_t numvouts; CTransaction tx; uint256 assetid,assetid2,txid,hashBlock; std::vector<uint8_t> origpubkey; std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
-    SetCCunspents(unspentOutputs,coinaddr);
-    for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=unspentOutputs.begin(); it!=unspentOutputs.end(); it++)
-    {
-        txid = it->first.txhash;
-        if ( GetTransaction(txid,tx,hashBlock,false) != 0 && (numvouts= tx.vout.size()) > 0 )
-        {
-            if ( DecodeAssetOpRet(tx.vout[numvouts-1].scriptPubKey,assetid,assetid2,price,origpubkey) != 0 && assetid == tokenid )
-            {
-                sum += it->second.satoshis;
-            }
-        }
-    }
-    return(sum);
-}
