@@ -312,27 +312,6 @@ bool GetCCaddress1of2(struct CCcontract_info *cp,char *destaddr,CPubKey pk,CPubK
     return(destaddr[0] != 0);
 }
 
-bool ConstrainVout(CTxOut vout,int32_t CCflag,char *cmpaddr,int64_t nValue)
-{
-    char destaddr[64];
-    if ( vout.scriptPubKey.IsPayToCryptoCondition() != CCflag )
-    {
-        fprintf(stderr,"constrain vout error isCC %d vs %d CCflag\n",vout.scriptPubKey.IsPayToCryptoCondition(),CCflag);
-        return(false);
-    }
-    else if ( cmpaddr != 0 && (Getscriptaddress(destaddr,vout.scriptPubKey) == 0 || strcmp(destaddr,cmpaddr) != 0) )
-    {
-        fprintf(stderr, "constrain vout error addr %s vs %s\n", cmpaddr != 0 ? cmpaddr : "", destaddr);
-        return(false);
-    }
-    else if ( nValue != 0 && nValue != vout.nValue ) //(nValue == 0 && vout.nValue < 10000) || (
-    {
-        fprintf(stderr,"constrain vout error nValue %.8f vs %.8f\n",(double)nValue/COIN,(double)vout.nValue/COIN);
-        return(false);
-    }
-    else return(true);
-}
-
 CPubKey GetUnspendable(struct CCcontract_info *cp,uint8_t *unspendablepriv)
 {
     if ( unspendablepriv != 0 )
@@ -373,35 +352,5 @@ bool ProcessCC(struct CCcontract_info *cp, Eval* eval, std::vector<uint8_t> para
     }
     //fprintf(stderr,"invalid CC %02x\n",cp->evalcode);
     return(false);
-}
-
-int64_t CCduration(int32_t &numblocks,uint256 txid)
-{
-    CTransaction tx; uint256 hashBlock; uint32_t txheight,txtime=0; char str[65]; CBlockIndex *pindex; int64_t duration = 0;
-    numblocks = 0;
-    if ( myGetTransaction(txid,tx,hashBlock) == 0 )
-    {
-        fprintf(stderr,"CCduration cant find duration txid %s\n",uint256_str(str,txid));
-        return(0);
-    }
-    else if ( hashBlock == zeroid )
-    {
-        fprintf(stderr,"CCduration no hashBlock for txid %s\n",uint256_str(str,txid));
-        return(0);
-    }
-    else if ( (pindex= mapBlockIndex[hashBlock]) == 0 || (txtime= pindex->nTime) == 0 || (txheight= pindex->GetHeight()) <= 0 )
-    {
-        fprintf(stderr,"CCduration no txtime %u or txheight.%d %p for txid %s\n",txtime,txheight,pindex,uint256_str(str,txid));
-        return(0);
-    }
-    else if ( (pindex= chainActive.LastTip()) == 0 || pindex->nTime < txtime || pindex->GetHeight() <= txheight )
-    {
-        fprintf(stderr,"CCduration backwards timestamps %u %u for txid %s hts.(%d %d)\n",(uint32_t)pindex->nTime,txtime,uint256_str(str,txid),txheight,(int32_t)pindex->GetHeight());
-        return(0);
-    }
-    numblocks = (pindex->GetHeight() - txheight);
-    duration = (pindex->nTime - txtime);
-    fprintf(stderr,"duration %d (%u - %u) numblocks %d (%d - %d)\n",(int32_t)duration,(uint32_t)pindex->nTime,txtime,numblocks,pindex->GetHeight(),txheight);
-    return(duration);
 }
 

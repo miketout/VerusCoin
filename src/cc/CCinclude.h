@@ -128,10 +128,8 @@ CPubKey pubkey2pk(std::vector<uint8_t> pubkey);
 bool _GetCCaddress(char *destaddr,uint8_t evalcode,CPubKey pk);
 bool GetCCaddress(struct CCcontract_info *cp,char *destaddr,CPubKey pk);
 bool GetCCaddress1of2(struct CCcontract_info *cp,char *destaddr,CPubKey pk,CPubKey pk2);
-bool ConstrainVout(CTxOut vout,int32_t CCflag,char *cmpaddr,int64_t nValue);
 bool Getscriptaddress(char *destaddr,const CScript &scriptPubKey);
 std::vector<uint8_t> Mypubkey();
-int64_t CCduration(int32_t &numblocks,uint256 txid);
 
 // curve25519 and sha256
 bits256 curve25519_shared(bits256 privkey,bits256 otherpub);
