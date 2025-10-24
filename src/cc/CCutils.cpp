@@ -19,16 +19,6 @@
  CCutils has low level functions that are universally useful for all contracts.
  */
 
-void endiancpy(uint8_t *dest,uint8_t *src,int32_t len)
-{
-    int32_t i,j=0;
-#if defined(WORDS_BIGENDIAN)
-    for (i=31; i>=0; i--)
-        dest[j++] = src[i];
-#else
-    memcpy(dest,src,len);
-#endif
-}
 
 CC *MakeCCcond1of2(uint8_t evalcode,CPubKey pk1,CPubKey pk2)
 {
@@ -290,16 +280,6 @@ bool GetCCParams(Eval* eval, const CTransaction &tx, uint32_t nIn,
     return false;
 }
 
-CPubKey CCtxidaddr(char *txidaddr,uint256 txid)
-{
-    uint8_t buf33[33]; CPubKey pk;
-    buf33[0] = 0x02;
-    endiancpy(&buf33[1],(uint8_t *)&txid,32);
-    pk = buf2pk(buf33);
-    Getscriptaddress(txidaddr,CScript() << ParseHex(HexStr(pk)) << OP_CHECKSIG);
-    return(pk);
-}
-
 bool _GetCCaddress(char *destaddr,uint8_t evalcode,CPubKey pk)
 {
     CC *payoutCond;
@@ -353,70 +333,13 @@ bool ConstrainVout(CTxOut vout,int32_t CCflag,char *cmpaddr,int64_t nValue)
     else return(true);
 }
 
-bool PreventCC(Eval* eval,const CTransaction &tx,int32_t preventCCvins,int32_t numvins,int32_t preventCCvouts,int32_t numvouts)
-{
-    int32_t i;
-    if ( preventCCvins >= 0 )
-    {
-        for (i=preventCCvins; i<numvins; i++)
-        {
-            if ( IsCCInput(tx.vin[i].scriptSig) != 0 )
-                return eval->Invalid("invalid CC vin");
-        }
-    }
-    if ( preventCCvouts >= 0 )
-    {
-        for (i=preventCCvouts; i<numvouts; i++)
-        {
-            if ( tx.vout[i].scriptPubKey.IsPayToCryptoCondition() != 0 )
-            {
-                fprintf(stderr,"vout.%d is CC\n",i);
-                return eval->Invalid("invalid CC vout");
-            }
-        }
-    }
-    return(true);
-}
-
-bool Myprivkey(uint8_t myprivkey[])
-{
-    char coinaddr[64]; std::string strAddress; char *dest; int32_t i,n; CBitcoinAddress address; CKeyID keyID; CKey vchSecret;
-    if ( Getscriptaddress(coinaddr,CScript() << Mypubkey() << OP_CHECKSIG) != 0 )
-    {
-        n = (int32_t)strlen(coinaddr);
-        strAddress.resize(n+1);
-        dest = (char *)strAddress.data();
-        for (i=0; i<n; i++)
-            dest[i] = coinaddr[i];
-        dest[i] = 0;
-        if ( address.SetString(strAddress) != 0 && address.GetKeyID(keyID) != 0 )
-        {
-#ifdef ENABLE_WALLET
-            if ( pwalletMain->GetKey(keyID,vchSecret) != 0 )
-            {
-                memcpy(myprivkey,vchSecret.begin(),32);
-                if ( 0 )
-                {
-                    for (i=0; i<32; i++)
-                        fprintf(stderr,"0x%02x, ",myprivkey[i]);
-                    fprintf(stderr," found privkey for %s!\n",dest);
-                }
-                return(true);
-            }
-#endif
-        }
-    }
-    fprintf(stderr,"privkey for the -pubkey= address is not in the wallet, importprivkey!\n");
-    return(false);
-}
-
 CPubKey GetUnspendable(struct CCcontract_info *cp,uint8_t *unspendablepriv)
 {
     if ( unspendablepriv != 0 )
         memcpy(unspendablepriv,cp->CCpriv,32);
     return(pubkey2pk(ParseHex(cp->CChexstr)));
 }
-
+// FIXME Alright used within Eval::Dispatch
 bool ProcessCC(struct CCcontract_info *cp, Eval* eval, std::vector<uint8_t> paramsNull,const CTransaction &ctx, unsigned int nIn, bool fulfilled)
 {
     CTransaction createTx; uint256 assetid,assetid2,hashBlock; uint8_t funcid; int32_t height,i,n,from_mempool = 0; int64_t amount; std::vector<uint8_t> origpubkey;
