@@ -158,9 +158,6 @@ bool Getscriptaddress(char *destaddr,const CScript &scriptPubKey);
 std::vector<uint8_t> Mypubkey();
 int64_t CCduration(int32_t &numblocks,uint256 txid);
 
-// CCtx
-bool SignTx(CMutableTransaction &mtx,int32_t vini,int64_t utxovalue,const CScript scriptPubKey);
-
 // curve25519 and sha256
 bits256 curve25519_shared(bits256 privkey,bits256 otherpub);
 bits256 curve25519_basepoint9();

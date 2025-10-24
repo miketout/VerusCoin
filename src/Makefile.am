@@ -301,7 +301,6 @@ libbitcoin_server_a_SOURCES = \
   bloom.cpp \
   cc/eval.cpp \
   cc/CCcustom.cpp \
-  cc/CCtx.cpp \
   cc/CCutils.cpp \
   cc/StakeGuard.cpp \
   cc/StakeGuard.h \
@@ -391,7 +390,6 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/paymentdisclosuredb.cpp \
   wallet/rpcdisclosure.cpp \
   wallet/rpcdump.cpp \
-  cc/CCtx.cpp \
   wallet/rpcwallet.cpp \
   wallet/wallet.cpp \
   wallet/wallet_ismine.cpp \
