@@ -80,25 +80,12 @@ bool myAddtomempool(CTransaction &tx, CValidationState *pstate = NULL, int32_t s
 //uint64_t myGettxout(uint256 hash,int32_t n);
 bool myIsutxo_spentinmempool(uint256 txid,int32_t vout);
 int32_t myIsutxo_spent(uint256 &spenttxid,uint256 txid,int32_t vout);
-bool mySendrawtransaction(std::string res);
 int32_t decode_hex(uint8_t *bytes,int32_t n,char *hex);
 int32_t iguana_rwnum(int32_t rwflag,uint8_t *serialized,int32_t len,void *endianedp);
 int32_t iguana_rwbignum(int32_t rwflag,uint8_t *serialized,int32_t len,uint8_t *endianedp);
 CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys);
 bool GetCCParams(Eval* eval, const CTransaction &tx, uint32_t nIn,
                  CTransaction &txOut, std::vector<std::vector<unsigned char>> &preConditions, std::vector<std::vector<unsigned char>> &params);
-
-int64_t OraclePrice(int32_t height,uint256 reforacletxid,char *markeraddr,char *format);
-uint8_t DecodeOraclesCreateOpRet(const CScript &scriptPubKey,std::string &name,std::string &description,std::string &format);
-uint256 OracleMerkle(int32_t height,uint256 reforacletxid,char *format,std::vector<struct oracle_merklepair>publishers);
-uint256 OraclesBatontxid(uint256 oracletxid,CPubKey pk);
-int64_t AddAssetInputs(struct CCcontract_info *cp,CMutableTransaction &mtx,CPubKey pk,uint256 assetid,int64_t total,int32_t maxinputs);
-bool DecodeHexTx(CTransaction& tx, const std::string& strHexTx);
-bool DecodeAssetCreateOpRet(const CScript &scriptPubKey,std::vector<uint8_t> &origpubkey,std::string &name,std::string &description);
-uint8_t DecodeAssetOpRet(const CScript &scriptPubKey,uint256 &assetid,uint256 &assetid2,int64_t &price,std::vector<uint8_t> &origpubkey);
-uint8_t DecodeOraclesData(const CScript &scriptPubKey,uint256 &oracletxid,uint256 &batontxid,CPubKey &pk,std::vector <uint8_t>&data);
-int32_t oracle_format(uint256 *hashp,int64_t *valp,char *str,uint8_t fmt,uint8_t *data,int32_t offset,int32_t datalen);
-CScript EncodeAssetOpRet(uint8_t funcid,uint256 assetid,uint256 assetid2,int64_t price,std::vector<uint8_t> origpubkey);
 
 // CCcustom
 CPubKey GetUnspendable(struct CCcontract_info *cp,uint8_t *unspendablepriv);
@@ -129,7 +116,6 @@ bool _GetCCaddress(char *destaddr,uint8_t evalcode,CPubKey pk);
 bool GetCCaddress(struct CCcontract_info *cp,char *destaddr,CPubKey pk);
 bool GetCCaddress1of2(struct CCcontract_info *cp,char *destaddr,CPubKey pk,CPubKey pk2);
 bool Getscriptaddress(char *destaddr,const CScript &scriptPubKey);
-std::vector<uint8_t> Mypubkey();
 
 // curve25519 and sha256
 bits256 curve25519_shared(bits256 privkey,bits256 otherpub);
