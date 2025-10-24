@@ -56,24 +56,6 @@ extern std::string CCerror;
 
 #define SMALLVAL 0.000000000000001
 
-struct CC_utxo
-{
-    uint256 txid;
-    int64_t nValue;
-    int32_t vout;
-};
-
-// these are the parameters stored after Verus crypto-condition vouts. new versions may change
-// the format
-struct CC_meta 
-{
-    std::vector<unsigned char> version;
-    uint8_t evalCode;
-    bool is1of2;
-    uint8_t numDestinations;
-    // followed by address destinations
-};
-
 struct CCcontract_info
 {
     char unspendableCCaddr[64], CChexstr[72], normaladdr[64], unspendableaddr2[64], unspendableaddr3[64];
@@ -85,13 +67,6 @@ struct CCcontract_info
     uint8_t evalcode,evalcode2,evalcode3,didinit;
 };
 struct CCcontract_info *CCinit(struct CCcontract_info *cp,uint8_t evalcode);
-
-struct oracleprice_info
-{
-    CPubKey pk;
-    std::vector <uint8_t> data;
-    int32_t height;
-};
 
 #ifdef ENABLE_WALLET
 extern CWallet* pwalletMain;
