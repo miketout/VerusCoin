@@ -34,8 +34,10 @@
 
 #if defined(__arm__)  || defined(__aarch64__)
 #include "crypto/sse2neon.h"
+#if !defined(__APPLE__)
 #include <sys/auxv.h>
 #include <asm/hwcap.h>
+#endif
 #else
 #include <cpuid.h>
 #include <x86intrin.h>
@@ -112,13 +114,16 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2_port(__m128i *randomso
 inline bool IsCPUVerusOptimized()
 {
     #if defined(__arm__)  || defined(__aarch64__)
+    #if defined(__APPLE__)
+    __cpuverusoptimized = true;
+#else
     long hwcaps= getauxval(AT_HWCAP);
 
     if((hwcaps & HWCAP_AES) && (hwcaps & HWCAP_PMULL))
         __cpuverusoptimized = true;
     else
         __cpuverusoptimized = false;
-        
+#endif
     #else
     if (__cpuverusoptimized & 0x80)
     {
