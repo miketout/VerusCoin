@@ -378,18 +378,6 @@ bool PreventCC(Eval* eval,const CTransaction &tx,int32_t preventCCvins,int32_t n
     return(true);
 }
 
-std::vector<uint8_t> Mypubkey()
-{
-    extern uint8_t NOTARY_PUBKEY33[33];
-    std::vector<uint8_t> pubkey; int32_t i; uint8_t *dest,*pubkey33;
-    pubkey33 = NOTARY_PUBKEY33;
-    pubkey.resize(33);
-    dest = pubkey.data();
-    for (i=0; i<33; i++)
-        dest[i] = pubkey33[i];
-    return(pubkey);
-}
-
 bool Myprivkey(uint8_t myprivkey[])
 {
     char coinaddr[64]; std::string strAddress; char *dest; int32_t i,n; CBitcoinAddress address; CKeyID keyID; CKey vchSecret;
