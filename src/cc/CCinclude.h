@@ -117,13 +117,6 @@ bool GetCCaddress(struct CCcontract_info *cp,char *destaddr,CPubKey pk);
 bool GetCCaddress1of2(struct CCcontract_info *cp,char *destaddr,CPubKey pk,CPubKey pk2);
 bool Getscriptaddress(char *destaddr,const CScript &scriptPubKey);
 
-// curve25519 and sha256
-bits256 curve25519_shared(bits256 privkey,bits256 otherpub);
-bits256 curve25519_basepoint9();
-bits256 curve25519(bits256 mysecret,bits256 basepoint);
-void vcalc_sha256(char deprecated[(256 >> 3) * 2 + 1],uint8_t hash[256 >> 3],uint8_t *src,int32_t len);
-bits256 bits256_doublesha256(char *deprecated,uint8_t *data,int32_t datalen);
-
 // TOBJ is CConditionObj of a CC output type
 template <typename TOBJ>
 CScript MakeMofNCCScript(const CConditionObj<TOBJ> &conditionObj, const CTxDestination *indexDest=nullptr)
