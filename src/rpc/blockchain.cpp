@@ -7,7 +7,6 @@
 #include "chain.h"
 #include "chainparams.h"
 #include "checkpoints.h"
-#include "crosschain.h"
 #include "base58.h"
 #include "consensus/validation.h"
 #include "cc/eval.h"

@@ -23,8 +23,6 @@
 #include "main.h"
 #include "chain.h"
 #include "core_io.h"
-#include "crosschain.h"
-
 
 Eval* EVAL_TEST = 0;
 struct CCcontract_info CCinfos[0x100];

@@ -309,7 +309,6 @@ libbitcoin_server_a_SOURCES = \
   cheatcatcher.h \
   cheatcatcher.cpp \
   checkpoints.cpp \
-  crosschain.cpp \
   crypto/haraka.h \
   crypto/haraka_portable.h \
   crypto/verus_clhash.h \
@@ -337,7 +336,6 @@ libbitcoin_server_a_SOURCES = \
   primitives/solutiondata.cpp \
   rest.cpp \
   rpc/blockchain.cpp \
-  rpc/crosschain.cpp \
   rpc/mining.cpp \
   rpc/pbaasrpc.cpp \
   rpc/misc.cpp \
@@ -491,7 +489,6 @@ libbitcoin_common_a_SOURCES = \
   crypto/verus_hash.h \
   crypto/verus_hash.cpp \
   hash.cpp \
-  importcoin.cpp \
   key.cpp \
   key_io.cpp \
   keystore.cpp \

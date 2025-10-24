@@ -9,7 +9,6 @@
 #include "version.h"
 #include "policy/fees.h"
 #include "komodo_defs.h"
-#include "importcoin.h"
 #include "pbaas/notarization.h"
 #include "pbaas/reserves.h"
 
@@ -594,8 +593,6 @@ CAmount CCoinsViewCache::GetValueIn(int32_t nHeight, int64_t *interestp, const C
     CAmount value,nResult = 0;
     if ( interestp != 0 )
         *interestp = 0;
-    if ( tx.IsCoinImport() )
-        return GetCoinImportValue(tx);
     if ( tx.IsCoinBase() != 0 )
         return 0;
     for (unsigned int i = 0; i < tx.vin.size(); i++)
