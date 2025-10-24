@@ -271,10 +271,6 @@ extern UniValue channelsrefund(const UniValue& params, bool fHelp);
 
 //extern UniValue tokenswapask(const UniValue& params, bool fHelp);
 //extern UniValue tokenfillswap(const UniValue& params, bool fHelp);
-extern UniValue faucetfund(const UniValue& params, bool fHelp);
-extern UniValue faucetget(const UniValue& params, bool fHelp);
-extern UniValue faucetaddress(const UniValue& params, bool fHelp);
-extern UniValue faucetinfo(const UniValue& params, bool fHelp);
 extern UniValue rewardsinfo(const UniValue& params, bool fHelp);
 extern UniValue rewardslist(const UniValue& params, bool fHelp);
 extern UniValue rewardsaddress(const UniValue& params, bool fHelp);
@@ -311,7 +307,6 @@ extern UniValue getreceivedbyaddress(const UniValue& params, bool fHelp);
 extern UniValue getreceivedbyaccount(const UniValue& params, bool fHelp);
 extern UniValue prunespentwallettransactions(const UniValue& params, bool fHelp);
 extern UniValue getbalance(const UniValue& params, bool fHelp);
-extern UniValue getbalance64(const UniValue& params, bool fHelp);
 extern UniValue getunconfirmedbalance(const UniValue& params, bool fHelp);
 extern UniValue movecmd(const UniValue& params, bool fHelp);
 extern UniValue sendfrom(const UniValue& params, bool fHelp);
@@ -406,17 +401,6 @@ extern UniValue z_listoperationids(const UniValue& params, bool fHelp); // in rp
 extern UniValue z_validateaddress(const UniValue& params, bool fHelp); // in rpcmisc.cpp
 extern UniValue z_getpaymentdisclosure(const UniValue& params, bool fHelp); // in rpcdisclosure.cpp
 extern UniValue z_validatepaymentdisclosure(const UniValue &params, bool fHelp); // in rpcdisclosure.cpp
-
-extern UniValue MoMoMdata(const UniValue& params, bool fHelp);
-extern UniValue calc_MoM(const UniValue& params, bool fHelp);
-extern UniValue height_MoM(const UniValue& params, bool fHelp);
-extern UniValue assetchainproof(const UniValue& params, bool fHelp);
-extern UniValue crosschainproof(const UniValue& params, bool fHelp);
-extern UniValue getNotarisationsForBlock(const UniValue& params, bool fHelp);
-extern UniValue scanNotarisationsDB(const UniValue& params, bool fHelp);
-extern UniValue migrate_converttoexport(const UniValue& params, bool fHelp);
-extern UniValue migrate_createimporttransaction(const UniValue& params, bool fHelp);
-extern UniValue migrate_completeimporttransaction(const UniValue& params, bool fHelp);
 
 extern UniValue notaries(const UniValue& params, bool fHelp);
 extern UniValue minerids(const UniValue& params, bool fHelp);
