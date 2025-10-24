@@ -8557,45 +8557,6 @@ UniValue CCaddress(struct CCcontract_info *cp,char *name,std::vector<unsigned ch
     return(result);
 }
 
-UniValue getbalance64(const UniValue& params, bool fHelp)
-{
-    set<CBitcoinAddress> setAddress; vector<COutput> vecOutputs;
-    UniValue ret(UniValue::VOBJ); UniValue a(UniValue::VARR),b(UniValue::VARR); CTxDestination address;
-    const CKeyStore& keystore = *pwalletMain;
-    CAmount nValues[64],nValues2[64],nValue,total,total2; int32_t i,segid;
-    if (!EnsureWalletIsAvailable(fHelp))
-        return NullUniValue;
-    if (params.size() > 0)
-        throw runtime_error("getbalance64\n");
-    total = total2 = 0;
-    memset(nValues,0,sizeof(nValues));
-    memset(nValues2,0,sizeof(nValues2));
-    LOCK2(cs_main, pwalletMain->cs_wallet);
-    pwalletMain->AvailableCoins(vecOutputs, false, NULL, true);
-    BOOST_FOREACH(const COutput& out, vecOutputs)
-    {
-        nValue = out.tx->vout[out.i].nValue;
-        if ( ExtractDestination(out.tx->vout[out.i].scriptPubKey, address) )
-        {
-            segid = (komodo_segid32((char *)CBitcoinAddress(address).ToString().c_str()) & 0x3f);
-            if ( out.nDepth < 100 )
-                nValues2[segid] += nValue, total2 += nValue;
-            else nValues[segid] += nValue, total += nValue;
-            //fprintf(stderr,"%s %.8f depth.%d segid.%d\n",(char *)CBitcoinAddress(address).ToString().c_str(),(double)nValue/COIN,(int32_t)out.nDepth,segid);
-        } else fprintf(stderr,"no destination\n");
-    }
-    ret.push_back(Pair("mature",(double)total/COIN));
-    ret.push_back(Pair("immature",(double)total2/COIN));
-    for (i=0; i<64; i++)
-    {
-        a.push_back((uint64_t)nValues[i]);
-        b.push_back((uint64_t)nValues2[i]);
-    }
-    ret.push_back(Pair("staking", a));
-    ret.push_back(Pair("notstaking", b));
-    return ret;
-}
-
 extern UniValue dumpprivkey(const UniValue& params, bool fHelp); // in rpcdump.cpp
 extern UniValue importprivkey(const UniValue& params, bool fHelp);
 extern UniValue rescanfromheight(const UniValue& params, bool fHelp);
