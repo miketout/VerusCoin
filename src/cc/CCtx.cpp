@@ -93,14 +93,3 @@ int64_t CCutxovalue(char *coinaddr,uint256 utxotxid,int32_t utxovout)
     }
     return(0);
 }
-
-int64_t CCaddress_balance(char *coinaddr)
-{
-    int64_t sum = 0; std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
-    SetCCunspents(unspentOutputs,coinaddr);
-    for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=unspentOutputs.begin(); it!=unspentOutputs.end(); it++)
-    {
-        sum += it->second.satoshis;
-    }
-    return(sum);
-}
