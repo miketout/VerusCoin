@@ -38,9 +38,10 @@ software written by Eric Young (eay@cryptsoft.com).
 
 Although almost all of the Zcash/Komodo/VerusCoin code is licensed under "permissive" open source
 licenses, users and distributors should note that when built using the default
-build options, Zcash depends on Oracle Berkeley DB 6.2.x, which is licensed
-under the GNU Affero General Public License.
-
+build options, Verus depends on Oracle Berkeley DB 6.2.x, which is licensed
+under the GNU Affero General Public License. Additionally, builds without libstdc++ (typically
+macOS x86_64-apple-darwin and arm64-apple-darwin targets) include GCC libstdc++-derived code
+for consensus compatibility, licensed under GPLv3 with GCC Runtime Library Exception 3.1.
 
 Contributors should understand licensing implications before modifying the
 following files in build-aux/m4 (see https://github.com/zcash/zcash/issues/2827):

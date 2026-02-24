@@ -15,6 +15,9 @@
 #include "rpc/pbaasrpc.h"
 #include "rpc/server.h"
 #include "key_io.h"
+#ifndef __GLIBCXX__
+#include "pbaas/shuffle_compat.h"
+#endif
 #include <random>
 
 LRUCache<CUTXORef, std::tuple<int, CCrossChainExport, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol>>
@@ -6762,7 +6765,11 @@ CCoinbaseCurrencyState &CCoinbaseCurrencyState::UpdateWithEmission(CAmount toEmi
             }
 
             // distribute the extra as evenly as possible
+#ifdef __GLIBCXX__
             std::shuffle(extraWeight.begin(), extraWeight.end(), prandom);
+#else
+            gcc_compatible_shuffle(extraWeight.begin(), extraWeight.end(), prandom);
+#endif
             for (int i = 0; i < weights.size(); i++)
             {
                 weights[i] -= extraWeight[i];
@@ -6841,7 +6848,11 @@ CCoinbaseCurrencyState &CCoinbaseCurrencyState::ApplyCarveouts(int32_t carveOut)
                 }
             }
             // distribute the extra weight loss as evenly as possible
+#ifdef __GLIBCXX__
             std::shuffle(extraWeight.begin(), extraWeight.end(), prandom);
+#else
+            gcc_compatible_shuffle(extraWeight.begin(), extraWeight.end(), prandom);
+#endif
             for (int i = 0; i < weights.size(); i++)
             {
                 weights[i] -= extraWeight[i];
