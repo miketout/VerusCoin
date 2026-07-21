@@ -1511,7 +1511,7 @@ uint16_t komodo_userpass(char *userpass, char *symbol)
     {
         port = _komodo_userpass(username,password,fp);
         sprintf(userpass,"%s:%s",username,password);
-        if ( strcmp(symbol,ASSETCHAINS_SYMBOL) == 0 )
+        if ( strcmp(symbol,ASSETCHAINS_SYMBOL) == 0 && userpass != ASSETCHAINS_USERPASS )
             strcpy(ASSETCHAINS_USERPASS,userpass);
         fclose(fp);
     }
