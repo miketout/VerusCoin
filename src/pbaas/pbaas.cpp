@@ -1762,8 +1762,8 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
 
         if (LogAcceptCategory("crosschainexports"))
         {
-            printf("%s: checking %ld transfers for inclusion between blocks %u - %u, inclusive at height %d\n", __func__, _txInputs.size(), ccx.sourceHeightStart, addHeight, chainActive.Height());
-            LogPrintf("%s: checking %ld transfers for inclusion between blocks %u - %u, inclusive at height %d\n", __func__, _txInputs.size(), ccx.sourceHeightStart, addHeight, chainActive.Height());
+            printf("%s: checking %zu transfers for inclusion between blocks %u - %u, inclusive at height %d\n", __func__, _txInputs.size(), ccx.sourceHeightStart, addHeight, chainActive.Height());
+            LogPrintf("%s: checking %zu transfers for inclusion between blocks %u - %u, inclusive at height %d\n", __func__, _txInputs.size(), ccx.sourceHeightStart, addHeight, chainActive.Height());
             uint32_t curBlockNum = 0;
             int transferCount = 0;
             for (auto &oneTransfer : _txInputs)
@@ -1801,8 +1801,8 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
 
         if (LogAcceptCategory("crosschainexports"))
         {
-            printf("%ld transfers from block %u to %u\n", txInputVec.size(), ccx.sourceHeightStart ? ccx.sourceHeightStart - 1 : 0, txInputVec.size() ? std::get<0>(txInputVec.back()) : addHeight);
-            LogPrintf("%ld transfers from block %u to %u\n", txInputVec.size(), ccx.sourceHeightStart ? ccx.sourceHeightStart - 1 : 0, txInputVec.size() ? std::get<0>(txInputVec.back()) : addHeight);
+            printf("%zu transfers from block %u to %u\n", txInputVec.size(), ccx.sourceHeightStart ? ccx.sourceHeightStart - 1 : 0, txInputVec.size() ? std::get<0>(txInputVec.back()) : addHeight);
+            LogPrintf("%zu transfers from block %u to %u\n", txInputVec.size(), ccx.sourceHeightStart ? ccx.sourceHeightStart - 1 : 0, txInputVec.size() ? std::get<0>(txInputVec.back()) : addHeight);
         }
 
         // the input vec should be the same as the export transfers
@@ -1813,10 +1813,10 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
         {
             if (LogAcceptCategory("crosschainexports") || LogAcceptCategory("mevattack"))
             {
-                printf("%s: mismatch transfer sizes: ccx.reserveTransfers.size(): %ld, reserveTransfers.size(): %ld, txInputVec.size(): %ld, _txInputs.size(): %ld\n",
+                printf("%s: mismatch transfer sizes: ccx.reserveTransfers.size(): %zu, reserveTransfers.size(): %zu, txInputVec.size(): %zu, _txInputs.size(): %zu\n",
                        __func__, ccx.reserveTransfers.size(), reserveTransfers.size(), txInputVec.size(), _txInputs.size());
                 printf("start: %u, end: %u, chainActive.Height(): %u, unpentBy: %u\n", ccx.sourceHeightStart, ccx.sourceHeightEnd, chainActive.Height(), height);
-                LogPrintf("%s: mismatch transfer sizes: ccx.reserveTransfers.size(): %ld, reserveTransfers.size(): %ld, txInputVec.size(): %ld, _txInputs.size(): %ld\n",
+                LogPrintf("%s: mismatch transfer sizes: ccx.reserveTransfers.size(): %zu, reserveTransfers.size(): %zu, txInputVec.size(): %zu, _txInputs.size(): %zu\n",
                        __func__, ccx.reserveTransfers.size(), reserveTransfers.size(), txInputVec.size(), _txInputs.size());
                 LogPrintf("start: %u, end: %u, chainActive.Height(): %u, unpentBy: %u\n", ccx.sourceHeightStart, ccx.sourceHeightEnd, chainActive.Height(), height);
                 printf("height: %u, currencyname: %s, ccx: %s\n", height, thisDef.name.c_str(), ccx.ToUniValue().write(1,2).c_str());
@@ -11318,7 +11318,7 @@ void CConnectedChains::AggregateChainTransfers(const CTransferDestination &feeRe
                             LogPrintf("%s: missing or invalid notarization for %s\n", __func__, EncodeDestination(CIdentityID(destID)).c_str());
                             if (notarizationTxes.size() != cnd.vtx.size())
                             {
-                                printf("NOTE: notarization and transaction vectors are not the same size - cnd.vtx.size(): %ld, notarizationTxes.size(): %ld\n", cnd.vtx.size(), notarizationTxes.size());
+                                printf("NOTE: notarization and transaction vectors are not the same size - cnd.vtx.size(): %zu, notarizationTxes.size(): %zu\n", cnd.vtx.size(), notarizationTxes.size());
                                 LogPrintf("NOTE: notarization and transaction vectors are not the same size\n");
                             }
                         }

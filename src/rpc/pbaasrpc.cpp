@@ -4179,7 +4179,7 @@ bool GetChainTransfersUnspentBy(std::multimap<std::pair<uint32_t, uint160>, std:
 
         if (mevCheckTrigger)
         {
-            printf("blocksToLoad.size(): %lu, start: %u, end: %u\n", blocksToLoad.size(), start, end);
+            printf("blocksToLoad.size(): %zu, start: %u, end: %u\n", blocksToLoad.size(), start, end);
         }
 
         if (!(blocksToLoad.size() == 1 && blocksToLoad[0].first == start && blocksToLoad[0].second == end))
@@ -4203,7 +4203,7 @@ bool GetChainTransfersUnspentBy(std::multimap<std::pair<uint32_t, uint160>, std:
     {
         if (mevCheckTrigger)
         {
-            printf("failed - addressIndex.size(): %lu, start: %u, end: %u\n", addressIndex.size(), start, end);
+            printf("failed - addressIndex.size(): %zu, start: %u, end: %u\n", addressIndex.size(), start, end);
         }
 
         return false;
@@ -4212,7 +4212,7 @@ bool GetChainTransfersUnspentBy(std::multimap<std::pair<uint32_t, uint160>, std:
     {
         if (mevCheckTrigger)
         {
-            printf("addressIndex.size(): %lu, start: %u, end: %u\n", addressIndex.size(), start, end);
+            printf("addressIndex.size(): %zu, start: %u, end: %u\n", addressIndex.size(), start, end);
         }
 
         // This call does not include outputs that were mined in as spent at the
