@@ -1,18 +1,41 @@
 #!/bin/bash
-HOST=x86_64-w64-mingw32
-CXX=x86_64-w64-mingw32-g++-posix
-CC=x86_64-w64-mingw32-gcc-posix
-PREFIX="$(pwd)/depends/$HOST"
 
 set -eu -o pipefail
 
-set -x
 cd "$(dirname "$(readlink -f "$0")")/.."
 
-cd depends/ && make "$@" HOST=$HOST V=1 NO_QT=1
-cd ../
-./autogen.sh
-CONFIG_SITE=$PWD/depends/x86_64-w64-mingw32/share/config.site CPPFLAGS="-g" CXXFLAGS="-DPTW32_STATIC_LIB -DCURL_STATICLIB -DCURVE_ALT_BN128 -fopenmp -pthread -g" ./configure --prefix="${PREFIX}" --host=x86_64-w64-mingw32 --enable-static --disable-shared
-sed -i 's/-lboost_system-mt /-lboost_system-mt-s /' configure
-cd src/
-CC="${CC} -g " CXX="${CXX} -g " make "$@" V=1  verusd.exe verus.exe verus-tx.exe
+if [ "x$*" = 'x--help' ]
+then
+    cat <<EOF
+Usage:
+
+$0 --help
+  Show this help message and exit.
+
+$0 [ MAKEARGS... ]
+  Cross-build Verus for Windows (x86_64-w64-mingw32) by invoking
+  ./zcutil/build.sh with HOST set. MAKEARGS are applied to both
+  dependencies and Verus itself.
+
+  Pass extra flags to ./configure using the CONFIGURE_FLAGS environment
+  variable, for example:
+
+      CONFIGURE_FLAGS="--enable-debug" ./zcutil/build-win.sh
+
+  For verbose output, use:
+      ./zcutil/build-win.sh V=1
+EOF
+    exit 0
+fi
+
+set -x
+
+HOST=x86_64-w64-mingw32
+PREFIX="$PWD/depends/$HOST"
+
+export HOST
+export CPPFLAGS="-g"
+export CXXFLAGS="-DPTW32_STATIC_LIB -DCURL_STATICLIB -DCURVE_ALT_BN128 -fopenmp -pthread -g"
+export CONFIGURE_FLAGS="--prefix=${PREFIX} --enable-static --disable-shared --enable-tests=no --disable-bench ${CONFIGURE_FLAGS-}"
+
+exec ./zcutil/build.sh "$@"
