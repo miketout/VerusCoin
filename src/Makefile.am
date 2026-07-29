@@ -707,11 +707,11 @@ libtls_a_SOURCES = \
     tls/utiltls.cpp\
     tls/tlsmanager.cpp
 
-libtls_a_CPPFLAGS = -DMULTICORE -fPIC -DBINARY_OUTPUT -DCURVE_ALT_BN128 -DBOOST_SPIRIT_THREADSAFE -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS $(HARDENED_CPPFLAGS) -pipe -O2 -g  -Wstack-protector -fstack-protector-all -fPIE -fvisibility=hidden -DSTATIC $(BITCOIN_INCLUDES)
+libtls_a_CPPFLAGS = $(PIC_FLAGS) -DBOOST_SPIRIT_THREADSAFE -DSTATIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 
-libtls_a_CXXFLAGS = $(HARDENED_CXXFLAGS) -fwrapv -fno-strict-aliasing
+libtls_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
-libtls_a_LDFLAGS = $(HARDENED_LDFLAGS)
+libtls_a_LDFLAGS = $(AM_LDFLAGS)
 
 libtls_a_CPPFLAGS += -DMONTGOMERY_OUTPUT
 
