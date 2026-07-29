@@ -417,11 +417,11 @@ endif
 
 # Verus hash specific library - optimized
 if ARCH_ARM
-crypto_libverus_crypto_a_CPPFLAGS = -O3 -g -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_crypto_a_CXXFLAGS = -O3 -Wno-error=attributes -Wint-conversion -g -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
+crypto_libverus_crypto_a_CPPFLAGS = -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+crypto_libverus_crypto_a_CXXFLAGS = -Wno-error=attributes -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS)
 else
-crypto_libverus_crypto_a_CPPFLAGS = -O3 -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_crypto_a_CXXFLAGS = -O3 -Wint-conversion -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
+crypto_libverus_crypto_a_CPPFLAGS = -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+crypto_libverus_crypto_a_CXXFLAGS = -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS)
 endif
 
 crypto_libverus_crypto_a_SOURCES = \
@@ -432,11 +432,11 @@ crypto_libverus_crypto_a_SOURCES = \
 
 # Verus hash specific library - portable
 if ARCH_ARM
-crypto_libverus_portable_crypto_a_CPPFLAGS = -O3 -g -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_portable_crypto_a_CXXFLAGS = -O3 -Wno-error=attributes -Wint-conversion -g -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
+crypto_libverus_portable_crypto_a_CPPFLAGS = -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+crypto_libverus_portable_crypto_a_CXXFLAGS = -Wno-error=attributes -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS)
 else
-crypto_libverus_portable_crypto_a_CPPFLAGS = -O3 -march=$(PLATFORM_VARIANT) -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) -w $(BITCOIN_INCLUDES)
-crypto_libverus_portable_crypto_a_CXXFLAGS = -O3 -Wint-conversion -march=$(PLATFORM_VARIANT) -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
+crypto_libverus_portable_crypto_a_CPPFLAGS = -march=$(PLATFORM_VARIANT) -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+crypto_libverus_portable_crypto_a_CXXFLAGS = -march=$(PLATFORM_VARIANT) -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS)
 endif
 
 crypto_libverus_portable_crypto_a_SOURCES = \
@@ -446,8 +446,8 @@ crypto_libverus_portable_crypto_a_SOURCES = \
   crypto/verus_clhash_portable.cpp
 
 # common: shared between zcashd and non-server tools
-libbitcoin_common_a_CPPFLAGS = -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-libbitcoin_common_a_CXXFLAGS = -fPIC $(AM_CXXFLAGS) $(PIE_FLAGS)
+libbitcoin_common_a_CPPFLAGS = $(PIC_FLAGS) $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+libbitcoin_common_a_CXXFLAGS = $(PIC_FLAGS) $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_common_a_SOURCES = \
   amount.cpp \
   arith_uint256.cpp \

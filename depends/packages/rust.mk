@@ -36,7 +36,7 @@ $(package)_rust_std_sha256_hash_x86_64-unknown-freebsd=eed4b3f3358a8887b0f6a62e0
 $(package)_rust_std_sha256_hash_aarch64-apple-darwin=00307d648acc269a0874ba8de4f8eb3bd3b85a0f10e3da59ba1ff8c840e92b34
 
 define rust_target
-$(if $($(1)_rust_target_$(2)),$($(1)_rust_target_$(2)),$(if $(findstring darwin,$(3)),x86_64-apple-darwin,$(if $(findstring freebsd,$(3)),x86_64-unknown-freebsd,$(2))))
+$(if $($(1)_rust_target_$(2)),$($(1)_rust_target_$(2)),$(if $(findstring darwin,$(3)),$(if $(findstring aarch64,$(2)),aarch64-apple-darwin,x86_64-apple-darwin),$(if $(findstring freebsd,$(3)),x86_64-unknown-freebsd,$(2))))
 endef
 
 define $(package)_set_vars

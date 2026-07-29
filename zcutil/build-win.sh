@@ -30,12 +30,6 @@ fi
 
 set -x
 
-HOST=x86_64-w64-mingw32
-PREFIX="$PWD/depends/$HOST"
-
-export HOST
-export CPPFLAGS="-g"
-export CXXFLAGS="-DPTW32_STATIC_LIB -DCURL_STATICLIB -DCURVE_ALT_BN128 -fopenmp -pthread -g"
-export CONFIGURE_FLAGS="--prefix=${PREFIX} --enable-static --disable-shared --enable-tests=no --disable-bench ${CONFIGURE_FLAGS-}"
+export HOST=x86_64-w64-mingw32
 
 exec ./zcutil/build.sh "$@"

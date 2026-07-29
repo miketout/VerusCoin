@@ -28,7 +28,7 @@ PKG_CONFIG="`which pkg-config` --static"
 export PKG_CONFIG_LIBDIR=$depends_prefix/lib/pkgconfig
 export PKG_CONFIG_PATH=$depends_prefix/share/pkgconfig
 
-CPPFLAGS="-I$depends_prefix/include/ $CPPFLAGS"
+CPPFLAGS="-isystem $depends_prefix/include/ $CPPFLAGS"
 LDFLAGS="-L$depends_prefix/lib $LDFLAGS"
 
 if test -n "@CC@" -a -z "${CC}"; then

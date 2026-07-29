@@ -6,6 +6,11 @@ LLD_VERSION=711
 
 OSX_SDK=$(SDK_PATH)/Xcode-$(XCODE_VERSION)-$(XCODE_BUILD_ID)-extracted-SDK-with-libcxx-headers
 
+darwin_AR=$(shell command -v llvm-ar || command -v ar)
+darwin_NM=$(shell command -v llvm-nm || command -v nm)
+darwin_RANLIB=$(shell command -v llvm-ranlib || command -v ranlib)
+darwin_STRIP=$(shell command -v llvm-strip || command -v strip)
+
 # Flag explanations:
 #
 #     -mlinker-version
@@ -37,14 +42,7 @@ darwin_CXXFLAGS=$(darwin_CFLAGS)
 darwin_release_CFLAGS=-O2
 darwin_release_CXXFLAGS=$(darwin_release_CFLAGS)
 
-darwin_debug_CFLAGS=-g -O0
+darwin_debug_CFLAGS=-O1 -g
 darwin_debug_CXXFLAGS=$(darwin_debug_CFLAGS)
-
-darwin_native_binutils=native_cctools
-ifeq ($(strip $(FORCE_USE_SYSTEM_CLANG)),)
-darwin_native_toolchain=native_cctools
-else
-darwin_native_toolchain=
-endif
 
 darwin_cmake_system=Darwin

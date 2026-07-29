@@ -20,7 +20,7 @@ $0 [ MAKEARGS... ]
   variable. For example, to enable coverage instrumentation (thus enabling
   "make cov" to work), call:
 
-      CONFIGURE_FLAGS="--enable-lcov --disable-hardening" ./zcutil/build-mac.sh
+      CONFIGURE_FLAGS="--enable-lcov" ./zcutil/build-mac.sh
 
   To build with debugging information, call:
 
@@ -34,13 +34,6 @@ fi
 
 set -x
 
-PREFIX="$PWD/depends/$(./depends/config.guess)"
+export HOST=x86_64-apple-darwin
 
-export CPPFLAGS="-I$PREFIX/include -arch x86_64"
-export LDFLAGS="-L$PREFIX/lib -L/usr/local/opt/libb2/lib -arch x86_64 -Wl,-no_pie"
-export CXXFLAGS="-arch x86_64 -I$PREFIX/include -fwrapv -fno-strict-aliasing \
--Wno-deprecated-declarations -Wno-deprecated-builtins -Wno-enum-constexpr-conversion \
--Wno-unknown-warning-option -Werror -Wno-error=attributes -g"
-export CONFIGURE_FLAGS="--prefix=${PREFIX} --with-gui=no --disable-hardening ${CONFIGURE_FLAGS-}"
-
-exec ./zcutil/build.sh "$@" NO_GTEST=1 STATIC=1
+exec ./zcutil/build.sh "$@"

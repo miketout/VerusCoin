@@ -101,19 +101,11 @@ AC_ARG_ENABLE(tests,
     [use_tests=$enableval],
     [use_tests=yes])
 
-if test x$TARGET_OS = xdarwin; then
-AC_ARG_ENABLE([hardening],
-  [AS_HELP_STRING([--enable-hardening],
-  [attempt to harden the resulting executables (default is yes)])],
-  [use_hardening=$enableval],
-  [use_hardening=no])
-else
 AC_ARG_ENABLE([hardening],
   [AS_HELP_STRING([--disable-hardening],
   [do not attempt to harden the resulting executables (default is to harden when possible)])],
   [use_hardening=$enableval],
   [use_hardening=yes])
-fi
 
 AC_ARG_ENABLE([reduce-exports],
   [AS_HELP_STRING([--enable-reduce-exports],
@@ -353,7 +345,7 @@ case $host in
        AC_MSG_ERROR("windres not found")
      fi
 
-     CPPFLAGS="$CPPFLAGS -D_MT -DWIN32 -D_WINDOWS -DBOOST_THREAD_USE_LIB"
+     CPPFLAGS="$CPPFLAGS -D_MT -DWIN32 -D_WINDOWS -DBOOST_THREAD_USE_LIB -DCURL_STATICLIB"
      LEVELDB_TARGET_FLAGS="TARGET_OS=OS_WINDOWS_CROSSCOMPILE"
      if test "x$CXXFLAGS_overridden" = "xno"; then
        CXXFLAGS="$CXXFLAGS -w"
@@ -475,6 +467,8 @@ AC_C_BIGENDIAN
 
 dnl Check for pthread compile/link requirements
 AX_PTHREAD
+CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
+CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS"
 
 # The following macro will add the necessary defines to bitcoin-config.h, but
 # they also need to be passed down to any subprojects. Pull the results out of
