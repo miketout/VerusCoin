@@ -14,6 +14,13 @@ $(package)_sha256_hash_aarch64_linux=88af5aa7a40c8f1b40416a1f27de8ffbe09c155d933
 $(package)_file_name_aarch64-apple-darwin=rust-$($(package)_version)-aarch64-apple-darwin.tar.gz
 $(package)_sha256_hash_aarch64-apple-darwin=36228cac303298243fb84235db87a5ecf2af49db28585a82af091caefd598677
 
+ifneq (,$(filter aarch64 arm64,$(build_arch)))
+$(package)_file_name_darwin=$($(package)_file_name_aarch64-apple-darwin)
+$(package)_sha256_hash_darwin=$($(package)_sha256_hash_aarch64-apple-darwin)
+$(package)_file_name_linux=$($(package)_file_name_aarch64_linux)
+$(package)_sha256_hash_linux=$($(package)_sha256_hash_aarch64_linux)
+endif
+
 # Mapping from GCC canonical hosts to Rust targets
 # If a mapping is not present, we assume they are identical, unless $host_os is
 # "darwin", in which case we assume x86_64-apple-darwin.
