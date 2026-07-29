@@ -167,7 +167,7 @@ std::string EvalToStr(EvalCode c)
 {
     FOREACH_EVAL(EVAL_GENERATE_STRING);
     char s[10];
-    sprintf(s, "0x%x", c);
+    snprintf(s, sizeof(s), "0x%x", c);
     return std::string(s);
 
 }

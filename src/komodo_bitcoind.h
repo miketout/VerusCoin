@@ -196,8 +196,9 @@ try_again:
                 bracket1 = (char *)"]";
             }
 
-            databuf = (char *)malloc(256 + strlen(command) + strlen(params));
-            sprintf(databuf,"{\"id\":\"jl777\",\"method\":\"%s\",\"params\":%s%s%s}",command,bracket0,params,bracket1);
+            size_t databuf_len = 256 + strlen(command) + strlen(params);
+            databuf = (char *)malloc(databuf_len);
+            snprintf(databuf, databuf_len,"{\"id\":\"jl777\",\"method\":\"%s\",\"params\":%s%s%s}",command,bracket0,params,bracket1);
             //printf("url.(%s) userpass.(%s) databuf.(%s)\n",url,userpass,databuf);
             //
         } //else if ( specialcase != 0 ) fprintf(stderr,"databuf.(%s)\n",params);
@@ -339,8 +340,8 @@ char *komodo_issuemethod(char *userpass,char *method,char *params,uint16_t port)
         params = (char *)"[]";
     if ( strlen(params) < sizeof(postdata)-128 )
     {
-        sprintf(url,(char *)"http://127.0.0.1:%u",port);
-        sprintf(postdata,"{\"method\":\"%s\",\"params\":%s}",method,params);
+        snprintf(url, sizeof(url),(char *)"http://127.0.0.1:%u",port);
+        snprintf(postdata, sizeof(postdata),"{\"method\":\"%s\",\"params\":%s}",method,params);
         //printf("[%s] (%s) postdata.(%s) params.(%s) USERPASS.(%s)\n",ASSETCHAINS_SYMBOL,url,postdata,params,KMDUSERPASS);
         retstr2 = bitcoind_RPC(&retstr,(char *)"debug",url,userpass,method,params);
         //retstr = curl_post(&cHandle,url,USERPASS,postdata,0,0,0,0);
@@ -380,7 +381,7 @@ int32_t notarizedtxid_height(char *dest,char *txidstr,int32_t *kmdnotarized_heig
             }
             free(jsonstr);
         }
-        sprintf(params,"[\"%s\", 1]",txidstr);
+        snprintf(params, sizeof(params),"[\"%s\", 1]",txidstr);
         if ( (jsonstr= komodo_issuemethod(userpass,(char *)"getrawtransaction",params,port)) != 0 )
         {
             //printf("(%s)\n",jsonstr);
@@ -427,7 +428,7 @@ int32_t komodo_verifynotarization(char *symbol,char *dest,int32_t height,int32_t
      for (i=0; i<32; i++)
      sprintf(&params[i*2 + 2],"%02x",((uint8_t *)&NOTARIZED_DESTTXID)[31-i]);
      strcat(params,"\", 1]");*/
-    sprintf(params,"[\"%s\", 1]",NOTARIZED_DESTTXID.ToString().c_str());
+    snprintf(params, sizeof(params),"[\"%s\", 1]",NOTARIZED_DESTTXID.ToString().c_str());
     if ( strcmp(symbol,ASSETCHAINS_SYMBOL[0]==0?(char *)"KMD":ASSETCHAINS_SYMBOL) != 0 )
         return(0);
     if ( 0 && ASSETCHAINS_SYMBOL[0] != 0 )
@@ -500,7 +501,7 @@ int32_t komodo_verifynotarization(char *symbol,char *dest,int32_t height,int32_t
  {
  uint256 hash; char params[128],*hexstr,*jsonstr; cJSON *result; int32_t i; uint8_t revbuf[32];
  memset(&hash,0,sizeof(hash));
- sprintf(params,"[%d]",height);
+ snprintf(params, sizeof(params),"[%d]",height);
  if ( (jsonstr= komodo_issuemethod(KMDUSERPASS,(char *)"getblockhash",params,BITCOIND_RPCPORT)) != 0 )
  {
  if ( (result= cJSON_Parse(jsonstr)) != 0 )

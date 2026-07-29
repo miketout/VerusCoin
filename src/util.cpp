@@ -826,7 +826,7 @@ boost::filesystem::path GetConfigFile()
     char confname[2048];
     std::string chainName = CanonicalChainFileName(ASSETCHAINS_SYMBOL);
     if ( ASSETCHAINS_SYMBOL[0] != 0 )
-        sprintf(confname, "%s.conf", chainName.c_str());
+        snprintf(confname, sizeof(confname), "%s.conf", chainName.c_str());
     else
     {
 #ifdef __APPLE__

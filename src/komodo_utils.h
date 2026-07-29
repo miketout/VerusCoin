@@ -1360,14 +1360,14 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
         OS_randombytes(buf2,sizeof(buf2));
 				#endif
         for (i=0; i<sizeof(buf2); i++)
-            sprintf(&password[i*2],"%02x",buf2[i]);
+            snprintf(&password[i*2], sizeof(password) - i*2,"%02x",buf2[i]);
         password[i*2] = 0;
-        sprintf(buf,"%s.conf", _symbol);
+        snprintf(buf, sizeof(buf),"%s.conf", _symbol);
         BITCOIND_RPCPORT = rpcport;
 #ifdef _WIN32
-        sprintf(fname,"%s\\%s",GetDataDir(false).string().c_str(), buf);
+        snprintf(fname, sizeof(fname),"%s\\%s",GetDataDir(false).string().c_str(), buf);
 #else
-        sprintf(fname,"%s/%s",GetDataDir(false).string().c_str(), buf);
+        snprintf(fname, sizeof(fname),"%s/%s",GetDataDir(false).string().c_str(), buf);
 #endif
 
 #ifndef FROM_CLI
@@ -1496,21 +1496,21 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
     {
         if ( (kmdport= _komodo_userpass(username,password,fp)) != 0 )
             KMD_PORT = kmdport;
-        sprintf(KMDUSERPASS,"%s:%s",username,password);
+        snprintf(KMDUSERPASS, sizeof(KMDUSERPASS),"%s:%s",username,password);
         fclose(fp);
 //printf("KOMODO.(%s) -> userpass.(%s)\n",fname,KMDUSERPASS);
     } //else printf("couldnt open.(%s)\n",fname);
 }
 
 extern boost::filesystem::path GetConfigFile();
-uint16_t komodo_userpass(char *userpass, char *symbol)
+uint16_t komodo_userpass(char *userpass, size_t userpass_len, char *symbol)
 {
     FILE *fp; uint16_t port = 0; char fname[512],username[512],password[512],confname[KOMODO_ASSETCHAIN_MAXLEN + 5];
     userpass[0] = 0;
     if ( (fp = fopen(GetConfigFile().generic_string().c_str(),"rb")) != 0 )
     {
         port = _komodo_userpass(username,password,fp);
-        sprintf(userpass,"%s:%s",username,password);
+        snprintf(userpass, userpass_len,"%s:%s",username,password);
         if ( strcmp(symbol,ASSETCHAINS_SYMBOL) == 0 && userpass != ASSETCHAINS_USERPASS )
             strcpy(ASSETCHAINS_USERPASS,userpass);
         fclose(fp);
@@ -2145,14 +2145,14 @@ void komodo_args(char *argv0)
         if ( ASSETCHAINS_SYMBOL[0] != 0 )
         {
             int32_t komodo_baseid(char *origbase);
-            if ( (port = komodo_userpass(ASSETCHAINS_USERPASS, ASSETCHAINS_SYMBOL)) != 0 )
+            if ( (port = komodo_userpass(ASSETCHAINS_USERPASS, sizeof(ASSETCHAINS_USERPASS), ASSETCHAINS_SYMBOL)) != 0 )
             {
                 ASSETCHAINS_RPCPORT = port;
             }
             else
             {
                 komodo_configfile(ASSETCHAINS_SYMBOL, ASSETCHAINS_P2PPORT + 1);
-                komodo_userpass(ASSETCHAINS_USERPASS, ASSETCHAINS_SYMBOL);      // make sure we set user and password on first load
+                komodo_userpass(ASSETCHAINS_USERPASS, sizeof(ASSETCHAINS_USERPASS), ASSETCHAINS_SYMBOL);      // make sure we set user and password on first load
             }
 
             //fprintf(stderr,"ASSETCHAINS_RPCPORT (%s) %u\n",ASSETCHAINS_SYMBOL,ASSETCHAINS_RPCPORT);
@@ -2164,7 +2164,7 @@ void komodo_args(char *argv0)
         //komodo_assetchain_pubkeys((char *)ASSETCHAINS_NOTARIES.c_str());
         iguana_rwnum(1,magic,sizeof(ASSETCHAINS_MAGIC),(void *)&ASSETCHAINS_MAGIC);
         for (int i=0; i<4; i++)
-            sprintf(&magicstr[i<<1],"%02x",magic[i]);
+            snprintf(&magicstr[i<<1], sizeof(magicstr) - (i<<1),"%02x",magic[i]);
         magicstr[8] = 0;
 
         if ( KOMODO_CCACTIVATE != 0 && ASSETCHAINS_CC < 2 )
@@ -2282,7 +2282,7 @@ void komodo_args(char *argv0)
             if ( (fp= fopen(fname,"rb")) != 0 )
             {
                 _komodo_userpass(username,password,fp);
-                sprintf(iter == 0 ? KMDUSERPASS : BTCUSERPASS,"%s:%s",username,password);
+                snprintf(iter == 0 ? KMDUSERPASS : BTCUSERPASS, sizeof(KMDUSERPASS),"%s:%s",username,password);
                 fclose(fp);
                 //printf("KOMODO.(%s) -> userpass.(%s)\n",fname,KMDUSERPASS);
             } //else printf("couldnt open.(%s)\n",fname);

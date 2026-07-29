@@ -863,7 +863,7 @@ int main(int argc, char * argv[])
         allocated[rpcport-1] = 1;
         for (i=0; i<num; i++)
         {
-            sprintf(newname,"%s%03x",name,i); // limit 4096
+            snprintf(newname, sizeof(newname),"%s%03x",name,i); // limit 4096
             j = 0;
             while ( 1 )
             {
