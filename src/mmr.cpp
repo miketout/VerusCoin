@@ -21,7 +21,9 @@ CMultiPartProof::CMultiPartProof(const std::vector<CMMRProof> &chunkVec) : CMerk
     for (const CMMRProof &oneChunk : chunkVec)
     {
         assert(oneChunk.IsMultiPart());
-        vch.insert(vch.end(), ((CMultiPartProof *)oneChunk.proofSequence[0])->vch.begin(), ((CMultiPartProof *)oneChunk.proofSequence[0])->vch.end());
+        const auto* p = std::get_if<CMultiPartProof>(&oneChunk.proofSequence[0]);
+        assert(p);
+        vch.insert(vch.end(), p->vch.begin(), p->vch.end());
     }
 }
 
@@ -54,7 +56,9 @@ std::vector<CMMRProof> CMultiPartProof::BreakToChunks(int maxSize) const
         }
         else
         {
-            std::vector<unsigned char> &oneChunkVec = ((CMultiPartProof *)oneChunk.proofSequence[0])->vch;
+            auto* pEntry = std::get_if<CMultiPartProof>(&oneChunk.proofSequence[0]);
+            assert(pEntry);
+            std::vector<unsigned char> &oneChunkVec = pEntry->vch;
             oneChunkVec.erase(oneChunkVec.begin() + (oneChunkVec.size() - removeBytes), oneChunkVec.end());
             bytesLeft -= oneChunkVec.size();
             curIndex += oneChunkVec.size();
@@ -66,204 +70,87 @@ std::vector<CMMRProof> CMultiPartProof::BreakToChunks(int maxSize) const
 
 void CMMRProof::DeleteProofSequenceEntry(int index)
 {
-    if (index >= 0 && index < proofSequence.size())
-    {
-        CMerkleBranchBase *pProof = proofSequence[index];
-        switch(pProof->branchType)
-        {
-            case CMerkleBranchBase::BRANCH_BTC:
-            {
-                delete (CBTCMerkleBranch *)pProof;
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_MMRBLAKE_NODE:
-            {
-                delete (CMMRNodeBranch *)pProof;
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE:
-            {
-                delete (CMMRPowerNodeBranch *)pProof;
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_ETH:
-            {
-                delete (CETHPATRICIABranch *)pProof;
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_MULTIPART:
-            {
-                delete (CMultiPartProof *)pProof;
-                break;
-            }
-            default:
-            {
-                ErrorAndBP("ERROR: likely double-free or memory corruption, unrecognized object in proof sequence");
-                // this is likely a memory error
-                // delete pProof;
-            }
-        }
+    if (index >= 0 && index < (int)proofSequence.size())
         proofSequence.erase(proofSequence.begin() + index);
-    }
 }
 
 void CMMRProof::DeleteProofSequence()
 {
-    // delete any objects that may be present
-    for (int i = proofSequence.size() - 1; i >= 0 && proofSequence[i]; i--)
-    {
-        CMerkleBranchBase *pProof = proofSequence[i];
-        switch(pProof->branchType)
-        {
-            case CMerkleBranchBase::BRANCH_BTC:
-            {
-                delete (CBTCMerkleBranch *)pProof;
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_MMRBLAKE_NODE:
-            {
-                delete (CMMRNodeBranch *)pProof;
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE:
-            {
-                delete (CMMRPowerNodeBranch *)pProof;
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_ETH:
-            {
-                delete (CETHPATRICIABranch *)pProof;
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_MULTIPART:
-            {
-                delete (CMultiPartProof *)pProof;
-                break;
-            }
-            default:
-            {
-                ErrorAndBP("ERROR: likely double-free or memory corruption, unrecognized object in proof sequence");
-                // this is likely a memory error
-                // delete pProof;
-            }
-        }
-        proofSequence.pop_back();
-    }
+    proofSequence.clear();
 }
 
 const CMMRProof &CMMRProof::operator<<(const CBTCMerkleBranch &append)
 {
-    CMerkleBranchBase *pNewProof = new CBTCMerkleBranch(append);
-    pNewProof->branchType = CMerkleBranchBase::BRANCH_BTC;
-    proofSequence.push_back(pNewProof);
+    proofSequence.emplace_back(append);
     return *this;
 }
 
 const CMMRProof &CMMRProof::operator<<(const CMMRNodeBranch &append)
 {
-    CMerkleBranchBase *pNewProof = new CMMRNodeBranch(append);
-    pNewProof->branchType = CMerkleBranchBase::BRANCH_MMRBLAKE_NODE;
-    proofSequence.push_back(pNewProof);
+    proofSequence.emplace_back(append);
     return *this;
 }
 
 const CMMRProof &CMMRProof::operator<<(const CMMRPowerNodeBranch &append)
 {
-    CMerkleBranchBase *pNewProof = new CMMRPowerNodeBranch(append);
-    pNewProof->branchType = CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE;
-    proofSequence.push_back(pNewProof);
+    proofSequence.emplace_back(append);
     return *this;
 }
 
 const CMMRProof &CMMRProof::operator<<(const CETHPATRICIABranch &append)
 {
-    CETHPATRICIABranch *pNewProof = new CETHPATRICIABranch(append);
-    pNewProof->branchType = CMerkleBranchBase::BRANCH_ETH;
-    proofSequence.push_back(pNewProof);
+    proofSequence.emplace_back(append);
     return *this;
 }
 
 const CMMRProof &CMMRProof::operator<<(const CMultiPartProof &append)
 {
-    CMultiPartProof *pNewProof = new CMultiPartProof(append);
-    proofSequence.push_back(pNewProof);
+    proofSequence.emplace_back(append);
     return *this;
 }
 
 uint160 CMMRProof::GetNativeAddress() const
 {
     uint160 retAddress;
-    for (auto &pProof : proofSequence)
+    for (const auto& entry : proofSequence)
     {
-        switch(pProof->branchType)
-        {
-            case CMerkleBranchBase::BRANCH_ETH:
-            {
-                retAddress = ((CETHPATRICIABranch *)pProof)->address;
-                break;
-            }
-            default:
-            {
-                return uint160();
-            }
-        }
+        if (const auto* p = std::get_if<CETHPATRICIABranch>(&entry))
+            retAddress = p->address;
+        else
+            return uint160();
     }
     return retAddress;
 }
 
 bool CMMRProof::CheckStorageKey(uint32_t height) const
 {
-    for (auto &pProof : proofSequence)
+    for (const auto& entry : proofSequence)
     {
-        switch(pProof->branchType)
-        {
-            case CMerkleBranchBase::BRANCH_ETH:
-            {
-                return ((CETHPATRICIABranch *)pProof)->CheckStorageKeyHash(height);
-            }
-            default:
-            {
-                return false;
-            }
-        }
+        if (const auto* p = std::get_if<CETHPATRICIABranch>(&entry))
+            return p->CheckStorageKeyHash(height);
+        else
+            return false;
     }
     return false;
 }
 
 uint256 CMMRProof::CheckProof(uint256 hash, bool optimized) const
 {
-    for (auto &pProof : proofSequence)
+    for (const auto& entry : proofSequence)
     {
-        switch(pProof->branchType)
+        if (const auto* p = std::get_if<CBTCMerkleBranch>(&entry))
+            hash = p->SafeCheck(hash);
+        else if (const auto* p = std::get_if<CMMRNodeBranch>(&entry))
+            hash = p->SafeCheck(hash);
+        else if (const auto* p = std::get_if<CMMRPowerNodeBranch>(&entry))
+            hash = p->SafeCheck(hash);
+        else if (const auto* p = std::get_if<CETHPATRICIABranch>(&entry))
         {
-            case CMerkleBranchBase::BRANCH_BTC:
-            {
-                hash = ((CBTCMerkleBranch *)pProof)->SafeCheck(hash);
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_MMRBLAKE_NODE:
-            {
-                hash = ((CMMRNodeBranch *)pProof)->SafeCheck(hash);
-                //printf("Result from CMMRNodeBranch check: %s\n", hash.GetHex().c_str());
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE:
-            {
-                hash = ((CMMRPowerNodeBranch *)pProof)->SafeCheck(hash);
-                //printf("Result from CMMRPowerNodeBranch check: %s\n", hash.GetHex().c_str());
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_ETH:
-            {
-                hash = ((CETHPATRICIABranch *)pProof)->SafeCheck(hash, optimized);
-                LogPrint("crosschain", "Result from ETHBranch check: %s\n", hash.GetHex().c_str());
-                break;
-            }
-            default:
-            {
-                return uint256();
-            }
+            hash = p->SafeCheck(hash, optimized);
+            LogPrint("crosschain", "Result from ETHBranch check: %s\n", hash.GetHex().c_str());
         }
+        else
+            return uint256();
     }
     return hash;
 }

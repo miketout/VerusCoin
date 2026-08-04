@@ -631,9 +631,10 @@ public:
 
     int32_t BlockNum()
     {
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        if (!headerProof.proofSequence.empty())
         {
-            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[0]))->nIndex;
+            if (const auto* p = std::get_if<CMMRPowerNodeBranch>(&headerProof.proofSequence[0]))
+                return p->nIndex;
         }
         return -1;
     }
@@ -651,12 +652,12 @@ public:
     uint256 GetBlockPower() const
     {
         int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        if (!headerProof.proofSequence.empty())
         {
-            std::vector<uint256> &branch = ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->branch;
-            if (branch.size() >= 1)
+            if (const auto* p = std::get_if<CMMRPowerNodeBranch>(&headerProof.proofSequence[proofIdx]))
             {
-                return branch[0];
+                if (p->branch.size() >= 1)
+                    return p->branch[0];
             }
         }
         return uint256();
@@ -665,9 +666,10 @@ public:
     uint32_t GetBlockHeight() const
     {
         int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        if (!headerProof.proofSequence.empty())
         {
-            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->nIndex;
+            if (const auto* p = std::get_if<CMMRPowerNodeBranch>(&headerProof.proofSequence[proofIdx]))
+                return p->nIndex;
         }
         return 0;
     }
@@ -756,9 +758,10 @@ public:
 
     int32_t BlockNum()
     {
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        if (!headerProof.proofSequence.empty())
         {
-            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[0]))->nIndex;
+            if (const auto* p = std::get_if<CMMRPowerNodeBranch>(&headerProof.proofSequence[0]))
+                return p->nIndex;
         }
         return -1;
     }
@@ -776,12 +779,12 @@ public:
     uint256 GetBlockPower() const
     {
         int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        if (!headerProof.proofSequence.empty())
         {
-            std::vector<uint256> &branch = ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->branch;
-            if (branch.size() >= 1)
+            if (const auto* p = std::get_if<CMMRPowerNodeBranch>(&headerProof.proofSequence[proofIdx]))
             {
-                return branch[0];
+                if (p->branch.size() >= 1)
+                    return p->branch[0];
             }
         }
         return uint256();
@@ -790,9 +793,10 @@ public:
     uint32_t GetBlockHeight() const
     {
         int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        if (!headerProof.proofSequence.empty())
         {
-            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->nIndex;
+            if (const auto* p = std::get_if<CMMRPowerNodeBranch>(&headerProof.proofSequence[proofIdx]))
+                return p->nIndex;
         }
         return 0;
     }

@@ -1482,58 +1482,41 @@ UniValue CRating::ToUniValue() const
 UniValue CMMRProof::ToUniValue() const
 {
     UniValue retObj(UniValue::VOBJ);
-    for (auto &proof : proofSequence)
+    for (const auto& entry : proofSequence)
     {
         UniValue branchArray(UniValue::VARR);
-        switch (proof->branchType)
+        if (const auto* p = std::get_if<CBTCMerkleBranch>(&entry))
         {
-            case CMerkleBranchBase::BRANCH_BTC:
-            {
-                CBTCMerkleBranch &branch = *(CBTCMerkleBranch *)(proof);
-                retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_BTC));
-                retObj.push_back(Pair("index", (int64_t)(branch.nIndex)));
-                for (auto &oneHash : branch.branch)
-                {
-                    branchArray.push_back(oneHash.GetHex());
-                }
-                retObj.push_back(Pair("hashes", branchArray));
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_MMRBLAKE_NODE:
-            {
-                CMMRNodeBranch &branch = *(CMMRNodeBranch *)(proof);
-                retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_MMRBLAKE_NODE));
-                retObj.push_back(Pair("index", (int64_t)(branch.nIndex)));
-                retObj.push_back(Pair("mmvsize", (int64_t)(branch.nSize)));
-                for (auto &oneHash : branch.branch)
-                {
-                    branchArray.push_back(oneHash.GetHex());
-                }
-                retObj.push_back(Pair("hashes", branchArray));
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE:
-            {
-                CMMRPowerNodeBranch &branch = *(CMMRPowerNodeBranch *)(proof);
-                retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE));
-                retObj.push_back(Pair("index", (int64_t)(branch.nIndex)));
-                retObj.push_back(Pair("mmvsize", (int64_t)(branch.nSize)));
-                for (auto &oneHash : branch.branch)
-                {
-                    branchArray.push_back(oneHash.GetHex());
-                }
-                retObj.push_back(Pair("hashes", branchArray));
-                break;
-            }
-            case CMerkleBranchBase::BRANCH_ETH:
-            {
-                CETHPATRICIABranch &branch = *(CETHPATRICIABranch *)(proof);
-                retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_ETH));
-                // univalue of ETH proof is just hex of whole object
-                std::vector<unsigned char> serBytes(::AsVector(*this));
-                retObj.push_back(Pair("data", HexBytes(&(serBytes[0]), serBytes.size())));
-            }
-        };
+            retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_BTC));
+            retObj.push_back(Pair("index", (int64_t)(p->nIndex)));
+            for (auto &oneHash : p->branch)
+                branchArray.push_back(oneHash.GetHex());
+            retObj.push_back(Pair("hashes", branchArray));
+        }
+        else if (const auto* p = std::get_if<CMMRNodeBranch>(&entry))
+        {
+            retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_MMRBLAKE_NODE));
+            retObj.push_back(Pair("index", (int64_t)(p->nIndex)));
+            retObj.push_back(Pair("mmvsize", (int64_t)(p->nSize)));
+            for (auto &oneHash : p->branch)
+                branchArray.push_back(oneHash.GetHex());
+            retObj.push_back(Pair("hashes", branchArray));
+        }
+        else if (const auto* p = std::get_if<CMMRPowerNodeBranch>(&entry))
+        {
+            retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE));
+            retObj.push_back(Pair("index", (int64_t)(p->nIndex)));
+            retObj.push_back(Pair("mmvsize", (int64_t)(p->nSize)));
+            for (auto &oneHash : p->branch)
+                branchArray.push_back(oneHash.GetHex());
+            retObj.push_back(Pair("hashes", branchArray));
+        }
+        else if (std::holds_alternative<CETHPATRICIABranch>(entry))
+        {
+            retObj.push_back(Pair("branchtype", (int)CMerkleBranchBase::BRANCH_ETH));
+            std::vector<unsigned char> serBytes(::AsVector(*this));
+            retObj.push_back(Pair("data", HexBytes(&(serBytes[0]), serBytes.size())));
+        }
     }
     return retObj;
 }

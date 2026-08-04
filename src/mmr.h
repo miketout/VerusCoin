@@ -19,6 +19,7 @@
 #ifndef MMR_H
 #define MMR_H
 
+#include <variant>
 #include <vector>
 #include <univalue.h>
 
@@ -688,32 +689,21 @@ public:
 class CMMRProof
 {
 public:
-    std::vector<CMerkleBranchBase *> proofSequence;
+    using ProofEntry = std::variant<CBTCMerkleBranch, CMMRNodeBranch, CMMRPowerNodeBranch, CETHPATRICIABranch, CMultiPartProof>;
+    std::vector<ProofEntry> proofSequence;
 
-    CMMRProof() {}
-    CMMRProof(const CMMRProof &oldProof)
-    {
-        CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
-        s << oldProof;
-        DeleteProofSequence();
-        s >> *this;
-    }
-    const CMMRProof &operator=(const CMMRProof &operand)
-    {
-        CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
-        s << operand;
-        DeleteProofSequence();
-        s >> *this;
-        return *this;
-    }
+    CMMRProof() = default;
+    CMMRProof(const CMMRProof &) = default;
+    CMMRProof(CMMRProof &&) = default;
+    CMMRProof &operator=(const CMMRProof &) = default;
+    CMMRProof &operator=(CMMRProof &&) = default;
 
-    ~CMMRProof()
+    void DeleteProofSequence() { proofSequence.clear(); }
+    void DeleteProofSequenceEntry(int index)
     {
-        DeleteProofSequence();
+        if (index >= 0 && index < (int)proofSequence.size())
+            proofSequence.erase(proofSequence.begin() + index);
     }
-
-    void DeleteProofSequence();
-    void DeleteProofSequenceEntry(int index);
 
     ADD_SERIALIZE_METHODS;
     
@@ -723,78 +713,50 @@ public:
         {
             int32_t proofSize;
             READWRITE(proofSize);
-
-            // in case it is deserialized with something present
-            DeleteProofSequence();
-
+            proofSequence.clear();
             bool error = false;
             for (int i = 0; i < proofSize && !error; i++)
             {
                 uint8_t branchType = 0;
-                union {
-                    CBTCMerkleBranch *pBranch;
-                    CMMRNodeBranch *pNodeBranch;
-                    CMMRPowerNodeBranch *pPowerNodeBranch;
-                    CMerkleBranchBase *pobj;
-                    CETHPATRICIABranch *pETHBranch;
-                    CMultiPartProof *pMultiProofBranch;
-                };
-
-                // non-error exception comes from the first try on each object. after this, it is an error
-                pobj = nullptr;
-                bool manualDelete = false;
-
+                bool emplaced = false;
                 try
                 {
-                    // our normal way out is an exception at end of stream
-                    // would prefer a better way
                     READWRITE(branchType);
-
                     switch(branchType)
                     {
                         case CMerkleBranchBase::BRANCH_BTC:
                         {
-                            pBranch = new CBTCMerkleBranch();
-                            if (pBranch)
-                            {
-                                READWRITE(*pBranch);
-                            }
+                            proofSequence.emplace_back(std::in_place_type<CBTCMerkleBranch>);
+                            emplaced = true;
+                            READWRITE(std::get<CBTCMerkleBranch>(proofSequence.back()));
                             break;
                         }
                         case CMerkleBranchBase::BRANCH_MMRBLAKE_NODE:
                         {
-                            pNodeBranch = new CMMRNodeBranch();
-                            if (pNodeBranch)
-                            {
-                                READWRITE(*pNodeBranch);
-                            }
+                            proofSequence.emplace_back(std::in_place_type<CMMRNodeBranch>);
+                            emplaced = true;
+                            READWRITE(std::get<CMMRNodeBranch>(proofSequence.back()));
                             break;
                         }
                         case CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE:
                         {
-                            pPowerNodeBranch = new CMMRPowerNodeBranch();
-                            if (pPowerNodeBranch)
-                            {
-                                READWRITE(*pPowerNodeBranch);
-                            }
+                            proofSequence.emplace_back(std::in_place_type<CMMRPowerNodeBranch>);
+                            emplaced = true;
+                            READWRITE(std::get<CMMRPowerNodeBranch>(proofSequence.back()));
                             break;
                         }
                         case CMerkleBranchBase::BRANCH_ETH:
                         {
-                            pETHBranch = new CETHPATRICIABranch();
-                            if (pETHBranch)
-                            {
-                                READWRITE(*pETHBranch);
-                            }
+                            proofSequence.emplace_back(std::in_place_type<CETHPATRICIABranch>);
+                            emplaced = true;
+                            READWRITE(std::get<CETHPATRICIABranch>(proofSequence.back()));
                             break;
                         }
                         case CMerkleBranchBase::BRANCH_MULTIPART:
                         {
-                            pMultiProofBranch = new CMultiPartProof();
-                            if (pMultiProofBranch)
-                            {
-                                READWRITE(*pMultiProofBranch);
-                            }
+                            proofSequence.emplace_back(std::in_place_type<CMultiPartProof>);
+                            emplaced = true;
+                            READWRITE(std::get<CMultiPartProof>(proofSequence.back()));
                             break;
                         }
                         default:
@@ -804,118 +766,66 @@ public:
                             error = true;
                         }
                     }
-
-                    if (pobj)
+                    if (!error && emplaced)
                     {
-                        if (pobj->branchType == branchType)
+                        uint8_t actualType = std::visit([](const auto& b) -> uint8_t { return b.branchType; }, proofSequence.back());
+                        if (actualType != branchType)
                         {
-                            proofSequence.push_back(pobj);
-                        }
-                        else
-                        {
-                            manualDelete = true;
+                            proofSequence.pop_back();
+                            error = true;
                         }
                     }
                 }
                 catch(const std::exception& e)
                 {
                     error = true;
-                    if (pobj)
-                    {
-                        manualDelete = true;
-                    }
-                }
-
-                if (manualDelete)
-                {
-                    error = true;
-                    switch(branchType)
-                    {
-                        case CMerkleBranchBase::BRANCH_BTC:
-                        {
-                            delete pBranch;
-                            break;
-                        }
-                        case CMerkleBranchBase::BRANCH_MMRBLAKE_NODE:
-                        {
-                            delete pNodeBranch;
-                            break;
-                        }
-                        case CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE:
-                        {
-                            delete pPowerNodeBranch;
-                            break;
-                        }
-                        case CMerkleBranchBase::BRANCH_ETH:
-                        {
-                            delete pETHBranch;
-                            break;
-                        }
-                        case CMerkleBranchBase::BRANCH_MULTIPART:
-                        {
-                            delete pMultiProofBranch;
-                            break;
-                        }
-                        default:
-                        {
-                            printf("%s: ERROR: should never get here - proof sequence is likely corrupt, code %d\n", __func__, branchType);
-                            LogPrintf("%s: ERROR: should never get here - proof sequence is likely corrupt, code %d\n", __func__, branchType);
-                        }
-                    }
-                    pobj = nullptr;
+                    if (emplaced)
+                        proofSequence.pop_back();
                 }
             }
-
             if (error)
             {
                 printf("%s: ERROR: failure - proof sequence is likely corrupt\n", __func__);
                 LogPrintf("%s: ERROR: failure - proof sequence is likely corrupt\n", __func__);
-                DeleteProofSequence();
+                proofSequence.clear();
             }
         }
         else
         {
             int32_t proofSize = proofSequence.size();
             READWRITE(proofSize);
-
-            for (auto pProof : proofSequence)
+            for (auto& entry : proofSequence)
             {
                 bool error = false;
-                READWRITE(pProof->branchType);
-
-                switch(pProof->branchType)
+                if (auto* p = std::get_if<CBTCMerkleBranch>(&entry))
                 {
-                    case CMerkleBranchBase::BRANCH_BTC:
-                    {
-                        READWRITE(*(CBTCMerkleBranch *)pProof);
-                        break;
-                    }
-                    case CMerkleBranchBase::BRANCH_MMRBLAKE_NODE:
-                    {
-                        READWRITE(*(CMMRNodeBranch *)pProof);
-                        break;
-                    }
-                    case CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE:
-                    {
-                        READWRITE(*(CMMRPowerNodeBranch *)pProof);
-                        break;
-                    }
-                    case CMerkleBranchBase::BRANCH_ETH:
-                    {
-                        READWRITE(*(CETHPATRICIABranch *)pProof);
-                        break;
-                    }
-                    case CMerkleBranchBase::BRANCH_MULTIPART:
-                    {
-                        READWRITE(*(CMultiPartProof *)pProof);
-                        break;
-                    }
-                    default:
-                    {
-                        error = true;
-                        printf("ERROR: unknown branch type (%u), likely corrupt\n", pProof->branchType);
-                        break;
-                    }
+                    READWRITE(p->branchType);
+                    READWRITE(*p);
+                }
+                else if (auto* p = std::get_if<CMMRNodeBranch>(&entry))
+                {
+                    READWRITE(p->branchType);
+                    READWRITE(*p);
+                }
+                else if (auto* p = std::get_if<CMMRPowerNodeBranch>(&entry))
+                {
+                    READWRITE(p->branchType);
+                    READWRITE(*p);
+                }
+                else if (auto* p = std::get_if<CETHPATRICIABranch>(&entry))
+                {
+                    READWRITE(p->branchType);
+                    READWRITE(*p);
+                }
+                else if (auto* p = std::get_if<CMultiPartProof>(&entry))
+                {
+                    READWRITE(p->branchType);
+                    READWRITE(*p);
+                }
+                else
+                {
+                    error = true;
+                    printf("ERROR: unknown branch type in proof sequence, likely corrupt\n");
                 }
                 assert(!error);
             }
@@ -929,7 +839,7 @@ public:
     const CMMRProof &operator<<(const CMultiPartProof &append);
     bool IsMultiPart() const
     {
-        return proofSequence.size() == 1 && proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_MULTIPART;
+        return proofSequence.size() == 1 && std::holds_alternative<CMultiPartProof>(proofSequence[0]);
     }
     uint256 CheckProof(uint256 checkHash, bool optimized=true) const;
     uint160 GetNativeAddress() const;

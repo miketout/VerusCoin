@@ -5757,17 +5757,19 @@ bool ProvePosBlock(uint32_t lastProofRootHeight, const CBlockIndex *pindex, CNot
         uint256 txHash = checkProof.GetPartialTransaction(checkTx);
         uint256 merkleRoot = checkProof.CheckPartialTransaction(checkTx);
 
-        uint32_t shiftIndex = ((CBTCMerkleBranch *)(checkProof.txProof.proofSequence[0]))->nIndex;
+        const auto* pBranch = std::get_if<CBTCMerkleBranch>(&checkProof.txProof.proofSequence[0]);
+        assert(pBranch);
+        uint32_t shiftIndex = pBranch->nIndex;
         LogPrintf("%s: Checking stake transaction proof\nMerkle branch:\nindex: %d\n", __func__, shiftIndex);
 
-        for (auto oneHash : ((CBTCMerkleBranch *)(checkProof.txProof.proofSequence[0]))->branch)
+        for (auto oneHash : pBranch->branch)
         {
             LogPrintf("hash on %s: %s\n", shiftIndex & 1 ? "left" : "right", oneHash.GetHex().c_str());
             shiftIndex >>= 1;
         }
 
         uint256 checkMerkle =
-            SafeCheckMerkleBranch(txHash, ((CBTCMerkleBranch *)(checkProof.txProof.proofSequence[0]))->branch, ((CBTCMerkleBranch *)(checkProof.txProof.proofSequence[0]))->nIndex);
+            SafeCheckMerkleBranch(txHash, pBranch->branch, pBranch->nIndex);
 
         LogPrintf("CBlockIndex: %s\nProofRoot: %s\n", pindex->ToString().c_str(), CProofRoot::GetProofRoot(pindex->GetHeight()).ToUniValue().write(1,2).c_str());
         LogPrintf("txhash: %s\ncheckTx.GetHash(): %s\ncalculated merkle: %s\ncheckMerkle: %s\n", txHash.GetHex().c_str(), checkTx.GetHash().GetHex().c_str(), merkleRoot.GetHex().c_str(), checkMerkle.GetHex().c_str());

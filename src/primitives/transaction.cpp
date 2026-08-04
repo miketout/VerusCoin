@@ -639,12 +639,12 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
 
                 if (elHash.size() == 0 ||
                     components[0].elProof.proofSequence.size() != 1 ||
-                    components[0].elProof.proofSequence[0]->branchType != CMerkleBranchBase::BRANCH_MMRBLAKE_NODE ||
-                    elHash.size() != ((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->nSize ||
-                    ((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->nIndex != 0 ||
-                    ((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->branch.size() == 0 ||
-                    TransactionMMView::GetProofBits(((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->nIndex, elHash.size()).size() !=
-                            (((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->branch.size() - (IsCapped() ? 1 : 0)))
+                    !std::holds_alternative<CMMRNodeBranch>(components[0].elProof.proofSequence[0]) ||
+                    elHash.size() != std::get<CMMRNodeBranch>(components[0].elProof.proofSequence[0]).nSize ||
+                    std::get<CMMRNodeBranch>(components[0].elProof.proofSequence[0]).nIndex != 0 ||
+                    std::get<CMMRNodeBranch>(components[0].elProof.proofSequence[0]).branch.size() == 0 ||
+                    TransactionMMView::GetProofBits(std::get<CMMRNodeBranch>(components[0].elProof.proofSequence[0]).nIndex, elHash.size()).size() !=
+                            (std::get<CMMRNodeBranch>(components[0].elProof.proofSequence[0]).branch.size() - (IsCapped() ? 1 : 0)))
                 {
                     // error
                     return uint256();
@@ -654,7 +654,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
 
                 if (IsCapped())
                 {
-                    arith_uint256 mmrSizeHash = UintToArith256(*((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->branch.rbegin());
+                    arith_uint256 mmrSizeHash = UintToArith256(*std::get<CMMRNodeBranch>(components[0].elProof.proofSequence[0]).branch.rbegin());
 
                     if (mmrSizeHash != arith_uint256(elHash.size()))
                     {
@@ -679,7 +679,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
 
                     try
                     {
-                        for (auto &oneHash : ((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->branch)
+                        for (auto &oneHash : std::get<CMMRNodeBranch>(components[0].elProof.proofSequence[0]).branch)
                         {
                             checkCount++;
                             if (UintToArith256(oneHash) <= checkLimit)
@@ -692,11 +692,10 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                         {
                             for (auto &oneBranch : txProof.proofSequence)
                             {
-                                if (oneBranch->branchType != CMerkleBranchBase::BRANCH_MMRBLAKE_NODE)
-                                {
+                                const auto* pNode = std::get_if<CMMRNodeBranch>(&oneBranch);
+                                if (!pNode)
                                     break;
-                                }
-                                for (auto &oneHash : ((CMMRNodeBranch *)oneBranch)->branch)
+                                for (auto &oneHash : pNode->branch)
                                 {
                                     checkCount++;
                                     if (UintToArith256(oneHash) <= checkLimit)
@@ -731,9 +730,9 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                 {
                     if (components[i].CheckProof() != txRoot ||
                         !elHash.count({components[i].elType, components[i].elIdx}) ||
-                        elHash[{components[i].elType, components[i].elIdx}] != ((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->nIndex ||
-                        TransactionMMView::GetProofBits(((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->nIndex, elHash.size()).size() !=
-                            (((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->branch.size() - (IsCapped() ? 1 : 0)))
+                        elHash[{components[i].elType, components[i].elIdx}] != std::get<CMMRNodeBranch>(components[i].elProof.proofSequence[0]).nIndex ||
+                        TransactionMMView::GetProofBits(std::get<CMMRNodeBranch>(components[i].elProof.proofSequence[0]).nIndex, elHash.size()).size() !=
+                            (std::get<CMMRNodeBranch>(components[i].elProof.proofSequence[0]).branch.size() - (IsCapped() ? 1 : 0)))
                     {
                         checkOK = false;
                         break;

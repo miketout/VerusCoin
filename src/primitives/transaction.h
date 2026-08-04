@@ -1280,7 +1280,9 @@ public:
         if (capped &&
             retVal.elProof.proofSequence.size())
         {
-            ((CMMRNodeBranch *)retVal.elProof.proofSequence[0])->branch.push_back(ArithToUint256(arith_uint256(txView.size())));
+            auto* p = std::get_if<CMMRNodeBranch>(&retVal.elProof.proofSequence[0]);
+            if (p)
+                p->branch.push_back(ArithToUint256(arith_uint256(txView.size())));
         }
         return retVal;
     }
@@ -1467,8 +1469,8 @@ public:
                ((type == TYPE_ETH) ||
                 (TYPE_PBAAS == type &&
                  txProof.proofSequence.size() >= 3 &&
-                 txProof.proofSequence[1]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_NODE &&
-                 txProof.proofSequence[2]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE));
+                 std::holds_alternative<CMMRNodeBranch>(txProof.proofSequence[1]) &&
+                 std::holds_alternative<CMMRPowerNodeBranch>(txProof.proofSequence[2])));
     }
 
     bool IsValid() const
@@ -1478,7 +1480,7 @@ public:
 
     bool IsMultipart() const
     {
-        return IsValid() && txProof.proofSequence.size() == 1 && txProof.proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_MULTIPART;
+        return IsValid() && txProof.proofSequence.size() == 1 && std::holds_alternative<CMultiPartProof>(txProof.proofSequence[0]);
     }
 
     std::vector<CPartialTransactionProof> BreakApart(int maxChunkSize=(CScript::MAX_SCRIPT_ELEMENT_SIZE-256)) const
@@ -1505,7 +1507,7 @@ public:
     {
         if ((type == TYPE_PBAAS || type == TYPE_FULLTX) && IsChainProof())
         {
-            std::vector<uint256> &branch = ((CMMRNodeBranch *)(txProof.proofSequence[1]))->branch;
+            const std::vector<uint256> &branch = std::get<CMMRNodeBranch>(txProof.proofSequence[1]).branch;
             if (branch.size() == 1)
             {
                 return branch[0];
@@ -1518,7 +1520,7 @@ public:
     {
         if (type == TYPE_PBAAS && IsChainProof())
         {
-            std::vector<uint256> &branch = ((CMMRPowerNodeBranch *)(txProof.proofSequence[2]))->branch;
+            const std::vector<uint256> &branch = std::get<CMMRPowerNodeBranch>(txProof.proofSequence[2]).branch;
             if (branch.size() >= 1)
             {
                 return branch[0];
@@ -1531,7 +1533,7 @@ public:
     {
         if (type == TYPE_PBAAS && IsChainProof())
         {
-            std::vector<uint256> &branch = ((CMMRPowerNodeBranch *)(txProof.proofSequence[2]))->branch;
+            const std::vector<uint256> &branch = std::get<CMMRPowerNodeBranch>(txProof.proofSequence[2]).branch;
             if (branch.size() >= 1)
             {
                 return branch.back();
@@ -1544,7 +1546,7 @@ public:
     {
         if ((type == TYPE_PBAAS || type == TYPE_FULLTX) && IsChainProof())
         {
-            return ((CMMRPowerNodeBranch *)(txProof.proofSequence[2]))->nIndex;
+            return std::get<CMMRPowerNodeBranch>(txProof.proofSequence[2]).nIndex;
         }
         return 0;
     }
@@ -1553,7 +1555,7 @@ public:
     {
         if ((type == TYPE_PBAAS || type == TYPE_FULLTX) && IsChainProof())
         {
-            return ((CMMRPowerNodeBranch *)(txProof.proofSequence[2]))->nSize - 1;
+            return std::get<CMMRPowerNodeBranch>(txProof.proofSequence[2]).nSize - 1;
         }
         return 0;
     }
