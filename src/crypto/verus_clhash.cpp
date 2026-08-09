@@ -123,7 +123,7 @@ bool mine_verus_v2(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &finalHas
 	CVerusHashV2 &vh = vhw.GetState();
     verusclhasher &vclh = vh.vclh;
 
-	alignas(32) uint256 curHash, curTarget = target;
+	alignas(16) uint256 curHash, curTarget = target;
 
     const uint64_t *compResult = (uint64_t *)&curHash;
     const uint64_t *compTarget = (uint64_t *)&curTarget;

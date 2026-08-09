@@ -1292,7 +1292,7 @@ bool mine_verus_v2_port(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &fin
 	CVerusHashV2 &vh = vhw.GetState();
     verusclhasher &vclh = vh.vclh;
 
-	alignas(32) uint256 curHash;
+	alignas(16) uint256 curHash;
     arith_uint256 curTarget = UintToArith256(target);
 
     u128 *hashKey = (u128 *)verusclhasher_key.get();
