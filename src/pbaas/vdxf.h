@@ -228,7 +228,7 @@ public:
     static uint160 GetID(const std::string &Name);
     static uint160 GetID(const std::string &Name, uint160 &parent);
     static uint160 GetDataKey(const std::string &keyName, uint160 &nameSpaceID);
-    bool IsValid()
+    bool IsValid() const
     {
         return !key.IsNull() && version >= FIRST_VERSION && version <= LAST_VERSION;
     }
@@ -250,10 +250,7 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(*(CVDXF *)this);
-        if (IsValid())
-        {
-            READWRITE(data);
-        }
+        READWRITE(data);
     }
 
     static std::string DataByteKeyName()
@@ -897,9 +894,9 @@ public:
 
         if (ser_action.ForRead())
         {
+            READWRITE(data);
             if (IsValid())
             {
-                READWRITE(data);
                 CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
                 data.clear();
                 readData >> VARINT(encType);
@@ -917,6 +914,10 @@ public:
                 writeData << cipherData;
                 std::vector<unsigned char> vch(writeData.begin(), writeData.end());
                 READWRITE(vch);
+            }
+            else if (version != VERSION_INVALID)
+            {
+                READWRITE(data);
             }
         }
     }
@@ -1232,9 +1233,9 @@ public:
 
         if (ser_action.ForRead())
         {
+            READWRITE(data);
             if (IsValid())
             {
-                READWRITE(data);
                 CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
                 data.clear();
                 readData >> dataDescriptor;
@@ -1248,6 +1249,10 @@ public:
                 writeData << dataDescriptor;
                 std::vector<unsigned char> vch(writeData.begin(), writeData.end());
                 READWRITE(vch);
+            }
+            else if (version != VERSION_INVALID)
+            {
+                READWRITE(data);
             }
         }
     }
@@ -1365,9 +1370,9 @@ public:
 
         if (ser_action.ForRead())
         {
+            READWRITE(data);
             if (IsValid())
             {
-                READWRITE(data);
                 CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
                 data.clear();
                 readData >> signature;
@@ -1381,6 +1386,10 @@ public:
                 writeData << signature;
                 std::vector<unsigned char> vch(writeData.begin(), writeData.end());
                 READWRITE(vch);
+            }
+            else if (version != VERSION_INVALID)
+            {
+                READWRITE(data);
             }
         }
     }
@@ -1532,9 +1541,9 @@ public:
 
         if (ser_action.ForRead())
         {
+            READWRITE(data);
             if (CVDXF_Data::IsValid())
             {
-                READWRITE(data);
                 CDataStream readData(data, SER_DISK, PROTOCOL_VERSION);
                 data.clear();
                 readData >> mmrDescriptor;
@@ -1548,6 +1557,10 @@ public:
                 writeData << mmrDescriptor;
                 std::vector<unsigned char> vch(writeData.begin(), writeData.end());
                 READWRITE(vch);
+            }
+            else if (version != VERSION_INVALID)
+            {
+                READWRITE(data);
             }
         }
     }
@@ -1585,21 +1598,7 @@ public:
         return structuredDataKey;
     }
 
-    bool IsValid()
-    {
-        // structured data must have at least enough space for 1 element
-        if (CVDXF::IsValid() && data.size())
-        {
-            // ensure that all vectors are either valid, known types or possibly
-            // valid, unknown types
-            for (auto &oneVec : data)
-            {
-
-            }
-            return true;
-        }
-        return false;
-    }
+    bool IsValid() const;
 };
 
 class CVDXF_NoData {

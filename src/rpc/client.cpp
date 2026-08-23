@@ -31,6 +31,54 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef) 
     return true; // (?) pbaas/pbaas.h
 }
 
+// this deserializes a vector into either a VDXF data object or a VDXF structured
+// object, which may contain one or more VDXF data objects.
+// If the data in the sourceVector is not a recognized VDXF object, the returned
+// variant will be empty/invalid, otherwise, it will be a recognized VDXF object
+// or a VDXF structured object containing one or more recognized VDXF objects.
+VDXFData DeserializeVDXFData(const std::vector<unsigned char> &sourceVector)
+{
+    CVDXF_StructuredData sData;
+    bool serializedOK = false;
+    ::FromVector(sourceVector, sData, &serializedOK);
+    if (serializedOK && sData.IsValid())
+    {
+        return sData;
+    }
+    else
+    {
+        CVDXF_Data Data;
+        serializedOK = false;
+        ::FromVector(sourceVector, Data, &serializedOK);
+        if (serializedOK && Data.IsValid())
+        {
+            return Data;
+        }
+    }
+    return VDXFData();
+}
+
+bool CVDXF_StructuredData::IsValid() const
+{
+    // structured data must have at least enough space for 1 element
+    if (CVDXF::IsValid() && data.size())
+    {
+        // while this check is currently empty (change this comment if not), it is a placeholder to
+        // ensure that all vectors are either valid, known types or possibly
+        // valid, unknown types
+        for (auto &oneVec : data)
+        {
+            VDXFData deserObject = DeserializeVDXFData(oneVec);
+            if (deserObject.empty())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 CAmount AmountFromValueNoErr(const UniValue& value)
 {
     try

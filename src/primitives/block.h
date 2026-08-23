@@ -484,7 +484,7 @@ public:
     // get transaction node from the block
     CDefaultMMRNode GetMMRNode(int index) const;
 
-    CPartialTransactionProof GetPartialTransactionProof(const CTransaction &tx, int txIndex, const std::vector<std::pair<int16_t, int16_t>> &partIndexes=std::vector<std::pair<int16_t, int16_t>>(), const uint256 &pastHash=uint256()) const;
+    CPartialTransactionProof GetPartialTransactionProof(const CTransaction &tx, int txIndex, const std::vector<std::pair<uint16_t, uint16_t>> &partIndexes=std::vector<std::pair<uint16_t, uint16_t>>(), const uint256 &pastHash=uint256()) const;
 
     std::vector<uint256> GetMerkleBranch(int nIndex) const;
     static uint256 CheckMerkleBranch(uint256 hash, const std::vector<uint256>& vMerkleBranch, int nIndex);
@@ -1000,7 +1000,7 @@ public:
         CHashWriter hw(SER_GETHASH, PROTOCOL_VERSION);
 
         hw << object;
-        return GetHash();
+        return hw.GetHash();
     }
 };
 
@@ -1297,7 +1297,9 @@ public:
         VERSION_INVALID = 0,
         VERSION_FIRST = 1,
         VERSION_CURRENT = 1,
-        VERSION_LAST = 1
+        VERSION_LAST = 1,
+
+        MAX_CROSSCHAINPROOF_DEPTH = 100
     };
     uint32_t version;
     std::vector<CBaseChainObject *> chainObjects;    // this owns the memory associated with chainObjects and deletes it on destructions
@@ -1327,38 +1329,54 @@ public:
         return *this;
     }
 
+    struct CDepthGuard
+    {
+        int &d;
+        CDepthGuard(int &depth) : d(depth) { ++d; }
+        ~CDepthGuard() { --d; }
+    };
+
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
+        static thread_local int crossChainProofDepth = 0;
+
         READWRITE(version);
         if (ser_action.ForRead())
         {
+            CDepthGuard depthGuard(crossChainProofDepth);
+            if (crossChainProofDepth > MAX_CROSSCHAINPROOF_DEPTH)
+            {
+                throw std::runtime_error("CCrossChainProof: max recursion depth exceeded");
+            }
+
             int32_t proofSize;
             READWRITE(VARINT(proofSize));
 
             bool error = false;
+
             for (int i = 0; i < proofSize && !error; i++)
             {
+                uint16_t objType = CHAINOBJ_INVALID;
+                union {
+                    CChainObject<CBlockHeaderAndProof> *pNewHeader;
+                    CChainObject<CPartialTransactionProof> *pNewTx;
+                    CChainObject<CProofRoot> *pNewProof;
+                    CChainObject<CBlockHeaderProof> *pNewHeaderRef;
+                    CChainObject<CHashCommitments> *pPriors;
+                    CChainObject<CReserveTransfer> *pExport;
+                    CChainObject<CCrossChainProof> *pCrossChainProof;
+                    CChainObject<CNotarySignature> *pNotarySignature;
+                    CChainObject<CEvidenceData> *pBytes;
+                    CBaseChainObject *pobj;
+                };
+
+                pobj = nullptr;
+
                 try
                 {
-                    uint16_t objType;
                     READWRITE(objType);
-                    union {
-                        CChainObject<CBlockHeaderAndProof> *pNewHeader;
-                        CChainObject<CPartialTransactionProof> *pNewTx;
-                        CChainObject<CProofRoot> *pNewProof;
-                        CChainObject<CBlockHeaderProof> *pNewHeaderRef;
-                        CChainObject<CHashCommitments> *pPriors;
-                        CChainObject<CReserveTransfer> *pExport;
-                        CChainObject<CCrossChainProof> *pCrossChainProof;
-                        CChainObject<CNotarySignature> *pNotarySignature;
-                        CChainObject<CEvidenceData> *pBytes;
-                        CBaseChainObject *pobj;
-                    };
-
-                    pobj = nullptr;
-
                     switch(objType)
                     {
                         case CHAINOBJ_HEADER:
@@ -1443,11 +1461,20 @@ public:
                         {
                             CCrossChainProof obj;
                             READWRITE(obj);
-                            pCrossChainProof = new CChainObject<CCrossChainProof>();
-                            if (pCrossChainProof)
+                            if ((obj.version >= obj.VERSION_FIRST && obj.version <= obj.VERSION_LAST))
                             {
-                                pCrossChainProof->objectType = objType;
-                                pCrossChainProof->object = obj;
+                                pCrossChainProof = new CChainObject<CCrossChainProof>();
+                                if (pCrossChainProof)
+                                {
+                                    pCrossChainProof->objectType = objType;
+                                    pCrossChainProof->object.version = obj.version;
+                                    pCrossChainProof->object.chainObjects = obj.chainObjects;
+                                    obj.chainObjects.resize(0);
+                                }
+                            }
+                            else
+                            {
+                                error = true;
                             }
                             break;
                         }
@@ -1477,26 +1504,102 @@ public:
                             }
                             break;
                         }
+
+                        default:
+                        {
+                            error = true;
+                            LogPrintf("%s: invalid or unrecognized serialized data\n", __func__);
+                        }
                     }
 
                     if (pobj)
                     {
-                        //printf("%s: storing object, code %u\n", __func__, objType);
-                        chainObjects.push_back(pobj);
+                        if (pobj->objectType == objType)
+                        {
+                            //printf("%s: storing object, code %u\n", __func__, objType);
+                            chainObjects.push_back(pobj);
+                            pobj = nullptr;
+                        }
+                        else
+                        {
+                            error = true;
+                        }
                     }
                 }
                 catch(const std::exception& e)
                 {
                     error = true;
-                    break;
+                    LogPrintf("%s: exception: %s\n", __func__, e.what());
+                }
+                if (error)
+                {
+                    if (pobj)
+                    {
+                        switch(objType)
+                        {
+                            case CHAINOBJ_HEADER:
+                            {
+                                delete pNewHeader;
+                                break;
+                            }
+                            case CHAINOBJ_TRANSACTION_PROOF:
+                            {
+                                delete pNewTx;
+                                break;
+                            }
+                            case CHAINOBJ_PROOF_ROOT:
+                            {
+                                delete pNewProof;
+                                break;
+                            }
+
+                            case CHAINOBJ_HEADER_REF:
+                            {
+                                delete pNewHeaderRef;
+                                break;
+                            }
+
+                            case CHAINOBJ_COMMITMENTDATA:
+                            {
+                                delete pPriors;
+                                break;
+                            }
+
+                            case CHAINOBJ_RESERVETRANSFER:
+                            {
+                                delete pExport;
+                                break;
+                            }
+
+                            case CHAINOBJ_CROSSCHAINPROOF:
+                            {
+                                delete pCrossChainProof;
+                                break;
+                            }
+
+                            case CHAINOBJ_NOTARYSIGNATURE:
+                            {
+                                delete pNotarySignature;
+                                break;
+                            }
+
+                            case CHAINOBJ_EVIDENCEDATA:
+                            {
+                                delete pBytes;
+                                break;
+                            }
+                        }
+                        pobj = nullptr;
+                    }
+                    printf("%s: ERROR: proof is likely corrupt\n", __func__);
+                    LogPrintf("%s: ERROR: proof is likely corrupt\n", __func__);
                 }
             }
 
             if (error)
             {
-                printf("%s: ERROR: proof is likely corrupt\n", __func__);
-                LogPrintf("%s: ERROR: proof is likely corrupt\n", __func__);
                 DeleteOpRetObjects(chainObjects);
+                version = VERSION_INVALID;
             }
         }
         else
@@ -1772,7 +1875,7 @@ public:
             {
                 printf("%s: invalid chain object data of type: %d\n", __func__, baseObj->objectType);
                 LogPrintf("%s: invalid chain object data of type: %d\n", __func__, baseObj->objectType);
-                assert(false);
+                throw std::runtime_error("CCrossChainProof: invalid object type");
             }
         }
         return *this;

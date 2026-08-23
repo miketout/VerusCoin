@@ -602,11 +602,19 @@ CProofRoot IsValidChallengeEvidence(const CCurrencyDefinition &externalSystem,
 CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &externalSystem,
                                                const CNotaryEvidence &evidence,
                                                const CPBaaSNotarization &expectedNotarization,
+                                               int32_t notarizationCount,
                                                uint32_t lastConfirmedHeight,
                                                uint32_t height,
                                                uint256 *pOptEntropyHash=nullptr, // only needed when responding to a challenge
                                                const CProofRoot &challengeProofRoot=CProofRoot(CProofRoot::TYPE_PBAAS, CProofRoot::VERSION_INVALID));
 extern string PBAAS_HOST, PBAAS_USERPASS, ASSETCHAINS_RPCHOST, ASSETCHAINS_RPCCREDENTIALS;;
 extern int32_t PBAAS_PORT;
+
+bool IsEarnedNotarizationDescendent(const CPBaaSNotarization &checkNotarization,
+                                    const CPBaaSNotarization &priorNotarization,
+                                    const uint256 &priorHashBlock,
+                                    const std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> &lastConfirmedNotarization,
+                                    CValidationState &state,
+                                    int32_t *pNotarizationCount = nullptr);
 
 #endif

@@ -264,7 +264,10 @@ class CPBaaSSolutionDescriptor
 
         CPBaaSSolutionDescriptor(const std::vector<unsigned char> &vch)
         {
-            assert(vch.size() >= sizeof(*this));
+            if (vch.size() < sizeof(*this))
+            {
+                throw std::runtime_error("CPBaaSSolutionDescriptor::CPBaaSSolutionDescriptor(vch): vector of insufficient size");
+            }
 
             version = vch[0] + (vch[1] << 8) + (vch[2] << 16) + (vch[3] << 24);
             descrBits = vch[4];

@@ -482,16 +482,18 @@ std::vector<UniValue> uni_getValues(const UniValue &uv, std::vector<UniValue> de
 VDXFData DeserializeVDXFData(const std::vector<unsigned char> &sourceVector)
 {
     CVDXF_StructuredData sData;
-    ::FromVector(sourceVector, sData);
-    if (sData.IsValid())
+    bool serializedOK = false;
+    ::FromVector(sourceVector, sData, &serializedOK);
+    if (serializedOK && sData.IsValid())
     {
         return sData;
     }
     else
     {
         CVDXF_Data Data;
-        ::FromVector(sourceVector, Data);
-        if (Data.IsValid())
+        serializedOK = false;
+        ::FromVector(sourceVector, Data, &serializedOK);
+        if (serializedOK && Data.IsValid())
         {
             return Data;
         }
@@ -522,6 +524,27 @@ uint256 CVDXF_Data::GetHash(CNativeHashWriter &hw) const
 {
     hw.write((const char *)&(data[0]), data.size());
     return hw.GetHash();
+}
+
+bool CVDXF_StructuredData::IsValid() const
+{
+    // structured data must have at least enough space for 1 element
+    if (CVDXF::IsValid() && data.size())
+    {
+        // while this check is currently empty (change this comment if not), it is a placeholder to
+        // ensure that all vectors are either valid, known types or possibly
+        // valid, unknown types
+        for (auto &oneVec : data)
+        {
+            VDXFData deserObject = DeserializeVDXFData(oneVec);
+            if (deserObject.empty())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
 }
 
 CVDXFEncryptor::CVDXFEncryptor(const UniValue &uni) :

@@ -1266,7 +1266,7 @@ std::set<CIndexID> COptCCParams::GetIndexKeys() const
             if (vData.size() && (finalization = CObjectFinalization(vData[0])).IsValid())
             {
                 uint160 finalizationNotarizationID = CCrossChainRPCData::GetConditionID(finalization.currencyID, CObjectFinalization::ObjectFinalizationNotarizationKey());
-                // we care about confirmed and pending. no index for rejected
+                // we care about confirmed, pending, or rejected
 
                 // if this is a more powerful challenge than the confirmation
                 // figuring this out quickly enables efficient decision to not confirm

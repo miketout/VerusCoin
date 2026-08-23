@@ -623,7 +623,7 @@ BlockMMRange CBlock::GetBlockMMRTree(const uint256 &entropyHash) const
     return BuildBlockMMRTree(entropyHash);
 }
 
-CPartialTransactionProof CBlock::GetPartialTransactionProof(const CTransaction &tx, int txIndex, const std::vector<std::pair<int16_t, int16_t>> &partIndexes, const uint256 &entropyHash) const
+CPartialTransactionProof CBlock::GetPartialTransactionProof(const CTransaction &tx, int txIndex, const std::vector<std::pair<uint16_t, uint16_t>> &partIndexes, const uint256 &entropyHash) const
 {
     std::vector<CTransactionComponentProof> components;
 

@@ -4853,7 +4853,13 @@ bool GetNotarizationData(const uint160 &currencyID,
                       (blockIt = mapBlockIndex.find(blkHash)) != mapBlockIndex.end() &&
                       chainActive.Contains(blockIt->second)))
                 {
-                    LogPrint("notarization", "%s: invalid finalization on transaction %s, output %d\n", __func__, it->first.txhash.GetHex().c_str(), (int)it->first.index);
+                    LogPrint("notarization", "%s: invalid finalization or notarization on transaction %s, output %d\n", __func__, it->first.txhash.GetHex().c_str(), (int)it->first.index);
+                    continue;
+                }
+
+                if (::AsVector(n) != p.vData[0])
+                {
+                    LogPrintf("%s: non-canonical notarization on output %s\n", __func__, CUTXORef(f.output.hash.IsNull() ? it->first.txhash : f.output.hash, (int)it->first.index).ToString().c_str());
                     continue;
                 }
 
@@ -11915,11 +11921,6 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                             {
                                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot find identity to export (" + EncodeDestination(destination) + ")");
                             }
-                            if (destIdentity.unlockAfter && !destIdentity.IsLocked())
-                            {
-                                std::string correctCommand = "Identity time lock should be zeroed before sending cross-chain to avoid inadvertent locking on destination chain. Run the command:\nupdateidentity \'{\"name\":\"" + destIdentity.name + "\",\"parent\":\"" + EncodeDestination(CIdentityID(destIdentity.parent)) + "\",\"timelock\":0}\'\nto zero the timelock value before exporting to another chain";
-                                throw JSONRPCError(RPC_INVALID_PARAMETER, correctCommand);
-                            }
                             destIdentity.contentMap.clear();
                             destIdentity.contentMultiMap.clear();
                             dest = CTransferDestination(CTransferDestination::DEST_FULLID, ::AsVector(destIdentity));
@@ -17282,6 +17283,18 @@ bool CConnectedChains::GetNotaryIDs(const CRPCChainData notaryChain,
         identities[pbaasChain.GatewayConverterID()] = newConverterIdentity;
     }
     return true;
+}
+
+bool CConnectedChains::GetNotarizationModuloReset(uint32_t &resetHeight, uint32_t &resetTime) const
+{
+    auto it = activeUpgradesByKey.find(ResetNotarizationModuloKey());
+    if (it != activeUpgradesByKey.end())
+    {
+        resetHeight = it->second.upgradeBlockHeight;
+        resetTime = it->second.upgradeTargetTime;
+        return true;
+    }
+    return false;
 }
 
 UniValue getidentityhistory(const UniValue& params, bool fHelp)

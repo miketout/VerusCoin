@@ -374,8 +374,7 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
                                       int32_t &evidenceOutStart,
                                       int32_t &evidenceOutEnd,
                                       std::vector<CReserveTransfer> &reserveTransfers,
-                                      CValidationState &state,
-                                      bool deepCheck) const
+                                      CValidationState &state) const
 {
     // we can assume that to get here, we have decoded the first output, which is the import output
     // specified in numImportOut, our "this" pointer
@@ -624,15 +623,18 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
                 bool optimizeETHProof = ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.type == CPartialTransactionProof::TYPE_ETH &&
                                         ConnectedChains.ShouldOptimizeETHProof();
 
-                if (!(importNotarization.proofRoots[pBaseImport->sourceSystemID].stateRoot ==
+                auto rootIt = importNotarization.proofRoots.find(pBaseImport->sourceSystemID);
+                if (!(rootIt != importNotarization.proofRoots.end() &&
+                      !rootIt->second.stateRoot.IsNull() &&
+                      rootIt->second.stateRoot ==
                         ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.CheckPartialTransaction(exportTx, &isPartial, optimizeETHProof) &&
-                    ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.TransactionHash() == pBaseImport->exportTxId &&
-                    exportTx.vout.size() > pBaseImport->exportTxOutNum &&
-                    exportTx.vout[pBaseImport->exportTxOutNum].scriptPubKey.IsPayToCryptoCondition(p) &&
-                    p.IsValid() &&
-                    p.evalCode == EVAL_CROSSCHAIN_EXPORT &&
-                    p.vData.size() &&
-                    (ccx = CCrossChainExport(p.vData[0])).IsValid()))
+                      ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.TransactionHash() == pBaseImport->exportTxId &&
+                      exportTx.vout.size() > pBaseImport->exportTxOutNum &&
+                      exportTx.vout[pBaseImport->exportTxOutNum].scriptPubKey.IsPayToCryptoCondition(p) &&
+                      p.IsValid() &&
+                      p.evalCode == EVAL_CROSSCHAIN_EXPORT &&
+                      p.vData.size() &&
+                      (ccx = CCrossChainExport(p.vData[0])).IsValid()))
                 {
                     if (LogAcceptCategory("notarization"))
                     {
@@ -664,25 +666,22 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
                     if (transactionProof.evidence.chainObjects.size() &&
                         ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.IsChainProof())
                     {
-                        if (deepCheck)
+                        CMMRProof &EthProof = ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.txProof;
+                        if (importFromDef.nativeCurrencyID.TypeNoFlags() != importFromDef.nativeCurrencyID.DEST_ETH)
                         {
-                            CMMRProof &EthProof = ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.txProof;
-                            if (importFromDef.nativeCurrencyID.TypeNoFlags() != importFromDef.nativeCurrencyID.DEST_ETH)
-                            {
-                                return state.Error(strprintf("%s: missing contract address in currency definition", __func__));
-                            }
-                            if (uint160(importFromDef.nativeCurrencyID.destination) != EthProof.GetNativeAddress())
-                            {
-                                LogPrintf("%s: Invalid ETH storage address, Found: %s, got %s from proof", __func__,
-                                    CTransferDestination::EncodeEthDestination(uint160(importFromDef.nativeCurrencyID.destination)),
-                                    CTransferDestination::EncodeEthDestination(EthProof.GetNativeAddress()));
-                                return state.Error(strprintf("%s: invalid ETH storage address", __func__));
-                            }
+                            return state.Error(strprintf("%s: missing contract address in currency definition", __func__));
+                        }
+                        if (uint160(importFromDef.nativeCurrencyID.destination) != EthProof.GetNativeAddress())
+                        {
+                            LogPrintf("%s: Invalid ETH storage address, Found: %s, got %s from proof", __func__,
+                                CTransferDestination::EncodeEthDestination(uint160(importFromDef.nativeCurrencyID.destination)),
+                                CTransferDestination::EncodeEthDestination(EthProof.GetNativeAddress()));
+                            return state.Error(strprintf("%s: invalid ETH storage address", __func__));
+                        }
 
-                            if(!EthProof.CheckStorageKey(ccx.sourceHeightStart)){
-                                LogPrintf("%s: Invalid ETH storage key.", __func__);
-                                return state.Error(strprintf("%s: invalid ETH storage key", __func__));
-                            }
+                        if(!EthProof.CheckStorageKey(ccx.sourceHeightStart)){
+                            LogPrintf("%s: Invalid ETH storage key.", __func__);
+                            return state.Error(strprintf("%s: invalid ETH storage key", __func__));
                         }
                     }
                     else
@@ -1456,7 +1455,7 @@ CCurrencyValueMap CCrossChainImport::GetBestPriorConversions(const CTransaction 
                 // get best prices
                 for (auto &onePrice : priorConversionMap.valueMap)
                 {
-                    int64_t curVal = retVal.valueMap[onePrice.first];
+                    int64_t curVal = retVal.ValueOf(onePrice.first);
                     if ((!curVal || curVal > onePrice.second) && onePrice.second)
                     {
                         retVal.valueMap[onePrice.first] = onePrice.second;
@@ -1677,8 +1676,7 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
                                     int32_t &importNotarizationOut,
                                     int32_t &evidenceOutStart,
                                     int32_t &evidenceOutEnd,
-                                    std::vector<CReserveTransfer> &reserveTransfers,
-                                    bool deepCheck) const
+                                    std::vector<CReserveTransfer> &reserveTransfers) const
 {
     CValidationState state;
     return GetImportInfo(importTx,
@@ -3709,7 +3707,7 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                 CTxDestination dest = TransferDestinationToDestination(destination);
                 CIdentity fullID;
                 if (dest.which() != COptCCParams::ADDRTYPE_ID ||
-                    !(fullID = CIdentity::LookupIdentity(GetDestinationID(dest))).IsValid() ||
+                    !(fullID = CIdentity::LookupIdentity(GetDestinationID(dest), height - 1)).IsValid() ||
                     destination.gatewayID == ASSETCHAINS_CHAINID)
                 {
                     printf("%s: Invalid export identity or identity not found for %s\n", __func__, EncodeDestination(dest).c_str());
@@ -7871,7 +7869,19 @@ bool IsFeePoolInput(const CScript &scriptSig)
 
 bool PrecheckFeePool(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
 {
-    return true;
+    COptCCParams p;
+    CFeePool fp;
+    if (tx.vout[outNum].scriptPubKey.IsPayToCryptoCondition(p) &&
+        p.IsValid() &&
+        p.evalCode == EVAL_FEE_POOL &&
+        p.vData.size() &&
+        (fp = CFeePool(p.vData[0])).IsValid() &&
+        p.IsEvalPKOut() &&
+        ::AsVector(fp) == p.vData[0])
+    {
+        return true;
+    }
+    return false;
 }
 
 bool PrecheckReserveDeposit(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
