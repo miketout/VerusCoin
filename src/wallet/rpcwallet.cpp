@@ -4827,7 +4827,7 @@ UniValue getwalletinfo(const UniValue& params, bool fHelp)
         {
             UniValue unlockedReserveBal(UniValue::VOBJ);
             CCurrencyValueMap unlockedResBal = pwalletMain->GetSharedReserveBalance(false);
-            if (resBal != unlockedResBal)
+            if (reserveSharedBal != unlockedResBal)
             {
                 for (auto &oneBalance : unlockedResBal.valueMap)
                 {

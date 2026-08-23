@@ -28,7 +28,7 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &outputs,
 
 CCommitmentHash::CCommitmentHash(const CTransaction &tx)
 {
-    for (auto txOut : tx.vout)
+    for (auto &txOut : tx.vout)
     {
         COptCCParams p;
         if (txOut.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.evalCode == EVAL_IDENTITY_COMMITMENT && p.vData.size())
@@ -41,8 +41,7 @@ CCommitmentHash::CCommitmentHash(const CTransaction &tx)
 
 CIdentity::CIdentity(const CTransaction &tx, int *voutNum, const uint160 &onlyThisID)
 {
-    std::set<uint160> ids;
-    int idIndex;
+    int idIndex = -1;
     bool found = false;
 
     nVersion = VERSION_INVALID;
@@ -343,11 +342,35 @@ CIdentity::LookupIdentities(const CIdentityID &nameID,
     std::vector<CAddressIndexDbEntry> identityIndex;
     std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> mempoolIdentities;
 
+    std::map<CUTXORef, std::pair<size_t, CAddressIndexDbEntry>> rawIndexEntries;
+    std::map<size_t, CAddressIndexDbEntry> resortedIndexEntries;
+
     std::vector<std::pair<uint160, int32_t>> indexVec;
+    size_t maxVecIdx = 0;
     for (auto &oneKey : indexKeys)
     {
-        GetAddressIndex(oneKey, CScript::P2IDX, identityIndex, gteHeight, lteHeight);
+        std::vector<CAddressIndexDbEntry> oneIDIndex;
+        GetAddressIndex(oneKey, CScript::P2IDX, oneIDIndex, gteHeight, lteHeight);
+
+        for (size_t i = 0; i < oneIDIndex.size(); i++)
+        {
+            if (oneIDIndex[i].first.spending)
+            {
+                continue;
+            }
+            rawIndexEntries[CUTXORef(oneIDIndex[i].first.txhash, oneIDIndex[i].first.index)] = {maxVecIdx + i, oneIDIndex[i]};
+        }
+        maxVecIdx += oneIDIndex.size();
         indexVec.push_back({oneKey, CScript::P2IDX});
+    }
+
+    for (auto &oneDbEntry : rawIndexEntries)
+    {
+        resortedIndexEntries.insert(oneDbEntry.second);
+    }
+    for (auto &oneDbEntry : resortedIndexEntries)
+    {
+        identityIndex.push_back(oneDbEntry.second);
     }
 
     if (sorted)
@@ -380,8 +403,6 @@ CIdentity::LookupIdentities(const CIdentityID &nameID,
     // order from first that spends unknown to last that has no spender
     if (identityIndex.size() || mempoolIdentities.size())
     {
-        std::vector<int> toRemove;
-        std::map<COutPoint, int> outputMap;
         for (int i = 0; i < identityIndex.size(); i++)
         {
             if (!identityIndex[i].first.spending)
@@ -582,10 +603,12 @@ CIdentity::GetIdentityContentByKey(const uint160 &idID,
 
     std::vector<std::tuple<std::vector<unsigned char>, uint256, uint32_t, CUTXORef, CPartialTransactionProof>> retVec;
     auto keyRange = aggregatedMap.equal_range(vdxfKey);
+
+    // make sure not to lose track of the object lifetimes for the reference in this multimap's tuple
     std::multimap<uint32_t, std::tuple<std::vector<unsigned char>, uint256, uint32_t, CUTXORef, CPartialTransactionProof> &> sortMap;
     for (auto keyIt = keyRange.first; keyIt != keyRange.second; keyIt++)
     {
-        sortMap.insert({std::get<2>(keyIt->second), keyIt->second});
+        sortMap.insert({(std::get<2>(keyIt->second) == 0 ? UINT32_MAX : std::get<2>(keyIt->second)), keyIt->second});
     }
     for (auto &oneEntry : sortMap)
     {
@@ -993,7 +1016,7 @@ bool HasReferralRequired(const CIdentity &identity, const CTransaction &tx, int3
                     if (checkIdentity.IsValidUnrevoked() &&
                         (checkIdentity.parent == parentID ||
                          idID == parentID ||
-                         (chainActive[height]->nTime >= PBAAS_PREMAINNET_ACTIVATION && !checkReferralID.IsNull() && idID == checkReferralID)))
+                         (chainActive[std::min((uint32_t)chainActive.Height(), height)]->nTime >= PBAAS_PREMAINNET_ACTIVATION && !checkReferralID.IsNull() && idID == checkReferralID)))
                     {
                         checkIdentities.push_back(checkIdentity);
                     }
@@ -1035,6 +1058,10 @@ bool HasReferralRequired(const CIdentity &identity, const CTransaction &tx, int3
                 authorizedIssuance = true;
                 break;
             }
+        }
+        else if (inputTx.GetHash() != oneIn.prevout.hash)
+        {
+            return state.Error("Failed to read input transaction: " + oneIn.prevout.hash.GetHex());
         }
     }
     return authorizedIssuance;
@@ -1083,14 +1110,15 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
         {
             CIdentity signingID = CIdentity::LookupIdentity(parentID, height);
 
+            if (!signingID.IsValid())
+            {
+                return state.Error("Invalid identity or identity not found for currency mint or burn with weight change");
+            }
+
             std::set<uint160> signingKeys;
             for (auto &oneDest : signingID.primaryAddresses)
             {
                 signingKeys.insert(GetDestinationID(oneDest));
-            }
-            if (!signingID.IsValid())
-            {
-                return state.Error("Invalid identity or identity not found for currency mint or burn with weight change");
             }
 
             CTransaction inputTx;
@@ -1161,6 +1189,10 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
                     }
                     authorizedIssuance = true;
                     break;
+                }
+                else if (inputTx.GetHash() != oneIn.prevout.hash)
+                {
+                    return state.Error("Failed to retrieve input transaction: " + oneIn.prevout.hash.GetHex());
                 }
             }
         }
@@ -1244,6 +1276,10 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
                         authorizedIssuance = true;
                         break;
                     }
+                }
+                else if (inputTx.GetHash() != oneIn.prevout.hash)
+                {
+                    return state.Error("Failed to retrieve input transaction for referral check. txid: " + oneIn.prevout.hash.GetHex());
                 }
             }
         }
@@ -1477,7 +1513,7 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
         for (auto &dest : dests)
         {
             uint160 oneDestID;
-            if (dest.which() == COptCCParams::ADDRTYPE_ID && (oneDestID = GetDestinationID(dest)) != thisID && !CIdentity::LookupIdentity(CIdentityID(oneDestID)).IsValid())
+            if (dest.which() == COptCCParams::ADDRTYPE_ID && (oneDestID = GetDestinationID(dest)) != thisID && !CIdentity::LookupIdentity(CIdentityID(oneDestID), height - 1).IsValid())
             {
                 return state.Error("Destination includes invalid identity");
             }
@@ -1567,7 +1603,7 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
                 ::FromVector(p.vData[0], ch);
                 commitmentHeight = coins->nHeight;
                 // this needs to already be in a prior block, or we can't consider it valid
-                if (!commitmentHeight || commitmentHeight == -1)
+                if (!commitmentHeight || commitmentHeight >= height)
                 {
                     return state.Error("ID commitment was not already in blockchain");
                 }
@@ -1616,14 +1652,14 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
             return state.Error("Invalid identity registration - must include native currency import fee as well as registration fee.");
         }
 
-        int64_t feePaid =
-                issuerID == ASSETCHAINS_CHAINID ?
-                    rtxd.NativeFees() :
-                    (burnAmount.valueMap.begin()->first == issuerID ?
-                     burnAmount.valueMap.begin()->second :
-                     (issuingCurrency.IsFractional() ?
-                      pricingState.ReserveToNative(burnAmount.valueMap.begin()->second, pricingState.GetReserveMap()[burnAmount.valueMap.begin()->first]) :
-                      0));
+        int64_t feePaid = issuerID == ASSETCHAINS_CHAINID ?
+                        rtxd.NativeFees() :
+                        (burnAmount.valueMap.size() == 0 ? 0 :
+                          (burnAmount.valueMap.begin()->first == issuerID ?
+                          burnAmount.valueMap.begin()->second :
+                          (issuingCurrency.IsFractional() ?
+                          pricingState.ReserveToNative(burnAmount.valueMap.begin()->second, pricingState.GetReserveMap()[burnAmount.valueMap.begin()->first]) :
+                          0)));
 
         // CHECK #4 - if blockchain referrals are not enabled or if there is no referring identity, make sure the fees of this transaction are full price for an identity,
         // all further checks only if referrals are enabled and there is a referrer
@@ -1639,7 +1675,9 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
 
         // CHECK #5 - ensure that the first referring output goes to the referring identity followed by additional referrers
         // referrer must be mined in when this transaction is put into the mem pool
-        if (firstReferralIdentity.parent != parentID && firstReferralIdentity.GetID() != parentID)
+        if (heightOut >= height ||
+            !firstReferralIdentity.IsValid() ||
+                (firstReferralIdentity.parent != parentID && firstReferralIdentity.GetID() != parentID))
         {
             //printf("%s: cannot find first instance of: %s\n", __func__, EncodeDestination(CIdentityID(newName.referral)).c_str());
             return state.Error("Invalid identity registration referral - different parent");
@@ -1703,7 +1741,6 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
             }
         }
 
-        // only validate referrers before PBaaS
         if (referrers.size() != checkReferrers.size())
         {
             return state.Error("Invalid identity registration - incorrect referral payments");
@@ -1719,7 +1756,7 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
         }
 
         // CHECK #6 - ensure that the transaction pays the correct mining and referral fees
-        if (feePaid < (idReferredRegistrationFee - (referrers.size() * idReferralFee)))
+        if (feePaid < (idReferredRegistrationFee - ((int64_t)referrers.size() * idReferralFee)))
         {
             return state.Error("Invalid identity registration - insufficient fee");
         }
@@ -1743,28 +1780,13 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
         // CHECK #5 - ensure that the first referring output goes to the referring identity followed by up
         //            to two identities that come from the original definition transaction of the referring identity. account for all outputs between
         //            identity out and reservation out and ensure that they are correct and pay 20% of the price of an identity
-        uint32_t heightOut = 0;
-        CTransaction referralTx;
-
         CIdentity firstReferralIdentity = CIdentity::LookupFirstIdentity(referralID, &heightOut, &idTxIn, &referralTx);
 
         // referrer must be mined in when this transaction is put into the mem pool
-        if (isPBaaS)
+        if (heightOut >= height || !firstReferralIdentity.IsValid() || firstReferralIdentity.parent != parentID)
         {
-            if (heightOut >= height ||
-                !firstReferralIdentity.IsValid() ||
-                (firstReferralIdentity.parent != parentID && !(firstReferralIdentity.GetID() == parentID && !firstReferralIdentity.parent.IsNull())))
-            {
-                return state.Error("Invalid identity registration referral");
-            }
-        }
-        else
-        {
-            if (heightOut >= height || !firstReferralIdentity.IsValid() || firstReferralIdentity.parent != parentID)
-            {
-                //printf("%s: cannot find first instance of: %s\n", __func__, EncodeDestination(CIdentityID(newName.referral)).c_str());
-                return state.Error("Invalid identity registration referral");
-            }
+            //printf("%s: cannot find first instance of: %s\n", __func__, EncodeDestination(CIdentityID(newName.referral)).c_str());
+            return state.Error("Invalid identity registration referral");
         }
 
         bool isReferral = false;
@@ -1854,10 +1876,9 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
     bool isPBaaS = networkVersion >= CActivationHeight::ACTIVATE_PBAAS; // this is only PBaaS differences, not Verus Vault
     bool advancedIdentity = networkVersion >= CActivationHeight::ACTIVATE_VERUSVAULT;
 
-    std::set<uint160> burnSet;
-    burnSet.insert(GetDestinationID(DecodeDestination("i5oFhZ8Bby47KHbnvomVDtrfd71HQFL7vN")));
-    burnSet.insert(GetDestinationID(DecodeDestination("iBvu9M4kEzLYQmT2rB57rwQqfWUVUA9qub")));
-    burnSet.insert(GetDestinationID(DecodeDestination("i8j7hatfvNXvj38EfnSQZzqYczrKL9LNoo")));
+    static const std::set<uint160> burnSet = {GetDestinationID(DecodeDestination("i5oFhZ8Bby47KHbnvomVDtrfd71HQFL7vN")),
+                                              GetDestinationID(DecodeDestination("iBvu9M4kEzLYQmT2rB57rwQqfWUVUA9qub")),
+                                              GetDestinationID(DecodeDestination("i8j7hatfvNXvj38EfnSQZzqYczrKL9LNoo"))};
 
     AssertLockHeld(cs_main);
 
@@ -1894,6 +1915,10 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
             if (advNewName.parent != ASSETCHAINS_CHAINID)
             {
                 issuingCurrency = parentCurrency = ConnectedChains.GetCachedCurrency(advNewName.parent);
+                if (!issuingCurrency.IsValid())
+                {
+                    return state.Error("Invalid or inaccessible parent currency in identity reservation");
+                }
                 issuerID = parentID = advNewName.parent;
                 if (parentCurrency.IsGateway() && !parentCurrency.IsNameController() && !parentCurrency.GatewayConverterID().IsNull())
                 {
@@ -1948,7 +1973,6 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
     {
         // calculate the correct conversion rate that should have been observed when making the transaction and enforce it
         // always use default expiry
-        int32_t reserveIndex = issuingCurrency.GetCurrenciesMap().find(feePricingCurrency)->second;
         std::vector<std::pair<CTransaction, uint256>> txOut;
 
         if ((tx.nExpiryHeight - DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA) > height)
@@ -1960,6 +1984,7 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
 
         if (feePricingCurrency != issuerID)
         {
+            int32_t reserveIndex = issuingCurrency.GetCurrenciesMap().find(feePricingCurrency)->second;
             idReferralFee = pricingState.ReserveToNative(idReferralFee, reserveIndex);
             idFullRegistrationFee = pricingState.ReserveToNative(idFullRegistrationFee, reserveIndex);
             idReferredRegistrationFee = pricingState.ReserveToNative(idReferredRegistrationFee, reserveIndex);
@@ -1981,7 +2006,7 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
                 newIdentity = CIdentity(p.vData[0]);
                 uint160 dummyParent;
                 valid = newIdentity.IsValid() &&
-                        (((chainActive.LastTip()->nTime < PBAAS_PREMAINNET_ACTIVATION ||
+                        (((chainActive[std::min((uint32_t)chainActive.Height(), height - 1)]->nTime < PBAAS_PREMAINNET_ACTIVATION ||
                            burnSet.count(newIdentity.GetID())) &&
                           newIdentity.name == CleanName(newIdentity.name, dummyParent)) ||
                          newIdentity.name == CleanName(newIdentity.name, dummyParent, true)) &&
@@ -2114,9 +2139,8 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
                         p.evalCode != EVAL_NONE ||
                         p.n > 1 ||
                         p.m != 1 ||
-                        (isPBaaS && !txout.scriptPubKey.IsSpendableOutputType()) ||
                         (issuerID == ASSETCHAINS_CHAINID && txout.nValue < idReferralFee) ||
-                        issuerID != ASSETCHAINS_CHAINID && txout.ReserveOutValue().valueMap[issuerID] < idReferralFee)
+                        (issuerID != ASSETCHAINS_CHAINID && txout.ReserveOutValue().valueMap[issuerID] < idReferralFee))
                     {
                         valid = false;
                         break;
@@ -2145,9 +2169,10 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
     // if issuing currency is fractional, verify burn amount based on pricing state
     if (issuingCurrency.IsFractional())
     {
-        int64_t feePaid = burnAmount.valueMap.begin()->first == issuerID ?
-                    burnAmount.valueMap.begin()->second :
-                    pricingState.ReserveToNative(burnAmount.valueMap.begin()->second, pricingState.GetReserveMap()[burnAmount.valueMap.begin()->first]);
+        int64_t feePaid = burnAmount.valueMap.size() == 0 ? 0 :
+                    (burnAmount.valueMap.begin()->first == issuerID ?
+                        burnAmount.valueMap.begin()->second :
+                        pricingState.ReserveToNative(burnAmount.valueMap.begin()->second, pricingState.GetReserveMap()[burnAmount.valueMap.begin()->first]));
         if (feePaid < (referrers.size() ? (idReferredRegistrationFee - (referrers.size() * idReferralFee)) : idFullRegistrationFee))
         {
             return state.Error("Inadequate fee paid for ID registration");
@@ -2179,10 +2204,8 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
 
     CAmount nValueIn = 0;
     {
-        LOCK2(cs_main, mempool.cs);
-
         // from here, we must spend a matching name commitment
-        std::map<uint256, CTransaction> txMap;
+        std::map<uint256, std::pair<uint256, CTransaction>> txMap;
         uint256 hashBlk;
         for (auto &oneTxIn : tx.vin)
         {
@@ -2196,11 +2219,12 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
             }
             else if (sourceTxIt != txMap.end())
             {
-                sourceTx = sourceTxIt->second;
+                hashBlk = sourceTxIt->second.first;
+                sourceTx = sourceTxIt->second.second;
             }
             else
             {
-                txMap[oneTxIn.prevout.hash] = sourceTx;
+                txMap[oneTxIn.prevout.hash] = {hashBlk, sourceTx};
             }
 
             if (oneTxIn.prevout.n >= sourceTx.vout.size())
@@ -2359,7 +2383,7 @@ bool PrecheckIdentityCommitment(const CTransaction &tx, int32_t outNum, CValidat
                     }
                 }
                 LogPrint("onchaincommitment", "Not enough fee to close commitment or invalid commitment");
-                return false;
+                return state.Error("Not enough fee to close commitment or invalid commitment");
             }
             else if (p.vData[0].size() > 32)
             {
@@ -2398,25 +2422,36 @@ bool PrecheckIdentityCommitment(const CTransaction &tx, int32_t outNum, CValidat
                         }
                     }
                     LogPrint("onchaincommitment", "Invalid advanced commitment");
-                    return false;
+                    return state.Error("Invalid advanced commitment");
                 }
                 else
                 {
                     LogPrint("onchaincommitment", "Oversized, invalid on chain commitment");
-                    return false;
+                    return state.Error("Oversized, invalid on chain commitment");
                 }
             }
             else
             {
                 LogPrint("onchaincommitment", "Undersized, invalid on chain commitment");
-                return false;
+                return state.Error("Undersized, invalid on chain commitment");
             }
         }
         else
         {
             LogPrint("onchaincommitment", "Invalid on chain commitment");
-            return false;
+            return state.Error("Invalid on chain commitment");
         }
+    }
+    return true;
+}
+
+bool PrecheckCurrencyState(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
+{
+    AssertLockHeld(cs_main);
+
+    if (IsAfterBridgeCleanupWindowStarts(chainActive[std::min((uint32_t)chainActive.Height(), height - 1)]->nTime))
+    {
+        return state.Error("Unsupported output type");
     }
     return true;
 }
@@ -2535,13 +2570,13 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                         identity = checkIdentity;
                         CDataStream ss(SER_DISK, PROTOCOL_VERSION);
                         if (GetSerializeSize(ss, CReserveTransfer(CReserveTransfer::IDENTITY_EXPORT + CReserveTransfer::VALID + CReserveTransfer::CROSS_SYSTEM,
-                                             CCurrencyValueMap(std::vector<uint160>({ASSETCHAINS_CHAINID}), std::vector<int64_t>({1})),
-                                             ASSETCHAINS_CHAINID,
-                                             0,
-                                             checkIdentity.GetID(),
-                                             CTransferDestination(CTransferDestination::DEST_FULLID,
-                                             ::AsVector(checkIdentity),
-                                             checkIdentity.GetID()))) > (CScript::MAX_SCRIPT_ELEMENT_SIZE - 128))
+                                                 CCurrencyValueMap(std::vector<uint160>({ASSETCHAINS_CHAINID}), std::vector<int64_t>({1})),
+                                                 ASSETCHAINS_CHAINID,
+                                                 0,
+                                                 checkIdentity.GetID(),
+                                                 CTransferDestination(CTransferDestination::DEST_FULLID,
+                                                 ::AsVector(checkIdentity),
+                                                 checkIdentity.GetID()))) > (CScript::MAX_SCRIPT_ELEMENT_SIZE - 128))
                         {
                             return state.Error("Serialized identity is too large");
                         }
@@ -2842,8 +2877,9 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
     for (auto &input : tx.vin)
     {
         // first time through may be null
-        if ((!input.prevout.hash.IsNull() && input.prevout.hash == inTx.GetHash()) || myGetTransaction(input.prevout.hash, inTx, blkHash))
+        if (!input.prevout.hash.IsNull() && (input.prevout.hash == inTx.GetHash() || myGetTransaction(input.prevout.hash, inTx, blkHash)))
         {
+            CIdentity tmpIdentity;
             if (input.prevout.n >= inTx.vout.size())
             {
                 return state.Error("Invalid, malformed transaction");
@@ -2852,11 +2888,15 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                 p.IsValid() &&
                 p.evalCode == EVAL_IDENTITY_PRIMARY &&
                 p.vData.size() > 1 &&
-                (identity = CIdentity(p.vData[0])).IsValid() &&
-                idID == identity.GetID())
+                (tmpIdentity = CIdentity(p.vData[0])).IsValid() &&
+                idID == tmpIdentity.GetID())
             {
                 return true;
             }
+        }
+        else if (!input.prevout.hash.IsNull())
+        {
+            return state.Error("Failure to retrieve input transaction");
         }
     }
 
@@ -2915,7 +2955,8 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
         }
         else if (idMayBeImported && validCrossChainImport)
         {
-            // ensure that we are importing IDs from a source system that can send us these IDs
+            // AddReserveTransferImportOutputs ensures that we are importing IDs from a source system that can send us these IDs
+            // look for its action when checking a curTransfer with IsIdentityExport()
             return true;
         }
     }
@@ -3123,8 +3164,11 @@ bool ValidateIdentityRevoke(struct CCcontract_info *cp, Eval* eval, const CTrans
                 CTransaction tokenOutTx;
                 uint256 hashBlock;
                 COptCCParams tokenP;
+                // even though right now, the supply of a control currency can be only 1 satoshi, in the future, it would be possible
+                // to have a governance token with > 1 satoshi and to control an ID with a majority of the supply in this same way
                 if (controlCurrencyVal > 0 &&
                     myGetTransaction(spendingTx.vin[nIn + 1].prevout.hash, tokenOutTx, hashBlock) &&
+                    tokenOutTx.vout.size() > spendingTx.vin[nIn + 1].prevout.n &&
                     tokenOutTx.vout[spendingTx.vin[nIn + 1].prevout.n].ReserveOutValue().valueMap[identityID] == controlCurrencyVal &&
                     tokenOutTx.vout[spendingTx.vin[nIn + 1].prevout.n].scriptPubKey == spendingTx.vout[idIndex + 1].scriptPubKey)
                 {
@@ -3269,7 +3313,7 @@ bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTran
             CTransaction tokenOutTx;
             uint256 hashBlock;
             COptCCParams tokenP;
-            if (controlCurrencyVal == 1 &&
+            if (controlCurrencyVal > 0 &&
                 myGetTransaction(spendingTx.vin[nIn + 1].prevout.hash, tokenOutTx, hashBlock) &&
                 tokenOutTx.vout.size() > spendingTx.vin[nIn + 1].prevout.n &&
                 tokenOutTx.vout[spendingTx.vin[nIn + 1].prevout.n].ReserveOutValue().valueMap[identityID] == controlCurrencyVal &&

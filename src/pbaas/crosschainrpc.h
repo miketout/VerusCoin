@@ -494,7 +494,7 @@ public:
         MAX_NATIVE_IDENTITY_SIZE = 512,
         DEFAULT_START_TARGET = 0x1e01e1e1,
         MAX_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 20,
-        MAX_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 100,
+        MAX_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 32,
         MAX_TRANSFER_EXPORTS_PER_BLOCK = 500,       // this is per block, and up to two of these limits go into an export
         MAX_EXPORT_INPUT_OVERHEAD_PER_BLOCK = 10,   // in addition to transfer inputs, we may have up to 10 inputs extra for an export transaction
         MAX_TRANSFER_EXPORTS_SIZE_PER_BLOCK = 100000, // same as above, but regarding space
@@ -1832,7 +1832,7 @@ static const int VERUS_STAKE_EXPLOIT_RESTORED_HEIGHT = 1576200;         // heigh
 static const uint32_t PBAAS_VERSION8_SOLUTION_TIME_START = 1783443600;  //Tuesday, July 7, 2026 at 5:00:00 PM
 static const uint32_t PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_START = 1783443600; // ""
 static const uint32_t PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_END = 1783620000; // Thursday, July 9, 2026 at 6:00:00 PM UTC
-static const uint32_t PBAAS_TESTNET_IDENTITY_START_CHECKSER = 1785542400; // Saturday, August 1, 2026 at 12:00:00 AM UTC
+static const uint32_t PBAAS_TESTNET_IDENTITY_START_CHECKSER = 1786147200; // Saturday, August 8, 2026 at 12:00:00 AM UTC
 
 extern std::map<uint160,CTransferDestination> bridgeAdjustingAddresses;
 CCurrencyValueMap &BridgeCurrencyAdjustmentMap();

@@ -1001,35 +1001,35 @@ public:
         return mtx;
     }
 
-    std::map<std::pair<int16_t, int16_t>, int32_t> GetElementHashMap()
+    std::map<std::pair<uint16_t, uint16_t>, int32_t> GetElementHashMap()
     {
         // hash header information and put in MMR and map, followed by all elements in order
         int32_t idx = 0;
-        std::map<std::pair<int16_t, int16_t>, int32_t> retVal;
+        std::map<std::pair<uint16_t, uint16_t>, int32_t> retVal;
         if ((((int64_t)nVins * 2) + (int64_t)nVouts + (int64_t)nShieldedSpends + (int64_t)nShieldedOutputs + 1) > UINT16_MAX)
         {
             return retVal;
         }
-        retVal[std::make_pair((int16_t)CTransactionHeader::TX_HEADER, (int16_t)0)] = idx++;
+        retVal[std::make_pair((uint16_t)CTransactionHeader::TX_HEADER, (uint16_t)0)] = idx++;
 
         for (unsigned int n = 0; n < nVins; n++) {
-            retVal[std::make_pair((int16_t)CTransactionHeader::TX_PREVOUTSEQ, (int16_t)n)] = idx++;
+            retVal[std::make_pair((uint16_t)CTransactionHeader::TX_PREVOUTSEQ, (uint16_t)n)] = idx++;
         }
 
         for (unsigned int n = 0; n < nVins; n++) {
-            retVal[std::make_pair((int16_t)CTransactionHeader::TX_SIGNATURE, (int16_t)n)] = idx++;
+            retVal[std::make_pair((uint16_t)CTransactionHeader::TX_SIGNATURE, (uint16_t)n)] = idx++;
         }
 
         for (unsigned int n = 0; n < nVouts; n++) {
-            retVal[std::make_pair((int16_t)CTransactionHeader::TX_OUTPUT, (int16_t)n)] = idx++;
+            retVal[std::make_pair((uint16_t)CTransactionHeader::TX_OUTPUT, (uint16_t)n)] = idx++;
         }
 
         for (unsigned int n = 0; n < nShieldedSpends; n++) {
-            retVal[std::make_pair((int16_t)CTransactionHeader::TX_SHIELDEDSPEND, (int16_t)n)] = idx++;
+            retVal[std::make_pair((uint16_t)CTransactionHeader::TX_SHIELDEDSPEND, (uint16_t)n)] = idx++;
         }
 
         for (unsigned int n = 0; n < nShieldedOutputs; n++) {
-            retVal[std::make_pair((int16_t)CTransactionHeader::TX_SHIELDEDOUTPUT, (int16_t)n)] = idx++;
+            retVal[std::make_pair((uint16_t)CTransactionHeader::TX_SHIELDEDOUTPUT, (uint16_t)n)] = idx++;
         }
         return retVal;
     }
@@ -1056,7 +1056,7 @@ public:
         elVchObj = ::AsVector(txPart);
     }
 
-    CTransactionComponentProof(TransactionMMView &txView, const _CTransactionMap &txMap, const CTransaction &tx, int16_t partType, int16_t subIndex);
+    CTransactionComponentProof(TransactionMMView &txView, const _CTransactionMap &txMap, const CTransaction &tx, uint16_t partType, uint16_t subIndex);
 
     ADD_SERIALIZE_METHODS;
 
@@ -1074,6 +1074,10 @@ public:
         try
         {
             ::FromVector(elVchObj, txPart);
+            if (::AsVector(txPart) != elVchObj)
+            {
+                return false;
+            }
         }
         catch(const std::exception& e)
         {
@@ -1224,12 +1228,12 @@ class _CTransactionMap
 {
 public:
     TransactionMMRange transactionMMR;              // this enables us to generate a proof of any sub-element in the transaction that associates with the txid
-    std::map<std::pair<int16_t, int16_t>, int32_t> elementHashMap;  // <type,index> for idx num lookup from the element type and sub-index to global index
+    std::map<std::pair<uint16_t, uint16_t>, int32_t> elementHashMap;  // <type,index> for idx num lookup from the element type and sub-index to global index
 
     _CTransactionMap(const CTransaction &tx);
 
     // returns -1 if element is not found
-    int32_t GetElementIndex(int16_t elementType, int16_t indexInType)
+    int32_t GetElementIndex(uint16_t elementType, uint16_t indexInType)
     {
         auto it = elementHashMap.find(std::make_pair(elementType, indexInType));
         if (it != elementHashMap.end())
@@ -1253,7 +1257,7 @@ public:
     CTransactionMap(const CTransaction &tx, bool Capped) : txMap(tx), txView(txMap.transactionMMR), capped(Capped) {}
 
     // returns -1 if element is not found
-    int32_t GetElementIndex(int16_t elementType, int16_t indexInType)
+    int32_t GetElementIndex(uint16_t elementType, uint16_t indexInType)
     {
         return txMap.GetElementIndex(elementType, indexInType);
     }
@@ -1439,13 +1443,13 @@ public:
 
     bool IsBlockPreHeader() const
     {
-        return components[0].elType == CTransactionHeader::TX_BLOCK_PREHEADER;
+        return components.size() == 0 ? false : components[0].elType == CTransactionHeader::TX_BLOCK_PREHEADER;
     }
 
     CPBaaSPreHeader GetBlockPreHeader() const
     {
         CPBaaSPreHeader preHeader;
-        if (components[0].elType == CTransactionHeader::TX_BLOCK_PREHEADER && components[0].Rehydrate(preHeader))
+        if (components.size() > 0 && components[0].elType == CTransactionHeader::TX_BLOCK_PREHEADER && components[0].Rehydrate(preHeader))
         {
             return preHeader;
         }

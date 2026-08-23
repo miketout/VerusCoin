@@ -3470,7 +3470,6 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                     // make sure we don't export the same identity or currency to the same destination more than once in any block
                                     // we cover the single block case here, and the protocol for each must reject anything relating to prior blocks
                                     CReserveTransfer rt;
-                                    CCurrencyDefinition destSystem;
                                     if ((rt = CReserveTransfer(p.vData[0])).IsValid())
                                     {
                                         uint160 destCurrencyID = rt.GetImportCurrency();
@@ -3522,10 +3521,11 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                                                     secondLegSystem.SystemOrGatewayID() != destCurrency.SystemOrGatewayID();
                                             if (checkSecondLeg)
                                             {
+                                                int32_t exportShiftCount = IsAfterBridgeCleanupWindowStarts(pblock->nTime) ? 1 : 0;
                                                 uint160 secondLegID = secondLegSystem.SystemOrGatewayID();
-                                                if ((++tmpExportTransfers[secondLegID].first + exportTransferCount[secondLegID].first) > secondLegSystem.MaxTransferExportCount() ||
-                                                    ((tmpExportTransfers[secondLegID].second += oneOut.scriptPubKey.size()) +
-                                                        exportTransferCount[secondLegID].second) > secondLegSystem.MaxTransferExportSize())
+                                                if ((++tmpExportTransfers[secondLegID].first + exportTransferCount[secondLegID].first) > (secondLegSystem.MaxTransferExportCount() >> exportShiftCount) ||
+                                                    ((tmpExportTransfers[secondLegID].second += rt.NextLegSizeAttribution(oneOut.scriptPubKey.size())) +
+                                                        exportTransferCount[secondLegID].second) > (secondLegSystem.MaxTransferExportSize() >> exportShiftCount))
                                                 {
                                                     disqualified = true;
                                                     break;
@@ -3596,7 +3596,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
 
                                         if ((++tmpExportTransfers[destCurrencyID].first + exportTransferCount[destCurrencyID].first) > destSystem.MaxTransferExportCount() ||
                                             ((tmpExportTransfers[destCurrencyID].second += oneOut.scriptPubKey.size()) +
-                                                        exportTransferCount[destCurrencyID].second) > secondLegSystem.MaxTransferExportSize() ||
+                                                        exportTransferCount[destCurrencyID].second) > destSystem.MaxTransferExportSize() ||
                                             (rt.IsCurrencyExport() && (++tmpCurrencyExportTransfers[destCurrencyID] + currencyExportTransferCount[destCurrencyID]) > destSystem.MaxCurrencyDefinitionExportCount()) ||
                                             (rt.IsIdentityExport() && (++tmpIdentityExportTransfers[destCurrencyID] + identityExportTransferCount[destCurrencyID]) > destSystem.MaxIdentityDefinitionExportCount()))
                                         {

@@ -216,7 +216,7 @@ _CTransactionMap::_CTransactionMap(const CTransaction &tx)
         auto hw = CDefaultMMRNode::GetHashWriter();
         hw << txHeader;
         transactionMMR.Add(CDefaultMMRNode(hw.GetHash()));
-        elementHashMap[std::make_pair((int16_t)CTransactionHeader::TX_HEADER, (int16_t)0)] = idx++;
+        elementHashMap[std::make_pair((uint16_t)CTransactionHeader::TX_HEADER, (uint16_t)0)] = idx++;
     }
 
     for (unsigned int n = 0; n < txHeader.nVins; n++) {
@@ -224,21 +224,21 @@ _CTransactionMap::_CTransactionMap(const CTransaction &tx)
         hw << tx.vin[n].prevout;
         hw << tx.vin[n].nSequence;
         transactionMMR.Add(CDefaultMMRNode(hw.GetHash()));
-        elementHashMap[std::make_pair((int16_t)CTransactionHeader::TX_PREVOUTSEQ, (int16_t)n)] = idx++;
+        elementHashMap[std::make_pair((uint16_t)CTransactionHeader::TX_PREVOUTSEQ, (uint16_t)n)] = idx++;
     }
 
     for (unsigned int n = 0; n < txHeader.nVins; n++) {
         auto hw = CDefaultMMRNode::GetHashWriter();
         hw << tx.vin[n];
         transactionMMR.Add(CDefaultMMRNode(hw.GetHash()));
-        elementHashMap[std::make_pair((int16_t)CTransactionHeader::TX_SIGNATURE, (int16_t)n)] = idx++;
+        elementHashMap[std::make_pair((uint16_t)CTransactionHeader::TX_SIGNATURE, (uint16_t)n)] = idx++;
     }
 
     for (unsigned int n = 0; n < txHeader.nVouts; n++) {
         auto hw = CDefaultMMRNode::GetHashWriter();
         hw << tx.vout[n];
         transactionMMR.Add(CDefaultMMRNode(hw.GetHash()));
-        elementHashMap[std::make_pair((int16_t)CTransactionHeader::TX_OUTPUT, (int16_t)n)] = idx++;
+        elementHashMap[std::make_pair((uint16_t)CTransactionHeader::TX_OUTPUT, (uint16_t)n)] = idx++;
     }
 
     for (unsigned int n = 0; n < txHeader.nShieldedSpends; n++) {
@@ -249,14 +249,14 @@ _CTransactionMap::_CTransactionMap(const CTransaction &tx)
         hw << tx.vShieldedSpend[n].rk;
         hw << tx.vShieldedSpend[n].zkproof;
         transactionMMR.Add(CDefaultMMRNode(hw.GetHash()));
-        elementHashMap[std::make_pair((int16_t)CTransactionHeader::TX_SHIELDEDSPEND, (int16_t)n)] = idx++;
+        elementHashMap[std::make_pair((uint16_t)CTransactionHeader::TX_SHIELDEDSPEND, (uint16_t)n)] = idx++;
     }
 
     for (unsigned int n = 0; n < txHeader.nShieldedOutputs; n++) {
         auto hw = CDefaultMMRNode::GetHashWriter();
         hw << tx.vShieldedOutput[n];
         transactionMMR.Add(CDefaultMMRNode(hw.GetHash()));
-        elementHashMap[std::make_pair((int16_t)CTransactionHeader::TX_SHIELDEDOUTPUT, (int16_t)n)] = idx++;
+        elementHashMap[std::make_pair((uint16_t)CTransactionHeader::TX_SHIELDEDOUTPUT, (uint16_t)n)] = idx++;
     }
 }
 
@@ -528,66 +528,79 @@ std::string CTransaction::ToString() const
     return str;
 }
 
-CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView, const _CTransactionMap &txMap, const CTransaction &tx, int16_t partType, int16_t subIndex) :
+CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView, const _CTransactionMap &txMap, const CTransaction &tx, uint16_t partType, uint16_t subIndex) :
     elType(partType), elIdx(subIndex)
 {
-    std::pair<int16_t, int16_t> idx({partType, subIndex});
-    switch(partType)
+    std::pair<uint16_t, uint16_t> idx({partType, subIndex});
+    if (partType != CTransactionHeader::TX_FULL && subIndex >= INT16_MAX)
     {
-        case CTransactionHeader::TX_FULL:
+        *this = CTransactionComponentProof();
+        LogPrintf("%s: Invalid transaction proof, component index out of bounds\n", __func__);
+    }
+    else
+    {
+        switch(partType)
         {
-            elVchObj = ::AsVector(tx);
-            break;
-        }
-        case CTransactionHeader::TX_HEADER:
-        {
-            if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+            case CTransactionHeader::TX_FULL:
             {
-                elVchObj = ::AsVector(CTransactionHeader(tx));
+                elVchObj = ::AsVector(tx);
+                break;
             }
-            break;
-        }
-        case CTransactionHeader::TX_PREVOUTSEQ:
-        {
-            if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+            case CTransactionHeader::TX_HEADER:
             {
-                CTxIn prevOutSeqOnly = tx.vin[subIndex];
-                prevOutSeqOnly.scriptSig = CScript();
-                elVchObj = ::AsVector(prevOutSeqOnly);
+                if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+                {
+                    elVchObj = ::AsVector(CTransactionHeader(tx));
+                }
+                break;
             }
-            break;
-        }
-        case CTransactionHeader::TX_SIGNATURE:
-        {
-            if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+            case CTransactionHeader::TX_PREVOUTSEQ:
             {
-                elVchObj = ::AsVector(tx.vin[subIndex]);
+                if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+                {
+                    CTxIn prevOutSeqOnly = tx.vin[subIndex];
+                    prevOutSeqOnly.scriptSig = CScript();
+                    elVchObj = ::AsVector(prevOutSeqOnly);
+                }
+                break;
             }
-            break;
-        }
-        case CTransactionHeader::TX_OUTPUT:
-        {
-            if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+            case CTransactionHeader::TX_SIGNATURE:
             {
-                elVchObj = ::AsVector(tx.vout[subIndex]);
+                if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+                {
+                    elVchObj = ::AsVector(tx.vin[subIndex]);
+                }
+                break;
             }
-            break;
-        }
-        case CTransactionHeader::TX_SHIELDEDSPEND:
-        {
-            if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+            case CTransactionHeader::TX_OUTPUT:
             {
-                elVchObj = ::AsVector(tx.vShieldedSpend[subIndex]);
+                if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+                {
+                    elVchObj = ::AsVector(tx.vout[subIndex]);
+                }
+                break;
             }
-            break;
-        }
-        case CTransactionHeader::TX_SHIELDEDOUTPUT:
-        {
-            if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+            case CTransactionHeader::TX_SHIELDEDSPEND:
             {
-                elVchObj = ::AsVector(tx.vShieldedOutput[subIndex]);
+                if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+                {
+                    elVchObj = ::AsVector(tx.vShieldedSpend[subIndex]);
+                }
+                break;
             }
-            break;
+            case CTransactionHeader::TX_SHIELDEDOUTPUT:
+            {
+                if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
+                {
+                    elVchObj = ::AsVector(tx.vShieldedOutput[subIndex]);
+                }
+                break;
+            }
+            default:
+            {
+                *this = CTransactionComponentProof();
+                LogPrintf("%s: Invalid transaction proof, unrecognized element\n", __func__);
+            }
         }
     }
 }
@@ -622,6 +635,11 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
     CMutableTransaction mtx;
     CVDXF_Data vdxfObj;
 
+    if (!IsValid())
+    {
+        return uint256();
+    }
+
     uint256 txRoot;
     bool checkOK = false;
     bool isPartial = true;
@@ -635,7 +653,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                 txRoot = components[0].CheckProof();
 
                 mtx = txh.RehydrateTransactionScaffold();
-                std::map<std::pair<int16_t, int16_t>, int32_t> elHash = txh.GetElementHashMap();
+                std::map<std::pair<uint16_t, uint16_t>, int32_t> elHash = txh.GetElementHashMap();
 
                 if (elHash.size() == 0 ||
                     components[0].elProof.proofSequence.size() != 1 ||
@@ -729,7 +747,11 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
 
                 for (int i = 1; i < components.size(); i++)
                 {
-                    if (components[i].CheckProof() != txRoot ||
+                    if (components[i].elProof.proofSequence.size() != 1 ||
+                        components[i].elProof.proofSequence[0]->branchType != CMerkleBranchBase::BRANCH_MMRBLAKE_NODE ||
+                        ((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->nSize != elHash.size() ||
+                        ((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->branch.size() == 0 ||
+                        components[i].CheckProof() != txRoot ||
                         !elHash.count({components[i].elType, components[i].elIdx}) ||
                         elHash[{components[i].elType, components[i].elIdx}] != ((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->nIndex ||
                         TransactionMMView::GetProofBits(((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->nIndex, elHash.size()).size() !=
@@ -815,7 +837,11 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
             }
             else if (components[0].elType == CTransactionHeader::TX_ETH_OBJECT && components[0].Rehydrate(vdxfObj))
             {
-                if (vdxfObj.key == CCrossChainExport::CurrencyExportKey())
+                if (!vdxfObj.IsValid())
+                {
+                    return uint256();
+                }
+                else if (vdxfObj.key == CCrossChainExport::CurrencyExportKey())
                 {
                     // unpack data specific to export and reserve transfers
                     CDataStream s = CDataStream(vdxfObj.data, SER_NETWORK, PROTOCOL_VERSION);
@@ -877,6 +903,10 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
 // matches the expected block MMR root, which should be the return value
 uint256 CPartialTransactionProof::CheckPartialTransaction(CTransaction &outTx, bool *pIsPartial, bool optimizedETH) const
 {
+    if (!IsValid())
+    {
+        return uint256();
+    }
     return txProof.CheckProof(GetPartialTransaction(outTx, pIsPartial), optimizedETH);
 }
 

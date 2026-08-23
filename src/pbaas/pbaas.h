@@ -85,8 +85,8 @@ public:
     uint32_t upgradeTargetTime;             // target time for upgrade, depending on specific upgrade activation rules
 
     CUpgradeDescriptor(uint32_t Version=VERSION_INVALID) : version(Version), upgradeBlockHeight(0) {}
-    CUpgradeDescriptor(const uint160 &UpgradeID, uint32_t minDaemonVersion, uint32_t UpgradeHeight, uint32_t upgradeTargetTime, uint32_t Version=VERSION_CURRENT) :
-        version(Version), upgradeID(UpgradeID), upgradeBlockHeight(UpgradeHeight) {}
+    CUpgradeDescriptor(const uint160 &UpgradeID, uint32_t MinDaemonVersion, uint32_t UpgradeHeight, uint32_t UpgradeTargetTime, uint32_t Version=VERSION_CURRENT) :
+        version(Version), minDaemonVersion(MinDaemonVersion), upgradeID(UpgradeID), upgradeBlockHeight(UpgradeHeight), upgradeTargetTime(UpgradeTargetTime) {}
 
     ADD_SERIALIZE_METHODS;
 
@@ -310,13 +310,13 @@ public:
 
     inline static int32_t GetBlocksBeforeModuloExtension(uint32_t notarizationBlockModulo)
     {
-        uint32_t maxAutoConfirmBlocks = notarizationBlockModulo * MODULO_EXTENSION_MULTIPLIER * (MIN_EARNED_FOR_AUTO * 2);
-        return std::max(maxAutoConfirmBlocks, (uint32_t)NUM_BLOCKS_BEFORE_EXTENSION);
+        int64_t maxAutoConfirmBlocks = std::min((int64_t)INT32_MAX, ((int64_t)notarizationBlockModulo * MODULO_EXTENSION_MULTIPLIER * (MIN_EARNED_FOR_AUTO * 2)));
+        return std::max((int32_t)maxAutoConfirmBlocks, (int32_t)NUM_BLOCKS_BEFORE_EXTENSION);
     }
 
     inline static int32_t NotarizationsBeforeModuloExtension()
     {
-        return MIN_EARNED_FOR_AUTO << (1 + MIN_EARNED_FOR_AUTO);
+        return std::min(80, MIN_EARNED_FOR_AUTO << MIN_EARNED_FOR_AUTO);
     }
 
     static int32_t GetAdjustedNotarizationModuloExp(int64_t notarizationBlockModulo,
@@ -1238,6 +1238,7 @@ public:
     bool CheckStrictPreconvert(uint32_t height) const;
     uint32_t IncludePostLaunchFeeHeight(bool getVerusHeight) const;
     bool IncludePostLaunchFees(uint32_t height) const;
+    bool IsFirstDeFiVRSCTEST() const;
     bool CheckClearConvert(uint32_t height) const;
     uint32_t StrictCheckIDExportHeight(bool getVerusHeight) const;
     bool StrictCheckIDExport(uint32_t height) const;
@@ -1353,6 +1354,9 @@ public:
         static uint160 key = CVDXF_Data::GetDataKey(ResetNotarizationModuloKeyName(), nameSpace);
         return key;
     }
+
+    // returns the active reset constraint; 0 in a field means "no constraint"
+    bool GetNotarizationModuloReset(uint32_t &resetHeight, uint32_t &resetTime) const;
 
     static std::string ForceIdentityUpgradeKeyName()
     {

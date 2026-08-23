@@ -69,10 +69,10 @@ bool IsVerusBridgeExceptionTx(const uint256 &checkHash, uint32_t height)
 
 // these must be in text, as they are processed. i-addresses won't work.
 std::map<uint160,CTransferDestination> bridgeAdjustingAddresses =
-    {{GetOneAdjustmentAddressEntry("VRSC", "bridgecleanupadjuster@")},
-     {GetOneAdjustmentAddressEntry("VARRR", "bridgecleanupadjuster.varrr@")},
-     {GetOneAdjustmentAddressEntry("VDEX", "bridgecleanupadjuster.vdex@")},
-     {GetOneAdjustmentAddressEntry("CHIPS", "bridgecleanupadjuster.chips@")}};
+    {{GetOneAdjustmentAddressEntry("VRSC.", "bridgecleanupadjuster.vrsc.@")},
+    {GetOneAdjustmentAddressEntry("VARRR.vrsc.", "bridgecleanupadjuster.varrr.vrsc.@")},
+    {GetOneAdjustmentAddressEntry("VDEX.vrsc.", "bridgecleanupadjuster.vdex.vrsc.@")},
+    {GetOneAdjustmentAddressEntry("CHIPS.vrsc.", "bridgecleanupadjuster.chips.vrsc.@")}};
 
 bool IsBridgeCleanupWindowOpen(uint32_t chainTime)
 {

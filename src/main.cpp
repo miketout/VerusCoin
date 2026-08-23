@@ -2137,26 +2137,6 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
             }
         }
 
-        if (txDesc.IsReserveTransfer() && !txDesc.IsImport())
-        {
-            // don't enter reserve transfers that we can reject (fLimitFree is true && not import, so not checking a block) that export to a destination of this chain
-            for (auto &oneOut : tx.vout)
-            {
-                COptCCParams p;
-                CReserveTransfer rt;
-                if (oneOut.scriptPubKey.IsPayToCryptoCondition(p) &&
-                    p.IsValid() &&
-                    p.evalCode == EVAL_RESERVE_TRANSFER &&
-                    p.vData.size() &&
-                    (rt = CReserveTransfer(p.vData[0])).IsValid() &&
-                    rt.GetImportCurrency() == ASSETCHAINS_CHAINID)
-                {
-                    LogPrintf("AcceptToMemoryPool: invalid reserve transfer transaction, cannot export to current chain :\n%s\n", txDesc.ToUniValue().write(1,2).c_str());
-                    return state.DoS(0, error("AcceptToMemoryPool: invalid reserve transfer transaction, cannot export to current chain %s", hash.ToString()), REJECT_NONSTANDARD, "bad-txns-invalid-reservetransfer");
-                }
-            }
-        }
-
         // if this is an identity, determine the identityFeeFactor
         CAmount identityFeeFactor = 0;
         if (fLimitFree && txDesc.IsValid())
@@ -4150,8 +4130,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                    nHeight < 1800000)))
             {
                 LogPrintf("%s: ERROR: %s\nBlock %s rejected\n", __func__, state.GetRejectReason().c_str(), block.GetHash().GetHex().c_str());
-                if (state.GetRejectReason() != "bad-txns-invalid-reservetransfer" &&
-                    state.GetRejectReason() != "unable to get last confirmed notarization" &&
+                if (state.GetRejectReason() != "unable to get last confirmed notarization" &&
                     state.IsInvalid())
                 {
                     InvalidBlockFound(pindex, state, Params());
@@ -4226,6 +4205,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                     curDef.GetID() == ASSETCHAINS_CHAINID)
                                 {
                                     newThisChain = curDef;
+                                    currencyDefinitions.insert(curDef.GetID());
                                 }
                                 else if (curDef.IsValid())
                                 {
@@ -4370,10 +4350,11 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                     uint160 secondLegID;
                                     if (checkSecondLeg)
                                     {
+                                        int32_t exportShiftCount = IsAfterBridgeCleanupWindowStarts(pindex->nTime) ? 1 : 0;
                                         secondLegID = secondLegSystem.SystemOrGatewayID();
                                         if (secondLegID.IsNull() ||
-                                            ++exportTransferCount[secondLegID].first > secondLegSystem.MaxTransferExportCount() ||
-                                            (exportTransferCount[secondLegID].second += oneOut.scriptPubKey.size()) > secondLegSystem.MaxTransferExportSize())
+                                            ++exportTransferCount[secondLegID].first > (secondLegSystem.MaxTransferExportCount() >> exportShiftCount) ||
+                                            (exportTransferCount[secondLegID].second += rt.NextLegSizeAttribution(oneOut.scriptPubKey.size())) > (secondLegSystem.MaxTransferExportSize() >> exportShiftCount))
                                         {
                                             return state.DoS(10, error("%s: attempt to submit block with too many transfers exporting to %s", __func__, EncodeDestination(CIdentityID(secondLegID)).c_str()), REJECT_INVALID, "bad-txns-too-many-transfers");
                                         }
@@ -4418,7 +4399,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
                                             if (checkSecondLeg)
                                             {
-                                                if (++identityExportTransferCount[secondLegID] > secondLegSystem.MaxCurrencyDefinitionExportCount())
+                                                if (++identityExportTransferCount[secondLegID] > secondLegSystem.MaxIdentityDefinitionExportCount())
                                                 {
                                                     return state.DoS(10, error("%s: attempt to submit block with too many identity definition exports to %s", __func__, EncodeDestination(CIdentityID(secondLegID)).c_str()), REJECT_INVALID, "bad-txns-too-many-transfers");
                                                 }
@@ -6467,22 +6448,10 @@ bool CheckBlockHeader(int32_t *futureblockp, int32_t height, CBlockIndex *pindex
     *futureblockp = 0;
     if (blockhdr.GetBlockTime() > GetTime() + 60)
     {
-        CBlockIndex *tipindex;
-        //fprintf(stderr,"ht.%d future block %u vs time.%u + 60\n",height,(uint32_t)blockhdr.GetBlockTime(),(uint32_t)GetAdjustedTime());
-        if ( (tipindex= chainActive.Tip()) != 0 && tipindex->GetBlockHash() == blockhdr.hashPrevBlock && blockhdr.GetBlockTime() < GetTime() + 60 + 5 )
-        {
-            //fprintf(stderr,"it is the next block, let's wait for %d seconds\n",GetAdjustedTime() + 60 - blockhdr.GetBlockTime());
-            while ( blockhdr.GetBlockTime() > GetTime() + 60 )
-                sleep(1);
-            //fprintf(stderr,"now its valid\n");
-        }
-        else
-        {
-            if (blockhdr.GetBlockTime() < GetTime() + 600)
-                *futureblockp = 1;
-            //LogPrintf("CheckBlockHeader block from future %d error",blockhdr.GetBlockTime() - GetTime());
-            return false; //state.Invalid(error("CheckBlockHeader(): block timestamp too far in the future"),REJECT_INVALID, "time-too-new");
-        }
+        if (blockhdr.GetBlockTime() < GetTime() + 600)
+            *futureblockp = 1;
+        //LogPrintf("CheckBlockHeader block from future %d error",blockhdr.GetBlockTime() - GetTime());
+        return false; //state.Invalid(error("CheckBlockHeader(): block timestamp too far in the future"),REJECT_INVALID, "time-too-new");
     }
     // Check block version
     if (height > 0 && blockhdr.nVersion < MIN_BLOCK_VERSION)

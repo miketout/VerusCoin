@@ -554,7 +554,6 @@ std::string HelpMessage(HelpMessageMode mode)
 #endif
 
     strUsage += HelpMessageGroup(_("PBaaS options:"));
-    strUsage += HelpMessageOpt("-acceptfreeimportsfrom=<i-address>,<i-address>,...", _(" \"%s\" no spaces - accept underpaid imports from these PBaaS chains or networks - default is empty"));
     strUsage += HelpMessageOpt("-allowdelayednotarizations", strprintf(_("Do not notarize in order to prevent slower notarizations (default = %u, notarize to prevent slowing down)"), DEFAULT_SPENTINDEX));
     strUsage += HelpMessageOpt("-alwayssubmitnotarizations", strprintf(_("Submit notarizations to notary chain whenevever merge mining/staking and eligible (default = %u, only as needed)"), DEFAULT_SPENTINDEX));
     strUsage += HelpMessageOpt("-approvecontractupgrade=<ETHcontracthash(0x...)>", strprintf(_("When validating blocks, vote to agree to upgrade to the specific contract. Default is no upgrade.")));
@@ -1295,29 +1294,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     if (!upgradeContractAddress.IsNull())
     {
         APPROVE_CONTRACT_UPGRADE = CTransferDestination(CTransferDestination::DEST_ETH, ::AsVector(upgradeContractAddress));
-    }
-
-    // free imports
-    auto freeImportsFrom = GetArg("-acceptfreeimportsfrom", "");
-    if (!freeImportsFrom.empty())
-    {
-        std::vector<std::string> freeImportCurrencies;
-        boost::split(freeImportCurrencies, freeImportsFrom, boost::is_any_of(","));
-        for (auto &oneFreeCur : freeImportCurrencies)
-        {
-            auto oneCurDest = DecodeDestination(oneFreeCur);
-            if (oneCurDest.which() == COptCCParams::ADDRTYPE_ID)
-            {
-                FREE_CURRENCY_IMPORTS.insert(GetDestinationID(oneCurDest));
-                LogPrintf("Enabling free imports from system: %s\n", oneFreeCur.c_str());
-                printf("Enabling free imports from system: %s\n", oneFreeCur.c_str());
-            }
-            else
-            {
-                LogPrintf("Invalid parameter for free imports, should be valid identity name of system root currency: %s\n", oneFreeCur.c_str());
-                printf("Invalid parameter for free imports, should be valid identity name of system root currency: %s\n", oneFreeCur.c_str());
-            }
-        }
     }
 
     auto notaryIDDest = DecodeDestination(GetArg("-notaryid", ""));

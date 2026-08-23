@@ -247,6 +247,9 @@ public:
         MAX_NORMAL_TRANSFER_SIZE = 256,
         MAX_CURRENCYEXPORT_SIZE = 2048,
         MAX_IDENTITYEXPORT_SIZE = 1024,
+        MAX_EXPORT_SCRIPT_OVERHEAD = 256,   // CC wrapper allowance, generous and round
+        MAX_IDENTITYEXPORT_ATTRIBUTED = MAX_IDENTITYEXPORT_SIZE + MAX_EXPORT_SCRIPT_OVERHEAD,
+        MAX_CURRENCYEXPORT_ATTRIBUTED = MAX_CURRENCYEXPORT_SIZE + MAX_EXPORT_SCRIPT_OVERHEAD
     };
 
     static const CAmount DEFAULT_PER_STEP_FEE = 10000; // default fee for each step of each transfer (initial mining, transfer, mining on new chain)
@@ -476,6 +479,19 @@ public:
     bool IsCurrencyExport() const
     {
         return flags & CURRENCY_EXPORT || (destination.TypeNoFlags() == destination.DEST_REGISTERCURRENCY);
+    }
+
+    // bytes to charge against SECOND-LEG export size limits; identity and currency definitions
+    // are inlined into the destination when re-emitted, so charge the bound rather than the
+    // source size — producers and validators on any chain then agree without a definition lookup
+    int32_t NextLegSizeAttribution(size_t actualScriptSize) const
+    {
+        if (HasNextLeg())
+        {
+            if (IsIdentityExport()) return MAX_IDENTITYEXPORT_ATTRIBUTED;
+            if (IsCurrencyExport()) return MAX_CURRENCYEXPORT_ATTRIBUTED;
+        }
+        return actualScriptSize;
     }
 
     void SetArbitrageOnly(bool isArbitrage=true)
@@ -944,8 +960,7 @@ public:
                        int32_t &evidenceOutStart,
                        int32_t &evidenceOutEnd,
                        std::vector<CReserveTransfer> &reserveTransfers,
-                       CValidationState &state,
-                       bool deepCheck=false) const;
+                       CValidationState &state) const;
 
     bool GetImportInfo(const CTransaction &importTx,
                        uint32_t nHeight,
@@ -957,8 +972,7 @@ public:
                        int32_t &importNotarizationOut,
                        int32_t &evidenceOutStart,
                        int32_t &evidenceOutEnd,
-                       std::vector<CReserveTransfer> &reserveTransfers,
-                       bool deepCheck=false) const;
+                       std::vector<CReserveTransfer> &reserveTransfers) const;
 
     // ensures that all import rules were properly followed to create
     // the import inputs and outputs on this transaction
@@ -2051,6 +2065,7 @@ bool IsFeePoolInput(const CScript &scriptSig);
 bool PrecheckFeePool(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 bool PrecheckReserveDeposit(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
+bool PrecheckCurrencyState(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 CAmount GetMinRelayFeeByOutputs(const CReserveTransactionDescriptor &txDesc, const CTransaction &tx, CValidationState &state, CAmount identityFeeFactor);
 CAmount GetMinRelayFeeByOutputs(const CTransaction &tx, CValidationState &state, CAmount identityFeeFactor);
 

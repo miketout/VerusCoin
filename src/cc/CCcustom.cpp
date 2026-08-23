@@ -293,7 +293,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv,DecodeSecret(CurrencyStateWIF).begin(),32);
             cp->validate = ValidateCurrencyState;
             cp->ismyvin = IsCurrencyStateInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->contextualprecheck = &PrecheckCurrencyState;
             break;
 
         case EVAL_IDENTITY_PRIMARY:

@@ -727,7 +727,7 @@ public:
             // in case it is deserialized with something present
             DeleteProofSequence();
 
-            bool error = false;
+            bool error = proofSize < 0;
             for (int i = 0; i < proofSize && !error; i++)
             {
                 uint8_t branchType = 0;
@@ -880,7 +880,6 @@ public:
 
             for (auto pProof : proofSequence)
             {
-                bool error = false;
                 READWRITE(pProof->branchType);
 
                 switch(pProof->branchType)
@@ -912,12 +911,10 @@ public:
                     }
                     default:
                     {
-                        error = true;
-                        printf("ERROR: unknown branch type (%u), likely corrupt\n", pProof->branchType);
-                        break;
-                    }
+                        printf("%s: ERROR: unknown branch type (%u), likely memory corruption\n", __func__, pProof->branchType);
+                        LogPrintf("%s: ERROR: unknown branch type (%u), likely memory corrupttion\n", __func__, pProof->branchType);
+                        throw std::ios_base::failure("CMMRProof::SerializationOp: unknown branch type");                    }
                 }
-                assert(!error);
             }
         }
     }
