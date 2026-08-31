@@ -9,6 +9,7 @@
 #include "support/lockedpool.h"
 #include "support/cleanse.h"
 
+#include <cassert>
 #include <memory>
 #include <string>
 
