@@ -376,8 +376,8 @@ UniValue setgenerate(const UniValue& params, bool fHelp)
         KOMODO_MININGTHREADS = (int32_t)nGenProcLimit;
     }
 
-    mapArgs["-gen"] = (fGenerate ? "1" : "0");
-    mapArgs ["-genproclimit"] = itostr(KOMODO_MININGTHREADS);
+    OverrideSetArg("-gen", (fGenerate ? "1" : "0"));
+    OverrideSetArg("-genproclimit", itostr(KOMODO_MININGTHREADS));
 
 #ifdef ENABLE_WALLET
     GenerateBitcoins(fGenerate, pwalletMain, nGenProcLimit);
@@ -645,7 +645,7 @@ UniValue setminingdistribution(const UniValue& params, bool fHelp)
             }
             minerOutputs.push_back(CTxOut(relVal, GetScriptForDestination(oneDest)));
         }
-        mapArgs["-miningdistribution"] = params[0].write();
+        OverrideSetArg("-miningdistribution", params[0].write());
     }
     return NullUniValue;
 }
@@ -676,7 +676,7 @@ UniValue getminingdistribution(const UniValue& params, bool fHelp)
 
 
     UniValue distributionObj(UniValue::VOBJ);
-    distributionObj.read(mapArgs.count("-miningdistribution") ? mapArgs["-miningdistribution"] : "");
+    distributionObj.read(GetArg("-miningdistribution", ""));
     return distributionObj;
 }
 

@@ -1600,7 +1600,7 @@ void ThreadDNSAddressSeed()
     if ((addrman.size() > 0) &&
         (!GetBoolArg("-forcednsseed", false)))
     {
-        if (!(mapArgs.count("-connect") && mapMultiArgs["-connect"].size() > 0))
+        if (GetArgs("-connect").empty())
         {
             return;
         }
@@ -1680,12 +1680,13 @@ void ThreadOpenConnections()
 {
     // Connect to specific addresses
     bool skipSeeds = false;
-    if (mapArgs.count("-connect") && mapMultiArgs["-connect"].size() > 0)
+    const std::vector<std::string> connectArgs = GetArgs("-connect");
+    if (!connectArgs.empty())
     {
         for (int64_t nLoop = 0;; nLoop++)
         {
             ProcessOneShot();
-            BOOST_FOREACH(const std::string& strAddr, mapMultiArgs["-connect"])
+            BOOST_FOREACH(const std::string& strAddr, connectArgs)
             {
                 CAddress addr;
                 OpenNetworkConnection(addr, NULL, strAddr.c_str());
@@ -1783,7 +1784,7 @@ void ThreadOpenAddedConnections()
 {
     {
         LOCK(cs_vAddedNodes);
-        vAddedNodes = mapMultiArgs["-addnode"];
+        vAddedNodes = GetArgs("-addnode");
     }
 
     if (HaveNameProxy()) {
@@ -2632,13 +2633,13 @@ void CNode::EndMessage() UNLOCK_FUNCTION(cs_vSend)
     // The -*messagestest options are intentionally not documented in the help message,
     // since they are only used during development to debug the networking code and are
     // not intended for end-users.
-    if (mapArgs.count("-dropmessagestest") && GetRand(GetArg("-dropmessagestest", 2)) == 0)
+    if (IsArgSet("-dropmessagestest") && GetRand(GetArg("-dropmessagestest", 2)) == 0)
     {
         LogPrint("net", "dropmessages DROPPING SEND MESSAGE\n");
         AbortMessage();
         return;
     }
-    if (mapArgs.count("-fuzzmessagestest"))
+    if (IsArgSet("-fuzzmessagestest"))
         Fuzz(GetArg("-fuzzmessagestest", 10));
 
     if (ssSend.size() == 0)

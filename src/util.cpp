@@ -274,7 +274,7 @@ bool LogAcceptCategory(const char* category)
         static boost::thread_specific_ptr<set<string>> ptrCategory;
         if (ptrCategory.get() == NULL)
         {
-            const vector<string>& categories = mapMultiArgs["-debug"];
+            const vector<string> categories = GetArgs("-debug");
             ptrCategory.reset(new set<string>(categories.begin(), categories.end()));
             // thread_specific_ptr automatically deletes the set when the thread ends.
         }
@@ -470,10 +470,31 @@ bool GetBoolArg(const std::string& strArg, bool fDefault)
     return fDefault;
 }
 
+std::vector<std::string> GetArgs(const std::string& strArg)
+{
+    LOCK(cs_args);
+    std::map<std::string, std::vector<std::string> >::const_iterator it = mapMultiArgs.find(strArg);
+    if (it != mapMultiArgs.end())
+        return it->second;
+    return std::vector<std::string>();
+}
+
+bool IsArgSet(const std::string& strArg)
+{
+    LOCK(cs_args);
+    return mapArgs.count(strArg) != 0;
+}
+
 void OverrideSetArg(const std::string& strArg, const std::string& strValue)
 {
     LOCK(cs_args);
     mapArgs[strArg] = strValue;
+}
+
+void OverrideSetMultiArg(const std::string& strArg, const std::vector<std::string>& vStrValue)
+{
+    LOCK(cs_args);
+    mapMultiArgs[strArg] = vStrValue;
 }
 
 bool SoftSetArg(const std::string& strArg, const std::string& strValue)
@@ -907,17 +928,20 @@ bool ReadConfigFile(std::string chainName,
     set<string> setOptions;
     setOptions.insert("*");
 
-    for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
     {
-        // Don't overwrite existing settings so command line settings override komodo.conf
-        string strKey = string("-") + it->string_key;
-        if (mapSettingsRet.count(strKey) == 0)
+        LOCK(cs_args);
+        for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
         {
-            mapSettingsRet[strKey] = it->value[0];
-            // interpret nofoo=1 as foo=0 (and nofoo=0 as foo=1) as long as foo not set)
-            InterpretNegativeSetting(strKey, mapSettingsRet);
+            // Don't overwrite existing settings so command line settings override komodo.conf
+            string strKey = string("-") + it->string_key;
+            if (mapSettingsRet.count(strKey) == 0)
+            {
+                mapSettingsRet[strKey] = it->value[0];
+                // interpret nofoo=1 as foo=0 (and nofoo=0 as foo=1) as long as foo not set)
+                InterpretNegativeSetting(strKey, mapSettingsRet);
+            }
+            mapMultiSettingsRet[strKey].push_back(it->value[0]);
         }
-        mapMultiSettingsRet[strKey].push_back(it->value[0]);
     }
     return true;
 }

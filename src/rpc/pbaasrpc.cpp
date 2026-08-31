@@ -312,14 +312,14 @@ CIdentity ValidateIdentityParameter(const std::string &idStr)
 // set default peer nodes in the current connected chains
 bool SetPeerNodes(const UniValue &nodes)
 {
-    if (mapArgs.count("-connect") && mapMultiArgs["-connect"].size() > 0)
+    const std::vector<std::string> connectArgs = GetArgs("-connect");
+    if (!connectArgs.empty())
     {
         printf("%s: Ignoring seednodes due to nodes specified in \"-connect\" parameter\n", __func__);
         LogPrintf("%s: Ignoring seednodes due to nodes specified in \"-connect\" parameter\n", __func__);
-        std::vector<std::string> connectNodes = mapMultiArgs["-connect"];
-        for (int i = 0; i < connectNodes.size(); i++)
+        for (int i = 0; i < connectArgs.size(); i++)
         {
-            CNodeData oneNode = CNodeData(connectNodes[i], "");
+            CNodeData oneNode = CNodeData(connectArgs[i], "");
             if (oneNode.networkAddress != "")
             {
                 ConnectedChains.defaultPeerNodes.push_back(oneNode);
@@ -345,7 +345,7 @@ bool SetPeerNodes(const UniValue &nodes)
             }
         }
 
-        std::vector<std::string> seedNodes = mapMultiArgs["-seednode"];
+        std::vector<std::string> seedNodes = GetArgs("-seednode");
         for (int i = 0; i < seedNodes.size(); i++)
         {
             CNodeData oneNode = CNodeData(seedNodes[i], "");
@@ -356,7 +356,7 @@ bool SetPeerNodes(const UniValue &nodes)
         }
     }
 
-    std::vector<std::string> addNodes = mapMultiArgs["-addnode"];
+    std::vector<std::string> addNodes = GetArgs("-addnode");
     for (int i = 0; i < addNodes.size(); i++)
     {
         CNodeData oneNode = CNodeData(addNodes[i], "");
@@ -369,7 +369,7 @@ bool SetPeerNodes(const UniValue &nodes)
     // set all command line parameters into mapArgs from chain definition
     vector<string> nodeStrs;
 
-    if (!GetBoolArg("-forcednsseed", false) && !(mapArgs.count("-connect") && mapMultiArgs["-connect"].size() > 0))
+    if (!GetBoolArg("-forcednsseed", false) && connectArgs.empty())
     {
         for (auto node : ConnectedChains.defaultPeerNodes)
         {
@@ -377,9 +377,9 @@ bool SetPeerNodes(const UniValue &nodes)
         }
     }
 
-    if (!(mapArgs.count("-connect") && mapMultiArgs["-connect"].size() > 0))
+    if (connectArgs.empty())
     {
-        mapMultiArgs["-seednode"] = nodeStrs;
+        OverrideSetMultiArg("-seednode", nodeStrs);
     }
 
     for (auto &oneNode : nodeStrs)
@@ -389,7 +389,7 @@ bool SetPeerNodes(const UniValue &nodes)
 
     if (int port = ConnectedChains.GetThisChainPort())
     {
-        mapArgs["-port"] = to_string(port);
+        OverrideSetArg("-port", to_string(port));
     }
     return true;
 }
@@ -442,16 +442,16 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
         ASSETCHAINS_ISSUANCE = ConnectedChains.ThisChain().gatewayConverterIssuance;
         ASSETCHAINS_ERAOPTIONS[0] = ConnectedChains.ThisChain().ChainOptions();
 
-        mapArgs["-blocktime"] = to_string(ConnectedChains.ThisChain().blockTime);
-        if (mapArgs.count("-powaveragingwindow"))
+        OverrideSetArg("-blocktime", to_string(ConnectedChains.ThisChain().blockTime));
+        if (IsArgSet("-powaveragingwindow"))
         {
-            ConnectedChains.ThisChain().powAveragingWindow = stoi(mapArgs["-powaveragingwindow"]);
+            ConnectedChains.ThisChain().powAveragingWindow = stoi(GetArg("-powaveragingwindow", ""));
         }
         else
         {
-            mapArgs["-powaveragingwindow"] = to_string(ConnectedChains.ThisChain().powAveragingWindow);
+            OverrideSetArg("-powaveragingwindow", to_string(ConnectedChains.ThisChain().powAveragingWindow));
         }
-        mapArgs["-notarizationperiod"] = to_string(ConnectedChains.ThisChain().blockNotarizationModulo);
+        OverrideSetArg("-notarizationperiod", to_string(ConnectedChains.ThisChain().blockNotarizationModulo));
     }
 
     DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA = std::max((uint32_t)CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY, std::min((uint32_t)CCurrencyDefinition::MAX_DEFAULT_TX_EXPIRY, (uint32_t)((CCurrencyDefinition::MIN_DEFAULT_TX_EXPIRY * CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET) / ConnectedChains.ThisChain().blockTime)));
@@ -477,13 +477,13 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
     MAX_REORG_LENGTH = COINBASE_MATURITY - 1;
     auto numEras = ConnectedChains.ThisChain().rewards.size();
     ASSETCHAINS_LASTERA = numEras - 1;
-    mapArgs["-ac_eras"] = to_string(numEras);
+    OverrideSetArg("-ac_eras", to_string(numEras));
 
-    mapArgs["-ac_end"] = "";
-    mapArgs["-ac_reward"] = "";
-    mapArgs["-ac_halving"] = "";
-    mapArgs["-ac_decay"] = "";
-    mapArgs["-ac_options"] = "";
+    OverrideSetArg("-ac_end", "");
+    OverrideSetArg("-ac_reward", "");
+    OverrideSetArg("-ac_halving", "");
+    OverrideSetArg("-ac_decay", "");
+    OverrideSetArg("-ac_options", "");
 
     for (int j = 0; j < ASSETCHAINS_MAX_ERAS; j++)
     {
@@ -504,32 +504,32 @@ bool SetThisChain(const UniValue &chainDefinition, CCurrencyDefinition *retDef)
             ASSETCHAINS_ERAOPTIONS[j] = ConnectedChains.ThisChain().options;
             if (j == 0)
             {
-                mapArgs["-ac_reward"] = to_string(ASSETCHAINS_REWARD[j]);
-                mapArgs["-ac_decay"] = to_string(ASSETCHAINS_DECAY[j]);
-                mapArgs["-ac_halving"] = to_string(ASSETCHAINS_HALVING[j]);
-                mapArgs["-ac_end"] = to_string(ASSETCHAINS_ENDSUBSIDY[j]);
-                mapArgs["-ac_options"] = to_string(ASSETCHAINS_ERAOPTIONS[j]);
+                OverrideSetArg("-ac_reward", to_string(ASSETCHAINS_REWARD[j]));
+                OverrideSetArg("-ac_decay", to_string(ASSETCHAINS_DECAY[j]));
+                OverrideSetArg("-ac_halving", to_string(ASSETCHAINS_HALVING[j]));
+                OverrideSetArg("-ac_end", to_string(ASSETCHAINS_ENDSUBSIDY[j]));
+                OverrideSetArg("-ac_options", to_string(ASSETCHAINS_ERAOPTIONS[j]));
             }
             else
             {
-                mapArgs["-ac_reward"] += "," + to_string(ASSETCHAINS_REWARD[j]);
-                mapArgs["-ac_decay"] += "," + to_string(ASSETCHAINS_DECAY[j]);
-                mapArgs["-ac_halving"] += "," + to_string(ASSETCHAINS_HALVING[j]);
-                mapArgs["-ac_end"] += "," + to_string(ASSETCHAINS_ENDSUBSIDY[j]);
-                mapArgs["-ac_options"] += "," + to_string(ASSETCHAINS_ERAOPTIONS[j]);
+                OverrideSetArg("-ac_reward", GetArg("-ac_reward", "") + "," + to_string(ASSETCHAINS_REWARD[j]));
+                OverrideSetArg("-ac_decay", GetArg("-ac_decay", "") + "," + to_string(ASSETCHAINS_DECAY[j]));
+                OverrideSetArg("-ac_halving", GetArg("-ac_halving", "") + "," + to_string(ASSETCHAINS_HALVING[j]));
+                OverrideSetArg("-ac_end", GetArg("-ac_end", "") + "," + to_string(ASSETCHAINS_ENDSUBSIDY[j]));
+                OverrideSetArg("-ac_options", GetArg("-ac_options", "") + "," + to_string(ASSETCHAINS_ERAOPTIONS[j]));
             }
         }
     }
 
     PBAAS_STARTBLOCK = ConnectedChains.ThisChain().startBlock;
-    mapArgs["-startblock"] = to_string(PBAAS_STARTBLOCK);
+    OverrideSetArg("-startblock", to_string(PBAAS_STARTBLOCK));
     PBAAS_ENDBLOCK = ConnectedChains.ThisChain().endBlock;
-    mapArgs["-endblock"] = to_string(PBAAS_ENDBLOCK);
-    mapArgs["-ac_supply"] = to_string(ASSETCHAINS_SUPPLY);
-    mapArgs["-gatewayconverterissuance"] = to_string(ASSETCHAINS_ISSUANCE);
+    OverrideSetArg("-endblock", to_string(PBAAS_ENDBLOCK));
+    OverrideSetArg("-ac_supply", to_string(ASSETCHAINS_SUPPLY));
+    OverrideSetArg("-gatewayconverterissuance", to_string(ASSETCHAINS_ISSUANCE));
 
     // default to opt-out contract upgrade if this is non-testnet Verus and there is no "-approvecontractupgrade" set
-  /*  if (!PBAAS_TESTMODE && ASSETCHAINS_CHAINID == VERUS_CHAINID && !mapArgs.count("-approvecontractupgrade"))
+  /*  if (!PBAAS_TESTMODE && ASSETCHAINS_CHAINID == VERUS_CHAINID && !IsArgSet("-approvecontractupgrade"))
     {
         auto upgradeContractAddress = CTransferDestination::DecodeEthDestination("0xf9a8310aeab9f08bbdcf3010de9e39bfa821a78d");
         if (!upgradeContractAddress.IsNull())

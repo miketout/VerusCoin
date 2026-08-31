@@ -514,7 +514,7 @@ bool TLSManager::prepareCredentials()
     bool bPrepared = (credStatus == credOk);
 
     if (!bPrepared) {
-        if (!mapArgs.count("-tlskeypath") && !mapArgs.count("-tlscertpath")) {
+        if (!IsArgSet("-tlskeypath") && !IsArgSet("-tlscertpath")) {
             // Default paths were used
 
             if (credStatus == credAbsent) {

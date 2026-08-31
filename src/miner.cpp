@@ -4878,7 +4878,7 @@ void static BitcoinMiner_noeq()
 
         if (fGenerate == true || VERUS_MINTBLOCKS)
         {
-            mapArgs["-gen"] = "1";
+            OverrideSetArg("-gen", "1");
 
             if (VERUS_DEFAULT_ZADDR.size() > 0)
             {

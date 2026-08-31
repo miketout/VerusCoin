@@ -179,8 +179,8 @@ static bool InitHTTPAllowList()
     rpc_allow_subnets.clear();
     rpc_allow_subnets.push_back(CSubNet("127.0.0.0/8")); // always allow IPv4 local subnet
     rpc_allow_subnets.push_back(CSubNet("::1"));         // always allow IPv6 localhost
-    if (mapMultiArgs.count("-rpcallowip")) {
-        const std::vector<std::string>& vAllow = mapMultiArgs["-rpcallowip"];
+    const std::vector<std::string> vAllow = GetArgs("-rpcallowip");
+    if (!vAllow.empty()) {
         BOOST_FOREACH (std::string strAllow, vAllow) {
             CSubNet subnet(strAllow);
             if (!subnet.IsValid()) {
@@ -303,8 +303,7 @@ static void ThreadHTTP(struct event_base* base, struct evhttp* http)
 
 static bool ArgListEmpty(const std::string& name)
 {
-    std::map<std::string, std::vector<std::string> >::const_iterator it = mapMultiArgs.find(name);
-    return it == mapMultiArgs.end() || it->second.empty();
+    return GetArgs(name).empty();
 }
 
 /** Bind HTTP server to specified addresses */
@@ -328,7 +327,7 @@ static bool HTTPBindAddresses(struct evhttp* http)
             LogPrintf("WARNING: option -rpcbind was ignored because -rpcallowip was not specified, refusing to allow everyone to connect\n");
         }
     } else { // Specific bind addresses
-        const std::vector<std::string>& vbind = mapMultiArgs["-rpcbind"];
+        const std::vector<std::string> vbind = GetArgs("-rpcbind");
         for (std::vector<std::string>::const_iterator i = vbind.begin(); i != vbind.end(); ++i) {
             int port = defaultPort;
             std::string host;
