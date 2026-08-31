@@ -4047,15 +4047,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
         // DERSIG (BIP66) is also always enforced, but does not have a flag.
 
-        if ( ASSETCHAINS_CC != 0 )
-        {
-            if ( scriptcheckqueue.IsIdle() == 0 )
-            {
-                fprintf(stderr,"scriptcheckqueue isnt idle\n");
-                sleep(1);
-            }
-        }
-
         nTimeStart = GetTimeMicros();
         CDiskTxPos pos(pindex->GetBlockPos(), GetSizeOfCompactSize(block.vtx.size()));
         vPos.reserve(block.vtx.size());
