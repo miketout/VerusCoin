@@ -17,7 +17,7 @@
 #include "include/cJSON.h"
 #include "include/sha256.h"
 #include "include/ripemd-160.h"
-#include "include/secp256k1/include/secp256k1.h"
+#include <secp256k1.h>
 #include "cryptoconditions.h"
 #include "internal.h"
 
