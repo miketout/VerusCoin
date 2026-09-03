@@ -16,13 +16,6 @@ AM_CXXFLAGS = $(DEBUG_CXXFLAGS) $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS) $(GPROF_C
 AM_CPPFLAGS = $(DEBUG_CPPFLAGS) $(HARDENED_CPPFLAGS)
 EXTRA_LIBRARIES =
 
-if ARCH_ARM
-PLATFORM_VARIANT = armv8.1-a+crypto
-else
-PLATFORM_VARIANT = x86-64
-endif
-
-
 if EMBEDDED_LEVELDB
 LEVELDB_CPPFLAGS += -I$(srcdir)/leveldb/include
 LEVELDB_CPPFLAGS += -I$(srcdir)/leveldb/helpers/memenv
@@ -55,7 +48,11 @@ LIBBITCOIN_COMMON=libbitcoin_common.a
 LIBBITCOIN_CLI=libbitcoin_cli.a
 LIBBITCOIN_UTIL=libbitcoin_util.a
 LIBBITCOIN_CRYPTO=crypto/libbitcoin_crypto.a
+if ENABLE_VERUS_ISA
 LIBVERUS_CRYPTO=crypto/libverus_crypto.a
+else
+LIBVERUS_CRYPTO=
+endif
 LIBVERUS_PORTABLE_CRYPTO=crypto/libverus_portable_crypto.a
 LIBSECP256K1=secp256k1/libsecp256k1.la
 LIBCRYPTOCONDITIONS=cryptoconditions/libcryptoconditions_core.la
@@ -71,13 +68,13 @@ LIBZCASH_CONSENSUS=libzcashconsensus.la
 endif
 
 $(LIBSECP256K1): $(wildcard secp256k1/src/*) $(wildcard secp256k1/include/*)
-	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F) OPTFLAGS="-O3 -march=$(PLATFORM_VARIANT) -g "
+	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
 
 $(LIBUNIVALUE): $(wildcard univalue/lib/*)
-	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F) OPTFLAGS="-O3 -march=$(PLATFORM_VARIANT) -g "
+	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
 
 $(LIBCRYPTOCONDITIONS): $(wildcard cryptoconditions/src/*) $(wildcard cryptoconditions/include/*)
-	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F) OPTFLAGS="-O3 -march=$(PLATFORM_VARIANT) -g "
+	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
 
 # Make is not made aware of per-object dependencies to avoid limiting building parallelization
 # But to build the less dependent modules first, we manually select their order here:
@@ -416,13 +413,9 @@ crypto_libbitcoin_crypto_a_SOURCES += \
 endif
 
 # Verus hash specific library - optimized
-if ARCH_ARM
-crypto_libverus_crypto_a_CPPFLAGS = -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_crypto_a_CXXFLAGS = -Wno-error=attributes -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS)
-else
-crypto_libverus_crypto_a_CPPFLAGS = -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_crypto_a_CXXFLAGS = -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS)
-endif
+crypto_libverus_crypto_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+crypto_libverus_crypto_a_CFLAGS = -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(SSE2NEON_CFLAGS) $(VERUS_ISA_CFLAGS)
+crypto_libverus_crypto_a_CXXFLAGS = -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS) $(SSE2NEON_CXXFLAGS) $(VERUS_ISA_CXXFLAGS)
 
 crypto_libverus_crypto_a_SOURCES = \
   crypto/haraka.h \
@@ -431,13 +424,9 @@ crypto_libverus_crypto_a_SOURCES = \
   crypto/verus_clhash.cpp
 
 # Verus hash specific library - portable
-if ARCH_ARM
-crypto_libverus_portable_crypto_a_CPPFLAGS = -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_portable_crypto_a_CXXFLAGS = -Wno-error=attributes -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS)
-else
-crypto_libverus_portable_crypto_a_CPPFLAGS = -march=$(PLATFORM_VARIANT) -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_portable_crypto_a_CXXFLAGS = -march=$(PLATFORM_VARIANT) -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS)
-endif
+crypto_libverus_portable_crypto_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+crypto_libverus_portable_crypto_a_CFLAGS = -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(SSE2NEON_CFLAGS)
+crypto_libverus_portable_crypto_a_CXXFLAGS = -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS) $(SSE2NEON_CXXFLAGS)
 
 crypto_libverus_portable_crypto_a_SOURCES = \
   crypto/haraka_portable.h \

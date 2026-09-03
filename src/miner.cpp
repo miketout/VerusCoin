@@ -4611,7 +4611,11 @@ void static BitcoinMiner_noeq()
             u128 *hashKey;
             verusclhasher &vclh = vh2->vclh;
             minefunction mine_verus;
+#if defined(ENABLE_VERUS_ISA)
             mine_verus = IsCPUVerusOptimized() ? &mine_verus_v2 : &mine_verus_v2_port;
+#else
+            mine_verus = &mine_verus_v2_port;
+#endif
 
             while (true)
             {

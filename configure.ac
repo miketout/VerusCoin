@@ -293,8 +293,16 @@ AC_ARG_WITH([daemon],
   [build_bitcoind=$withval],
   [build_bitcoind=yes])
 
-GCC_TARGET=`$CC -dumpmachine 2>&1`
-case $GCC_TARGET in
+AC_ARG_ENABLE([verus-isa],
+  [AS_HELP_STRING([--enable-verus-isa@<:@=auto|yes|no@:>@],
+  [build the instruction set optimized Verus hash. "yes" fails configure if the
+   toolchain cannot build it, rather than silently falling back to the much
+   slower portable implementation. "no" forces the portable implementation
+   (default=auto)])],
+  [],
+  [enable_verus_isa=auto])
+
+case $host in
   arm*-*-*)
     have_arm=true
     ;;
@@ -302,6 +310,72 @@ case $GCC_TARGET in
     have_arm=true
     ;;
 esac
+
+have_verus_isa=no
+VERUS_ISA_ARCH_FLAGS=
+VERUS_ISA_CFLAGS=
+VERUS_ISA_CXXFLAGS=
+SSE2NEON_CFLAGS=
+SSE2NEON_CXXFLAGS=
+
+if test x$enable_verus_isa = xno; then
+  :
+elif test x$have_arm = xtrue; then
+  AX_CHECK_COMPILE_FLAG([-march=armv8-a+crypto],[[VERUS_ISA_ARCH_FLAGS="-march=armv8-a+crypto"]],,[[$CXXFLAG_WERROR]])
+  AX_CHECK_COMPILE_FLAG([-flax-vector-conversions],[[SSE2NEON_CFLAGS="-flax-vector-conversions"]],,[[$CXXFLAG_WERROR]])
+  AX_CHECK_COMPILE_FLAG([-Wno-error=attributes],[[SSE2NEON_CXXFLAGS="-Wno-error=attributes"]],,[[$CXXFLAG_WERROR]])
+  SSE2NEON_CXXFLAGS="$SSE2NEON_CXXFLAGS $SSE2NEON_CFLAGS"
+
+  TEMP_CXXFLAGS="$CXXFLAGS"
+  CXXFLAGS="$CXXFLAGS $VERUS_ISA_ARCH_FLAGS"
+  AC_MSG_CHECKING(for ARM AES and PMULL intrinsics)
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+      #include <arm_neon.h>
+    ]],[[
+      uint8x16_t a = vdupq_n_u8(0);
+      a = vaesmcq_u8(vaeseq_u8(a, a));
+      vmull_p64(0, 0);
+      return vgetq_lane_u8(a, 0);
+    ]])],
+   [ AC_MSG_RESULT(yes); have_verus_isa=yes ],
+   [ AC_MSG_RESULT(no) ])
+  CXXFLAGS="$TEMP_CXXFLAGS"
+else
+  AX_CHECK_COMPILE_FLAG(
+    [-mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes],
+    [[VERUS_ISA_ARCH_FLAGS="-mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes"]],,
+    [[$CXXFLAG_WERROR]])
+
+  TEMP_CXXFLAGS="$CXXFLAGS"
+  CXXFLAGS="$CXXFLAGS $VERUS_ISA_ARCH_FLAGS"
+  AC_MSG_CHECKING([for x86 SSSE3, SSE4, AES-NI and PCLMUL intrinsics])
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+      #include <stdint.h>
+      #include <immintrin.h>
+    ]],[[
+      __m128i a = _mm_set_epi32(0, 0, 0, 0);
+      __m128i b = _mm_load_si128(&a);
+      a = _mm_aesenc_si128(a, b);
+      a = _mm_clmulepi64_si128(a, b, 0x10);
+      a = _mm_shuffle_epi8(a, b);
+      a = _mm_mulhrs_epi16(a, b);
+      return (int)_mm_cvtsi128_si64(a);
+    ]])],
+   [ AC_MSG_RESULT(yes); have_verus_isa=yes ],
+   [ AC_MSG_RESULT(no) ])
+  CXXFLAGS="$TEMP_CXXFLAGS"
+fi
+
+if test x$have_verus_isa = xyes; then
+  VERUS_ISA_CFLAGS="$VERUS_ISA_ARCH_FLAGS"
+  VERUS_ISA_CXXFLAGS="$VERUS_ISA_ARCH_FLAGS"
+  AC_DEFINE(ENABLE_VERUS_ISA, 1,
+    [Define this symbol to build the instruction set optimized Verus hash])
+elif test x$enable_verus_isa = xyes; then
+  AC_MSG_ERROR([--enable-verus-isa=yes was given but the compiler cannot build the instruction set optimized Verus hash for $host; only the much slower portable implementation would be available])
+elif test x$enable_verus_isa != xno; then
+  AC_MSG_WARN([the compiler cannot build the instruction set optimized Verus hash; only the portable implementation will be available and Verus hash will be much slower])
+fi
 
 use_pkgconfig=yes
 case $host in
@@ -908,7 +982,7 @@ AM_CONDITIONAL([TARGET_WINDOWS], [test x$TARGET_OS = xwindows])
 AM_CONDITIONAL([ENABLE_WALLET],[test x$enable_wallet = xyes])
 AM_CONDITIONAL([ENABLE_MINING],[test x$enable_mining = xyes])
 AM_CONDITIONAL([ENABLE_TESTS],[test x$BUILD_TEST = xyes])
-AM_CONDITIONAL([ARCH_ARM], [test x$have_arm = xtrue])
+AM_CONDITIONAL([ENABLE_VERUS_ISA], [test x$have_verus_isa = xyes])
 AM_CONDITIONAL([USE_LCOV],[test x$use_lcov = xyes])
 AM_CONDITIONAL([GLIBC_BACK_COMPAT],[test x$use_glibc_compat = xyes])
 AM_CONDITIONAL([HARDEN],[test x$use_hardening = xyes])
@@ -940,6 +1014,10 @@ AC_SUBST(HARDENED_CPPFLAGS)
 AC_SUBST(HARDENED_LDFLAGS)
 AC_SUBST(PIC_FLAGS)
 AC_SUBST(PIE_FLAGS)
+AC_SUBST(SSE2NEON_CFLAGS)
+AC_SUBST(SSE2NEON_CXXFLAGS)
+AC_SUBST(VERUS_ISA_CFLAGS)
+AC_SUBST(VERUS_ISA_CXXFLAGS)
 AC_SUBST(SANITIZER_CXXFLAGS)
 AC_SUBST(SANITIZER_LDFLAGS)
 AC_SUBST(LIBTOOL_APP_LDFLAGS)
@@ -1004,6 +1082,7 @@ echo "  sanitizers    = $use_sanitizers"
 echo "  debug enabled = $enable_debug"
 echo "  gprof enabled = $enable_gprof"
 echo "  werror        = $enable_werror"
+echo "  verus hash isa= $have_verus_isa"
 echo 
 echo "  target os     = $TARGET_OS"
 echo "  build os      = $BUILD_OS"

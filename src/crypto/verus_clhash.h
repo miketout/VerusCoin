@@ -20,6 +20,10 @@
 #ifndef INCLUDE_VERUS_CLHASH_H
 #define INCLUDE_VERUS_CLHASH_H
 
+#if defined(HAVE_CONFIG_H)
+#include "config/bitcoin-config.h"
+#endif
+
 
 
 #include <stdlib.h>
@@ -118,7 +122,9 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2_port(__m128i *randomso
 
 inline bool IsCPUVerusOptimized()
 {
-    #if defined(__arm__)  || defined(__aarch64__)
+    #if !defined(ENABLE_VERUS_ISA)
+    __cpuverusoptimized = false;
+    #elif defined(__arm__)  || defined(__aarch64__)
     #if defined(__APPLE__)
     __cpuverusoptimized = true;
 #else
@@ -210,6 +216,7 @@ struct verusclhasher {
     // align on 256 bit boundary at end
     verusclhasher(uint64_t keysize=VERUSKEYSIZE, int solutionVersion=SOLUTION_VERUSHHASH_V2) : keySizeInBytes((keysize >> 5) << 5)
     {
+#if defined(ENABLE_VERUS_ISA)
         if (IsCPUVerusOptimized())
         {
             if (solutionVersion >= SOLUTION_VERUSHHASH_V2_1)
@@ -232,6 +239,7 @@ struct verusclhasher {
             }
         }
         else
+#endif
         {
             if (solutionVersion >= SOLUTION_VERUSHHASH_V2_1)
             {
