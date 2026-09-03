@@ -9741,12 +9741,20 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         vRecv >> alert;
 
         uint256 alertHash = alert.GetHash();
-        if (pfrom->setKnown.count(alertHash) == 0)
+        bool fKnown;
+        {
+            LOCK(pfrom->cs_setKnown);
+            fKnown = pfrom->setKnown.count(alertHash) != 0;
+        }
+        if (!fKnown)
         {
             if (alert.ProcessAlert(chainparams.AlertKey()))
             {
                 // Relay
-                pfrom->setKnown.insert(alertHash);
+                {
+                    LOCK(pfrom->cs_setKnown);
+                    pfrom->setKnown.insert(alertHash);
+                }
                 {
                     LOCK(cs_vNodes);
                     BOOST_FOREACH(CNode* pnode, vNodes)
