@@ -145,7 +145,8 @@ inline bool IsCPUVerusOptimized()
         }
         else
         {
-            __cpuverusoptimized = ((ecx & (bit_AVX | bit_AES | bit_PCLMUL)) == (bit_AVX | bit_AES | bit_PCLMUL));
+            const unsigned int required = bit_AES | bit_PCLMUL;
+            __cpuverusoptimized = (ecx & required) == required;
         }
     }
     #endif
