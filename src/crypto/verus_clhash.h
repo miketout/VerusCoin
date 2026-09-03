@@ -98,8 +98,8 @@ struct thread_specific_ptr {
 
     }
     void *get() { return ptr; }
-#if defined(__APPLE__) || defined(_WIN32)
-    // horrible MingW and Mac with gcc thread local storage bug workaround
+#if defined(_WIN32)
+    // horrible MingW thread local storage bug workaround
     ~thread_specific_ptr();
 #else
     ~thread_specific_ptr() {
