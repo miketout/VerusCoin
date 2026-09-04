@@ -4,44 +4,35 @@ $(package)_download_path=https://github.com/libarchive/libarchive/releases/downl
 $(package)_file_name=$(package)-$($(package)_version).tar.gz
 $(package)_download_file=$(package)-$($(package)_version).tar.gz
 $(package)_config_opts=--with-sysroot=$(host_prefix)/lib
-$(package)_config_opts_linux=--disable-bsdtar --disable-bsdcpio --disable-shared --enable-static --prefix=$(host_prefix) --host=$(HOST)
-$(package)_config_opts_mingw32=--disable-bsdtar --disable-bsdcpio --disable-shared --enable-static --prefix=$(host_prefix) --host=x86_64-w64-mingw32
-$(package)_config_opts_darwin=--without-zstd --without-lz4 --disable-bsdtar --disable-bsdcpio --disable-shared --enable-static --prefix=$(host_prefix)
+$(package)_config_opts+=--disable-shared --enable-static
+$(package)_config_opts+=--disable-bsdtar --disable-bsdcat --disable-bsdcpio --disable-bsdunzip
+$(package)_config_opts+=--without-bz2lib --without-lzma --without-zstd --without-lz4
+$(package)_config_opts+=--without-libb2 --without-iconv --without-openssl --without-cng
+$(package)_config_opts+=--without-xml2 --without-expat
+$(package)_config_opts+=--disable-acl --disable-xattr
+$(package)_config_opts_mingw32=--with-openssl
 $(package)_sha256_hash=f5a6539059cf5e597dbeda37bfa4874b1e8dea063c8d93bf85a2b44af90a5bd4
-$(package)_cflags_darwin=-mmacos-version-min=$(OSX_MIN_VERSION)
-$(package)_conf_tool=./configure
+$(package)_cflags+=-fPIC
 
-$(package)_dependencies=zlib
+$(package)_dependencies=zlib openssl
+$(package)_config_env_mingw32=LIBS="-lws2_32 -lgdi32 -lcrypt32"
 
-ifeq ($(build_os),darwin)
 define $(package)_set_vars
+ifeq ($(host_os),darwin)
   $(package)_build_env=MACOSX_DEPLOYMENT_TARGET="$(OSX_MIN_VERSION)"
-endef
 endif
-
 ifeq ($(build_os),linux)
-define $(package)_set_vars
-  $(package)_config_env=LD_LIBRARY_PATH="$(host_prefix)/lib" PKG_CONFIG_LIBDIR="$(host_prefix)/lib/pkgconfig" CPPFLAGS="-I$(host_prefix)/include" LDFLAGS="-L$(host_prefix)/lib"
-endef
+  $(package)_config_env=LD_LIBRARY_PATH="$(host_prefix)/lib"
 endif
-
+endef
 
 define $(package)_config_cmds
-  echo '=== config for $(package):' && \
-  echo '$($(package)_config_env) $($(package)_conf_tool) $($(package)_config_opts)' && \
-  echo '=== ' && \
-  $($(package)_config_env) $($(package)_conf_tool) $($(package)_config_opts)
+  $($(package)_autoconf)
 endef
 
-ifeq ($(build_os),darwin)
 define $(package)_build_cmds
-  $(MAKE) CPPFLAGS="-I$(host_prefix)/include -fPIC" CFLAGS="-mmacos-version-min=$(OSX_MIN_VERSION)"
+  $(MAKE)
 endef
-else
-define $(package)_build_cmds
-  $(MAKE) CPPFLAGS="-I$(host_prefix)/include -fPIC"
-endef
-endif
 
 define $(package)_stage_cmds
   echo 'Staging dir: $($(package)_staging_dir)$(host_prefix)/' && \
