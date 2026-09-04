@@ -1514,6 +1514,12 @@ static void UpdateWitnessHeights(NoteDataMap& noteDataMap, int indexHeight, int6
         //   guaranteed to have no witnesses and a witnessHeight of -1.
         if (nd.witnessHeight < indexHeight) {
             if (nd.witnesses.empty()) {
+                if (nd.witnessHeight != -1) {
+                    LogPrintf("Inconsistent witness cache state found\n- Cache size: %d\n- Empty witness list at witnessHeight %d\n- Repaired at height %d\n",
+                            nWitnessCacheSize,
+                            nd.witnessHeight,
+                            indexHeight);
+                }
                 nd.witnessHeight = -1;
             } else {
                 nd.witnessHeight = indexHeight;
