@@ -176,10 +176,7 @@ AC_LANG_PUSH([C++])
 AX_CHECK_COMPILE_FLAG([-Werror],[CXXFLAG_WERROR="-Werror"],[CXXFLAG_WERROR=""])
 
 if test "x$enable_debug" = xyes; then
-  # Clear default -g -O2 flags
-  if test "x$CXXFLAGS_overridden" = xno; then
-	CXXFLAGS=""
-  fi
+  CXXFLAGS=`echo "$CXXFLAGS" | sed -e 's/-O[[^ ]]*//g'`
 
   # Disable all optimizations
   AX_CHECK_COMPILE_FLAG([-O0], [[DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -O0"]],,[[$CXXFLAG_WERROR]])
@@ -626,7 +623,9 @@ if test x$use_hardening != xno; then
     AX_CHECK_PREPROC_FLAG([-U_FORTIFY_SOURCE],[
       HARDENED_CPPFLAGS="$HARDENED_CPPFLAGS -U_FORTIFY_SOURCE"
     ],[AC_MSG_ERROR(Cannot enable -U_FORTIFY_SOURCE)])
-    HARDENED_CPPFLAGS="$HARDENED_CPPFLAGS -D_FORTIFY_SOURCE=2"
+    if test "x$enable_debug" != xyes; then
+      HARDENED_CPPFLAGS="$HARDENED_CPPFLAGS -D_FORTIFY_SOURCE=2"
+    fi
   ],[AC_MSG_ERROR(Cannot enable -D_FORTIFY_SOURCE=2)])
 
   #AX_CHECK_LINK_FLAG([[-Wl,-z,relro]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,relro"],[AC_MSG_ERROR(Cannot enable RELRO)])
