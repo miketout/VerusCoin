@@ -430,6 +430,8 @@ extern LRUCache<std::tuple<uint160, uint256, uint32_t>, std::vector<CInputDescri
 
 void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMemPoolHeight, int flags)
 {
+    AssertLockHeld(cs_main);
+
     // remove:
     // 1) transactions spending a coinbase which are now immature
     // 2) exports, notarizations, reserve transfers, and imports that that are no longer valid at the current height
