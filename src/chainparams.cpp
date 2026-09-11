@@ -141,8 +141,6 @@ public:
         pchMessageStart[1] = 0xee;
         pchMessageStart[2] = 0xe4;
         pchMessageStart[3] = 0x8d;
-        vAlertPubKey = ParseHex("020e46e79a2a8d12b9b5d12c7a91adb4e454edfae43c0a0cb805427d2ac7613fd9");
-        // (Zcash) vAlertPubKey = ParseHex("04b7ecf0baa90495ceb4e4090f6b2fd37eec1e9c85fac68a487f3ce11589692e4a317479316ee814e066638e1db54e37a10689b70286e6315b1087b6615d179264");
         nDefaultPort = 7770;
         nMinerThreads = 0;
         nPruneAfterHeight = 100000;
@@ -531,7 +529,6 @@ public:
         assert(maxUint/UintToArith256(consensus.powLimit) >= consensus.nPowAveragingWindow);
         consensus.nMaxFutureBlockTime = 7 * 60;
 
-        vAlertPubKey = ParseHex("00");
         nDefaultPort = 17770;
         nMinerThreads = 0;
         consensus.nPowMaxAdjustDown = 32; // 32% adjustment down
@@ -559,7 +556,6 @@ public:
         pchMessageStart[1] = 0x1F;
         pchMessageStart[2] = 0x7E;
         pchMessageStart[3] = 0x62;
-        vAlertPubKey = ParseHex("020e46e79a2a8d12b9b5d12c7a91adb4e454edfae43c0a0cb805427d2ac7613fd9");
         nMaxTipAge = 24 * 60 * 60;
 
         nPruneAfterHeight = 1000;
