@@ -1,0 +1,26 @@
+--- a/include/boost/type_traits/is_signed.hpp
++++ b/include/boost/type_traits/is_signed.hpp
+@@ -68,10 +68,10 @@
+ template <class T>
+ struct is_signed_impl
+ {
+-   typedef ::boost::detail::is_signed_select_helper< ::boost::is_integral<T>::value || ::boost::is_enum<T>::value> selector;
++   typedef ::boost::detail::is_signed_select_helper< ::boost::is_integral<T>::value> selector;
+    typedef typename selector::template rebind<T> binder;
+    typedef typename binder::type type;
+-   BOOST_STATIC_CONSTANT(bool, value = type::value);
++   BOOST_STATIC_CONSTANT(bool, value = (::boost::is_enum<T>::value ? true : type::value));
+ };
+ 
+ }
+--- a/include/boost/type_traits/is_unsigned.hpp
++++ b/include/boost/type_traits/is_unsigned.hpp
+@@ -68,7 +68,7 @@
+ template <class T>
+ struct is_unsigned
+ {
+-   typedef ::boost::detail::is_unsigned_select_helper< ::boost::is_integral<T>::value || ::boost::is_enum<T>::value > selector;
++   typedef ::boost::detail::is_unsigned_select_helper< ::boost::is_integral<T>::value > selector;
+    typedef typename selector::template rebind<T> binder;
+    typedef typename binder::type type;
+    BOOST_STATIC_CONSTANT(bool, value = type::value);
