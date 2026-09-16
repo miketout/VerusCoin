@@ -1293,6 +1293,10 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
         LogPrintf("%s: exception reading currency definition JSON: %s\n", __func__, e.what());
         nVersion = PBAAS_VERSION_INVALID;
     }
+    catch (const boost::thread_interrupted&)
+    {
+        throw;
+    }
     catch (...)
     {
         LogPrintf("%s: uncaught exception reading currency definition JSON\n", __func__);

@@ -5772,6 +5772,10 @@ bool ProvePosBlock(uint32_t lastProofRootHeight, const CBlockIndex *pindex, CNot
     {
         ds >> sourceTxProof;
     }
+    catch (const boost::thread_interrupted&)
+    {
+        throw;
+    }
     catch (...)
     {
         sourceTxProof = CPartialTransactionProof(CPartialTransactionProof::VERSION_INVALID);
@@ -6186,6 +6190,10 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
         }
         bestProofRootResult = NullUniValue;
     }
+    catch (const boost::thread_interrupted&)
+    {
+        throw;
+    }
     catch (...)
     {
         LogPrintf("%s: uncaught exception from getbestproofroot call\n", __func__);
@@ -6211,6 +6219,10 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
             LogPrintf("exception from getnotarizationdata: %s\n", e.what());
         }
         notarizationResult = NullUniValue;
+    }
+    catch (const boost::thread_interrupted&)
+    {
+        throw;
     }
     catch (...)
     {
@@ -6907,6 +6919,10 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                     {
                         challengeResult = NullUniValue;
                     }
+                    catch (const boost::thread_interrupted&)
+                    {
+                        throw;
+                    }
                     catch (...)
                     {
                         challengeResult = NullUniValue;
@@ -7026,6 +7042,10 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
             } catch (const std::exception &e)
             {
                 challengeRequests = NullUniValue;
+            }
+            catch (const boost::thread_interrupted&)
+            {
+                throw;
             }
             catch (...)
             {
@@ -7958,6 +7978,10 @@ int CChainNotarizationData::BestConfirmedNotarization(const CCurrencyDefinition 
         {
             result = NullUniValue;
         }
+        catch (const boost::thread_interrupted&)
+        {
+            throw;
+        }
         catch (...)
         {
             result = NullUniValue;
@@ -8243,6 +8267,10 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
     } catch (const std::exception &e)
     {
         result = NullUniValue;
+    }
+    catch (const boost::thread_interrupted&)
+    {
+        throw;
     }
     catch (...)
     {
@@ -9468,6 +9496,10 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
     {
         result = NullUniValue;
     }
+    catch (const boost::thread_interrupted&)
+    {
+        throw;
+    }
     catch (...)
     {
         result = NullUniValue;
@@ -9962,6 +9994,10 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
             {
                 proofRequest = NullUniValue;
             }
+            catch (const boost::thread_interrupted&)
+            {
+                throw;
+            }
             catch (...)
             {
                 proofRequest = NullUniValue;
@@ -10138,6 +10174,10 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
             {
                 LogPrint("notarization", "Could not determine pending exports to external chain %s\n", uni_get_str(params[0]).c_str());
                 return retVal;
+            }
+            catch (const boost::thread_interrupted&)
+            {
+                throw;
             }
             catch (...)
             {

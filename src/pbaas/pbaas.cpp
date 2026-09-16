@@ -6403,6 +6403,10 @@ vector<pair<string, UniValue>> CConnectedChains::SubmitQualifiedBlocks()
             {
                 result = UniValue(e.what());
             }
+            catch (const boost::thread_interrupted&)
+            {
+                throw;
+            }
             catch (...)
             {
                 result = UniValue("Uncaught exception submitting blocks");
@@ -6662,6 +6666,10 @@ bool CConnectedChains::CheckVerusPBaaSAvailable()
         catch (const exception &e)
         {
             LogPrint("crosschain", "%s: Error communicating with %s\n", __func__, FirstNotaryChain().chainDefinition.name.c_str());
+        }
+        catch (const boost::thread_interrupted&)
+        {
+            throw;
         }
         catch (...)
         {
@@ -12254,6 +12262,10 @@ GetPendingExports(const CCurrencyDefinition &sourceChain,
                             {
                                 LogPrintf("%s: Exception (%s) %s pending cross-chain export\n", __func__, e.what(), rejectImport ? "rejecting" : "accepting");
                             }
+                            catch (const boost::thread_interrupted&)
+                            {
+                                throw;
+                            }
                             catch (...)
                             {
                                 LogPrintf("%s: Exception %s pending cross-chain export\n", __func__, rejectImport ? "rejecting" : "accepting");
@@ -12344,6 +12356,10 @@ GetPendingExports(const CCurrencyDefinition &sourceChain,
         {
             LogPrint("notarization", "Could not get latest export from external chain %s\n", uni_get_str(params[0]).c_str());
             return exports;
+        }
+        catch (const boost::thread_interrupted&)
+        {
+            throw;
         }
         catch (...)
         {
@@ -12724,6 +12740,10 @@ void CConnectedChains::SubmissionThread()
                                 } catch (const exception &e)
                                 {
                                     LogPrintf("%s: Error submitting imports to notary chain %s\n", __func__, uni_get_str(params[0]).c_str());
+                                }
+                                catch (const boost::thread_interrupted&)
+                                {
+                                    throw;
                                 }
                                 catch (...)
                                 {

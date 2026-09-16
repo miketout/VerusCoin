@@ -17017,6 +17017,10 @@ bool CConnectedChains::GetNotaryCurrencies(const CRPCChainData notaryChain,
             {
                 result = find_value(RPCCallRoot("getcurrency", params), "result");
             }
+            catch (const boost::thread_interrupted&)
+            {
+                throw;
+            }
             catch (...)
             {
                 result = NullUniValue;
@@ -17061,6 +17065,10 @@ bool CConnectedChains::GetNotaryCurrencies(const CRPCChainData notaryChain,
                 try
                 {
                     result = find_value(RPCCallRoot("getlaunchinfo", params), "result");
+                }
+                catch (const boost::thread_interrupted&)
+                {
+                    throw;
                 }
                 catch (...)
                 {
@@ -17108,6 +17116,10 @@ bool CConnectedChains::GetNotaryIDs(const CRPCChainData notaryChain,
             try
             {
                 result = find_value(RPCCallRoot("getidentity", params), "result");
+            }
+            catch (const boost::thread_interrupted&)
+            {
+                throw;
             }
             catch (...)
             {
