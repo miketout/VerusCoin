@@ -465,7 +465,7 @@ UniValue mempoolToJSON(bool fVerbose = false, bool fullTxes = false, bool includ
                 if (!mempool.IsKnownReserveTransaction(hash, rtxd) ||
                     ((rtxd.flags & includeMask) == 0 && !includeNonSmart) ||
                     ((rtxd.flags & includeMask) == 0 && excludeNonSmart) ||
-                    ((rtxd.flags & includeMask) != 0 && (rtxd.flags & includeCodes) == 0) || 
+                    ((rtxd.flags & includeMask) != 0 && (rtxd.flags & includeCodes) == 0) ||
                     (rtxd.flags & excludeCodes) != 0 ||
                     (expiresBefore && tx.nExpiryHeight >= expiresBefore) ||
                     (expiresAfter && tx.nExpiryHeight <= expiresAfter))
@@ -540,7 +540,7 @@ UniValue getrawmempool(const UniValue& params, bool fHelp)
             "1. verbose           (boolean, optional, default=false) true for a json object, false for array of transaction ids\n"
             "2. qualifiers        (object, optional, default=null) enables selective display of specific transaction types without others\n"
             "\n"
-            
+
             "\nResult: (for verbose = false):\n"
             "[                     (json array of string)\n"
             "  \"transactionid\"     (string) The transaction id\n"
@@ -578,10 +578,10 @@ UniValue getrawmempool(const UniValue& params, bool fHelp)
                                 "commitment, identitycommitment, nonsmart";
 
     // those postfixed with invalid should never be found
-    std::map<std::string, int32_t> keyWords = { {"evalnone", 0x20}, 
+    std::map<std::string, int32_t> keyWords = { {"evalnone", 0x20},
                                                 {"currencydef", 0x1000},
-                                                {"evidence", 0x4000}, 
-                                                {"storage", 0x4000}, 
+                                                {"evidence", 0x4000},
+                                                {"storage", 0x4000},
                                                 {"notarization", 0x2000},
                                                 {"reservetransfer", 8},
                                                 {"reserveoutput", 4},

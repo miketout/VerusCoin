@@ -279,10 +279,8 @@ bool LogAcceptCategory(const char* category)
         }
         const set<string>& setCategories = *ptrCategory.get();
 
-        // if not debugging everything and not debugging specific category, LogPrint does nothing.
-        if (setCategories.count(string("")) == 0 &&
-            setCategories.count(string("1")) == 0 &&
-            setCategories.count(string(category)) == 0)
+        // if not debugging specific category, LogPrint does nothing.
+        if (setCategories.count(string(category)) == 0)
             return false;
     }
     return true;

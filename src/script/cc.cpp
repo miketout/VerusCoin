@@ -34,6 +34,10 @@ bool IsSignedCryptoCondition(const CC *cond)
 static unsigned char* CopyPubKey(CPubKey pkIn)
 {
     unsigned char* pk = (unsigned char*) malloc(33);
+    if (!pk)
+    {
+        return NULL;
+    }
     memcpy(pk, pkIn.begin(), 33);  // TODO: compressed?
     return pk;
 }
@@ -41,6 +45,10 @@ static unsigned char* CopyPubKey(CPubKey pkIn)
 static unsigned char* CopyKeyIDChars(uint8_t *chars)
 {
     unsigned char* pk = (unsigned char*) malloc(33);
+    if (!pk)
+    {
+        return NULL;
+    }
     memcpy(pk, chars, 20);  // only the keyID
     memset(pk + 20, 0, 13);
     return pk;
@@ -49,6 +57,10 @@ static unsigned char* CopyKeyIDChars(uint8_t *chars)
 CC* CCNewThreshold(int t, std::vector<CC*> v)
 {
     CC *cond = cc_new(CC_Threshold);
+    if (!cond)
+    {
+        return NULL;
+    }
     cond->threshold = t;
     cond->size = v.size();
     cond->subconditions = (CC**) calloc(v.size(), sizeof(CC*));
@@ -59,6 +71,10 @@ CC* CCNewThreshold(int t, std::vector<CC*> v)
 CC* CCNewSecp256k1(CPubKey k)
 {
     CC *cond = cc_new(CC_Secp256k1);
+    if (!cond)
+    {
+        return NULL;
+    }
     cond->publicKey = CopyPubKey(k);
     return cond;
 }
@@ -66,7 +82,10 @@ CC* CCNewSecp256k1(CPubKey k)
 CC* CCNewHashedSecp256k1(CKeyID keyID)
 {
     CC *cond = cc_new(CC_Secp256k1);
-
+    if (!cond)
+    {
+        return NULL;
+    }
     cond->publicKey = CopyKeyIDChars(keyID.begin());
     return cond;
 }
@@ -74,6 +93,10 @@ CC* CCNewHashedSecp256k1(CKeyID keyID)
 CC* CCNewEval(std::vector<unsigned char> code)
 {
     CC *cond = cc_new(CC_Eval);
+    if (!cond)
+    {
+        return NULL;
+    }
     cond->code = (unsigned char*) malloc(code.size());
     memcpy(cond->code, code.data(), code.size());
     cond->codeLength = code.size();

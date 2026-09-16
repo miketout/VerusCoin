@@ -2003,6 +2003,9 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
             + HelpExampleRpc("signdata", "'{\"address\":\"Verus Coin Foundation.vrsc@\", \"createmmr\":true, \"data\":[{\"message\":\"hello world\", \"encrypttoaddress\":\"Sapling address\"}]}'")
         );
 
+
+    // TODO: Implement iddata
+
     CDataDescriptor encryptedDescriptor(find_value(params[0], "datadescriptor"));
 
     if (!encryptedDescriptor.IsValid())
@@ -2710,6 +2713,10 @@ UniValue sendmany(const UniValue& params, bool fHelp)
     int nMinDepth = 1;
     if (params.size() > 2)
         nMinDepth = params[2].get_int();
+    if (nMinDepth < 0 || nMinDepth > 1)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "mindepth is unsupported and must be 0 or 1");
+    }
 
     CWalletTx wtx;
     wtx.strFromAccount = strAccount;
@@ -3196,7 +3203,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                                 std::vector<std::tuple<uint32_t, int64_t, int64_t>> outGoingCostBases =
                                     pCurrenciesCostBases->TakeCurrency(oneCurrency.first,
                                                                        oneCurrency.second,
-                                                                       amountLeft, 
+                                                                       amountLeft,
                                                                        txTime,
                                                                        true,
                                                                        pCurrenciesCostBases->type == CCostBasisTracker::HIFO ? CCostBasisTracker::LOWIFO : pCurrenciesCostBases->type);
@@ -3702,6 +3709,12 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
                 }
             }
 
+            uint64_t fromBlock64 = uni_get_int64(find_value(reportQuery, "fromblock"), fromBlock);
+            uint64_t toBlock64 = uni_get_int64(find_value(reportQuery, "toblock"), toBlock);
+            if (fromBlock64 > UINT32_MAX || toBlock64 > UINT32_MAX || toBlock64 > chainActive.Height())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "fromblock and toblock must be from 0 to " + std::to_string(UINT32_MAX));
+            }
             fromBlock = uni_get_int64(find_value(reportQuery, "fromblock"), fromBlock);
             toBlock = uni_get_int64(find_value(reportQuery, "toblock"), toBlock);
 
@@ -3712,15 +3725,17 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
                 uint160 priceCurID = CVDXF::GetID("bridge.veth.vrsc@");
                 // start calculating prices from 10 minutes after first block move forward 1440 blocks at a time and look for the closest time
                 // to one day each time within 10 minute error
-                for (int64_t i = chainActive[fromBlock]->nTime + 600; i <= ((int64_t)chainActive[toBlock]->nTime + 86400); i += 86400, currentBlock += 1440)
+                for (int64_t i = chainActive[fromBlock]->nTime + 600;
+                     i <= ((int64_t)chainActive[toBlock]->nTime + 86400) && currentBlock < (uint32_t)chainActive.Height();
+                     i += 86400, currentBlock += 1440)
                 {
                     int64_t timeError = ((int64_t)chainActive[currentBlock]->nTime) - i;
-                    while (timeError > 600)
+                    while (timeError > 600 && currentBlock > fromBlock)
                     {
                         currentBlock--;
                         timeError = ((int64_t)chainActive[currentBlock]->nTime - i);
                     }
-                    while (timeError < 600)
+                    while (timeError < -600 && currentBlock < chainActive.Height())
                     {
                         currentBlock++;
                         timeError = ((int64_t)chainActive[currentBlock]->nTime - i);
@@ -3781,6 +3796,10 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
     for (CWallet::TxItems::reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it)
     {
         CWalletTx *const pwtx = (*it).second.first;
+        if (!pwtx)
+        {
+            continue;
+        }
         uint256 blockHash = pwtx->hashBlock;
         if (blockHash.IsNull())
         {
@@ -3816,7 +3835,7 @@ UniValue listtransactions(const UniValue& params, bool fHelp)
     if (nFrom > (int)ret.size())
         nFrom = ret.size();
 
-    if ((nFrom + nCount) > (int)ret.size())
+    if (((int64_t)nFrom + nCount) > (int)ret.size())
         nCount = ret.size() - nFrom;
 
     if (reportQuery.isObject())
@@ -5298,7 +5317,8 @@ UniValue fundrawtransaction(const UniValue& params, bool fHelp)
             }
             const CCoins *coins = view.AccessCoins(oneRef.hash);
             if (!coins ||
-                (coins->fCoinBase && coins->nHeight != 1 && (coins->nHeight < COINBASE_MATURITY)) ||
+                (coins->fCoinBase && coins->nHeight != 1 &&
+                 (((chainActive.Height() + 1) - coins->nHeight) < COINBASE_MATURITY)) ||
                 coins->vout.size() <= oneRef.n ||
                 !coins->vout[oneRef.n].scriptPubKey.size())
             {

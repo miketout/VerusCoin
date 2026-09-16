@@ -278,6 +278,11 @@ UniValue generate(const UniValue& params, bool fHelp)
                     [&pblock](std::vector<unsigned char> soln)
             {
                 LOCK(cs_main);
+                if (CConstVerusSolutionVector::IsAdvancedSolution(soln) &&
+                    !CConstVerusSolutionVector::IsDescriptorValid(soln))
+                {
+                    return false;
+                }
                 pblock->nSolution = soln;
                 solutionTargetChecks.increment();
                 return CheckProofOfWork(*pblock, chainActive.Height(), Params().GetConsensus());
@@ -1120,7 +1125,7 @@ UniValue submitblock(const UniValue& params, bool fHelp)
         if (!DecodeHexBlk(block, params[0].get_str()))
             throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Block decode failed");
     }
-    catch (exception e)
+    catch (const std::exception &e)
     {
         printf("Exception: %s\n", e.what());
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Block decode failed");

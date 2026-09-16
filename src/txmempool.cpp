@@ -616,7 +616,7 @@ void CTxMemPool::removeWithAnchor(const uint256 &invalidRoot, ShieldedType type)
     }
 }
 
-bool CTxMemPool::checkNameConflicts(const CTransaction &tx, std::list<CTransaction> &conflicting)
+bool CTxMemPool::checkNameConflicts(const CTransaction &tx, std::list<CTransaction> &conflicting, uint32_t height)
 {
     LOCK(cs);
 
@@ -629,11 +629,14 @@ bool CTxMemPool::checkNameConflicts(const CTransaction &tx, std::list<CTransacti
     CIdentity identity;
     CNameReservation reservation;
     CAdvancedNameReservation advNameRes;
+    int idCheckStart = -1;
+    int idCheckEnd = -1;
     CCurrencyDefinition newCurDef;
     std::set<uint160> newIDs;
     std::set<uint160> newCurrencies;
-    for (auto output : tx.vout)
+    for (int i = 0; i < tx.vout.size(); i++)
     {
+        auto &output = tx.vout[i];
         COptCCParams p;
         if (output.scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid() && p.version >= p.VERSION_V3 && p.vData.size())
         {
@@ -665,6 +668,53 @@ bool CTxMemPool::checkNameConflicts(const CTransaction &tx, std::list<CTransacti
                     }
                     break;
                 }
+                case EVAL_IDENTITY_PRIMARY:
+                {
+                    if (i >= idCheckStart && i <= idCheckEnd)
+                    {
+                        if ((identity = CIdentity(p.vData[0])).IsValid())
+                        {
+                            newIDs.insert(identity.GetID());
+                        }
+                    }
+                    break;
+                }
+                case EVAL_CROSSCHAIN_IMPORT:
+                {
+                    CCrossChainImport checkImport;
+                    CCrossChainImport sysCCI;
+                    CPBaaSNotarization notarization;
+                    int32_t sysCCIOut, notarizationOut, eOutStart, eOutEnd;
+                    std::vector<CReserveTransfer> reserveTransfers;
+                    CCrossChainExport ccx;
+                    if ((checkImport = CCrossChainImport(p.vData[0])).IsValid() &&
+                        !checkImport.IsSourceSystemImport() &&
+                        checkImport.sourceSystemID != ASSETCHAINS_CHAINID &&
+                        checkImport.numOutputs > 0 &&
+                        checkImport.numOutputs < (int32_t)tx.vout.size() &&
+                        checkImport.GetImportInfo(tx,
+                                                  height ?
+                                                    height :
+                                                    chainActive.LastTip() ?
+                                                      chainActive.LastTip()->GetHeight() + 1 :
+                                                      MEMPOOL_HEIGHT,
+                                                  i,
+                                                  ccx,
+                                                  sysCCI,
+                                                  sysCCIOut,
+                                                  notarization,
+                                                  notarizationOut,
+                                                  eOutStart,
+                                                  eOutEnd,
+                                                  reserveTransfers) &&
+                        eOutEnd > 0 &&
+                        eOutEnd < tx.vout.size())
+                    {
+                        idCheckStart = eOutEnd + 1;
+                        idCheckEnd = eOutEnd + checkImport.numOutputs;
+                    }
+                    break;
+                }
             }
         }
     }
@@ -674,7 +724,8 @@ bool CTxMemPool::checkNameConflicts(const CTransaction &tx, std::list<CTransacti
     {
         std::vector<std::pair<uint160, int>> addresses =
             std::vector<std::pair<uint160, int>>({{CCrossChainRPCData::GetConditionID(oneIDID, EVAL_IDENTITY_RESERVATION), CScript::P2IDX},
-                                                  {CCrossChainRPCData::GetConditionID(oneIDID, EVAL_IDENTITY_ADVANCEDRESERVATION), CScript::P2IDX}});
+                                                  {CCrossChainRPCData::GetConditionID(oneIDID, EVAL_IDENTITY_ADVANCEDRESERVATION), CScript::P2IDX},
+                                                  {CCrossChainRPCData::GetConditionID(oneIDID, EVAL_IDENTITY_PRIMARY), CScript::P2IDX}});
         std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> results;
         if (mempool.getAddressIndex(addresses, results) && results.size())
         {

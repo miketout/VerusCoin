@@ -1123,8 +1123,8 @@ UniValue signrawtransaction(const UniValue& params, bool fHelp)
             uint256 txid = ParseHashO(prevOut, "txid");
 
             int nOut = find_value(prevOut, "vout").get_int();
-            if (nOut < 0)
-                throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "vout must be positive");
+            if (nOut < 0 || nOut > INT16_MAX)
+                throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "vout must be positive and less than " + std::to_string(INT16_MAX));
 
             vector<unsigned char> pkData(ParseHexO(prevOut, "scriptPubKey"));
             CScript scriptPubKey(pkData.begin(), pkData.end());

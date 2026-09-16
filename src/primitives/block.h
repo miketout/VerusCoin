@@ -148,11 +148,16 @@ public:
     bool GetPBaaSHeader(CPBaaSBlockHeader &pbh, uint32_t idx) const
     {
         // search in the solution for this header index and return it if found
-        CPBaaSSolutionDescriptor descr = CConstVerusSolutionVector::GetDescriptor(nSolution);
-        if (nVersion == VERUS_V2 && CConstVerusSolutionVector::HasPBaaSHeader(nSolution) != 0 && idx < descr.numPBaaSHeaders)
+        if (nVersion == VERUS_V2 &&
+            CConstVerusSolutionVector::IsDescriptorValid(nSolution) &&
+            CConstVerusSolutionVector::HasPBaaSHeader(nSolution) != 0)
         {
-            pbh = *(CConstVerusSolutionVector::GetFirstPBaaSHeader(nSolution) + idx);
-            return true;
+            CPBaaSSolutionDescriptor descr = CConstVerusSolutionVector::GetDescriptor(nSolution);
+            if (idx < descr.numPBaaSHeaders)
+            {
+                pbh = *(CConstVerusSolutionVector::GetFirstPBaaSHeader(nSolution) + idx);
+                return true;
+            }
         }
         return false;
     }
@@ -672,6 +677,16 @@ public:
         return 0;
     }
 
+    uint32_t GetProofHeight() const
+    {
+        int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
+        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        {
+            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->nSize - 1;
+        }
+        return 0;
+    }
+
     // a block header proof validates the block MMR root, which is used
     // for proving down to the transaction sub-component. the first value
     // hashed against is the block hash, which enables proving the block hash as well
@@ -793,6 +808,16 @@ public:
         if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
         {
             return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->nIndex;
+        }
+        return 0;
+    }
+
+    uint32_t GetProofHeight() const
+    {
+        int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
+        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        {
+            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->nSize - 1;
         }
         return 0;
     }
@@ -2342,9 +2367,14 @@ public:
                                      const CIdentitySignature &idSignature,
                                      uint8_t thisState=STATE_CONFIRMING)
     {
+        if (thisState != STATE_CONFIRMING && thisState != STATE_REJECTING)
+        {
+            // only active signing intents are accepted, not consensus conclusions
+            return *this;
+        }
         std::map<CIdentityID, CIdentitySignature> newSigMap;
         newSigMap.insert(std::make_pair(signingID, idSignature));
-        CNotarySignature newSignature(systemID, output, true, newSigMap);
+        CNotarySignature newSignature(systemID, output, thisState == STATE_CONFIRMING, newSigMap);
         CCrossChainProof sigProof;
         sigProof << newSignature;
         CNotaryEvidence newEvidence(systemID, output, thisState, sigProof);
@@ -2545,7 +2575,7 @@ public:
     uint256 dataHash;
 
     CPBaaSEvidenceRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), flags(FLAG_ISEVIDENCE), subObject(-1) {}
-    CPBaaSEvidenceRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=-1, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+    CPBaaSEvidenceRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=-1, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         version(Version), flags(Flags), output(op), systemID(SystemID), dataHash(DataHash), objectNum(ObjectNum), subObject(SubObject)
     {
         SetFlags();
@@ -2637,7 +2667,7 @@ public:
     uint160 systemID;
 
     CIdentityMultimapRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), heightStart(0), heightEnd(0), flags(0) {}
-    CIdentityMultimapRef(const CIdentityID &ID, const uint160 &Key, uint32_t HeightStart=0, uint32_t HeightEnd=0, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), bool keepDeleted=false, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+    CIdentityMultimapRef(const CIdentityID &ID, const uint160 &Key, uint32_t HeightStart=0, uint32_t HeightEnd=0, const uint256 &DataHash=uint256(), const uint160 &SystemID=uint160(), bool keepDeleted=false, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         version(Version), idID(ID), key(Key), heightStart(HeightStart), heightEnd(HeightEnd), dataHash(DataHash), systemID(SystemID), flags(keepDeleted ? FLAG_NO_DELETION : 0)
     {
         SetFlags();
@@ -2730,7 +2760,7 @@ public:
     std::string url;
 
     CURLRef(uint32_t Version=VERSION_INVALID) : version(Version), flags(0) {}
-    CURLRef(const std::string &URL, uint32_t Version=DEFAULT_VERSION, uint32_t Flags=0, const uint256 &DataHash=uint256()) : 
+    CURLRef(const std::string &URL, uint32_t Version=DEFAULT_VERSION, uint32_t Flags=0, const uint256 &DataHash=uint256()) :
         version(Version), url(URL), flags(DataHash.IsNull() && !(Flags & FLAG_HAS_HASH) ? 0 : FLAG_HAS_HASH), dataHash(DataHash)
     {
         if (url.size() > 4096)
@@ -2765,7 +2795,7 @@ public:
     bool IsValid() const
     {
         bool valid = version >= FIRST_VERSION && version <= LAST_VERSION && !url.empty();
-        
+
         if (valid)
         {
             // Validate url using libcurl
@@ -2795,7 +2825,7 @@ public:
     boost::variant<CPBaaSEvidenceRef, CIdentityMultimapRef, CURLRef> ref;
 
     CCrossChainDataRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : ref(CPBaaSEvidenceRef(Version)) {}
-    CCrossChainDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+    CCrossChainDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         ref(CPBaaSEvidenceRef(op, ObjectNum, SubObject, SystemID, DataHash, Flags, Version)) {}
 
     CCrossChainDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
@@ -2919,7 +2949,7 @@ public:
     CCrossChainDataRef ref;
 
     CVDXFDataRef(uint32_t Version=CVDXF_Data::VERSION_INVALID) : ref(Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
-    CVDXFDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) : 
+    CVDXFDataRef(const COutPoint &op, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), const uint256 &DataHash=uint256(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :
         ref(op, ObjectNum, SubObject, SystemID, DataHash, Flags, Version), CVDXF_Data(CVDXF_Data::CrossChainDataRefKey(), std::vector<unsigned char>(), Version) {}
 
     CVDXFDataRef(const uint256 &HashIn, uint32_t nIn=UINT32_MAX, int32_t ObjectNum=0, int32_t SubObject=0, const uint160 &SystemID=uint160(), uint32_t Flags=CPBaaSEvidenceRef::FLAG_ISEVIDENCE, uint32_t Version=CVDXF_Data::DEFAULT_VERSION) :

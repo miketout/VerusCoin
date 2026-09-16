@@ -672,7 +672,7 @@ int32_t komodo_block2pubkey33(uint8_t *pubkey33,CBlock *block)
     if ( KOMODO_LOADINGBLOCKS == 0 )
         memset(pubkey33,0xff,33);
     else memset(pubkey33,0,33);
-    if ( block->vtx[0].vout.size() > 0 )
+    if ( block->vtx.size() > 0 && block->vtx[0].vout.size() > 0 )
     {
         txnouttype whichType;
         vector<vector<unsigned char>> vch = vector<vector<unsigned char>>();

@@ -72,7 +72,7 @@ static inline __m128i _mm_unpackhi_epi32_emu(__m128i a, __m128i b)
 void load_constants_port();
 
 /* Tweak constants with seed */
-void tweak_constants(const unsigned char *pk_seed, const unsigned char *sk_seed, 
+void tweak_constants(const unsigned char *pk_seed, const unsigned char *sk_seed,
 	                 unsigned long long seed_length);
 
 /* Haraka Sponge */

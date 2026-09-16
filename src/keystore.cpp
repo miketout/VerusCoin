@@ -444,6 +444,7 @@ std::set<CKeyID> CBasicKeyStore::GetIdentityKeyIDs() const
 void CBasicKeyStore::ClearCurrencyTrust()
 {
     mapCurrencyTrust.clear();
+    currencyTrustMode = CRating::TRUSTMODE_NORESTRICTION;
 }
 
 bool CBasicKeyStore::RemoveCurrencyTrust(const uint160 &currencyID)

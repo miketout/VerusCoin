@@ -499,7 +499,8 @@ namespace {
         // Make sure pindexBestKnownBlock is up to date, we'll need it.
         ProcessBlockAvailability(nodeid);
 
-        if (state->pindexBestKnownBlock == NULL || state->pindexBestKnownBlock->chainPower < chainActive.Tip()->chainPower) {
+        if (state->pindexBestKnownBlock == NULL ||
+            (chainActive.Tip() && state->pindexBestKnownBlock->chainPower < chainActive.Tip()->chainPower)) {
             // This peer has nothing interesting.
             return;
         }
@@ -507,7 +508,8 @@ namespace {
         if (state->pindexLastCommonBlock == NULL) {
             // Bootstrap quickly by guessing a parent of our best tip is the forking point.
             // Guessing wrong in either direction is not a problem.
-            state->pindexLastCommonBlock = chainActive[std::min(state->pindexBestKnownBlock->GetHeight(), chainActive.Height())];
+            state->pindexLastCommonBlock = chainActive[std::min((uint32_t)state->pindexBestKnownBlock->GetHeight(),
+                                                                (uint32_t)chainActive.Height())];
         }
 
         // If the peer reorganized, our previous pindexLastCommonBlock may not be an ancestor
@@ -1230,7 +1232,7 @@ bool ContextualCheckTransaction(
         CValidationState &state,
         const CChainParams& chainparams,
         const int nHeight,
-        const int dosLevel,
+        int dosLevel,
         bool (*isInitBlockDownload)(const CChainParams&))
 {
     bool overwinterActive = chainparams.GetConsensus().NetworkUpgradeActive(nHeight, Consensus::UPGRADE_OVERWINTER);
@@ -1365,7 +1367,7 @@ bool ContextualCheckTransaction(
             {
                 dataToBeSigned = SignatureHash(scriptCode, tx, NOT_AN_INPUT, SIGHASH_ALL, 0, consensusBranchId);
             }
-        } catch (std::logic_error ex) {
+        } catch (const std::logic_error &ex) {
             return state.DoS(100, error("CheckTransaction(): error computing signature hash"),
                              REJECT_INVALID, "error-computing-signature-hash");
         }
@@ -1510,7 +1512,16 @@ bool ContextualCheckTransaction(
                         }
                         LogPrintf("\n");
                     }
-                    return state.DoS(10, error(state.GetRejectReason().c_str()), REJECT_INVALID, "bad-txns-failed-precheck" );
+                    std::string rejectReason = state.GetRejectReason().empty() ? "failed-precheck" : state.GetRejectReason();
+                    if (nHeight <= (chainActive.Height() + 1) && !state.IsInvalid())
+                    {
+                        // unclassified failure: deterministic rejection of the tx/block, but no ban score.
+                        // do NOT leave this as MODE_ERROR - a block containing it would stall activation
+                        // as a phantom system error instead of being marked invalid (audit round 6)
+                        dosLevel = 0;
+                        state = CValidationState();
+                    }
+                    return state.DoS(dosLevel, error("%s", rejectReason.c_str()), REJECT_INVALID, "bad-txns-failed-precheck");
                 }
             }
         }
@@ -1972,7 +1983,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
     // if this is an identity that is already present in the mem pool, then we cannot duplicate it
     std::list<CTransaction> conflicts;
-    if (pool.checkNameConflicts(tx, conflicts))
+    if (pool.checkNameConflicts(tx, conflicts, nextBlockHeight))
     {
         return error("AcceptToMemoryPool: Invalid identity redefinition");
     }
@@ -4220,7 +4231,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
                             case EVAL_IDENTITY_PRIMARY:
                             {
-                                // if this is a straight up currency definition of our native currency, record it
+                                // if this is an ID import, record it as creating an ID
                                 CIdentity curID;
                                 if (rtxd.IsImport() &&
                                     (curID = CIdentity(p.vData[0])).IsValid())
@@ -4280,7 +4291,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                 // make sure we spend all of our arbs via imports
                                 CCrossChainImport cci, sysCCI;
                                 CCrossChainExport ccx;
-                                int primaryImportOut;
                                 int32_t sysCCIOut, notarizationOut, evidenceOutStart, evidenceOutEnd;
                                 CPBaaSNotarization importNotarization;
                                 CCurrencyDefinition destSystem;
@@ -5539,7 +5549,6 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
 
     // do not disconnect a notarized tip
     {
-        int32_t prevMoMheight;
         uint256 notarizedhash;
 
         CProofRoot confirmedRoot = ConnectedChains.FinalizedChainRoot();
@@ -6657,7 +6666,7 @@ bool ContextualCheckBlockHeader(
                 {
                     //fprintf(stderr,"got a pre notarization block that matches height.%d\n",(int32_t)nHeight);
                     return true;
-                } else return state.DoS(1, error("%s: forked chain %d older than last notarized (height %d) vs %d", __func__, nHeight, notarizedht));
+                } else return state.DoS(1, error("%s: forked chain %d older than last notarized (height %d)", __func__, nHeight, notarizedht));
             }
         }
     }
@@ -6665,6 +6674,35 @@ bool ContextualCheckBlockHeader(
     if (block.nVersion < 4)
         return state.Invalid(error("%s : rejected nVersion<4 block", __func__),
                              REJECT_OBSOLETE, "bad-version");
+
+    if (block.nSolution.size() > UINT16_MAX)
+    {
+        return state.DoS(100, error("%s: oversize solution", __func__), REJECT_INVALID, "oversize-solution");
+    }
+    // tolerate variable size solutions, but ensure that we have at least 16 bytes extra space to fit the clhash at the end
+    int modSpace = GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION) % 32;
+    int solutionVer = CConstVerusSolutionVector::GetVersionByHeight(nHeight);
+    if (!(solutionVer < CActivationHeight::ACTIVATE_VERUSHASH2_1 || (modSpace >= 1 && modSpace <= 16)))
+    {
+        return state.DoS(100, error("%s: invalid header format", __func__), REJECT_INVALID, "insufficient-extraspace");
+    }
+
+    // ensure the solution descriptor's claimed contents fit within the solution buffer,
+    // matching what local generation and merged block submission already require.
+    // deliberately does not require the exact reserved tail that IsDescriptorValid does,
+    // as consensus permits serialized remainders of 1 - 16
+    if (solutionVer >= CActivationHeight::ACTIVATE_PBAAS &&
+        CConstVerusSolutionVector::IsAdvancedSolution(block.nSolution))
+    {
+        CPBaaSSolutionDescriptor d = CConstVerusSolutionVector::GetDescriptor(block.nSolution);
+        uint32_t reservedTail = CConstVerusSolutionVector::ReservedTail(block.nSolution);
+        uint64_t headerBytes = (uint64_t)d.numPBaaSHeaders * sizeof(CPBaaSBlockHeader);
+        if ((uint64_t)CConstVerusSolutionVector::OVERHEAD_SIZE + headerBytes + reservedTail > block.nSolution.size() ||
+            d.extraDataSize > CConstVerusSolutionVector::ExtraDataLen(block.nSolution, true))
+        {
+            return state.DoS(100, error("%s: invalid solution descriptor", __func__), REJECT_INVALID, "invalid-solution-descriptor");
+        }
+    }
 
     if (block.IsVerusPOSBlock())
     {
@@ -6689,14 +6727,6 @@ bool ContextualCheckBlockHeader(
         if (!CheckProofOfWork(block, nHeight, Params().GetConsensus()))
         {
             return state.DoS(100, error("%s: incorrect proof of work header", __func__), REJECT_INVALID, "bad-work");
-        }
-
-        // tolerate variable size solutions, but ensure that we have at least 16 bytes extra space to fit the clhash at the end
-        int modSpace = GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION) % 32;
-        int solutionVer = CConstVerusSolutionVector::GetVersionByHeight(nHeight);
-        if (!(solutionVer < CActivationHeight::ACTIVATE_VERUSHASH2_1 || (modSpace >= 1 && modSpace <= 16)))
-        {
-            return state.DoS(100, error("%s: invalid header format", __func__), REJECT_INVALID, "insufficient-extraspace");
         }
     }
 
@@ -10243,7 +10273,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                                 mapRelay.erase(vRelayExpiration.front().second);
                                 vRelayExpiration.pop_front();
                             }
-    
+
                             auto ret = mapRelay.insert(std::make_pair(oneTx.first, std::make_shared<CTransaction>(txToSend)));
                             if (ret.second) {
                                 vRelayExpiration.push_back(std::make_pair(nNow + 15 * 60 * 1000000, ret.first));

@@ -833,8 +833,15 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
             return;
         }
 
-        startBlock = (uint32_t)uni_get_int64(find_value(obj, "startblock"));
-        endBlock = (uint32_t)uni_get_int64(find_value(obj, "endblock"));
+        uint64_t startBlock64 = uni_get_int64(find_value(obj, "startblock"));
+        uint64_t endBlock64 = uni_get_int64(find_value(obj, "endblock"));
+        if (startBlock64 > UINT32_MAX || endBlock64 > UINT32_MAX)
+        {
+            nVersion = PBAAS_VERSION_INVALID;
+            return;
+        }
+        startBlock = (uint32_t)startBlock64;
+        endBlock = (uint32_t)endBlock64;
 
         int32_t totalReserveWeight = IsFractional() ? SATOSHIDEN : 0;
         UniValue currencyArr = find_value(obj, "currencies");
@@ -946,6 +953,12 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                 }
                 else if (totalReserveWeight)
                 {
+                    if (!currencyArr.size())
+                    {
+                        LogPrintf("%s: invalid currency array of zero size\n", __func__);
+                        nVersion = PBAAS_VERSION_INVALID;
+                        return;
+                    }
                     uint32_t oneWeight = totalReserveWeight / currencyArr.size();
                     uint32_t mod = totalReserveWeight % currencyArr.size();
                     for (int i = 0; i < currencyArr.size(); i++)
@@ -1216,8 +1229,16 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                 return;
             }
 
-            blockTime = uni_get_int64(find_value(obj, "blocktime"), DEFAULT_BLOCKTIME_TARGET);
-            powAveragingWindow = uni_get_int64(find_value(obj, "powaveragingwindow"),
+            int64_t blockTime64 = uni_get_int64(find_value(obj, "blocktime"), DEFAULT_BLOCKTIME_TARGET);
+            if (blockTime64 < MIN_BLOCKTIME_TARGET || blockTime64 > MAX_BLOCKTIME_TARGET)
+            {
+                LogPrintf("%s: blocktime: %d out of range %d - %d\n", __func__, blockTime64, MIN_BLOCKTIME_TARGET, MAX_BLOCKTIME_TARGET);
+                nVersion = PBAAS_VERSION_INVALID;
+                return;
+            }
+            blockTime = (uint32_t)blockTime64;
+
+            int64_t powAveragingWindow64 = uni_get_int64(find_value(obj, "powaveragingwindow"),
                                    std::min(
                                        (int64_t)CCurrencyDefinition::MAX_AVERAGING_WINDOW,
                                        std::max(
@@ -1225,23 +1246,25 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                                            )
                                        )
                                    );
+            if (powAveragingWindow64 < MIN_AVERAGING_WINDOW || powAveragingWindow64 > MAX_AVERAGING_WINDOW)
+            {
+                LogPrintf("%s: powaveragingwindow: %d out of range %d - %d\n", __func__, powAveragingWindow64, MIN_AVERAGING_WINDOW, MAX_AVERAGING_WINDOW);
+                nVersion = PBAAS_VERSION_INVALID;
+                return;
+            }
+            powAveragingWindow = (uint32_t)powAveragingWindow64;
 
-            blockNotarizationModulo = uni_get_int64(find_value(obj, "notarizationperiod"),
+            int64_t paramNotarizationModulo = uni_get_int64(find_value(obj, "notarizationperiod"),
                                                     std::max((int64_t)(DEFAULT_BLOCK_NOTARIZATION_TIME / blockTime), (int64_t)MIN_BLOCK_NOTARIZATION_PERIOD));
-
-            if (powAveragingWindow < MIN_AVERAGING_WINDOW || powAveragingWindow > MAX_AVERAGING_WINDOW)
+            if (paramNotarizationModulo < MIN_BLOCK_NOTARIZATION_PERIOD ||
+                paramNotarizationModulo > MAX_BLOCK_NOTARIZATION_PERIOD)
             {
-                LogPrintf("%s: powaveragingwindow: %d out of range %d - %d\n", __func__, powAveragingWindow, MIN_AVERAGING_WINDOW, MAX_AVERAGING_WINDOW);
+                LogPrintf("%s: notarizationperiod: %ld out of range %d - %d\n",
+                            __func__, (long long)paramNotarizationModulo, MIN_BLOCK_NOTARIZATION_PERIOD, MAX_BLOCK_NOTARIZATION_PERIOD);
                 nVersion = PBAAS_VERSION_INVALID;
                 return;
             }
-
-            if (blockTime < MIN_BLOCKTIME_TARGET || blockTime > MAX_BLOCKTIME_TARGET)
-            {
-                LogPrintf("%s: blocktime: %d out of range %d - %d\n", __func__, blockTime, MIN_BLOCKTIME_TARGET, MAX_BLOCKTIME_TARGET);
-                nVersion = PBAAS_VERSION_INVALID;
-                return;
-            }
+            blockNotarizationModulo = paramNotarizationModulo;
 
             for (auto era : vEras)
             {
@@ -1249,6 +1272,8 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                 if (oneReward > (100000LL * COIN))
                 {
                     LogPrintf("%s: block reward out of range %ld - %ld\n", __func__, 0, (100000LL * COIN));
+                    nVersion = PBAAS_VERSION_INVALID;
+                    return;
                 }
                 rewards.push_back(uni_get_int64(find_value(era, "reward")));
                 rewardsDecay.push_back(uni_get_int64(find_value(era, "decay")));
@@ -1258,14 +1283,19 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
 
             if (!rewards.size())
             {
-                LogPrintf("%s: PBaaS chain does not have valid rewards eras");
+                LogPrintf("%s: PBaaS chain does not have valid rewards eras", __func__);
                 nVersion = PBAAS_VERSION_INVALID;
             }
         }
     }
-    catch (exception e)
+    catch (const std::exception &e)
     {
-        LogPrintf("%s: exception reading currency definition JSON\n", __func__, e.what());
+        LogPrintf("%s: exception reading currency definition JSON: %s\n", __func__, e.what());
+        nVersion = PBAAS_VERSION_INVALID;
+    }
+    catch (...)
+    {
+        LogPrintf("%s: uncaught exception reading currency definition JSON\n", __func__);
         nVersion = PBAAS_VERSION_INVALID;
     }
 }

@@ -21,7 +21,7 @@ void CConstVerusSolutionVector::SetPBaaSHeader(std::vector<unsigned char> &vch, 
 
 bool CVerusSolutionVector::GetPBaaSHeader(CPBaaSBlockHeader &pbh, uint32_t idx) const
 {
-    if (idx < GetNumPBaaSHeaders())
+    if (solutionTools.IsDescriptorValid(vch) && idx < GetNumPBaaSHeaders())
     {
         pbh = *(GetFirstPBaaSHeader() + idx);
         return true;

@@ -1129,11 +1129,12 @@ char *parse_conf_line(char *line,char *field)
     line += strlen(field);
     for (; *line!='='&&*line!=0; line++)
         break;
-    if ( *line == 0 )
-        return(0);
     if ( *line == '=' )
         line++;
-    while ( line[strlen(line)-1] == '\r' || line[strlen(line)-1] == '\n' || line[strlen(line)-1] == ' ' )
+    if ( *line == 0 )
+        return(0);
+    while ( strlen(line) > 0 &&
+            (line[strlen(line)-1] == '\r' || line[strlen(line)-1] == '\n' || line[strlen(line)-1] == ' ' ) )
         line[strlen(line)-1] = 0;
     //printf("LINE.(%s)\n",line);
     _stripwhite(line,0);
@@ -1368,10 +1369,22 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
 #else
         sprintf(fname,"%s/%s",GetDataDir(false).string().c_str(), buf);
 #endif
-        if ( (fp= fopen(fname,"rb")) == 0 )
-        {
+
 #ifndef FROM_CLI
-            if ( (fp= fopen(fname,"wb")) != 0 )
+
+#ifndef _WIN32
+        int fd = open(fname, O_WRONLY | O_CREAT | O_EXCL, 0600);
+        if (fd >= 0)
+#else
+        if ((fp = fopen(fname, "rb")) == 0)
+#endif
+        {
+
+#ifndef _WIN32
+            if ((fp = fdopen(fd, "wb")) != 0)
+#else
+            if ((fp = fopen(fname, "wb")) != 0)
+#endif
             {
                 fprintf(fp,"rpcuser=user%u\nrpcpassword=pass%s\nrpcport=%u\nserver=1\ntxindex=1\nrpcworkqueue=256\nrpcallowip=127.0.0.1\nrpchost=127.0.0.1\n",crc,password,rpcport);
 
@@ -1397,7 +1410,16 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
 
                     if (!mapArgs["-blocktime"].empty() || !mapArgs["-powaveragingwindow"].empty() || !mapArgs["-notarizationperiod"].empty())
                     {
-                        int paramBlockTime = GetArg("-blocktime", CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
+                        int64_t paramBlockTime = GetArg("-blocktime", CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
+                        if (paramBlockTime < CCurrencyDefinition::MIN_BLOCKTIME_TARGET ||
+                            paramBlockTime > CCurrencyDefinition::MAX_BLOCKTIME_TARGET)
+                        {
+                            LogPrintf("%s: blocktime: %ld out of range %d - %d\n", __func__, paramBlockTime, (int)CCurrencyDefinition::MIN_BLOCKTIME_TARGET, (int)CCurrencyDefinition::MAX_BLOCKTIME_TARGET);
+                            printf("%s: blocktime: %lld out of range %d - %d\n", __func__, (long long)paramBlockTime, (int)CCurrencyDefinition::MIN_BLOCKTIME_TARGET, (int)CCurrencyDefinition::MAX_BLOCKTIME_TARGET);
+                            fclose(fp);
+                            remove(fname);
+                            throw std::runtime_error("-blocktime: " + std::to_string(paramBlockTime) + " out of range");
+                        }
                         int powAveragingWindow = GetArg("-powaveragingwindow", CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW);
                         int notarizationPeriod = GetArg("-notarizationperiod",
                                                         std::max((int)(CCurrencyDefinition::DEFAULT_BLOCK_NOTARIZATION_TIME / paramBlockTime),
@@ -1429,16 +1451,31 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
                 }
                 fclose(fp);
                 printf("Created (%s)\n",fname);
-            } else printf("Couldnt create (%s)\n",fname);
+            } else
+            {
+                printf("Couldnt create (%s)\n",fname);
+
+#ifndef _WIN32
+                close(fd);
+            }
+#else
+            }
 #endif
         }
         else
+#endif // not FROMCLI - intentionally drop through after unconditionally after the else
         {
-            _komodo_userpass(myusername, mypassword, fp);
-            mapArgs["-rpcpassword"] = mypassword;
-            mapArgs["-rpcusername"] = myusername;
-            //fprintf(stderr,"myusername.(%s)\n",myusername);
+#if defined(_WIN32) && !defined(FROM_CLI)
             fclose(fp);
+#endif
+            if ((fp = fopen(fname, "rb")) != 0)
+            {
+                _komodo_userpass(myusername, mypassword, fp);
+                mapArgs["-rpcpassword"] = mypassword;
+                mapArgs["-rpcusername"] = myusername;
+                fclose(fp);
+            }
+            //fprintf(stderr,"myusername.(%s)\n",myusername);
         }
     }
     strcpy(fname,GetDataDir().string().c_str());
@@ -2160,7 +2197,14 @@ void komodo_args(char *argv0)
                 obj.push_back(Pair("systemid", GetArg("-systemid","")));
                 obj.push_back(Pair("parent", GetArg("-parentid","")));
 
-                int paramBlockTime = GetArg("-blocktime", (int64_t)CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
+                int64_t paramBlockTime = GetArg("-blocktime", (int64_t)CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
+                if (paramBlockTime < CCurrencyDefinition::MIN_BLOCKTIME_TARGET ||
+                    paramBlockTime > CCurrencyDefinition::MAX_BLOCKTIME_TARGET)
+                {
+                    LogPrintf("%s: blocktime: %ld out of range %d - %d\n", __func__, paramBlockTime, (int)CCurrencyDefinition::MIN_BLOCKTIME_TARGET, (int)CCurrencyDefinition::MAX_BLOCKTIME_TARGET);
+                    printf("%s: blocktime: %lld out of range %d - %d\n", __func__, (long long)paramBlockTime, (int)CCurrencyDefinition::MIN_BLOCKTIME_TARGET, (int)CCurrencyDefinition::MAX_BLOCKTIME_TARGET);
+                    throw std::runtime_error("-blocktime: " + std::to_string(paramBlockTime) + " out of range");
+                }
                 obj.pushKV("blocktime", paramBlockTime);
                 obj.pushKV("powaveragingwindow", GetArg("-powaveragingwindow", (int64_t)CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW));
                 obj.pushKV("notarizationperiod", GetArg("-notarizationperiod",

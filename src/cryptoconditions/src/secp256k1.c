@@ -418,7 +418,8 @@ static unsigned long secp256k1Cost(const CC *cond) {
 }
 
 
-static CC *cc_secp256k1Condition(const unsigned char *publicKey, const unsigned char *signature) {
+static CC *cc_secp256k1Condition(const unsigned char *publicKey, const unsigned char *signature,
+                                 size_t signatureLen) {
     // Check that pk parses
     initVerify();
     secp256k1_pubkey spk;
@@ -438,16 +439,39 @@ static CC *cc_secp256k1Condition(const unsigned char *publicKey, const unsigned 
         }
     }
 
+    if (signature && signatureLen != (size_t)signatureSize)
+    {
+        return NULL;
+    }
+
     unsigned char *pk = 0, *sig = 0;
 
     pk = calloc(1, SECP256K1_PK_SIZE);
-    memcpy(pk, publicKey, SECP256K1_PK_SIZE);
-    if (signature) {
-        sig = calloc(1, signatureSize);
-        memcpy(sig, signature, signatureSize);
+    if (pk)
+    {
+        memcpy(pk, publicKey, SECP256K1_PK_SIZE);
+        if (signature) {
+            sig = calloc(1, signatureSize);
+            if (!sig)
+            {
+                free(pk);
+                return NULL;
+            }
+            memcpy(sig, signature, signatureSize);
+        }
+    }
+    else
+    {
+        return NULL;
     }
 
     CC *cond = cc_new(CC_Secp256k1);
+    if (!cond)
+    {
+        free(sig);
+        free(pk);
+        return NULL;
+    }
     cond->publicKey = pk;
     cond->signature = sig;
     return cond;
@@ -457,9 +481,11 @@ static CC *cc_secp256k1Condition(const unsigned char *publicKey, const unsigned 
 static CC *secp256k1FromJSON(const cJSON *params, char *err) {
     CC *cond = 0;
     unsigned char *pk = 0, *sig = 0;
-    size_t pkSize, sigSize;
+    size_t pkSize = 0, sigSize = 0;
 
     if (!jsonGetHex(params, "publicKey", err, &pk, &pkSize)) goto END;
+
+    if (pkSize != SECP256K1_PK_SIZE) { strcpy(err, "publicKey has incorrect length"); goto END; }
 
     if (!jsonGetHexOptional(params, "signature", err, &sig, &sigSize)) goto END;
 
@@ -473,7 +499,7 @@ static CC *secp256k1FromJSON(const cJSON *params, char *err) {
         }
     }
 
-    cond = cc_secp256k1Condition(pk, sig);
+    cond = cc_secp256k1Condition(pk, sig, sigSize);
     if (!cond) {
         strcpy(err, "invalid public key");
     }
@@ -498,8 +524,12 @@ static void secp256k1ToJSON(const CC *cond, cJSON *params) {
 
 
 static CC *secp256k1FromFulfillment(const Fulfillment_t *ffill) {
+    if (ffill->choice.secp256k1Sha256.publicKey.size != SECP256K1_PK_SIZE) {
+        return NULL;
+    }
     return cc_secp256k1Condition(ffill->choice.secp256k1Sha256.publicKey.buf,
-                                 ffill->choice.secp256k1Sha256.signature.buf);
+                                 ffill->choice.secp256k1Sha256.signature.buf,
+                                 ffill->choice.secp256k1Sha256.signature.size);
 }
 
 
@@ -528,8 +558,12 @@ static Fulfillment_t *secp256k1ToFulfillment(const CC *cond) {
 
 
 static CC *secp256k1FromPartialFulfillment(const Fulfillment_t *ffill) {
+    if (ffill->choice.secp256k1Sha256.publicKey.size != SECP256K1_PK_SIZE) {
+        return NULL;
+    }
     return cc_secp256k1Condition(ffill->choice.secp256k1Sha256.publicKey.buf,
-                                 ffill->choice.secp256k1Sha256.signature.size == 0 ? NULL : ffill->choice.secp256k1Sha256.signature.buf);
+                                 ffill->choice.secp256k1Sha256.signature.size == 0 ? NULL : ffill->choice.secp256k1Sha256.signature.buf,
+                                 ffill->choice.secp256k1Sha256.signature.size);
 }
 
 

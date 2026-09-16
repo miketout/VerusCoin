@@ -17,6 +17,7 @@
 
 #include "version.h"
 #include "uint256.h"
+#include "pubkey.h"
 #include <univalue.h>
 #include <sstream>
 #include "streams.h"
@@ -265,6 +266,34 @@ public:
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(type);
         READWRITE(destination);
+        if (ser_action.ForRead())
+        {
+            switch (TypeNoFlags())
+            {
+                case DEST_ETH:
+                case DEST_PKH:
+                case DEST_ID:
+                case DEST_SH:
+                case DEST_QUANTUM:
+                {
+                    if (destination.size() != sizeof(uint160))
+                    {
+                        type &= FLAG_MASK;
+                        destination.clear();
+                    }
+                    break;
+                }
+                case DEST_PK:
+                {
+                    if (destination.size() != CPubKey::COMPRESSED_PUBLIC_KEY_SIZE)
+                    {
+                        type &= FLAG_MASK;
+                        destination.clear();
+                    }
+                    break;
+                }
+            }
+        }
         if (type & FLAG_DEST_GATEWAY)
         {
             READWRITE(gatewayID);
@@ -508,6 +537,7 @@ public:
         MAX_AVERAGING_WINDOW = 180,                 // max averaging window
         DEFAULT_BLOCK_NOTARIZATION_TIME = 600,      // default target time for block notarizations
         MIN_BLOCK_NOTARIZATION_PERIOD = 5,          // minimum target blocks for notarization period
+        MAX_BLOCK_NOTARIZATION_PERIOD = INT16_MAX,  // maximum target blocks for notarization period
         MAX_NOTARIZATION_CONVERSION_PRICING_INTERVAL = 100,  // there must be a notarization with conversion at least 100 blocks before reserve transfer
         DEFAULT_BLOCKTIME_TARGET = 60,              // default block time target for difficulty adjustment, in seconds
         MIN_BLOCKTIME_TARGET = 10,                  // min 10 seconds in first version of PBaaS
@@ -597,8 +627,8 @@ public:
 
     // launch host, system start and end block if there is an end time for the expected use of this currency
     uint160 launchSystemID;                 // where is this currency launched? for PBaaS chains, vrsc. startblock is measured against launch system
-    int32_t startBlock;                     // block # that indicates the end of pre-launch when a chain fails or begins running and if token, becomes active for use
-    int32_t endBlock;                       // block after which this is considered end-of-lifed, which applies to task-specific currencies
+    uint32_t startBlock;                     // block # that indicates the end of pre-launch when a chain fails or begins running and if token, becomes active for use
+    uint32_t endBlock;                       // block after which this is considered end-of-lifed, which applies to task-specific currencies
 
     int64_t initialFractionalSupply;        // initial supply available for all pre-launch conversions, not including pre-allocation, which will be added to this
     std::vector<std::pair<uint160, int64_t>> preAllocation; // pre-allocation recipients, from pre-allocation/premine, emitted after reserve weights are set
@@ -1149,6 +1179,9 @@ public:
                 idReferralLevels <= MAX_ID_REFERRAL_LEVELS &&
                 name.size() > 0 &&
                 name.size() <= (KOMODO_ASSETCHAIN_MAXLEN - 1) &&
+                rewards.size() == rewardsDecay.size() &&
+                rewards.size() == halving.size() &&
+                rewards.size() == eraEnd.size() &&
                 std::max({rewards.size(), rewardsDecay.size(), halving.size(), eraEnd.size()}) <= ASSETCHAINS_MAX_ERAS;
     }
 
@@ -1575,7 +1608,8 @@ public:
     uint256 compactPower;                   // compact power (or external proxy) of the block height notarization to compare
     int64_t gasPrice;                       // Ethereum protocol gas price
 
-    CProofRoot(int Type=TYPE_PBAAS, int Version=VERSION_INVALID) : type(Type), version(Version), rootHeight(0) {}
+    CProofRoot(int Type=TYPE_PBAAS, int Version=VERSION_INVALID) :
+                type(Type), version(Version), rootHeight(0), gasPrice(0) {}
     CProofRoot(const UniValue &uni);
     CProofRoot(const uint160 &sysID,
                 uint32_t nHeight,

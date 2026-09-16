@@ -1992,7 +1992,7 @@ bool CWallet::VerusSelectStakeOutput(CBlock *pBlock, arith_uint256 &hashResult, 
                                                 }
                                                 else
                                                 {
-                                                    LogPrintf("%s: Identity that has been updated more recently than minimum stake age (%d) blocks renders UTXO ineligible to stake\n", __func__, EncodeDestination(CIdentityID(GetDestinationID(oneDest))).c_str(), VERUS_MIN_STAKEAGE);
+                                                    LogPrintf("%s: Identity, %s, has been updated more recently than minimum stake age (%d) blocks renders UTXO ineligible to stake\n", __func__, EncodeDestination(CIdentityID(GetDestinationID(oneDest))).c_str(), VERUS_MIN_STAKEAGE);
                                                 }
                                             }
                                             isValid = false;
@@ -2207,7 +2207,7 @@ int32_t CWallet::VerusStakeTransaction(CBlock *pBlock, CMutableTransaction &txNe
     {
         if (!p.vKeys.size())
         {
-            LogPrintf("%s: Please report - no destination on stake source\n");
+            LogPrintf("%s: Please report - no destination on stake source\n", __func__);
             return 0;
         }
 
@@ -2239,7 +2239,7 @@ int32_t CWallet::VerusStakeTransaction(CBlock *pBlock, CMutableTransaction &txNe
         }
         else
         {
-            LogPrintf("%s: Please report - found stake source that is not valid\n");
+            LogPrintf("%s: Please report - found stake source that is not valid\n", __func__);
             return 0;
         }
     }

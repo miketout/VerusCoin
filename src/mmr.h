@@ -691,6 +691,25 @@ public:
     std::vector<CMerkleBranchBase *> proofSequence;
 
     CMMRProof() {}
+
+    // do not remove "noexcept"
+    CMMRProof(CMMRProof &&oldProof) noexcept : proofSequence(std::move(oldProof.proofSequence))
+    {
+        oldProof.proofSequence.clear();
+    }
+
+    // do not remove "noexcept"
+    CMMRProof &operator=(CMMRProof &&operand) noexcept
+    {
+        if (this != &operand)
+        {
+            DeleteProofSequence();
+            proofSequence = std::move(operand.proofSequence);
+            operand.proofSequence.clear();
+        }
+        return *this;
+    }
+
     CMMRProof(const CMMRProof &oldProof)
     {
         CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
@@ -871,6 +890,7 @@ public:
                 printf("%s: ERROR: failure - proof sequence is likely corrupt\n", __func__);
                 LogPrintf("%s: ERROR: failure - proof sequence is likely corrupt\n", __func__);
                 DeleteProofSequence();
+                throw std::ios_base::failure("CMMRProof: corrupt proof sequence");
             }
         }
         else

@@ -253,9 +253,12 @@ bool downloadFiles(std::string title)
                     it->second.prog.curl = it->second.curl;
                 }
 
+#ifdef _WIN32
+                curl_easy_setopt(it->second.curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+#endif
                 curl_easy_setopt(it->second.curl, CURLOPT_URL, it->second.URL.c_str());
-                curl_easy_setopt(it->second.curl, CURLOPT_SSL_VERIFYPEER, 0L);
-                curl_easy_setopt(it->second.curl, CURLOPT_SSL_VERIFYHOST, 0L);
+                curl_easy_setopt(it->second.curl, CURLOPT_SSL_VERIFYPEER, 1L);
+                curl_easy_setopt(it->second.curl, CURLOPT_SSL_VERIFYHOST, 2L);
                 curl_easy_setopt(it->second.curl, CURLOPT_VERBOSE, 0L);
                 curl_easy_setopt(it->second.curl, CURLOPT_TCP_KEEPALIVE, 1L);
                 curl_easy_setopt(it->second.curl, CURLOPT_XFERINFOFUNCTION, xferinfo);
@@ -435,10 +438,12 @@ void getHttpsJson(std::string url)
 
     curl = curl_easy_init();
     if(curl) {
-
+#ifdef _WIN32
+        curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+#endif
         curl_easy_setopt(curl, CURLOPT_URL, downloadedJSON.URL.c_str());
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
         curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writer);
@@ -489,7 +494,8 @@ bool getBootstrap() {
         }
     }
 
-    // check signature of downloaded bootstrap archive, then extract
+    // TODO: HARDENING - compile in current ID to enable local
+    // signature check of downloaded bootstrap archive, then extract
 
     if (dlsuccess) {
         if (!extract(bootstrap.path)) {
@@ -515,9 +521,9 @@ bool extract(boost::filesystem::path filename) {
 	int r;
 
     int flags = ARCHIVE_EXTRACT_TIME;
-    flags |= ARCHIVE_EXTRACT_PERM;
-    flags |= ARCHIVE_EXTRACT_ACL;
     flags |= ARCHIVE_EXTRACT_FFLAGS;
+    flags |= ARCHIVE_EXTRACT_SECURE_NODOTDOT;
+    flags |= ARCHIVE_EXTRACT_SECURE_SYMLINKS;
 
 	a = archive_read_new();
 	ext = archive_write_disk_new();
@@ -549,6 +555,14 @@ bool extract(boost::filesystem::path filename) {
             }
 
             const char* currentFile = archive_entry_pathname(entry);
+
+            if (archive_entry_hardlink(entry) != NULL || archive_entry_symlink(entry) != NULL)
+            {
+                LogPrintf("Bootstrap archive contains a link entry (%s), rejecting\n", currentFile);
+                extractComplete = false;
+                break;
+            }
+
             std::string path = GetDataDir().string() + "/" + currentFile;
             std::string uiMessage = "Extracting Bootstrap file ";
             uiMessage.append(currentFile);
@@ -560,8 +574,11 @@ bool extract(boost::filesystem::path filename) {
                 extractComplete = false;
                 break;
             } else {
-                copy_data(a, ext);
-                r = archive_write_finish_entry(ext);
+                r = copy_data(a, ext);
+                if (r == ARCHIVE_OK)
+                {
+                    r = archive_write_finish_entry(ext);
+                }
                 if (r != ARCHIVE_OK) {
                     LogPrintf("archive_write_finish_entry() %s %d\n",archive_error_string(ext), r);
                     extractComplete = false;

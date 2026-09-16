@@ -610,7 +610,9 @@ UniValue CRPCTable::execute(const std::string &strMethod, const UniValue &params
         throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Method " + strMethod + " not found");
     }
 
-    LogPrint("rpcrequests", "command %s, params:\n%s\n", strMethod.c_str(), params.write(1,2).c_str());
+    // The commented line will include PII in the debug.log, and should only be used
+    // by a developer who understands the risk and needs the information anyhow
+    //LogPrint("rpcrequests", "command %s, params:\n%s\n", strMethod.c_str(), params.write(1,2).c_str());
 
     g_rpcSignals.PreCommand(*pcmd);
 

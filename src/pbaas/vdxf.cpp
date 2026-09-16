@@ -537,7 +537,7 @@ bool CVDXF_StructuredData::IsValid() const
         for (auto &oneVec : data)
         {
             VDXFData deserObject = DeserializeVDXFData(oneVec);
-            if (deserObject.empty())
+            if (deserObject.which() == 0)
             {
                 return false;
             }

@@ -266,7 +266,7 @@ bool CCrossChainExport::GetExportInfo(const CTransaction &exportTx,
                   (rtExport = CCrossChainExport(p.vData[0])).IsValid() &&
                   rtExport.IsSupplemental()))
             {
-                if ((!IsVerusMainnetActive() || chainActive.Height() > PBAAS_LARGE_ETH_PROOF_ACTIVATION) && 
+                if ((!IsVerusMainnetActive() || chainActive.Height() > PBAAS_LARGE_ETH_PROOF_ACTIVATION) &&
                     p.IsValid() &&
                     p.evalCode == EVAL_NOTARY_EVIDENCE)
                 {
@@ -629,6 +629,8 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
                       rootIt->second.stateRoot ==
                         ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.CheckPartialTransaction(exportTx, &isPartial, optimizeETHProof) &&
                       ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.TransactionHash() == pBaseImport->exportTxId &&
+                      (((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.type == CPartialTransactionProof::TYPE_ETH ||
+                       ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.GetProofHeight() == rootIt->second.rootHeight) &&
                       exportTx.vout.size() > pBaseImport->exportTxOutNum &&
                       exportTx.vout[pBaseImport->exportTxOutNum].scriptPubKey.IsPayToCryptoCondition(p) &&
                       p.IsValid() &&
@@ -1220,7 +1222,6 @@ CCrossChainImport CCrossChainImport::GetPriorImportFromSystem(const CTransaction
     // after we are looking below the current height, query the index for an import from that system to this currency.
     do
     {
-        bool sourceSystemChain = sourceSystemID != ASSETCHAINS_CHAINID;
         CCrossChainImport primaryCCI;
 
         CTransaction tmpPriorTx;
@@ -1308,7 +1309,8 @@ CCurrencyValueMap CCrossChainImport::GetBestPriorConversions(const CTransaction 
 
     // first check cache
     if (height > 0 &&
-        chainActive.Height() >= height - 1 &&
+        chainActive.Height() != -1 &&
+        (uint32_t)chainActive.Height() >= height - 1 &&
         priorConversionCache.Get({chainActive[height - 1]->GetBlockHash(), minHeight, maxHeight, CUTXORef(tx.GetHash(), outNum), converterCurrencyID, targetCurrencyID}, retVal))
     {
         return retVal;
@@ -1471,7 +1473,8 @@ CCurrencyValueMap CCrossChainImport::GetBestPriorConversions(const CTransaction 
     }
 
     if (height > 0 &&
-        chainActive.Height() >= height - 1)
+        chainActive.Height() != -1 &&
+        (uint32_t)chainActive.Height() >= height - 1)
     {
         priorConversionCache.Put({chainActive[height - 1]->GetBlockHash(), minHeight, maxHeight, CUTXORef(tx.GetHash(), outNum), converterCurrencyID, targetCurrencyID}, retVal);
     }
@@ -2830,7 +2833,6 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
     }
 
     bool isPBaaS = solutionVersion >= CActivationHeight::ACTIVATE_PBAAS;
-    bool isPBaaSActivation = CConstVerusSolutionVector::activationHeight.IsActivationHeight(CActivationHeight::ACTIVATE_PBAAS, nHeight);
     bool loadedCurrencies = false;
 
     bool reservationValid = false;
@@ -2842,7 +2844,7 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
     std::vector<CPBaaSNotarization> notarizations;
     CCurrencyValueMap importGeneratedCurrency;
 
-    int32_t outAfterImport = INT32_MAX;
+    int32_t outAfterImport = 0;
 
     flags |= IS_VALID;
 
@@ -2921,7 +2923,7 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
 
                 case EVAL_IDENTITY_PRIMARY:
                 {
-                    if (IsImport() && outAfterImport <= i)
+                    if (IsImport() && outAfterImport <= i && nHeight != 1)
                     {
                         flags &= ~IS_VALID;
                         flags |= IS_REJECT;
@@ -3110,7 +3112,7 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
 
                         bool updatedChecks = ConnectedChains.CheckZeroViaOnlyPostLaunch(nHeight);
 
-                        if ((IsBridgeCleanupWindowOpen(chainActive[std::min(nHeight, chainActive.LastTip()->GetHeight())]->nTime) &&
+                        if ((IsBridgeCleanupWindowOpen(chainActive.ChainTimeAtOrBefore(nHeight)) &&
                              checkState.IsLaunchConfirmed())||
                             (updatedChecks &&
                              isClearLaunch &&
@@ -3267,7 +3269,7 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                             }
                         }
 
-                        if (ConnectedChains.IsUpgrade01Active((nHeight - 1) == chainActive.Height() ? nHeight - 1 : nHeight) &&
+                        if (ConnectedChains.IsUpgrade01Active(nHeight > 0 && (nHeight - 1) == chainActive.Height() ? nHeight - 1 : nHeight) &&
                             newState.reserveOut == std::vector<int64_t>(newState.reserveOut.size(), 0) &&
                             importNotarization.currencyState.viaConversionPrice != newState.viaConversionPrice &&
                             newState.viaConversionPrice[0] == newState.conversionPrice[0])
@@ -3315,7 +3317,23 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                                 checkOutputs.size() != cci.numOutputs ||
                                 (startingOutput + checkOutputs.size()) > tx.vout.size())
                             {
-                                LogPrint("importtransactions", "%s: import outputs would index beyond import transaction\n", __func__);
+                                if (LogAcceptCategory("importtransactions"))
+                                {
+                                    LogPrintf("%s: import outputs would index beyond import transaction\n", __func__);
+                                    for (int l = 0; l < checkOutputs.size(); l++)
+                                    {
+
+                                        UniValue scriptJSON(UniValue::VOBJ);
+                                        ScriptPubKeyToUniv(checkOutputs[l].scriptPubKey, scriptJSON, false, false);
+                                        LogPrintf("output #%d, native: %lld, scriptPubKey %s\n",
+                                                  l,
+                                                  (long long)checkOutputs[l].nValue,
+                                                  scriptJSON.write(1,2).c_str());
+                                    }
+                                    UniValue txJSON(UniValue::VOBJ);
+                                    TxToUniv(tx, uint256(), txJSON);
+                                    LogPrintf("compare with transaction: %s\n", txJSON.write(1,2).c_str());
+                                }
                                 flags &= ~IS_VALID;
                                 flags |= IS_REJECT;
                                 return;
@@ -4093,61 +4111,7 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
             else if (!exportedIDs.count(importedID.GetID()) && !preexistingID.IsValid())
             {
                 exportedIDs.insert(importedID.GetID());
-
-                LOCK(mempool.cs);
-                // check mempool for collision, and if none, make the ID output
-                uint160 identityKeyID(CCrossChainRPCData::GetConditionID(importedID.GetID(), EVAL_IDENTITY_PRIMARY));
-                std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> memIndex;
-
-                bool foundMemDup = false;
-                bool foundCollision = false;
-                if (mempool.getAddressIndex(std::vector<std::pair<uint160, int32_t>>({{identityKeyID, CScript::P2IDX}}), memIndex))
-                {
-                    // if there is any conflicting entry, we have an issue, otherwise, we are fine
-                    std::set<COutPoint> dummySpentInMempool;
-                    for (auto &oneIdxEntry : mempool.FilterUnspent(memIndex, dummySpentInMempool))
-                    {
-                        if (!existingTxHash.IsNull() &&
-                            oneIdxEntry.first.txhash == existingTxHash)
-                        {
-                            continue;
-                        }
-                        foundMemDup = true;
-
-                        const CTransaction &identityTx = mempool.mapTx.find(oneIdxEntry.first.txhash)->GetTx();
-                        preexistingID = CIdentity(identityTx.vout[oneIdxEntry.first.index].scriptPubKey);
-                        if (!preexistingID.IsValid() ||
-                            boost::to_lower_copy(importedID.name) != boost::to_lower_copy(preexistingID.name) ||
-                            importedID.parent != preexistingID.parent ||
-                            importedID.systemID != preexistingID.systemID)
-                        {
-                            printf("WARNING!: Imported identity collides with pre-existing identity of another name in mempool.\n"
-                                "The only likely reason for this occurance is a hash-collision attack, targeted specifically at\n"
-                                "either the %s or the %s identities. As a result, this transaction is undeliverable.\n"
-                                "Full identity outputs:\n%s\n%s\n",
-                                importedID.name.c_str(), preexistingID.name.c_str(),
-                                importedID.ToUniValue().write(1,2).c_str(), preexistingID.ToUniValue().write(1,2).c_str());
-                            LogPrintf("WARNING!: Imported identity collides with pre-existing identity of another name in mempool.\n"
-                                "The only likely reason for this occurance is a hash-collision attack, targeted specifically at\n"
-                                "either the %s or the %s identities. As a result, this transaction is undeliverable.\n"
-                                "Full identity outputs:\n%s\n%s\n",
-                                importedID.name.c_str(), preexistingID.name.c_str(),
-                                importedID.ToUniValue().write(1,2).c_str(), preexistingID.ToUniValue().write(1,2).c_str());
-
-                            dest = GetCompatibleAuxDestination(destination, (CCurrencyDefinition::EProofProtocol)destSystem.proofProtocol);
-                            if (dest.which() == COptCCParams::ADDRTYPE_INVALID)
-                            {
-                                dest = importedID.primaryAddresses[0];
-                            }
-
-                            // this is not just a mem dup
-                            foundCollision = true;
-                        }
-                    }
-                }
-
-                // if the ID is already in the mempool on a different transaction, we don't need to make an ID output, otherwise, we do
-                if (!foundMemDup)
+                if (IsAfterBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height)))
                 {
                     // if we are sending no value, make one output for the ID and return
                     if (reserves.CanonicalMap() == CCurrencyValueMap() && !nativeAmount)
@@ -4157,10 +4121,77 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                     }
                     txOutputs.push_back(CTxOut(0, importedID.IdentityUpdateOutputScript(height)));
                 }
-                else if (reserves.CanonicalMap() == CCurrencyValueMap() && !nativeAmount)
+                else
                 {
-                    txOut = CTxOut(-1, GetScriptForDestination(dest));
-                    return true;
+
+                    LOCK(mempool.cs);
+                    // check mempool for collision, and if none, make the ID output
+                    uint160 identityKeyID(CCrossChainRPCData::GetConditionID(importedID.GetID(), EVAL_IDENTITY_PRIMARY));
+                    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> memIndex;
+
+                    bool foundMemDup = false;
+                    bool foundCollision = false;
+                    if (mempool.getAddressIndex(std::vector<std::pair<uint160, int32_t>>({{identityKeyID, CScript::P2IDX}}), memIndex))
+                    {
+                        // if there is any conflicting entry, we have an issue, otherwise, we are fine
+                        std::set<COutPoint> dummySpentInMempool;
+                        for (auto &oneIdxEntry : mempool.FilterUnspent(memIndex, dummySpentInMempool))
+                        {
+                            if (!existingTxHash.IsNull() &&
+                                oneIdxEntry.first.txhash == existingTxHash)
+                            {
+                                continue;
+                            }
+                            foundMemDup = true;
+
+                            const CTransaction &identityTx = mempool.mapTx.find(oneIdxEntry.first.txhash)->GetTx();
+                            preexistingID = CIdentity(identityTx.vout[oneIdxEntry.first.index].scriptPubKey);
+                            if (!preexistingID.IsValid() ||
+                                boost::to_lower_copy(importedID.name) != boost::to_lower_copy(preexistingID.name) ||
+                                importedID.parent != preexistingID.parent ||
+                                importedID.systemID != preexistingID.systemID)
+                            {
+                                printf("WARNING!: Imported identity collides with pre-existing identity of another name in mempool.\n"
+                                    "The only likely reason for this occurance is a hash-collision attack, targeted specifically at\n"
+                                    "either the %s or the %s identities. As a result, this transaction is undeliverable.\n"
+                                    "Full identity outputs:\n%s\n%s\n",
+                                    importedID.name.c_str(), preexistingID.name.c_str(),
+                                    importedID.ToUniValue().write(1,2).c_str(), preexistingID.ToUniValue().write(1,2).c_str());
+                                LogPrintf("WARNING!: Imported identity collides with pre-existing identity of another name in mempool.\n"
+                                    "The only likely reason for this occurance is a hash-collision attack, targeted specifically at\n"
+                                    "either the %s or the %s identities. As a result, this transaction is undeliverable.\n"
+                                    "Full identity outputs:\n%s\n%s\n",
+                                    importedID.name.c_str(), preexistingID.name.c_str(),
+                                    importedID.ToUniValue().write(1,2).c_str(), preexistingID.ToUniValue().write(1,2).c_str());
+
+                                dest = GetCompatibleAuxDestination(destination, (CCurrencyDefinition::EProofProtocol)destSystem.proofProtocol);
+                                if (dest.which() == COptCCParams::ADDRTYPE_INVALID)
+                                {
+                                    dest = importedID.primaryAddresses[0];
+                                }
+
+                                // this is not just a mem dup
+                                foundCollision = true;
+                            }
+                        }
+                    }
+
+                    // if the ID is already in the mempool on a different transaction, we don't need to make an ID output, otherwise, we do
+                    if (!foundMemDup)
+                    {
+                        // if we are sending no value, make one output for the ID and return
+                        if (reserves.CanonicalMap() == CCurrencyValueMap() && !nativeAmount)
+                        {
+                            txOut = CTxOut(0, importedID.IdentityUpdateOutputScript(height));
+                            return true;
+                        }
+                        txOutputs.push_back(CTxOut(0, importedID.IdentityUpdateOutputScript(height)));
+                    }
+                    else if (reserves.CanonicalMap() == CCurrencyValueMap() && !nativeAmount)
+                    {
+                        txOut = CTxOut(-1, GetScriptForDestination(dest));
+                        return true;
+                    }
                 }
             }
 
@@ -4339,9 +4370,6 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
         maxPreconvert = CCurrencyValueMap(importCurrencyDef.currencies, importCurrencyDef.maxPreconvert);
     }
 
-    bool feeOutputStart = false;                        // fee outputs must come after all others, this indicates they have started
-    int nFeeOutputs = 0;                                // number of fee outputs
-
     int32_t totalCarveOut = importCurrencyDef.GetTotalCarveOut();
     CCurrencyValueMap totalCarveOuts;
 
@@ -4352,14 +4380,14 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     CAmount totalVerusFee = 0;
 
     bool updatedPostLaunch = ConnectedChains.CheckZeroViaOnlyPostLaunch(height);
-    bool updatedPastTestFork4 = updatedPostLaunch && chainActive.Height() >= (height - 1);
+    bool updatedPastTestFork4 = updatedPostLaunch && chainActive.Height() != -1 && chainActive.Height() >= (height - 1);
     bool preLaunchPostFees = updatedPastTestFork4 && ConnectedChains.IncludePostLaunchFees(height) && newCurrencyState.IsPrelaunch();
     bool updatedPostFees = updatedPastTestFork4 && ConnectedChains.IncludePostLaunchFees(height);
     bool isLaunchComplete = newCurrencyState.IsLaunchCompleteMarker();
     bool isPreLaunch = newCurrencyState.IsPrelaunch();
     bool processingPreConverts = !isPreLaunch && !isLaunchComplete;
 
-    uint32_t chainTime = chainActive[std::min(height, (uint32_t)chainActive.Height())]->nTime;
+    uint32_t chainTime = chainActive.ChainTimeAtOrBefore(height);
     bool isBridgeCleanupWindowOpen = IsBridgeCleanupWindowOpen(chainTime);
     bool isAfterBridgeCleanupWindowStarts = IsAfterBridgeCleanupWindowStarts(chainTime);
 
@@ -4835,18 +4863,25 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     exporterDest.which() == COptCCParams::ADDRTYPE_PKH ||
                     exporterDest.which() == COptCCParams::ADDRTYPE_ID)
                 {
+                    bool afterFixBoundary = IsAfterSecondBridgeCleanupWindowStarts(chainTime);
+
                     if (exporterDest2.which() != COptCCParams::ADDRTYPE_INVALID &&
                         exporterReward > systemDest.GetTransactionTransferFee())
                     {
+                        CScript outScript;
                         CAmount halfExportReward = exporterReward >> 1;
                         CCurrencyValueMap halfExportReserves = exporterReserves / 2;
                         exporterReward -= halfExportReward;
                         exporterReserves -= halfExportReserves;
-                        CScript outScript;
                         if (halfExportReserves > CCurrencyValueMap())
                         {
                             CTokenOutput ro = CTokenOutput(halfExportReserves);
-                            CScript outScript = MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, std::vector<CTxDestination>({exporterDest2}), 1, &ro));
+                            if (afterFixBoundary)
+                            {
+                                outScript = MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, std::vector<CTxDestination>({exporterDest2}), 1, &ro));
+                            }
+                            // pre-window: reproduce the historical empty-script emission byte-exactly (shadowed-variable
+                            // bug, fixed at the second cleanup window) — do NOT "fix" this branch
                         }
                         else
                         {
@@ -4858,7 +4893,12 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     if (exporterReserves > CCurrencyValueMap())
                     {
                         CTokenOutput ro = CTokenOutput(exporterReserves);
-                        CScript outScript = MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, std::vector<CTxDestination>({exporterDest}), 1, &ro));
+                        if (afterFixBoundary)
+                        {
+                            outScript = MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, std::vector<CTxDestination>({exporterDest}), 1, &ro));
+                        }
+                        // pre-window: reproduce the historical empty-script emission byte-exactly (shadowed-variable
+                        // bug, fixed at the second cleanup window) — do NOT "fix" this branch
                     }
                     else
                     {
@@ -5833,7 +5873,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 printf("%s: Invalid destination for reserve transfer\n", __func__);
             }
             printf("%s: Invalid reserve transfer on transfer %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
-            LogPrintf("%s: Invalid reserve transfer on export %s\n", __func__);
+            LogPrintf("%s: Invalid reserve transfer: %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
             return false;
         }
     }
@@ -5941,7 +5981,6 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     CCurrencyValueMap adjustedReserveConverted = reserveConverted - preConvertedReserves;
 
     int32_t issuedWeight = 0;
-    CAmount totalRatio = 0;
     bool fractionalLaunchClearConfirm = false;
 
     if (isFractional && importCurrencyState.IsLaunchConfirmed())
@@ -5980,11 +6019,6 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
         if (importCurrencyState.IsLaunchClear())
         {
             fractionalLaunchClearConfirm = true;
-
-            for (auto weight : importCurrencyDef.weights)
-            {
-                totalRatio += weight;
-            }
 
             CAmount tempIssuedWeight =
                 issuedWeight =
@@ -7344,7 +7378,11 @@ bool CFeePool::GetCoinbaseFeePool(CFeePool &feePool, uint32_t height)
     CBlock block;
     CTransaction coinbaseTx;
     feePool.SetInvalid();
-    if (!height || chainActive.Height() < height)
+    if (chainActive.Height() == -1)
+    {
+        return true;
+    }
+    if (!height || (uint32_t)chainActive.Height() < height)
     {
         height = chainActive.Height();
     }
@@ -7558,7 +7596,7 @@ std::vector<std::tuple<uint32_t, int64_t, int64_t>> CCostBasisTracker::TakeCurre
         std::map<std::pair<int64_t,uint32_t>,std::map<std::tuple<uint160, uint32_t, uint64_t>, int64_t>::iterator> orderHIFO;
         auto startIter = costBasisMap.lower_bound({currencyID, (uint32_t)0, (int64_t)0});
         auto endIter = costBasisMap.upper_bound({currencyID, curBlockTime, INT64_MAX});
-        
+
         for (auto oneIter = startIter; oneIter != endIter && curBlockTime >= std::get<1>(oneIter->first); oneIter++)
         {
             orderHIFO.insert({{std::get<2>(oneIter->first), std::get<1>(oneIter->first)}, oneIter});
@@ -7595,7 +7633,7 @@ std::vector<std::tuple<uint32_t, int64_t, int64_t>> CCostBasisTracker::TakeCurre
         std::map<std::pair<int64_t,uint32_t>,std::map<std::tuple<uint160, uint32_t, uint64_t>, int64_t>::iterator> orderLOWIFO;
         auto startIter = costBasisMap.lower_bound({currencyID, (uint32_t)0, (int64_t)0});
         auto endIter = costBasisMap.upper_bound({currencyID, curBlockTime, INT64_MAX});
-        
+
         for (auto oneIter = startIter; oneIter != endIter && curBlockTime >= std::get<1>(oneIter->first); oneIter++)
         {
             orderLOWIFO.insert({{std::get<2>(oneIter->first), std::get<1>(oneIter->first)}, oneIter});
@@ -7881,7 +7919,37 @@ bool PrecheckFeePool(const CTransaction &tx, int32_t outNum, CValidationState &s
     {
         return true;
     }
-    return false;
+    return state.Error("Invalid fee pool output " + fp.ToUniValue().write(1,2));
+}
+
+bool PrecheckReserveOutput(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
+{
+    COptCCParams p;
+    CTokenOutput to;
+    bool isAfterSecondWindow = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1));
+    if (tx.vout[outNum].scriptPubKey.IsPayToCryptoCondition(p) &&
+        p.IsValid() &&
+        p.evalCode == EVAL_RESERVE_OUTPUT &&
+        p.vData.size() &&
+        (to = CTokenOutput(p.vData[0])).IsValid() &&
+        to.reserveValues.ValueOf(ASSETCHAINS_CHAINID) == 0 &&
+        (!isAfterSecondWindow || ::AsVector(to) == p.vData[0]))
+    {
+        int countZeros = 0;
+        for (auto &oneCur : to.reserveValues.valueMap)
+        {
+            if (!oneCur.second)
+            {
+                countZeros++;
+            }
+        }
+        if (countZeros > 1)
+        {
+            return state.Error("Too many zeros in reserve output " + to.ToUniValue().write(1,2));
+        }
+        return true;
+    }
+    return state.Error("Non-canonical reserve output " + to.ToUniValue().write(1,2));
 }
 
 bool PrecheckReserveDeposit(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
@@ -7900,7 +7968,7 @@ bool PrecheckReserveDeposit(const CTransaction &tx, int32_t outNum, CValidationS
     {
         return true;
     }
-    return false;
+    return state.DoS(100, false, 0, "Invalid reserve deposit output");
 }
 
 CAmount GetMinRelayFeeByOutputs(const CReserveTransactionDescriptor &txDesc, const CTransaction &tx, CValidationState &state, CAmount identityFeeFactor)

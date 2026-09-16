@@ -206,18 +206,17 @@ CIdentity CIdentity::LookupIdentity(const CIdentityID &nameID, uint32_t height, 
         }
         unspentInputs.clear();
     }
-    // TODO: NEXTRELEASE - uncomment cache code
-    /* else if (height)
+    else if (height && chainActive.Height() != -1 && height <= (uint32_t)chainActive.Height())
     {
         std::tuple<CIdentity, uint32_t, CTxIn> cachedIdentity;
-        if (std::get<0>(cachedIdentity = IdentityLookupCache.Get({chainActive[height > chainActive.Height() ? chainActive.Height() : height]->GetBlockHash(), nameID})).IsValid())
+        if (std::get<0>(cachedIdentity = IdentityLookupCache.Get({chainActive[height]->GetBlockHash(), nameID})).IsValid())
         {
             *pHeightOut = std::get<1>(cachedIdentity);
             idTxIn = std::get<2>(cachedIdentity);
             ret = std::get<0>(cachedIdentity);
             return ret;
         }
-    } */
+    }
 
     if (unspentOutputs.size() || GetAddressUnspent(keyID, CScript::P2IDX, unspentNewIDX) && GetAddressUnspent(keyID, CScript::P2PKH, unspentOutputs))
     {
@@ -309,12 +308,10 @@ CIdentity CIdentity::LookupIdentity(const CIdentityID &nameID, uint32_t height, 
         }
     }
 
-    // TODO: NEXTRELEASE - uncomment cache code
-    /* if (height && !(height > chainActive.Height() && checkMempool))
+    if (ret.IsValid() && height && height <= (uint32_t)chainActive.Height() && chainActive.Height() != -1)
     {
-        IdentityLookupCache.Put({chainActive[height > chainActive.Height() ? chainActive.Height() : height]->GetBlockHash(), nameID}, {ret, *pHeightOut, idTxIn});
-    } */
-
+        IdentityLookupCache.Put({chainActive[height]->GetBlockHash(), nameID}, {ret, *pHeightOut, idTxIn});
+    }
     return ret;
 }
 
@@ -967,7 +964,6 @@ bool HasReferralRequired(const CIdentity &identity, const CTransaction &tx, int3
 {
     CTransaction inputTx;
     uint160 parentID = issuingParent.GetID();
-    bool isNativeParent = parentID == ASSETCHAINS_CHAINID;
     bool authorizedIssuance = false;
     uint160 checkReferralID;
 
@@ -1016,7 +1012,7 @@ bool HasReferralRequired(const CIdentity &identity, const CTransaction &tx, int3
                     if (checkIdentity.IsValidUnrevoked() &&
                         (checkIdentity.parent == parentID ||
                          idID == parentID ||
-                         (chainActive[std::min((uint32_t)chainActive.Height(), height)]->nTime >= PBAAS_PREMAINNET_ACTIVATION && !checkReferralID.IsNull() && idID == checkReferralID)))
+                         (chainActive.ChainTimeAtOrBefore(height) >= PBAAS_PREMAINNET_ACTIVATION && !checkReferralID.IsNull() && idID == checkReferralID)))
                     {
                         checkIdentities.push_back(checkIdentity);
                     }
@@ -1363,7 +1359,7 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
                 }
                 newIdentity = CIdentity(p.vData[0]);
                 if (newIdentity.parent.IsNull() &&
-                    chainActive[height - 1]->nTime > PBAAS_PREMAINNET_ACTIVATION &&
+                    chainActive.ChainTimeAtOrBefore(height - 1) > PBAAS_PREMAINNET_ACTIVATION &&
                     !HasReferralRequired(newIdentity, tx, outNum, state, height, ConnectedChains.ThisChain()))
                 {
                     return state.Error("Cannot make identity without valid referral");
@@ -1568,7 +1564,6 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
     CCommitmentHash ch;
     int idx = -1;
 
-    CAmount nValueIn = 0;
     {
         // from here, we must spend a matching name commitment
         std::map<uint256, const CCoins *> txMap;
@@ -2006,7 +2001,7 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
                 newIdentity = CIdentity(p.vData[0]);
                 uint160 dummyParent;
                 valid = newIdentity.IsValid() &&
-                        (((chainActive[std::min((uint32_t)chainActive.Height(), height - 1)]->nTime < PBAAS_PREMAINNET_ACTIVATION ||
+                        (((chainActive.ChainTimeAtOrBefore(height - 1) < PBAAS_PREMAINNET_ACTIVATION ||
                            burnSet.count(newIdentity.GetID())) &&
                           newIdentity.name == CleanName(newIdentity.name, dummyParent)) ||
                          newIdentity.name == CleanName(newIdentity.name, dummyParent, true)) &&
@@ -2202,7 +2197,6 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
     CCommitmentHash ch;
     int idx = -1;
 
-    CAmount nValueIn = 0;
     {
         // from here, we must spend a matching name commitment
         std::map<uint256, std::pair<uint256, CTransaction>> txMap;
@@ -2390,7 +2384,8 @@ bool PrecheckIdentityCommitment(const CTransaction &tx, int32_t outNum, CValidat
                 if ((checkVal == CCommitmentHash::AdvancedCommitmentHashKey()) &&
                     ch.IsValid() &&
                     ch.reserveValues.valueMap.size() &&
-                    !ch.reserveValues.valueMap.count(ASSETCHAINS_CHAINID))
+                    !ch.reserveValues.valueMap.count(ASSETCHAINS_CHAINID) &&
+                    ::AsVector(ch) == p.vData[0])
                 {
                     // for a later version:
                     // for more general use, instead of a fixed subclass of token, we should abstract and contain objects in this output
@@ -2449,15 +2444,13 @@ bool PrecheckCurrencyState(const CTransaction &tx, int32_t outNum, CValidationSt
 {
     AssertLockHeld(cs_main);
 
-    if (IsAfterBridgeCleanupWindowStarts(chainActive[std::min((uint32_t)chainActive.Height(), height - 1)]->nTime))
+    if (IsAfterBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
     {
         return state.Error("Unsupported output type");
     }
     return true;
 }
 
-// with the thorough check for an identity reservation, the only thing we need to check is that either 1) this transaction includes an identity reservation output or 2)
-// this transaction spends a prior identity transaction that does not create a clearly invalid mutation between the two
 bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
 {
     AssertLockHeld(cs_main);
@@ -2498,7 +2491,7 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                 case EVAL_IDENTITY_RESERVATION:
                 {
                     nameRes = CNameReservation(p.vData[0]);
-                    if (!nameRes.IsValid())
+                    if (!nameRes.IsValid() || ::AsVector(nameRes) != p.vData[0])
                     {
                         return state.Error("Invalid identity reservation");
                     }
@@ -2514,8 +2507,7 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                 case EVAL_IDENTITY_ADVANCEDRESERVATION:
                 {
                     advNameRes = CAdvancedNameReservation(p.vData[0]);
-                    if (!advNameRes.IsValid() ||
-                        ::AsVector(advNameRes) != p.vData[0])
+                    if (!advNameRes.IsValid() || ::AsVector(advNameRes) != p.vData[0])
                     {
                         return state.Error("Invalid identity reservation");
                     }
@@ -2531,7 +2523,7 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                 case EVAL_IDENTITY_PRIMARY:
                 {
                     checkIdentity = CIdentity(p.vData[0]);
-                    if (!(IsVerusActive() && PBAAS_TESTMODE && chainActive[std::min((uint32_t)chainActive.Height(), height - 1)]->nTime < PBAAS_TESTNET_IDENTITY_START_CHECKSER) &&
+                    if (!(IsVerusActive() && PBAAS_TESTMODE && chainActive.ChainTimeAtOrBefore(height - 1) < PBAAS_TESTNET_IDENTITY_START_CHECKSER) &&
                         (!checkIdentity.IsValid() ||
                          ::AsVector(checkIdentity) != p.vData[0]))
                     {
@@ -2551,7 +2543,8 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                         }
                         if (primaryDests.size() != checkIdentity.primaryAddresses.size())
                         {
-                            if (!PBAAS_TESTMODE || chainActive[height - 1]->nTime >= PBAAS_TESTFORK_TIME)
+                            if (!PBAAS_TESTMODE ||
+                                chainActive.ChainTimeAtOrBefore(height - 1) >= PBAAS_TESTFORK_TIME)
                             {
                                 return state.Error("Duplicate or invalid primary address in identity " + ConnectedChains.GetFriendlyIdentityName(checkIdentity));
                             }
@@ -3331,7 +3324,6 @@ bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTran
             // get transaction hash and verify signature
             auto consensusBranchID = CurrentEpochBranchId(height, Params().GetConsensus());
             CSmartTransactionSignatures smartSigs;
-            bool signedByDefaultKey = false;
             std::vector<unsigned char> ffVec = GetFulfillmentVector(spendingTx.vin[nIn].scriptSig);
             smartSigs = CSmartTransactionSignatures(std::vector<unsigned char>(ffVec.begin(), ffVec.end()));
 
@@ -3342,12 +3334,10 @@ bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTran
             std::set<CTxDestination> revocationSigDests = revocationIdentity.IdentityPrimaryAddressKeySet();
             std::set<CTxDestination> primarySigDests = oldIdentity.IdentityPrimaryAddressKeySet();
 
-            int numIDSigsValid = 0;
             int recSigsValid = 0;
             int revSigsValid = 0;
             int priSigsValid = 0;
 
-            int sigCount = 0;
             if (smartSigs.IsValid())
             {
                 for (auto &keySig : smartSigs.signatures)

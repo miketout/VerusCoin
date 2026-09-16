@@ -716,7 +716,7 @@ uint256 _HashFile(const std::string &filepath, CNativeHashWriter &ss)
 
 uint256 HashFile(const std::string &filepath, CNativeHashWriter &ss)
 {
-    if (!GetBoolArg("-enablefileencryption", true))
+    if (!GetBoolArg("-enablefileencryption", false))
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + filepath + " for data output");
     }
@@ -725,7 +725,7 @@ uint256 HashFile(const std::string &filepath, CNativeHashWriter &ss)
 
 uint256 HashFile(const std::string &filepath)
 {
-    if (!GetBoolArg("-enablefileencryption", true))
+    if (!GetBoolArg("-enablefileencryption", false))
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot read file: " + filepath + " for data output");
     }
