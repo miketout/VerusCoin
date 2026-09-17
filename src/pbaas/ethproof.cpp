@@ -81,7 +81,7 @@ static std::string uint64_to_hex_deprecated(uint64_t input)
         return sstream.str();
     }
     char buffer[64] = {0};
-    sprintf(buffer, "%" PRIx64, input);
+    snprintf(buffer, sizeof(buffer), "%" PRIx64, input);
     return std::string(buffer);
 }
 

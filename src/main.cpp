@@ -78,13 +78,13 @@ void komodo_broadcast(const CBlock *pblock,int32_t limit);
 BlockMap mapBlockIndex;
 CChain chainActive;
 CBlockIndex *pindexBestHeader = NULL;
-static int64_t nTimeBestReceived = 0;
+static std::atomic<int64_t> nTimeBestReceived(0); // Used only to inform the wallet of when we last received a block
 CWaitableCriticalSection csBestBlock;
 CConditionVariable cvBlockChange;
 int nScriptCheckThreads = 0;
 bool fExperimentalMode = false;
-bool fImporting = false;
-bool fReindex = false;
+std::atomic_bool fImporting(false);
+std::atomic_bool fReindex(false);
 bool fTxIndex = true;
 bool fIdIndex = false;
 bool fConversionIndex = false;      // index conversions by final destination
@@ -363,7 +363,7 @@ namespace {
     void InitializeNode(NodeId nodeid, const CNode *pnode) {
         LOCK(cs_main);
         CNodeState &state = mapNodeState.insert(std::make_pair(nodeid, CNodeState())).first->second;
-        state.name = pnode->addrName;
+        state.name = pnode->GetAddrName();
         state.address = pnode->addr;
     }
 
@@ -499,7 +499,8 @@ namespace {
         // Make sure pindexBestKnownBlock is up to date, we'll need it.
         ProcessBlockAvailability(nodeid);
 
-        if (state->pindexBestKnownBlock == NULL || state->pindexBestKnownBlock->chainPower < chainActive.Tip()->chainPower) {
+        if (state->pindexBestKnownBlock == NULL ||
+            (chainActive.Tip() && state->pindexBestKnownBlock->chainPower < chainActive.Tip()->chainPower)) {
             // This peer has nothing interesting.
             return;
         }
@@ -507,7 +508,8 @@ namespace {
         if (state->pindexLastCommonBlock == NULL) {
             // Bootstrap quickly by guessing a parent of our best tip is the forking point.
             // Guessing wrong in either direction is not a problem.
-            state->pindexLastCommonBlock = chainActive[std::min(state->pindexBestKnownBlock->GetHeight(), chainActive.Height())];
+            state->pindexLastCommonBlock = chainActive[std::min((uint32_t)state->pindexBestKnownBlock->GetHeight(),
+                                                                (uint32_t)chainActive.Height())];
         }
 
         // If the peer reorganized, our previous pindexLastCommonBlock may not be an ancestor
@@ -1230,7 +1232,7 @@ bool ContextualCheckTransaction(
         CValidationState &state,
         const CChainParams& chainparams,
         const int nHeight,
-        const int dosLevel,
+        int dosLevel,
         bool (*isInitBlockDownload)(const CChainParams&))
 {
     bool overwinterActive = chainparams.GetConsensus().NetworkUpgradeActive(nHeight, Consensus::UPGRADE_OVERWINTER);
@@ -1365,7 +1367,7 @@ bool ContextualCheckTransaction(
             {
                 dataToBeSigned = SignatureHash(scriptCode, tx, NOT_AN_INPUT, SIGHASH_ALL, 0, consensusBranchId);
             }
-        } catch (std::logic_error ex) {
+        } catch (const std::logic_error &ex) {
             return state.DoS(100, error("CheckTransaction(): error computing signature hash"),
                              REJECT_INVALID, "error-computing-signature-hash");
         }
@@ -1510,7 +1512,16 @@ bool ContextualCheckTransaction(
                         }
                         LogPrintf("\n");
                     }
-                    return state.DoS(10, error(state.GetRejectReason().c_str()), REJECT_INVALID, "bad-txns-failed-precheck" );
+                    std::string rejectReason = state.GetRejectReason().empty() ? "failed-precheck" : state.GetRejectReason();
+                    if (nHeight <= (chainActive.Height() + 1) && !state.IsInvalid())
+                    {
+                        // unclassified failure: deterministic rejection of the tx/block, but no ban score.
+                        // do NOT leave this as MODE_ERROR - a block containing it would stall activation
+                        // as a phantom system error instead of being marked invalid (audit round 6)
+                        dosLevel = 0;
+                        state = CValidationState();
+                    }
+                    return state.DoS(dosLevel, error("%s", rejectReason.c_str()), REJECT_INVALID, "bad-txns-failed-precheck");
                 }
             }
         }
@@ -1972,7 +1983,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
     // if this is an identity that is already present in the mem pool, then we cannot duplicate it
     std::list<CTransaction> conflicts;
-    if (pool.checkNameConflicts(tx, conflicts))
+    if (pool.checkNameConflicts(tx, conflicts, nextBlockHeight))
     {
         return error("AcceptToMemoryPool: Invalid identity redefinition");
     }
@@ -2868,7 +2879,7 @@ void Misbehaving(NodeId pnode, int howmuch)
         return;
 
     state->nMisbehavior += howmuch;
-    int banscore = GetArg("-banscore", 101);
+    int banscore = GetArg("-banscore", 100);
     if (state->nMisbehavior >= banscore && state->nMisbehavior - howmuch < banscore)
     {
         LogPrintf("%s: %s (%d -> %d) BAN THRESHOLD EXCEEDED\n", __func__, state->name, state->nMisbehavior-howmuch, state->nMisbehavior);
@@ -4036,15 +4047,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
         // DERSIG (BIP66) is also always enforced, but does not have a flag.
 
-        if ( ASSETCHAINS_CC != 0 )
-        {
-            if ( scriptcheckqueue.IsIdle() == 0 )
-            {
-                fprintf(stderr,"scriptcheckqueue isnt idle\n");
-                sleep(1);
-            }
-        }
-
         nTimeStart = GetTimeMicros();
         CDiskTxPos pos(pindex->GetBlockPos(), GetSizeOfCompactSize(block.vtx.size()));
         vPos.reserve(block.vtx.size());
@@ -4220,7 +4222,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
                             case EVAL_IDENTITY_PRIMARY:
                             {
-                                // if this is a straight up currency definition of our native currency, record it
+                                // if this is an ID import, record it as creating an ID
                                 CIdentity curID;
                                 if (rtxd.IsImport() &&
                                     (curID = CIdentity(p.vData[0])).IsValid())
@@ -4280,7 +4282,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                 // make sure we spend all of our arbs via imports
                                 CCrossChainImport cci, sysCCI;
                                 CCrossChainExport ccx;
-                                int primaryImportOut;
                                 int32_t sysCCIOut, notarizationOut, evidenceOutStart, evidenceOutEnd;
                                 CPBaaSNotarization importNotarization;
                                 CCurrencyDefinition destSystem;
@@ -5539,7 +5540,6 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
 
     // do not disconnect a notarized tip
     {
-        int32_t prevMoMheight;
         uint256 notarizedhash;
 
         CProofRoot confirmedRoot = ConnectedChains.FinalizedChainRoot();
@@ -6058,7 +6058,7 @@ bool ActivateBestChain(CValidationState& state, const CChainParams& chainparams,
             GetMainSignals().UpdatedBlockTip(pindexNewTip);
             uiInterface.NotifyBlockTip(hashNewTip);
         } //else fprintf(stderr,"initial download skips propagation\n");
-    } while(pindexMostWork != chainActive.Tip());
+    } while (pindexNewTip != pindexMostWork);
     CheckBlockIndex(chainparams.GetConsensus());
 
     // Write changes periodically to disk, after relay.
@@ -6222,7 +6222,7 @@ void FallbackSproutValuePoolBalance(
     }
 
     // When developer option -developersetpoolsizezero is enabled, we don't need a fallback balance.
-    if (fExperimentalMode && mapArgs.count("-developersetpoolsizezero")) {
+    if (fExperimentalMode && IsArgSet("-developersetpoolsizezero")) {
         return;
     }
 
@@ -6657,7 +6657,7 @@ bool ContextualCheckBlockHeader(
                 {
                     //fprintf(stderr,"got a pre notarization block that matches height.%d\n",(int32_t)nHeight);
                     return true;
-                } else return state.DoS(1, error("%s: forked chain %d older than last notarized (height %d) vs %d", __func__, nHeight, notarizedht));
+                } else return state.DoS(1, error("%s: forked chain %d older than last notarized (height %d)", __func__, nHeight, notarizedht));
             }
         }
     }
@@ -6665,6 +6665,35 @@ bool ContextualCheckBlockHeader(
     if (block.nVersion < 4)
         return state.Invalid(error("%s : rejected nVersion<4 block", __func__),
                              REJECT_OBSOLETE, "bad-version");
+
+    if (block.nSolution.size() > UINT16_MAX)
+    {
+        return state.DoS(100, error("%s: oversize solution", __func__), REJECT_INVALID, "oversize-solution");
+    }
+    // tolerate variable size solutions, but ensure that we have at least 16 bytes extra space to fit the clhash at the end
+    int modSpace = GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION) % 32;
+    int solutionVer = CConstVerusSolutionVector::GetVersionByHeight(nHeight);
+    if (!(solutionVer < CActivationHeight::ACTIVATE_VERUSHASH2_1 || (modSpace >= 1 && modSpace <= 16)))
+    {
+        return state.DoS(100, error("%s: invalid header format", __func__), REJECT_INVALID, "insufficient-extraspace");
+    }
+
+    // ensure the solution descriptor's claimed contents fit within the solution buffer,
+    // matching what local generation and merged block submission already require.
+    // deliberately does not require the exact reserved tail that IsDescriptorValid does,
+    // as consensus permits serialized remainders of 1 - 16
+    if (solutionVer >= CActivationHeight::ACTIVATE_PBAAS &&
+        CConstVerusSolutionVector::IsAdvancedSolution(block.nSolution))
+    {
+        CPBaaSSolutionDescriptor d = CConstVerusSolutionVector::GetDescriptor(block.nSolution);
+        uint32_t reservedTail = CConstVerusSolutionVector::ReservedTail(block.nSolution);
+        uint64_t headerBytes = (uint64_t)d.numPBaaSHeaders * sizeof(CPBaaSBlockHeader);
+        if ((uint64_t)CConstVerusSolutionVector::OVERHEAD_SIZE + headerBytes + reservedTail > block.nSolution.size() ||
+            d.extraDataSize > CConstVerusSolutionVector::ExtraDataLen(block.nSolution, true))
+        {
+            return state.DoS(100, error("%s: invalid solution descriptor", __func__), REJECT_INVALID, "invalid-solution-descriptor");
+        }
+    }
 
     if (block.IsVerusPOSBlock())
     {
@@ -6689,14 +6718,6 @@ bool ContextualCheckBlockHeader(
         if (!CheckProofOfWork(block, nHeight, Params().GetConsensus()))
         {
             return state.DoS(100, error("%s: incorrect proof of work header", __func__), REJECT_INVALID, "bad-work");
-        }
-
-        // tolerate variable size solutions, but ensure that we have at least 16 bytes extra space to fit the clhash at the end
-        int modSpace = GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION) % 32;
-        int solutionVer = CConstVerusSolutionVector::GetVersionByHeight(nHeight);
-        if (!(solutionVer < CActivationHeight::ACTIVATE_VERUSHASH2_1 || (modSpace >= 1 && modSpace <= 16)))
-        {
-            return state.DoS(100, error("%s: invalid header format", __func__), REJECT_INVALID, "insufficient-extraspace");
         }
     }
 
@@ -7460,7 +7481,7 @@ bool static LoadBlockIndexDB()
             // If developer option -developersetpoolsizezero has been enabled,
             // override and set the in-memory size of shielded pools to zero.  An unshielding transaction
             // can then be used to trigger and test the handling of turnstile violations.
-            if (fExperimentalMode && mapArgs.count("-developersetpoolsizezero")) {
+            if (fExperimentalMode && IsArgSet("-developersetpoolsizezero")) {
                 pindex->nChainSproutValue = 0;
                 pindex->nChainSaplingValue = 0;
             }
@@ -7535,7 +7556,7 @@ bool static LoadBlockIndexDB()
     // Check whether we need to continue reindexing
     bool fReindexing = false;
     pblocktree->ReadReindexing(fReindexing);
-    fReindex |= fReindexing;
+    if(fReindexing) fReindex = true;
 
     // Check whether we have a transaction index
     pblocktree->ReadFlag("txindex", fTxIndex);
@@ -8666,7 +8687,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
     const CChainParams& chainparams = Params();
     LogPrint("net", "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), (uint32_t)vRecv.size(), pfrom->id);
     //fprintf(stderr, "recv: %s peer=%d\n", SanitizeString(strCommand).c_str(), (int32_t)pfrom->GetId());
-    if (mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
+    if (IsArgSet("-dropmessagestest") && GetRand(atoi(GetArg("-dropmessagestest", ""))) == 0)
     {
         LogPrintf("dropmessagestest DROPPING RECV MESSAGE\n");
         return true;
@@ -8685,6 +8706,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         if (pfrom->nVersion != 0)
         {
             pfrom->PushMessage("reject", strCommand, REJECT_DUPLICATE, string("Duplicate version message"));
+            LOCK(cs_main);
             Misbehaving(pfrom->GetId(), 1);
             return false;
         }
@@ -8693,8 +8715,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         CAddress addrMe;
         CAddress addrFrom;
         uint64_t nNonce = 1;
+        std::string strSubVer;
+        std::string cleanSubVer;
         int nVersion;           // use temporary for version, don't set version number until validated as connected
-        vRecv >> nVersion >> pfrom->nServices >> nTime >> addrMe;
+        uint64_t nServices;
+        vRecv >> nVersion >> nServices >> nTime >> addrMe;
+        pfrom->nServices = nServices;
         if (nVersion == 10300)
             nVersion = 300;
 
@@ -8733,11 +8759,14 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         }
 
         if (!vRecv.empty()) {
-            vRecv >> LIMITED_STRING(pfrom->strSubVer, MAX_SUBVERSION_LENGTH);
-            pfrom->cleanSubVer = SanitizeString(pfrom->strSubVer);
+            vRecv >> LIMITED_STRING(strSubVer, MAX_SUBVERSION_LENGTH);
+            cleanSubVer = SanitizeString(strSubVer);
         }
-        if (!vRecv.empty())
-            vRecv >> pfrom->nStartingHeight;
+        if (!vRecv.empty()) {
+            int nStartingHeight;
+            vRecv >> nStartingHeight;
+            pfrom->nStartingHeight = nStartingHeight;
+        }
         if (!vRecv.empty())
             vRecv >> pfrom->fRelayTxes; // set to true after we get the first filter* message
         else
@@ -8753,7 +8782,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
         pfrom->nVersion = nVersion;
 
-        pfrom->addrLocal = addrMe;
+        pfrom->SetAddrLocal(addrMe);
         if (pfrom->fInbound && addrMe.IsRoutable())
         {
             SeenLocal(addrMe);
@@ -8763,10 +8792,18 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         if (pfrom->fInbound)
             pfrom->PushVersion();
 
+        {
+            LOCK(pfrom->cs_SubVer);
+            pfrom->strSubVer = strSubVer;
+            pfrom->cleanSubVer = cleanSubVer;
+        }
         pfrom->fClient = !(pfrom->nServices & NODE_NETWORK);
 
         // Potentially mark this peer as a preferred download peer.
-        UpdatePreferredDownload(pfrom, State(pfrom->GetId()));
+        {
+            LOCK(cs_main);
+            UpdatePreferredDownload(pfrom, State(pfrom->GetId()));
+        }
 
         // Change version
         pfrom->PushMessage("verack");
@@ -8785,7 +8822,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                     LogPrintf("ProcessMessages: advertizing address %s\n", addr.ToString());
                     pfrom->PushAddress(addr);
                 } else if (IsPeerAddrLocalGood(pfrom)) {
-                    addr.SetIP(pfrom->addrLocal);
+                    addr.SetIP(addrMe);
                     LogPrintf("ProcessMessages: advertizing address %s\n", addr.ToString());
                     pfrom->PushAddress(addr);
                 }
@@ -8824,7 +8861,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             remoteAddr = ", peeraddr=" + pfrom->addr.ToString();
 
         LogPrintf("receive version message: %s: version %d, blocks=%d, us=%s, peer=%d%s\n",
-                  pfrom->cleanSubVer, pfrom->nVersion,
+                  cleanSubVer, pfrom->nVersion,
                   pfrom->nStartingHeight, addrMe.ToString(), pfrom->id,
                   remoteAddr);
 
@@ -8840,6 +8877,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
     else if (pfrom->nVersion == 0 && strCommand != "reject")
     {
         // Must have a version message before anything else
+        LOCK(cs_main);
         Misbehaving(pfrom->GetId(), 1);
         return false;
     }
@@ -8932,6 +8970,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 }
             }
         }
+        LOCK(cs_main);
         Misbehaving(pfrom->GetId(), misbehavingLevel);
         return false;
     }
@@ -8963,6 +9002,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             return true;
         if (vAddr.size() > 1000)
         {
+            LOCK(cs_main);
             Misbehaving(pfrom->GetId(), 20);
             return error("message addr size() = %u", vAddr.size());
         }
@@ -9064,6 +9104,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         vRecv >> vInv;
         if (vInv.size() > MAX_INV_SZ)
         {
+            LOCK(cs_main);
             Misbehaving(pfrom->GetId(), 20);
             return error("message inv size() = %u", vInv.size());
         }
@@ -9129,6 +9170,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         vRecv >> vInv;
         if (vInv.size() > MAX_INV_SZ)
         {
+            LOCK(cs_main);
             Misbehaving(pfrom->GetId(), 20);
             return error("message getdata size() = %u", vInv.size());
         }
@@ -9413,6 +9455,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         // Bypass the normal CBlock deserialization, as we don't want to risk deserializing 2000 full blocks.
         unsigned int nCount = ReadCompactSize(vRecv);
         if (nCount > MAX_HEADERS_RESULTS) {
+            LOCK(cs_main);
             Misbehaving(pfrom->GetId(), 20);
             return error("headers message size = %u", nCount);
         }
@@ -9698,12 +9741,20 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         vRecv >> alert;
 
         uint256 alertHash = alert.GetHash();
-        if (pfrom->setKnown.count(alertHash) == 0)
+        bool fKnown;
+        {
+            LOCK(pfrom->cs_setKnown);
+            fKnown = pfrom->setKnown.count(alertHash) != 0;
+        }
+        if (!fKnown)
         {
             if (alert.ProcessAlert(chainparams.AlertKey()))
             {
                 // Relay
-                pfrom->setKnown.insert(alertHash);
+                {
+                    LOCK(pfrom->cs_setKnown);
+                    pfrom->setKnown.insert(alertHash);
+                }
                 {
                     LOCK(cs_vNodes);
                     BOOST_FOREACH(CNode* pnode, vNodes)
@@ -9717,6 +9768,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 // This isn't a Misbehaving(100) (immediate ban) because the
                 // peer might be an older or different implementation with
                 // a different signature key, etc.
+                LOCK(cs_main);
                 Misbehaving(pfrom->GetId(), 10);
             }
         }
@@ -9728,6 +9780,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                strCommand == "filteradd"))
     {
         if (pfrom->nVersion >= NO_BLOOM_VERSION) {
+            LOCK(cs_main);
             Misbehaving(pfrom->GetId(), 100);
             return false;
         } else if (GetBoolArg("-enforcenodebloom", false)) {
@@ -9743,8 +9796,11 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         vRecv >> filter;
 
         if (!filter.IsWithinSizeConstraints())
+        {
             // There is no excuse for sending a too-large filter
+            LOCK(cs_main);
             Misbehaving(pfrom->GetId(), 100);
+        }
         else
         {
             LOCK(pfrom->cs_filter);
@@ -9762,15 +9818,20 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
         // Nodes must NEVER send a data item bigger than the max size for a script data object,
         // and thus, the maximum size any matched object can have) in a filteradd message
-        if (vData.size() > CScript::MAX_SCRIPT_ELEMENT_SIZE)
-        {
-            Misbehaving(pfrom->GetId(), 100);
+        bool bad = false;
+        if (vData.size() > CScript::MAX_SCRIPT_ELEMENT_SIZE) {
+            bad = true;
         } else {
             LOCK(pfrom->cs_filter);
-            if (pfrom->pfilter)
+            if (pfrom->pfilter) {
                 pfrom->pfilter->insert(vData);
-            else
-                Misbehaving(pfrom->GetId(), 100);
+            } else {
+                bad = true;
+            }
+        }
+        if (bad) {
+            LOCK(cs_main);
+            Misbehaving(pfrom->GetId(), 100);
         }
     }
 
@@ -10243,7 +10304,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                                 mapRelay.erase(vRelayExpiration.front().second);
                                 vRelayExpiration.pop_front();
                             }
-    
+
                             auto ret = mapRelay.insert(std::make_pair(oneTx.first, std::make_shared<CTransaction>(txToSend)));
                             if (ret.second) {
                                 vRelayExpiration.push_back(std::make_pair(nNow + 15 * 60 * 1000000, ret.first));

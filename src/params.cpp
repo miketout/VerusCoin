@@ -3,10 +3,124 @@
 #include "ui_interface.h"
 #include "pbaas/vdxf.h"
 #include <fstream>
+#include <sys/stat.h>
 
 std::map<std::string, ParamFile> mapParams;
 JsonDownload downloadedJSON;
 static const int K_READ_BUF_SIZE{ 1024 * 16 };
+
+#ifndef _WIN32
+// Well-known system CA bundle files, in probe order. The depends-built curl has
+// no compiled-in bundle that is valid across distributions, so the path is
+// resolved at runtime rather than baked in at configure time.
+static const char *const ca_bundle_paths[] = {
+    "/etc/ssl/certs/ca-certificates.crt",   // Debian, Ubuntu
+    "/etc/pki/tls/certs/ca-bundle.crt",     // Fedora, RHEL, CentOS
+    "/etc/ssl/ca-bundle.pem",               // openSUSE
+    "/etc/ssl/cert.pem",                    // macOS, Alpine, FreeBSD
+};
+
+// Well-known hashed CA directories, in probe order. Some systems ship only a
+// hashed directory and no single-file bundle, so a missing bundle is not by
+// itself a missing trust store.
+static const char *const ca_dir_paths[] = {
+    "/etc/ssl/certs",                       // Debian, Ubuntu, openSUSE, Alpine
+    "/etc/pki/tls/certs",                   // Fedora, RHEL, CentOS
+};
+
+static bool IsReadableFile(const char *path)
+{
+    struct stat st;
+    return path != nullptr && *path != '\0' && stat(path, &st) == 0 &&
+           S_ISREG(st.st_mode) && access(path, R_OK) == 0;
+}
+
+static bool IsReadableDir(const char *path)
+{
+    struct stat st;
+    return path != nullptr && *path != '\0' && stat(path, &st) == 0 &&
+           S_ISDIR(st.st_mode) && access(path, R_OK | X_OK) == 0;
+}
+
+// Returns a readable CA bundle file, or nullptr if none was found. SSL_CERT_FILE
+// takes precedence, which matches OpenSSL's own convention and makes the choice
+// overridable for testing.
+static const char *FindSystemCABundle()
+{
+    const char *env = getenv("SSL_CERT_FILE");
+    if (IsReadableFile(env))
+    {
+        return env;
+    }
+    for (const char *path : ca_bundle_paths)
+    {
+        if (IsReadableFile(path))
+        {
+            return path;
+        }
+    }
+    return nullptr;
+}
+
+// Returns a readable hashed CA directory, or nullptr if none was found.
+// SSL_CERT_DIR takes precedence, mirroring FindSystemCABundle().
+static const char *FindSystemCADir()
+{
+    const char *env = getenv("SSL_CERT_DIR");
+    if (IsReadableDir(env))
+    {
+        return env;
+    }
+    for (const char *path : ca_dir_paths)
+    {
+        if (IsReadableDir(path))
+        {
+            return path;
+        }
+    }
+    return nullptr;
+}
+#endif // !_WIN32
+
+// Point curl at the platform's CA trust store. These are easy-handle options, so
+// this must be called for every handle rather than once globally.
+static void SetCurlCATrust(CURL *curl)
+{
+    if (curl == nullptr)
+    {
+        return;
+    }
+#ifdef _WIN32
+    curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+#else
+    // Set whichever of the two are present. Supplying both is normal: a bundle
+    // covers the common case, a hashed directory covers systems that ship only
+    // that, and curl is happy to be given each.
+    const char *ca_bundle = FindSystemCABundle();
+    const char *ca_dir = FindSystemCADir();
+
+    if (ca_bundle != nullptr)
+    {
+        curl_easy_setopt(curl, CURLOPT_CAINFO, ca_bundle);
+    }
+    if (ca_dir != nullptr)
+    {
+        curl_easy_setopt(curl, CURLOPT_CAPATH, ca_dir);
+    }
+
+    if (ca_bundle == nullptr && ca_dir == nullptr)
+    {
+        static bool warned = false;
+        if (!warned)
+        {
+            warned = true;
+            fprintf(stderr, "Warning: no system CA bundle or CA directory found; TLS peer "
+                            "verification may fail. Set SSL_CERT_FILE to a CA bundle or "
+                            "SSL_CERT_DIR to a hashed CA directory.\n");
+        }
+    }
+#endif
+}
 
 std::string CalcSha256(std::string filename)
 {
@@ -253,9 +367,10 @@ bool downloadFiles(std::string title)
                     it->second.prog.curl = it->second.curl;
                 }
 
+                SetCurlCATrust(it->second.curl);
                 curl_easy_setopt(it->second.curl, CURLOPT_URL, it->second.URL.c_str());
-                curl_easy_setopt(it->second.curl, CURLOPT_SSL_VERIFYPEER, 0L);
-                curl_easy_setopt(it->second.curl, CURLOPT_SSL_VERIFYHOST, 0L);
+                curl_easy_setopt(it->second.curl, CURLOPT_SSL_VERIFYPEER, 1L);
+                curl_easy_setopt(it->second.curl, CURLOPT_SSL_VERIFYHOST, 2L);
                 curl_easy_setopt(it->second.curl, CURLOPT_VERBOSE, 0L);
                 curl_easy_setopt(it->second.curl, CURLOPT_TCP_KEEPALIVE, 1L);
                 curl_easy_setopt(it->second.curl, CURLOPT_XFERINFOFUNCTION, xferinfo);
@@ -435,10 +550,10 @@ void getHttpsJson(std::string url)
 
     curl = curl_easy_init();
     if(curl) {
-
+        SetCurlCATrust(curl);
         curl_easy_setopt(curl, CURLOPT_URL, downloadedJSON.URL.c_str());
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
         curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writer);
@@ -489,7 +604,8 @@ bool getBootstrap() {
         }
     }
 
-    // check signature of downloaded bootstrap archive, then extract
+    // TODO: HARDENING - compile in current ID to enable local
+    // signature check of downloaded bootstrap archive, then extract
 
     if (dlsuccess) {
         if (!extract(bootstrap.path)) {
@@ -515,9 +631,9 @@ bool extract(boost::filesystem::path filename) {
 	int r;
 
     int flags = ARCHIVE_EXTRACT_TIME;
-    flags |= ARCHIVE_EXTRACT_PERM;
-    flags |= ARCHIVE_EXTRACT_ACL;
     flags |= ARCHIVE_EXTRACT_FFLAGS;
+    flags |= ARCHIVE_EXTRACT_SECURE_NODOTDOT;
+    flags |= ARCHIVE_EXTRACT_SECURE_SYMLINKS;
 
 	a = archive_read_new();
 	ext = archive_write_disk_new();
@@ -549,6 +665,14 @@ bool extract(boost::filesystem::path filename) {
             }
 
             const char* currentFile = archive_entry_pathname(entry);
+
+            if (archive_entry_hardlink(entry) != NULL || archive_entry_symlink(entry) != NULL)
+            {
+                LogPrintf("Bootstrap archive contains a link entry (%s), rejecting\n", currentFile);
+                extractComplete = false;
+                break;
+            }
+
             std::string path = GetDataDir().string() + "/" + currentFile;
             std::string uiMessage = "Extracting Bootstrap file ";
             uiMessage.append(currentFile);
@@ -560,8 +684,11 @@ bool extract(boost::filesystem::path filename) {
                 extractComplete = false;
                 break;
             } else {
-                copy_data(a, ext);
-                r = archive_write_finish_entry(ext);
+                r = copy_data(a, ext);
+                if (r == ARCHIVE_OK)
+                {
+                    r = archive_write_finish_entry(ext);
+                }
                 if (r != ARCHIVE_OK) {
                     LogPrintf("archive_write_finish_entry() %s %d\n",archive_error_string(ext), r);
                     extractComplete = false;

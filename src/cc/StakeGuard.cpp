@@ -85,7 +85,7 @@ bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTra
                             COptCCParams p;
                             if (!srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey.IsPayToCryptoCondition(p))
                             {
-                                LogPrint("staking", "%s: internal error - this should never happen\n");
+                                LogPrint("staking", "%s: internal error - this should never happen\n", __func__);
                                 return false;
                             }
                             CCcontract_info CC;
@@ -98,7 +98,7 @@ bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTra
                         }
                         if (invalidOutput)
                         {
-                            LogPrint("staking", "%s: Invalid stake for OPTION_IDSTAKING -- only outputs spendable to native ID of chain may stake\n");
+                            LogPrint("staking", "%s: Invalid stake for OPTION_IDSTAKING -- only outputs spendable to native ID of chain may stake\n", __func__);
                             return false;
                         }
                     }
@@ -358,7 +358,7 @@ bool RawPrecheckStakeGuardOutput(const CTransaction &tx, int32_t outNum, CValida
     {
         return true;
     }
-    return false;
+    return state.Error("Invalid stake guard output " + tx.GetHash().GetHex() + " : " + std::to_string(outNum));
 }
 
 bool PrecheckStakeGuardOutput(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)

@@ -1129,11 +1129,12 @@ char *parse_conf_line(char *line,char *field)
     line += strlen(field);
     for (; *line!='='&&*line!=0; line++)
         break;
-    if ( *line == 0 )
-        return(0);
     if ( *line == '=' )
         line++;
-    while ( line[strlen(line)-1] == '\r' || line[strlen(line)-1] == '\n' || line[strlen(line)-1] == ' ' )
+    if ( *line == 0 )
+        return(0);
+    while ( strlen(line) > 0 &&
+            (line[strlen(line)-1] == '\r' || line[strlen(line)-1] == '\n' || line[strlen(line)-1] == ' ' ) )
         line[strlen(line)-1] = 0;
     //printf("LINE.(%s)\n",line);
     _stripwhite(line,0);
@@ -1359,26 +1360,42 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
         OS_randombytes(buf2,sizeof(buf2));
 				#endif
         for (i=0; i<sizeof(buf2); i++)
-            sprintf(&password[i*2],"%02x",buf2[i]);
+            snprintf(&password[i*2], sizeof(password) - i*2,"%02x",buf2[i]);
         password[i*2] = 0;
-        sprintf(buf,"%s.conf", _symbol);
+        snprintf(buf, sizeof(buf),"%s.conf", _symbol);
         BITCOIND_RPCPORT = rpcport;
 #ifdef _WIN32
-        sprintf(fname,"%s\\%s",GetDataDir(false).string().c_str(), buf);
+        snprintf(fname, sizeof(fname),"%s\\%s",GetDataDir(false).string().c_str(), buf);
 #else
-        sprintf(fname,"%s/%s",GetDataDir(false).string().c_str(), buf);
+        snprintf(fname, sizeof(fname),"%s/%s",GetDataDir(false).string().c_str(), buf);
 #endif
-        if ( (fp= fopen(fname,"rb")) == 0 )
-        {
+
 #ifndef FROM_CLI
-            if ( (fp= fopen(fname,"wb")) != 0 )
+
+#ifndef _WIN32
+        int fd = open(fname, O_WRONLY | O_CREAT | O_EXCL, 0600);
+        if (fd >= 0)
+#else
+        if ((fp = fopen(fname, "rb")) == 0)
+#endif
+        {
+
+#ifndef _WIN32
+            if ((fp = fdopen(fd, "wb")) != 0)
+#else
+            if ((fp = fopen(fname, "wb")) != 0)
+#endif
             {
                 fprintf(fp,"rpcuser=user%u\nrpcpassword=pass%s\nrpcport=%u\nserver=1\ntxindex=1\nrpcworkqueue=256\nrpcallowip=127.0.0.1\nrpchost=127.0.0.1\n",crc,password,rpcport);
 
                 // add basic chain parameters for non-VRSC chains
                 if (!_IsVerusMainnetActive())
                 {
-                    const char *charPtr;
+                    auto argOrDefault = [](const std::string &argName, const std::string &defaultValue)
+                    {
+                        std::string argValue = GetArg(argName, defaultValue);
+                        return argValue.empty() ? defaultValue : argValue;
+                    };
                     // basic coin parameters. the rest will come from block 1
                     fprintf(fp,"ac_algo=verushash\nac_veruspos=50\nac_cc=1\n");
                     fprintf(fp,"launchsystemid=%s\n", EncodeDestination(CIdentityID(ConnectedChains.thisChain.launchSystemID)).c_str());
@@ -1386,18 +1403,27 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
                     fprintf(fp,"systemid=%s\n", EncodeDestination(CIdentityID(ConnectedChains.thisChain.systemID)).c_str());
                     fprintf(fp,"startblock=%d\n", ConnectedChains.thisChain.startBlock);
                     fprintf(fp,"endblock=%d\n", ConnectedChains.thisChain.endBlock);
-                    fprintf(fp,"gatewayconverterissuance=%s\n", (charPtr = mapArgs["-gatewayconverterissuance"].c_str())[0] == 0 ? "0" : charPtr);
-                    fprintf(fp,"ac_supply=%s\n", (charPtr = mapArgs["-ac_supply"].c_str())[0] == 0 ? "0" : charPtr);
-                    fprintf(fp,"ac_halving=%s\n", (charPtr = mapArgs["-ac_halving"].c_str())[0] == 0 ? "0" : charPtr);
-                    fprintf(fp,"ac_decay=%s\n", (charPtr = mapArgs["-ac_decay"].c_str())[0] == 0 ? "0" : charPtr);
-                    fprintf(fp,"ac_reward=%s\n", (charPtr = mapArgs["-ac_reward"].c_str())[0] == 0 ? "0" : charPtr);
-                    fprintf(fp,"ac_eras=%s\n", (charPtr = mapArgs["-ac_eras"].c_str())[0] == 0 ? "1" : charPtr);
-                    fprintf(fp,"ac_end=%s\n", (charPtr = mapArgs["-ac_end"].c_str())[0] == 0 ? "0" : charPtr);
-                    fprintf(fp,"ac_options=%s\n", (charPtr = mapArgs["-ac_options"].c_str())[0] == 0 ? "0" : charPtr);
+                    fprintf(fp,"gatewayconverterissuance=%s\n", argOrDefault("-gatewayconverterissuance", "0").c_str());
+                    fprintf(fp,"ac_supply=%s\n", argOrDefault("-ac_supply", "0").c_str());
+                    fprintf(fp,"ac_halving=%s\n", argOrDefault("-ac_halving", "0").c_str());
+                    fprintf(fp,"ac_decay=%s\n", argOrDefault("-ac_decay", "0").c_str());
+                    fprintf(fp,"ac_reward=%s\n", argOrDefault("-ac_reward", "0").c_str());
+                    fprintf(fp,"ac_eras=%s\n", argOrDefault("-ac_eras", "1").c_str());
+                    fprintf(fp,"ac_end=%s\n", argOrDefault("-ac_end", "0").c_str());
+                    fprintf(fp,"ac_options=%s\n", argOrDefault("-ac_options", "0").c_str());
 
-                    if (!mapArgs["-blocktime"].empty() || !mapArgs["-powaveragingwindow"].empty() || !mapArgs["-notarizationperiod"].empty())
+                    if (!GetArg("-blocktime", "").empty() || !GetArg("-powaveragingwindow", "").empty() || !GetArg("-notarizationperiod", "").empty())
                     {
-                        int paramBlockTime = GetArg("-blocktime", CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
+                        int64_t paramBlockTime = GetArg("-blocktime", CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
+                        if (paramBlockTime < CCurrencyDefinition::MIN_BLOCKTIME_TARGET ||
+                            paramBlockTime > CCurrencyDefinition::MAX_BLOCKTIME_TARGET)
+                        {
+                            LogPrintf("%s: blocktime: %ld out of range %d - %d\n", __func__, paramBlockTime, (int)CCurrencyDefinition::MIN_BLOCKTIME_TARGET, (int)CCurrencyDefinition::MAX_BLOCKTIME_TARGET);
+                            printf("%s: blocktime: %lld out of range %d - %d\n", __func__, (long long)paramBlockTime, (int)CCurrencyDefinition::MIN_BLOCKTIME_TARGET, (int)CCurrencyDefinition::MAX_BLOCKTIME_TARGET);
+                            fclose(fp);
+                            remove(fname);
+                            throw std::runtime_error("-blocktime: " + std::to_string(paramBlockTime) + " out of range");
+                        }
                         int powAveragingWindow = GetArg("-powaveragingwindow", CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW);
                         int notarizationPeriod = GetArg("-notarizationperiod",
                                                         std::max((int)(CCurrencyDefinition::DEFAULT_BLOCK_NOTARIZATION_TIME / paramBlockTime),
@@ -1414,31 +1440,41 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
 
                     if (GetArg("-port", 0))
                     {
-                        fprintf(fp,"port=%s\n", mapArgs["-port"].c_str());
+                        fprintf(fp,"port=%s\n", GetArg("-port", "").c_str());
                     }
 
-                    auto nodeIt = mapMultiArgs.find("-seednode");
-                    if (nodeIt != mapMultiArgs.end())
+                    for (auto nodeStr : GetArgs("-seednode"))
                     {
-                        std::vector<std::string> &nodeStrs = mapMultiArgs["-seednode"];
-                        for (auto nodeStr : nodeStrs)
-                        {
-                            fprintf(fp,"seednode=%s\n", nodeStr.c_str());
-                        }
+                        fprintf(fp,"seednode=%s\n", nodeStr.c_str());
                     }
                 }
                 fclose(fp);
                 printf("Created (%s)\n",fname);
-            } else printf("Couldnt create (%s)\n",fname);
+            } else
+            {
+                printf("Couldnt create (%s)\n",fname);
+
+#ifndef _WIN32
+                close(fd);
+            }
+#else
+            }
 #endif
         }
         else
+#endif // not FROMCLI - intentionally drop through after unconditionally after the else
         {
-            _komodo_userpass(myusername, mypassword, fp);
-            mapArgs["-rpcpassword"] = mypassword;
-            mapArgs["-rpcusername"] = myusername;
-            //fprintf(stderr,"myusername.(%s)\n",myusername);
+#if defined(_WIN32) && !defined(FROM_CLI)
             fclose(fp);
+#endif
+            if ((fp = fopen(fname, "rb")) != 0)
+            {
+                _komodo_userpass(myusername, mypassword, fp);
+                OverrideSetArg("-rpcpassword", mypassword);
+                OverrideSetArg("-rpcusername", myusername);
+                fclose(fp);
+            }
+            //fprintf(stderr,"myusername.(%s)\n",myusername);
         }
     }
     strcpy(fname,GetDataDir().string().c_str());
@@ -1459,22 +1495,22 @@ void komodo_configfile(char *symbol, uint16_t rpcport)
     {
         if ( (kmdport= _komodo_userpass(username,password,fp)) != 0 )
             KMD_PORT = kmdport;
-        sprintf(KMDUSERPASS,"%s:%s",username,password);
+        snprintf(KMDUSERPASS, sizeof(KMDUSERPASS),"%s:%s",username,password);
         fclose(fp);
 //printf("KOMODO.(%s) -> userpass.(%s)\n",fname,KMDUSERPASS);
     } //else printf("couldnt open.(%s)\n",fname);
 }
 
 extern boost::filesystem::path GetConfigFile();
-uint16_t komodo_userpass(char *userpass, char *symbol)
+uint16_t komodo_userpass(char *userpass, size_t userpass_len, char *symbol)
 {
     FILE *fp; uint16_t port = 0; char fname[512],username[512],password[512],confname[KOMODO_ASSETCHAIN_MAXLEN + 5];
     userpass[0] = 0;
     if ( (fp = fopen(GetConfigFile().generic_string().c_str(),"rb")) != 0 )
     {
         port = _komodo_userpass(username,password,fp);
-        sprintf(userpass,"%s:%s",username,password);
-        if ( strcmp(symbol,ASSETCHAINS_SYMBOL) == 0 )
+        snprintf(userpass, userpass_len,"%s:%s",username,password);
+        if ( strcmp(symbol,ASSETCHAINS_SYMBOL) == 0 && userpass != ASSETCHAINS_USERPASS )
             strcpy(ASSETCHAINS_USERPASS,userpass);
         fclose(fp);
     }
@@ -1737,7 +1773,7 @@ void komodo_args(char *argv0)
         name = "VRSC";
     }
 
-    mapArgs["-ac_name"] = name;
+    OverrideSetArg("-ac_name", name);
     memset(ASSETCHAINS_SYMBOL, 0, sizeof(ASSETCHAINS_SYMBOL));
     strcpy(ASSETCHAINS_SYMBOL, name.c_str());
 
@@ -1749,9 +1785,9 @@ void komodo_args(char *argv0)
 
     CCurrencyDefinition mainVerusCurrency;
 
-    mapArgs["-ac_algo"] = "verushash";
-    mapArgs["-ac_cc"] = "1";
-    mapArgs["-ac_veruspos"] = "50";
+    OverrideSetArg("-ac_algo", "verushash");
+    OverrideSetArg("-ac_cc", "1");
+    OverrideSetArg("-ac_veruspos", "50");
 
     VERUS_CHAINNAME = PBAAS_TESTMODE ? "VRSCTEST" : "VRSC";
     VERUS_CHAINID = CCrossChainRPCData::GetID(VERUS_CHAINNAME);
@@ -1771,12 +1807,12 @@ void komodo_args(char *argv0)
 
         auto numEras = mainVerusCurrency.rewards.size();
         ASSETCHAINS_LASTERA = numEras - 1;
-        mapArgs["-ac_eras"] = to_string(numEras);
+        OverrideSetArg("-ac_eras", to_string(numEras));
 
         if (PBAAS_TESTMODE)
         {
             uint32_t defaultHalving = mainVerusCurrency.halving[0];
-            std::string halving = GetArg("-ac_halving", mapArgs.count("-ac_halving") ? mapArgs["-ac_halving"] : std::to_string(defaultHalving)); // this assignment is required for an ARM compiler workaround
+            std::string halving = GetArg("-ac_halving", std::to_string(defaultHalving)); // this assignment is required for an ARM compiler workaround
             mainVerusCurrency.halving[0] = atoi(halving);
         }
 
@@ -1799,38 +1835,38 @@ void komodo_args(char *argv0)
                 ASSETCHAINS_ERAOPTIONS[j] = mainVerusCurrency.options;
                 if (j == 0)
                 {
-                    mapArgs["-ac_reward"] = to_string(ASSETCHAINS_REWARD[j]);
-                    mapArgs["-ac_decay"] = to_string(ASSETCHAINS_DECAY[j]);
-                    mapArgs["-ac_halving"] = to_string(ASSETCHAINS_HALVING[j]);
-                    mapArgs["-ac_end"] = to_string(ASSETCHAINS_ENDSUBSIDY[j]);
-                    mapArgs["-ac_options"] = to_string(ASSETCHAINS_ERAOPTIONS[j]);
+                    OverrideSetArg("-ac_reward", to_string(ASSETCHAINS_REWARD[j]));
+                    OverrideSetArg("-ac_decay", to_string(ASSETCHAINS_DECAY[j]));
+                    OverrideSetArg("-ac_halving", to_string(ASSETCHAINS_HALVING[j]));
+                    OverrideSetArg("-ac_end", to_string(ASSETCHAINS_ENDSUBSIDY[j]));
+                    OverrideSetArg("-ac_options", to_string(ASSETCHAINS_ERAOPTIONS[j]));
                 }
                 else
                 {
-                    mapArgs["-ac_reward"] += "," + to_string(ASSETCHAINS_REWARD[j]);
-                    mapArgs["-ac_decay"] += "," + to_string(ASSETCHAINS_DECAY[j]);
-                    mapArgs["-ac_halving"] += "," + to_string(ASSETCHAINS_HALVING[j]);
-                    mapArgs["-ac_end"] += "," + to_string(ASSETCHAINS_ENDSUBSIDY[j]);
-                    mapArgs["-ac_options"] += "," + to_string(ASSETCHAINS_ERAOPTIONS[j]);
+                    OverrideSetArg("-ac_reward", GetArg("-ac_reward", "") + "," + to_string(ASSETCHAINS_REWARD[j]));
+                    OverrideSetArg("-ac_decay", GetArg("-ac_decay", "") + "," + to_string(ASSETCHAINS_DECAY[j]));
+                    OverrideSetArg("-ac_halving", GetArg("-ac_halving", "") + "," + to_string(ASSETCHAINS_HALVING[j]));
+                    OverrideSetArg("-ac_end", GetArg("-ac_end", "") + "," + to_string(ASSETCHAINS_ENDSUBSIDY[j]));
+                    OverrideSetArg("-ac_options", GetArg("-ac_options", "") + "," + to_string(ASSETCHAINS_ERAOPTIONS[j]));
                 }
             }
         }
 
         PBAAS_STARTBLOCK = mainVerusCurrency.startBlock;
-        mapArgs["-startblock"] = to_string(PBAAS_STARTBLOCK);
+        OverrideSetArg("-startblock", to_string(PBAAS_STARTBLOCK));
         PBAAS_ENDBLOCK = mainVerusCurrency.endBlock;
-        mapArgs["-endblock"] = to_string(PBAAS_ENDBLOCK);
+        OverrideSetArg("-endblock", to_string(PBAAS_ENDBLOCK));
 
         ASSETCHAINS_SUPPLY = mainVerusCurrency.GetTotalPreallocation();
         ASSETCHAINS_ISSUANCE = mainVerusCurrency.gatewayConverterIssuance;
-        mapArgs["-ac_supply"] = to_string(ASSETCHAINS_SUPPLY);
-        mapArgs["-gatewayconverterissuance"] = to_string(ASSETCHAINS_ISSUANCE);
+        OverrideSetArg("-ac_supply", to_string(ASSETCHAINS_SUPPLY));
+        OverrideSetArg("-gatewayconverterissuance", to_string(ASSETCHAINS_ISSUANCE));
 
         if (name == "VRSC")
         {
-            mapArgs["-ac_timelockgte"] = "19200000000";
-            mapArgs["-ac_timeunlockfrom"] = "129600";
-            mapArgs["-ac_timeunlockto"] = "1180800";
+            OverrideSetArg("-ac_timelockgte", "19200000000");
+            OverrideSetArg("-ac_timeunlockfrom", "129600");
+            OverrideSetArg("-ac_timeunlockto", "1180800");
 
             ASSETCHAINS_TIMELOCKGTE = 19200000000;
             ASSETCHAINS_TIMEUNLOCKFROM = 129600;
@@ -1886,8 +1922,8 @@ void komodo_args(char *argv0)
                     ASSETCHAINS_ERAOPTIONS[0] = thisCurrency.options;
                     ASSETCHAINS_SUPPLY = thisCurrency.GetTotalPreallocation();
                     ASSETCHAINS_ISSUANCE = thisCurrency.gatewayConverterIssuance;
-                    mapArgs["-ac_supply"] = to_string(ASSETCHAINS_SUPPLY);
-                    mapArgs["-gatewayconverterissuance"] = to_string(ASSETCHAINS_ISSUANCE);
+                    OverrideSetArg("-ac_supply", to_string(ASSETCHAINS_SUPPLY));
+                    OverrideSetArg("-gatewayconverterissuance", to_string(ASSETCHAINS_ISSUANCE));
                     PARAMS_LOADED = true;
                 }
                 catch(const std::exception& e)
@@ -2108,14 +2144,14 @@ void komodo_args(char *argv0)
         if ( ASSETCHAINS_SYMBOL[0] != 0 )
         {
             int32_t komodo_baseid(char *origbase);
-            if ( (port = komodo_userpass(ASSETCHAINS_USERPASS, ASSETCHAINS_SYMBOL)) != 0 )
+            if ( (port = komodo_userpass(ASSETCHAINS_USERPASS, sizeof(ASSETCHAINS_USERPASS), ASSETCHAINS_SYMBOL)) != 0 )
             {
                 ASSETCHAINS_RPCPORT = port;
             }
             else
             {
                 komodo_configfile(ASSETCHAINS_SYMBOL, ASSETCHAINS_P2PPORT + 1);
-                komodo_userpass(ASSETCHAINS_USERPASS, ASSETCHAINS_SYMBOL);      // make sure we set user and password on first load
+                komodo_userpass(ASSETCHAINS_USERPASS, sizeof(ASSETCHAINS_USERPASS), ASSETCHAINS_SYMBOL);      // make sure we set user and password on first load
             }
 
             //fprintf(stderr,"ASSETCHAINS_RPCPORT (%s) %u\n",ASSETCHAINS_SYMBOL,ASSETCHAINS_RPCPORT);
@@ -2127,7 +2163,7 @@ void komodo_args(char *argv0)
         //komodo_assetchain_pubkeys((char *)ASSETCHAINS_NOTARIES.c_str());
         iguana_rwnum(1,magic,sizeof(ASSETCHAINS_MAGIC),(void *)&ASSETCHAINS_MAGIC);
         for (int i=0; i<4; i++)
-            sprintf(&magicstr[i<<1],"%02x",magic[i]);
+            snprintf(&magicstr[i<<1], sizeof(magicstr) - (i<<1),"%02x",magic[i]);
         magicstr[8] = 0;
 
         if ( KOMODO_CCACTIVATE != 0 && ASSETCHAINS_CC < 2 )
@@ -2160,7 +2196,14 @@ void komodo_args(char *argv0)
                 obj.push_back(Pair("systemid", GetArg("-systemid","")));
                 obj.push_back(Pair("parent", GetArg("-parentid","")));
 
-                int paramBlockTime = GetArg("-blocktime", (int64_t)CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
+                int64_t paramBlockTime = GetArg("-blocktime", (int64_t)CCurrencyDefinition::DEFAULT_BLOCKTIME_TARGET);
+                if (paramBlockTime < CCurrencyDefinition::MIN_BLOCKTIME_TARGET ||
+                    paramBlockTime > CCurrencyDefinition::MAX_BLOCKTIME_TARGET)
+                {
+                    LogPrintf("%s: blocktime: %ld out of range %d - %d\n", __func__, paramBlockTime, (int)CCurrencyDefinition::MIN_BLOCKTIME_TARGET, (int)CCurrencyDefinition::MAX_BLOCKTIME_TARGET);
+                    printf("%s: blocktime: %lld out of range %d - %d\n", __func__, (long long)paramBlockTime, (int)CCurrencyDefinition::MIN_BLOCKTIME_TARGET, (int)CCurrencyDefinition::MAX_BLOCKTIME_TARGET);
+                    throw std::runtime_error("-blocktime: " + std::to_string(paramBlockTime) + " out of range");
+                }
                 obj.pushKV("blocktime", paramBlockTime);
                 obj.pushKV("powaveragingwindow", GetArg("-powaveragingwindow", (int64_t)CCurrencyDefinition::DEFAULT_AVERAGING_WINDOW));
                 obj.pushKV("notarizationperiod", GetArg("-notarizationperiod",
@@ -2194,10 +2237,10 @@ void komodo_args(char *argv0)
 
             std::vector<std::string> addn;
             UniValue nodeArr(UniValue::VARR);
-            std::map<std::string, std::vector<std::string>>::iterator seedIt = mapMultiArgs.find("-seednode");
-            if (seedIt != mapMultiArgs.end())
+            std::vector<std::string> seedNodeArgs = GetArgs("-seednode");
+            if (!seedNodeArgs.empty())
             {
-                for (auto oneSeedStr : seedIt->second)
+                for (auto oneSeedStr : seedNodeArgs)
                 {
                     nodeArr.push_back(CNodeData(oneSeedStr, "").ToUniValue());
                 }
@@ -2238,7 +2281,7 @@ void komodo_args(char *argv0)
             if ( (fp= fopen(fname,"rb")) != 0 )
             {
                 _komodo_userpass(username,password,fp);
-                sprintf(iter == 0 ? KMDUSERPASS : BTCUSERPASS,"%s:%s",username,password);
+                snprintf(iter == 0 ? KMDUSERPASS : BTCUSERPASS, sizeof(KMDUSERPASS),"%s:%s",username,password);
                 fclose(fp);
                 //printf("KOMODO.(%s) -> userpass.(%s)\n",fname,KMDUSERPASS);
             } //else printf("couldnt open.(%s)\n",fname);

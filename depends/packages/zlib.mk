@@ -7,10 +7,9 @@ $(package)_sha256_hash=d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e4
 define $(package)_set_vars
 $(package)_config_opts= CC="$($(package)_cc)"
 $(package)_config_opts+=CFLAGS="$($(package)_cflags) $($(package)_cppflags) -fPIC"
+$(package)_config_opts+=LDFLAGS="$($(package)_ldflags)"
 $(package)_config_opts+=RANLIB="$($(package)_ranlib)"
 $(package)_config_opts+=AR="$($(package)_ar)"
-$(package)_config_opts_darwin+=AR="$($(package)_libtool)"
-$(package)_config_opts_darwin+=ARFLAGS="-o"
 $(package)_config_opts_android+=CHOST=$(host)
 endef
 

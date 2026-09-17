@@ -220,7 +220,7 @@ uint64_t get_satoshi_obj(cJSON *json,char *field)
             printf("get_satoshi_obj numstr.(%s) i.%d prev.%llu vs satoshis.%llu\n",numstr.buf,i,(unsigned long long)prev,(unsigned long long)satoshis);
         prev = satoshis;
     }
-    sprintf(checkstr.buf,"%llu",(long long)satoshis);
+    snprintf(checkstr.buf, sizeof(checkstr.buf),"%llu",(long long)satoshis);
     if ( strcmp(checkstr.buf,numstr.buf) != 0 )
     {
         printf("SATOSHI GREMLIN?? numstr.(%s) -> %.8f -> (%s)\n",numstr.buf,dstr(satoshis),checkstr.buf);
@@ -232,7 +232,7 @@ void add_satoshis_json(cJSON *json,char *field,uint64_t satoshis)
 {
     cJSON *obj;
     char numstr[64];
-    sprintf(numstr,"%lld",(long long)satoshis);
+    snprintf(numstr, sizeof(numstr),"%lld",(long long)satoshis);
     obj = cJSON_CreateString(numstr);
     cJSON_AddItemToObject(json,field,obj);
     if ( satoshis != get_satoshi_obj(json,field) )
@@ -249,11 +249,11 @@ char *cJSON_str(cJSON *json)
 void jadd(cJSON *json,char *field,cJSON *item) { if ( json != 0 )cJSON_AddItemToObject(json,field,item); }
 void jaddstr(cJSON *json,char *field,char *str) { if ( json != 0 && str != 0 ) cJSON_AddItemToObject(json,field,cJSON_CreateString(str)); }
 void jaddnum(cJSON *json,char *field,double num) { if ( json != 0 )cJSON_AddItemToObject(json,field,cJSON_CreateNumber(num)); }
-void jadd64bits(cJSON *json,char *field,uint64_t nxt64bits) { char numstr[64]; sprintf(numstr,"%llu",(long long)nxt64bits), jaddstr(json,field,numstr); }
+void jadd64bits(cJSON *json,char *field,uint64_t nxt64bits) { char numstr[64]; snprintf(numstr, sizeof(numstr),"%llu",(long long)nxt64bits), jaddstr(json,field,numstr); }
 void jaddi(cJSON *json,cJSON *item) { if ( json != 0 ) cJSON_AddItemToArray(json,item); }
 void jaddistr(cJSON *json,char *str) { if ( json != 0 ) cJSON_AddItemToArray(json,cJSON_CreateString(str)); }
 void jaddinum(cJSON *json,double num) { if ( json != 0 ) cJSON_AddItemToArray(json,cJSON_CreateNumber(num)); }
-void jaddi64bits(cJSON *json,uint64_t nxt64bits) { char numstr[64]; sprintf(numstr,"%llu",(long long)nxt64bits), jaddistr(json,numstr); }
+void jaddi64bits(cJSON *json,uint64_t nxt64bits) { char numstr[64]; snprintf(numstr, sizeof(numstr),"%llu",(long long)nxt64bits), jaddistr(json,numstr); }
 char *jstr(cJSON *json,char *field) { if ( json == 0 ) return(0); if ( field == 0 ) return(cJSON_str(json)); return(cJSON_str(cJSON_GetObjectItem(json,field))); }
 
 char *jstri(cJSON *json,int32_t i) { return(cJSON_str(cJSON_GetArrayItem(json,i))); }

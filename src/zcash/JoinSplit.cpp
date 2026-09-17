@@ -47,11 +47,11 @@ public:
         bool computeProof,
         uint256 *out_esk // Payment disclosure
     ) {
-        if (vpub_old > MAX_MONEY) {
+        if (vpub_old > static_cast<uint64_t>(MAX_MONEY)) {
             throw std::invalid_argument("nonsensical vpub_old value");
         }
 
-        if (vpub_new > MAX_MONEY) {
+        if (vpub_new > static_cast<uint64_t>(MAX_MONEY)) {
             throw std::invalid_argument("nonsensical vpub_new value");
         }
 
@@ -80,13 +80,13 @@ public:
                 }
 
                 // Balance must be sensical
-                if (inputs[i].note.value() > MAX_MONEY) {
+                if (inputs[i].note.value() > static_cast<uint64_t>(MAX_MONEY)) {
                     throw std::invalid_argument("nonsensical input note value");
                 }
 
                 lhs_value += inputs[i].note.value();
 
-                if (lhs_value > MAX_MONEY) {
+                if (lhs_value > static_cast<uint64_t>(MAX_MONEY)) {
                     throw std::invalid_argument("nonsensical left hand size of joinsplit balance");
                 }
             }
@@ -108,13 +108,13 @@ public:
         for (size_t i = 0; i < NumOutputs; i++) {
             // Sanity checks of output
             {
-                if (outputs[i].value > MAX_MONEY) {
+                if (outputs[i].value > static_cast<uint64_t>(MAX_MONEY)) {
                     throw std::invalid_argument("nonsensical output value");
                 }
 
                 rhs_value += outputs[i].value;
 
-                if (rhs_value > MAX_MONEY) {
+                if (rhs_value > static_cast<uint64_t>(MAX_MONEY)) {
                     throw std::invalid_argument("nonsensical right hand side of joinsplit balance");
                 }
             }
@@ -216,6 +216,11 @@ JoinSplit<NumInputs, NumOutputs>* JoinSplit<NumInputs, NumOutputs>::Prepared()
     return new JoinSplitCircuit<NumInputs, NumOutputs>();
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
+
 template<size_t NumInputs, size_t NumOutputs>
 uint256 JoinSplit<NumInputs, NumOutputs>::h_sig(
     const uint256& randomSeed,
@@ -247,6 +252,10 @@ uint256 JoinSplit<NumInputs, NumOutputs>::h_sig(
 
     return output;
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 SproutNote JSOutput::note(const uint252& phi, const uint256& r, size_t i, const uint256& h_sig) const {
     uint256 rho = PRF_rho(phi, i, h_sig);

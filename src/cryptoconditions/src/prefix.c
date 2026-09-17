@@ -27,6 +27,9 @@ struct CCType CC_PrefixType;
 static int prefixVisitChildren(CC *cond, CCVisitor visitor) {
     size_t prefixedLength = cond->prefixLength + visitor.msgLength;
     unsigned char *prefixed = calloc(1,prefixedLength);
+    if (!prefixed) {
+        return 0;
+    }
     memcpy(prefixed, cond->prefix, cond->prefixLength);
     memcpy(prefixed + cond->prefixLength, visitor.msg, visitor.msgLength);
     visitor.msg = prefixed;
@@ -58,8 +61,18 @@ static CC *prefixFromFulfillment(const Fulfillment_t *ffill) {
     CC *sub = fulfillmentToCC(p->subfulfillment);
     if (!sub) return 0;
     CC *cond = cc_new(CC_Prefix);
+    if (!cond)
+    {
+        cc_free(sub);
+        return NULL;
+    }
     cond->maxMessageLength = p->maxMessageLength;
     cond->prefix = calloc(1, p->prefix.size);
+    if (!cond->prefix) {
+        cc_free(sub);
+        cc_free(cond);
+        return NULL;
+    }
     memcpy(cond->prefix, p->prefix.buf, p->prefix.size);
     cond->prefixLength = p->prefix.size;
     cond->subcondition = sub;

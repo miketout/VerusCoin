@@ -32,16 +32,15 @@
 
 #include <stdlib.h>
 
-
-struct CCType *CCTypeRegistry[] = {
-    &CC_PreimageType,
-    &CC_PrefixType,
-    &CC_ThresholdType,
-    NULL, /* &CC_rsaType */
-    &CC_Ed25519Type,
-    &CC_Secp256k1Type,
-    &CC_Falcon512Type, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, /* 6-14 unused */
-    &CC_EvalType
+struct CCType *CCTypeRegistry[16] = {
+    [CC_Preimage]  = &CC_PreimageType,
+    [CC_Prefix]    = &CC_PrefixType,
+    [CC_Threshold] = &CC_ThresholdType,
+    /* [3] rsa — never implemented */
+    [CC_Ed25519]   = &CC_Ed25519Type,
+    [CC_Secp256k1] = &CC_Secp256k1Type,
+    /* [CC_Falcon512] = 6 — never enabled, rewrite before use */
+    [CC_Eval]      = &CC_EvalType
 };
 
 
@@ -50,8 +49,8 @@ int CCTypeRegistryLength = sizeof(CCTypeRegistry) / sizeof(CCTypeRegistry[0]);
 
 void appendUriSubtypes(uint32_t mask, unsigned char *buf) {
     int append = 0;
-    for (int i=0; i<32; i++) {
-        if (mask & 1 << i) {
+    for (int i = 0; i < CCTypeRegistryLength; i++) {
+        if (CCTypeRegistry[i] && (mask & 1 << i)) {
             if (append) {
                 strcat(buf, ",");
                 strcat(buf, CCTypeRegistry[i]->name);
@@ -276,6 +275,10 @@ int cc_readFulfillmentBinaryExt(const unsigned char *ffill_bin, size_t ffill_bin
 
     int error = 0;
     unsigned char *buf = calloc(1,ffill_bin_len);
+    if (!buf)
+    {
+        return -1;
+    }
     Fulfillment_t *ffill = 0;
     asn_dec_rval_t rval = ber_decode(0, &asn_DEF_Fulfillment, (void **)&ffill, ffill_bin, ffill_bin_len);
     if (rval.code != RC_OK) {
@@ -373,7 +376,7 @@ int cc_verify(const struct CC *cond, const unsigned char *msg, size_t msgLength,
     //fprintf(stderr,"in cc_verify cond.%p msg.%p[%d] dohash.%d condbin.%p[%d]\n",cond,msg,(int32_t)msgLength,doHashMsg,condBin,(int32_t)condBinLength);
     const size_t binLength = cc_conditionBinary(cond, targetBinary, MAX_BINARY_CC_SIZE);
 
-    if (0 != memcmp(condBin, targetBinary, binLength)) {
+    if (!binLength || binLength != condBinLength || 0 != memcmp(condBin, targetBinary, binLength)) {
         fprintf(stderr,"cc_verify error A\n");
         return 0;
     }
@@ -443,7 +446,14 @@ char *cc_typeName(const CC *cond) {
 
 
 CC *cc_new(int typeId) {
+    if (typeId != CC_Anon &&
+        (typeId < 0 || typeId >= CCTypeRegistryLength || !CCTypeRegistry[typeId]))
+    {
+        return NULL;
+    }
      CC *cond = calloc(1, sizeof(CC));
+     if (!cond)
+        return NULL;
      cond->type = typeId == CC_Anon ? &CC_AnonType : CCTypeRegistry[typeId];
      return cond;
 }

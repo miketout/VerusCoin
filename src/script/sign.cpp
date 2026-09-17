@@ -38,7 +38,7 @@ bool TransactionSignatureCreator::CreateSig(std::vector<unsigned char> &vchSig, 
     uint256 hash;
     try {
         hash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, consensusBranchId);
-    } catch (logic_error ex) {
+    } catch (const std::logic_error &ex) {
         return false;
     }
 

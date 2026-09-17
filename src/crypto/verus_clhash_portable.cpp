@@ -32,6 +32,7 @@
 #if defined(__i386__) || defined(__X86_64__)
 #include <x86intrin.h>
 #elif defined(__arm__) || defined(__aarch64__)
+#define SSE2NEON_SUPPRESS_WARNINGS
 #if !defined(__clang__) && defined(__GNUC__) && __GNUC__ < 10
 #include "crypto/compat/sse2neon.h"
 #else
@@ -43,6 +44,40 @@
 #pragma warning (disable : 4146)
 #include <intrin.h>
 #endif
+
+int __cpuverusoptimized = 0x80;
+
+thread_local thread_specific_ptr verusclhasher_key;
+thread_local thread_specific_ptr verusclhasher_descr;
+
+#if defined(_WIN32)
+// attempt to workaround horrible mingw/gcc destructor bug on Windows, which passes garbage in the this pointer
+// we use the opportunity of control here to clean up all of our tls variables. we could keep a list, but this is a safe,
+// functional hack
+thread_specific_ptr::~thread_specific_ptr() {
+    if (verusclhasher_key.ptr)
+    {
+        verusclhasher_key.reset();
+    }
+    if (verusclhasher_descr.ptr)
+    {
+        verusclhasher_descr.reset();
+    }
+}
+#endif // defined(_WIN32)
+
+void *alloc_aligned_buffer(uint64_t bufSize)
+{
+    void *answer = NULL;
+    if (posix_memalign(&answer, sizeof(__m128i)*2, bufSize))
+    {
+        return NULL;
+    }
+    else
+    {
+        return answer;
+    }
+}
 
 void clmul64(uint64_t a, uint64_t b, uint64_t* r)
 {
@@ -1257,7 +1292,7 @@ bool mine_verus_v2_port(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &fin
 	CVerusHashV2 &vh = vhw.GetState();
     verusclhasher &vclh = vh.vclh;
 
-	alignas(32) uint256 curHash;
+	alignas(16) uint256 curHash;
     arith_uint256 curTarget = UintToArith256(target);
 
     u128 *hashKey = (u128 *)verusclhasher_key.get();

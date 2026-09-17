@@ -49,11 +49,13 @@ void CVerusHash::Hash(void *result, const void *data, size_t _len)
 
 void CVerusHash::init()
 {
+#if defined(ENABLE_VERUS_ISA)
     if (IsCPUVerusOptimized())
     {
         haraka512Function = &haraka512_zero;
     }
     else
+#endif
     {
         haraka512Function = &haraka512_port_zero;
     }
@@ -101,6 +103,7 @@ void (*CVerusHashV2::haraka256Function)(unsigned char *out, const unsigned char 
 
 void CVerusHashV2::init()
 {
+#if defined(ENABLE_VERUS_ISA)
     if (IsCPUVerusOptimized())
     {
         load_constants();
@@ -109,6 +112,7 @@ void CVerusHashV2::init()
         haraka256Function = &haraka256;
     }
     else
+#endif
     {
         // load the haraka constants
         load_constants_port();

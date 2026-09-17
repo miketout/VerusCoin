@@ -213,6 +213,10 @@ int64_t GetArg(const std::string& strArg, int64_t nDefault);
  */
 bool GetBoolArg(const std::string& strArg, bool fDefault);
 
+std::vector<std::string> GetArgs(const std::string& strArg);
+
+bool IsArgSet(const std::string& strArg);
+
 /**
  * Set an argument even if it already has a value
  *
@@ -220,6 +224,8 @@ bool GetBoolArg(const std::string& strArg, bool fDefault);
  * @param strValue Value (e.g. "1")
  */
 void OverrideSetArg(const std::string& strArg, const std::string& strValue);
+
+void OverrideSetMultiArg(const std::string& strArg, const std::vector<std::string>& vStrValue);
 
 /**
  * Set an argument if it doesn't already have a value

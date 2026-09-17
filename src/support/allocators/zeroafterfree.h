@@ -12,33 +12,36 @@
 #include <vector>
 
 template <typename T>
-struct zero_after_free_allocator : public std::allocator<T> {
-    // MSVC8 default copy constructor is broken
-    typedef std::allocator<T> base;
-    typedef typename base::size_type size_type;
-    typedef typename base::difference_type difference_type;
-    typedef typename base::pointer pointer;
-    typedef typename base::const_pointer const_pointer;
-    typedef typename base::reference reference;
-    typedef typename base::const_reference const_reference;
-    typedef typename base::value_type value_type;
-    zero_after_free_allocator() throw() {}
-    zero_after_free_allocator(const zero_after_free_allocator& a) throw() : base(a) {}
+struct zero_after_free_allocator {
+    using value_type = T;
+
+    zero_after_free_allocator() noexcept = default;
     template <typename U>
-    zero_after_free_allocator(const zero_after_free_allocator<U>& a) throw() : base(a)
+    zero_after_free_allocator(const zero_after_free_allocator<U>&) noexcept
     {
     }
-    ~zero_after_free_allocator() throw() {}
-    template <typename _Other>
-    struct rebind {
-        typedef zero_after_free_allocator<_Other> other;
-    };
+
+    T* allocate(std::size_t n)
+    {
+        return std::allocator<T>{}.allocate(n);
+    }
 
     void deallocate(T* p, std::size_t n)
     {
         if (p != NULL)
             memory_cleanse(p, sizeof(T) * n);
-        std::allocator<T>::deallocate(p, n);
+        std::allocator<T>{}.deallocate(p, n);
+    }
+
+    template <typename U>
+    friend bool operator==(const zero_after_free_allocator&, const zero_after_free_allocator<U>&) noexcept
+    {
+        return true;
+    }
+    template <typename U>
+    friend bool operator!=(const zero_after_free_allocator&, const zero_after_free_allocator<U>&) noexcept
+    {
+        return false;
     }
 };
 

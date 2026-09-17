@@ -52,22 +52,22 @@ static struct CRPCSignals
     boost::signals2::signal<void (const CRPCCommand&)> PostCommand;
 } g_rpcSignals;
 
-void RPCServer::OnStarted(boost::function<void ()> slot)
+void RPCServer::OnStarted(std::function<void ()> slot)
 {
     g_rpcSignals.Started.connect(slot);
 }
 
-void RPCServer::OnStopped(boost::function<void ()> slot)
+void RPCServer::OnStopped(std::function<void ()> slot)
 {
     g_rpcSignals.Stopped.connect(slot);
 }
 
-void RPCServer::OnPreCommand(boost::function<void (const CRPCCommand&)> slot)
+void RPCServer::OnPreCommand(std::function<void (const CRPCCommand&)> slot)
 {
     g_rpcSignals.PreCommand.connect(boost::bind(slot, _1));
 }
 
-void RPCServer::OnPostCommand(boost::function<void (const CRPCCommand&)> slot)
+void RPCServer::OnPostCommand(std::function<void (const CRPCCommand&)> slot)
 {
     g_rpcSignals.PostCommand.connect(boost::bind(slot, _1));
 }
@@ -245,7 +245,7 @@ UniValue stop(const UniValue& params, bool fHelp)
 
     // Shutdown will take long enough that the response should get back
     StartShutdown();
-    sprintf(buf,"%s server stopping",ASSETCHAINS_SYMBOL);
+    snprintf(buf, sizeof(buf),"%s server stopping",ASSETCHAINS_SYMBOL);
     return buf;
 }
 
@@ -610,7 +610,9 @@ UniValue CRPCTable::execute(const std::string &strMethod, const UniValue &params
         throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Method " + strMethod + " not found");
     }
 
-    LogPrint("rpcrequests", "command %s, params:\n%s\n", strMethod.c_str(), params.write(1,2).c_str());
+    // The commented line will include PII in the debug.log, and should only be used
+    // by a developer who understands the risk and needs the information anyhow
+    //LogPrint("rpcrequests", "command %s, params:\n%s\n", strMethod.c_str(), params.write(1,2).c_str());
 
     g_rpcSignals.PreCommand(*pcmd);
 
@@ -660,7 +662,7 @@ void RPCUnregisterTimerInterface(RPCTimerInterface *iface)
     timerInterfaces.erase(i);
 }
 
-void RPCRunLater(const std::string& name, boost::function<void(void)> func, int64_t nSeconds)
+void RPCRunLater(const std::string& name, std::function<void(void)> func, int64_t nSeconds)
 {
     if (timerInterfaces.empty())
         throw JSONRPCError(RPC_INTERNAL_ERROR, "No timer handler registered for RPC");

@@ -155,7 +155,7 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(name);
+        READWRITE(LIMITED_STRING(name,MAX_NAME_SIZE));
         READWRITE(referral);
         READWRITE(salt);
     }
@@ -268,8 +268,8 @@ public:
     std::vector<CTxDestination> primaryAddresses;
     int32_t minSigs;
 
-    CPrincipal() : nVersion(VERSION_INVALID), flags(0) {}
-    CPrincipal(uint32_t Version, uint32_t Flags=0) : nVersion(Version), flags(Flags) {}
+    CPrincipal() : nVersion(VERSION_INVALID), flags(0), minSigs(0) {}
+    CPrincipal(uint32_t Version, uint32_t Flags=0) : nVersion(Version), flags(Flags), minSigs(0) {}
 
     CPrincipal(uint32_t Version,
                uint32_t Flags,

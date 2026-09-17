@@ -128,7 +128,12 @@ public:
 
     CTokenOutput(const std::vector<unsigned char> &asVector)
     {
-        FromVector(asVector, *this);
+        bool success = false;
+        FromVector(asVector, *this, &success);
+        if (!success)
+        {
+            nVersion = VERSION_INVALID;
+        }
     }
 
     CTokenOutput(const UniValue &obj);
@@ -715,6 +720,10 @@ public:
         FLAG_HASSUPPLEMENT = 0x10,                      // indicates that we have additional outputs containing the reservetransfers for this export
         FLAG_SUPPLEMENTAL = 0x20,                       // this flag indicates that this is a supplemental output to a prior output
         FLAG_SOURCESYSTEM = 0x40,                       // import flag used to indicate source system
+    };
+    enum EGatewayPendingStates {
+        IMPORT_COOL_DOWN = 1,
+        IMPORT_NEEDS_VOTE = 2
     };
 
     uint16_t nVersion;
@@ -1314,7 +1323,8 @@ public:
         FLAG_REFUNDING = 4,
         FLAG_LAUNCHCLEAR = 8,               // set only on the first import after launch has been cleared, whether refunding or confirmed
         FLAG_LAUNCHCONFIRMED = 0x10,
-        FLAG_LAUNCHCOMPLETEMARKER = 0x20    // only set on the currency state when importing the last transfers exported during pre-launch
+        FLAG_LAUNCHCOMPLETEMARKER = 0x20,   // only set on the currency state when importing the last transfers exported during pre-launch
+        FLAG_MASK = (1 + 2 + 4 + 8 + 0x10 + 0x20)
     };
 
     enum EConstants {
@@ -1475,7 +1485,12 @@ public:
 
     bool IsValid() const
     {
-        return version >= VERSION_FIRST && version <= VERSION_LAST && !currencyID.IsNull();
+        return version >= VERSION_FIRST &&
+               version <= VERSION_LAST &&
+               (flags & FLAG_MASK) == flags &&
+               weights.size() == currencies.size() &&
+               reserves.size() == currencies.size() &&
+               !currencyID.IsNull();
     }
 
     bool IsFractional() const
@@ -1675,6 +1690,19 @@ public:
     }
 
     UniValue ToUniValue() const;
+
+    bool IsValid() const
+    {
+        return CCurrencyState::IsValid() &&
+               reserveIn.size() == currencies.size() &&
+               primaryCurrencyIn.size() == currencies.size() &&
+               reserveOut.size() == currencies.size() &&
+               conversionPrice.size() == currencies.size() &&
+               viaConversionPrice.size() == currencies.size() &&
+               fees.size() == currencies.size() &&
+               conversionFees.size() == currencies.size() &&
+               priorWeights.size() == currencies.size();
+    }
 
     CCoinbaseCurrencyState &UpdateWithEmission(CAmount toEmit, int32_t excessRatio=0);
     CCoinbaseCurrencyState &ApplyCarveouts(int32_t carveOut);
@@ -2064,6 +2092,7 @@ bool ValidateFeePool(struct CCcontract_info *cp, Eval* eval, const CTransaction 
 bool IsFeePoolInput(const CScript &scriptSig);
 bool PrecheckFeePool(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
+bool PrecheckReserveOutput(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 bool PrecheckReserveDeposit(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 bool PrecheckCurrencyState(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height);
 CAmount GetMinRelayFeeByOutputs(const CReserveTransactionDescriptor &txDesc, const CTransaction &tx, CValidationState &state, CAmount identityFeeFactor);

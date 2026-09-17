@@ -109,6 +109,7 @@ static UniValue ValuePoolDesc(
 
 UniValue blockheaderToJSON(const CBlockIndex* blockindex)
 {
+    AssertLockHeld(cs_main);
     UniValue result(UniValue::VOBJ);
     if ( blockindex == 0 )
     {
@@ -171,6 +172,7 @@ UniValue blockheaderToJSON(const CBlockIndex* blockindex)
 
 UniValue blockToDeltasJSON(const CBlock& block, const CBlockIndex* blockindex)
 {
+    AssertLockHeld(cs_main);
     UniValue result(UniValue::VOBJ);
     result.push_back(Pair("hash", block.GetHash().GetHex()));
     int confirmations = -1;
@@ -299,6 +301,7 @@ UniValue blockToDeltasJSON(const CBlock& block, const CBlockIndex* blockindex)
 
 UniValue blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool txDetails = false)
 {
+    AssertLockHeld(cs_main);
     UniValue result(UniValue::VOBJ);
     int32_t height = blockindex->GetHeight();
     result.push_back(Pair("hash", block.GetHash().GetHex()));
@@ -465,7 +468,7 @@ UniValue mempoolToJSON(bool fVerbose = false, bool fullTxes = false, bool includ
                 if (!mempool.IsKnownReserveTransaction(hash, rtxd) ||
                     ((rtxd.flags & includeMask) == 0 && !includeNonSmart) ||
                     ((rtxd.flags & includeMask) == 0 && excludeNonSmart) ||
-                    ((rtxd.flags & includeMask) != 0 && (rtxd.flags & includeCodes) == 0) || 
+                    ((rtxd.flags & includeMask) != 0 && (rtxd.flags & includeCodes) == 0) ||
                     (rtxd.flags & excludeCodes) != 0 ||
                     (expiresBefore && tx.nExpiryHeight >= expiresBefore) ||
                     (expiresAfter && tx.nExpiryHeight <= expiresAfter))
@@ -540,7 +543,7 @@ UniValue getrawmempool(const UniValue& params, bool fHelp)
             "1. verbose           (boolean, optional, default=false) true for a json object, false for array of transaction ids\n"
             "2. qualifiers        (object, optional, default=null) enables selective display of specific transaction types without others\n"
             "\n"
-            
+
             "\nResult: (for verbose = false):\n"
             "[                     (json array of string)\n"
             "  \"transactionid\"     (string) The transaction id\n"
@@ -578,10 +581,10 @@ UniValue getrawmempool(const UniValue& params, bool fHelp)
                                 "commitment, identitycommitment, nonsmart";
 
     // those postfixed with invalid should never be found
-    std::map<std::string, int32_t> keyWords = { {"evalnone", 0x20}, 
+    std::map<std::string, int32_t> keyWords = { {"evalnone", 0x20},
                                                 {"currencydef", 0x1000},
-                                                {"evidence", 0x4000}, 
-                                                {"storage", 0x4000}, 
+                                                {"evidence", 0x4000},
+                                                {"storage", 0x4000},
                                                 {"notarization", 0x2000},
                                                 {"reservetransfer", 8},
                                                 {"reserveoutput", 4},
@@ -852,6 +855,8 @@ UniValue getblockdeltas(const UniValue& params, bool fHelp)
             "Run './verus help getblockdeltas' for instructions on how to enable this feature.");
     }
 
+    LOCK(cs_main);
+
     std::string strHash = params[0].get_str();
     uint256 hash(uint256S(strHash));
 
@@ -920,11 +925,11 @@ UniValue getblockhashes(const UniValue& params, bool fHelp)
 
     std::vector<std::pair<uint256, unsigned int> > blockHashes;
 
-    if (fActiveOnly)
+    {
         LOCK(cs_main);
-
-    if (!GetTimestampIndex(high, low, fActiveOnly, blockHashes)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for block hashes");
+        if (!GetTimestampIndex(high, low, fActiveOnly, blockHashes)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for block hashes");
+        }
     }
 
     UniValue result(UniValue::VARR);
@@ -1752,21 +1757,30 @@ UniValue getchaintips(const UniValue& params, bool fHelp)
 
     LOCK(cs_main);
 
-    /* Build up a list of chain tips.  We start with the list of all
-       known blocks, and successively remove blocks that appear as pprev
-       of another block.  */
+    /*
+     * Idea:  the set of chain tips is chainActive.tip, plus orphan blocks which do not have another orphan building off of them.
+     * Algorithm:
+     *  - Make one pass through mapBlockIndex, picking out the orphan blocks, and also storing a set of the orphan block's pprev pointers.
+     *  - Iterate through the orphan blocks. If the block isn't pointed to by another orphan, it is a chain tip.
+     *  - add chainActive.Tip()
+     */
     std::set<const CBlockIndex*, CompareBlocksByHeight> setTips;
+    std::set<const CBlockIndex*> setOrphans;
+    std::set<const CBlockIndex*> setPrevs;
+
     for (const auto &item : mapBlockIndex)
     {
-        setTips.insert(item.second);
+        if (item.second != 0 && !chainActive.Contains(item.second)) {
+            setOrphans.insert(item.second);
+            setPrevs.insert(item.second->pprev);
+        }
     }
-    for (const auto &item : mapBlockIndex)
+
+    for (std::set<const CBlockIndex*>::iterator it = setOrphans.begin(); it != setOrphans.end(); ++it)
     {
-        const CBlockIndex* pprev=0;
-        if ( item.second != 0 )
-            pprev = item.second->pprev;
-        if (pprev)
-            setTips.erase(pprev);
+        if (setPrevs.erase(*it) == 0) {
+            setTips.insert(*it);
+        }
     }
 
     // Always report the currently active tip.

@@ -22,7 +22,7 @@ static const char *WWW_AUTH_HEADER_DATA = "Basic realm=\"jsonrpc\"";
 class HTTPRPCTimer : public RPCTimerBase
 {
 public:
-    HTTPRPCTimer(struct event_base* eventBase, boost::function<void(void)>& func, int64_t millis) :
+    HTTPRPCTimer(struct event_base* eventBase, std::function<void(void)>& func, int64_t millis) :
         ev(eventBase, false, func)
     {
         struct timeval tv;
@@ -44,7 +44,7 @@ public:
     {
         return "HTTP";
     }
-    RPCTimerBase* NewTimer(boost::function<void(void)>& func, int64_t millis)
+    RPCTimerBase* NewTimer(std::function<void(void)>& func, int64_t millis)
     {
         return new HTTPRPCTimer(base, func, millis);
     }
@@ -105,11 +105,6 @@ static bool HTTPReq_JSONRPC(HTTPRequest* req, const std::string &)
     if (!RPCAuthorized(authHeader.second)) {
         LogPrintf("ThreadRPCServer incorrect password attempt from %s\n", req->GetPeer().ToString());
 
-        /* Deter brute-forcing
-           If this results in a DoS the user really
-           shouldn't have their RPC port exposed. */
-        MilliSleep(250);
-
         req->WriteHeader("WWW-Authenticate", WWW_AUTH_HEADER_DATA);
         req->WriteReply(HTTP_UNAUTHORIZED);
         return false;
@@ -126,11 +121,9 @@ static bool HTTPReq_JSONRPC(HTTPRequest* req, const std::string &)
             if (!valRequest.read(reqBody))
             {
                 LogPrintf("raw request: %s\n", reqBody.c_str());
-                LogPrintf("function: %s, params: %s\n", jreq.strMethod.c_str(), jreq.params.write().c_str());
                 if (LogAcceptCategory("rpcapiconsole"))
                 {
                     printf("raw request: %s\n", reqBody.c_str());
-                    printf("function: %s, params: %s\n", jreq.strMethod.c_str(), jreq.params.write().c_str());
                 }
                 throw JSONRPCError(RPC_PARSE_ERROR, "Parse error");
             }
@@ -150,18 +143,19 @@ static bool HTTPReq_JSONRPC(HTTPRequest* req, const std::string &)
 
             if (!RPCAuthorized(authHeader.second)) {
                 LogPrintf("ThreadRPCServer incorrect password attempt from %s\n", req->GetPeer().ToString());
-                MilliSleep(250);
-
                 req->WriteHeader("WWW-Authenticate", WWW_AUTH_HEADER_DATA);
                 req->WriteReply(HTTP_UNAUTHORIZED);
                 return false;
             }
 
-            if (LogAcceptCategory("rpcapiconsole"))
+            // The commented out logging will include PII in the debug.log or stdout, and should only be used
+            // by a developer who understands the risk and needs the information anyhow
+            /* if (LogAcceptCategory("rpcapiconsole"))
             {
                 printf("%s %s\n", jreq.strMethod.c_str(), jreq.params.write().c_str());
             }
             LogPrint("rpcapi", "%s %s\n", jreq.strMethod.c_str(), jreq.params.write().c_str());
+            */
 
             UniValue result = tableRPC.execute(jreq.strMethod, jreq.params);
 
@@ -188,7 +182,7 @@ static bool HTTPReq_JSONRPC(HTTPRequest* req, const std::string &)
 
 static bool InitRPCAuthentication()
 {
-    if (mapArgs["-rpcpassword"] == "")
+    if (GetArg("-rpcpassword", "") == "")
     {
         LogPrintf("No rpcpassword set - using random cookie authentication\n");
         if (!GenerateAuthCookie(&strRPCUserColonPass)) {
@@ -198,7 +192,7 @@ static bool InitRPCAuthentication()
             return false;
         }
     } else {
-        strRPCUserColonPass = mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"];
+        strRPCUserColonPass = GetArg("-rpcuser", "") + ":" + GetArg("-rpcpassword", "");
     }
     return true;
 }

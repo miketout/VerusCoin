@@ -54,8 +54,15 @@ static unsigned char *preimageFingerprint(const CC *cond) {
 
 static CC *preimageFromFulfillment(const Fulfillment_t *ffill) {
     CC *cond = cc_new(CC_Preimage);
+    if (!cond) {
+        return NULL;
+    }
     PreimageFulfillment_t p = ffill->choice.preimageSha256;
     cond->preimage = calloc(1, p.preimage.size);
+    if (!cond->preimage) {
+        cc_free(cond);
+        return NULL;
+    }
     memcpy(cond->preimage, p.preimage.buf, p.preimage.size);
     cond->preimageLength = p.preimage.size;
     return cond;

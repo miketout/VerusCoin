@@ -1,27 +1,16 @@
 lib_LTLIBRARIES=libcryptoconditions.la
 noinst_LTLIBRARIES=$(CRYPTOCONDITIONS_CORE)
-SUBDIRS = src/include/secp256k1
 
 include_HEADERS = include/cryptoconditions.h
 
 # Have a separate build target for cryptoconditions that does not contain secp256k1
 
 libcryptoconditions_la_SOURCES = include/cryptoconditions.h
-libcryptoconditions_la_LIBADD = $(CRYPTOCONDITIONS_CORE) $(LIBSECP256K1)
+libcryptoconditions_la_LIBADD = $(CRYPTOCONDITIONS_CORE)
 
 AM_CFLAGS = -I$(top_srcdir)/src/asn -I$(top_srcdir)/include -I$(top_srcdir)/src/include \
-			-I$(top_srcdir)/src/include/falcon -Wall -Wno-pointer-sign -Wno-discarded-qualifiers
-
-LIBSECP256K1=src/include/secp256k1/libsecp256k1.la
-
-if ARCH_ARM
-PLATFORM_VARIANT = armv8.1-a+crypto
-else
-PLATFORM_VARIANT = x86-64
-endif
-
-$(LIBSECP256K1): $(wildcard src/secp256k1/*)
-	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F) -march:$(PLATFORM_VARIANT) -g
+			-I$(top_srcdir)/src/include/falcon -I$(top_srcdir)/../secp256k1/include \
+			-Wall -Wno-pointer-sign -Wno-discarded-qualifiers
 
 CRYPTOCONDITIONS_CORE=libcryptoconditions_core.la
 

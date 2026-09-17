@@ -103,6 +103,7 @@ namespace boost {
 
 using namespace std;
 
+CCriticalSection cs_args;
 map<string, string> mapArgs;
 map<string, vector<string> > mapMultiArgs;
 bool fDebug = false;
@@ -273,16 +274,14 @@ bool LogAcceptCategory(const char* category)
         static boost::thread_specific_ptr<set<string>> ptrCategory;
         if (ptrCategory.get() == NULL)
         {
-            const vector<string>& categories = mapMultiArgs["-debug"];
+            const vector<string> categories = GetArgs("-debug");
             ptrCategory.reset(new set<string>(categories.begin(), categories.end()));
             // thread_specific_ptr automatically deletes the set when the thread ends.
         }
         const set<string>& setCategories = *ptrCategory.get();
 
-        // if not debugging everything and not debugging specific category, LogPrint does nothing.
-        if (setCategories.count(string("")) == 0 &&
-            setCategories.count(string("1")) == 0 &&
-            setCategories.count(string(category)) == 0)
+        // if not debugging specific category, LogPrint does nothing.
+        if (setCategories.count(string(category)) == 0)
             return false;
     }
     return true;
@@ -369,6 +368,7 @@ static void InterpretNegativeSetting(string name, map<string, string>& mapSettin
 
 void ParseParameters(int argc, const char* const argv[])
 {
+    LOCK(cs_args);
     mapArgs.clear();
     mapMultiArgs.clear();
 
@@ -444,6 +444,7 @@ void Split(const std::string& strVal, uint64_t *outVals, const uint64_t nDefault
 
 std::string GetArg(const std::string& strArg, const std::string& strDefault)
 {
+    LOCK(cs_args);
     if (mapArgs.count(strArg))
         return mapArgs[strArg];
     return strDefault;
@@ -451,6 +452,7 @@ std::string GetArg(const std::string& strArg, const std::string& strDefault)
 
 int64_t GetArg(const std::string& strArg, int64_t nDefault)
 {
+    LOCK(cs_args);
     if (mapArgs.count(strArg))
         return atoi64(mapArgs[strArg]);
     return nDefault;
@@ -458,6 +460,7 @@ int64_t GetArg(const std::string& strArg, int64_t nDefault)
 
 bool GetBoolArg(const std::string& strArg, bool fDefault)
 {
+    LOCK(cs_args);
     if (mapArgs.count(strArg))
     {
         if (mapArgs[strArg].empty())
@@ -467,13 +470,36 @@ bool GetBoolArg(const std::string& strArg, bool fDefault)
     return fDefault;
 }
 
+std::vector<std::string> GetArgs(const std::string& strArg)
+{
+    LOCK(cs_args);
+    std::map<std::string, std::vector<std::string> >::const_iterator it = mapMultiArgs.find(strArg);
+    if (it != mapMultiArgs.end())
+        return it->second;
+    return std::vector<std::string>();
+}
+
+bool IsArgSet(const std::string& strArg)
+{
+    LOCK(cs_args);
+    return mapArgs.count(strArg) != 0;
+}
+
 void OverrideSetArg(const std::string& strArg, const std::string& strValue)
 {
+    LOCK(cs_args);
     mapArgs[strArg] = strValue;
+}
+
+void OverrideSetMultiArg(const std::string& strArg, const std::vector<std::string>& vStrValue)
+{
+    LOCK(cs_args);
+    mapMultiArgs[strArg] = vStrValue;
 }
 
 bool SoftSetArg(const std::string& strArg, const std::string& strValue)
 {
+    LOCK(cs_args);
     if (mapArgs.count(strArg))
         return false;
     mapArgs[strArg] = strValue;
@@ -722,7 +748,7 @@ const boost::filesystem::path &ZC_GetParamsDir()
 {
     namespace fs = boost::filesystem;
 
-    LOCK(csPathCached); // Reuse the same lock as upstream.
+    LOCK2(cs_args, csPathCached);
 
     fs::path &path = zc_paramsPathCached;
 
@@ -743,6 +769,7 @@ const boost::filesystem::path GetExportDir()
 {
     namespace fs = boost::filesystem;
     fs::path path;
+    LOCK(cs_args);
     if (!mapArgs.count("-exportdir"))
     {
         path = GetDataDir();
@@ -765,7 +792,7 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
 {
     namespace fs = boost::filesystem;
 
-    LOCK(csPathCached);
+    LOCK2(cs_args, csPathCached);
 
     fs::path &path = fNetSpecific ? pathCachedNetSpecific : pathCached;
 
@@ -801,6 +828,7 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
 const boost::filesystem::path GetDataDir(std::string chainName)
 {
     namespace fs = boost::filesystem;
+    LOCK(cs_args);
     fs::path path;
     std::string canonicalName = CanonicalChainFileName(chainName);
     bool isExternalChain = canonicalName != CanonicalChainFileName(std::string(ASSETCHAINS_SYMBOL));
@@ -819,6 +847,7 @@ const boost::filesystem::path GetDataDir(std::string chainName)
 
 void ClearDatadirCache()
 {
+    LOCK(csPathCached);
     pathCached = boost::filesystem::path();
     pathCachedNetSpecific = boost::filesystem::path();
 }
@@ -828,7 +857,7 @@ boost::filesystem::path GetConfigFile()
     char confname[2048];
     std::string chainName = CanonicalChainFileName(ASSETCHAINS_SYMBOL);
     if ( ASSETCHAINS_SYMBOL[0] != 0 )
-        sprintf(confname, "%s.conf", chainName.c_str());
+        snprintf(confname, sizeof(confname), "%s.conf", chainName.c_str());
     else
     {
 #ifdef __APPLE__
@@ -865,17 +894,20 @@ void ReadConfigFile(map<string, string>& mapSettingsRet,
     set<string> setOptions;
     setOptions.insert("*");
 
-    for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
     {
-        // Don't overwrite existing settings so command line settings override komodo.conf
-        string strKey = string("-") + it->string_key;
-        if (mapSettingsRet.count(strKey) == 0)
+        LOCK(cs_args);
+        for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
         {
-            mapSettingsRet[strKey] = it->value[0];
-            // interpret nofoo=1 as foo=0 (and nofoo=0 as foo=1) as long as foo not set)
-            InterpretNegativeSetting(strKey, mapSettingsRet);
+            // Don't overwrite existing settings so command line settings override komodo.conf
+            string strKey = string("-") + it->string_key;
+            if (mapSettingsRet.count(strKey) == 0)
+            {
+                mapSettingsRet[strKey] = it->value[0];
+                // interpret nofoo=1 as foo=0 (and nofoo=0 as foo=1) as long as foo not set)
+                InterpretNegativeSetting(strKey, mapSettingsRet);
+            }
+            mapMultiSettingsRet[strKey].push_back(it->value[0]);
         }
-        mapMultiSettingsRet[strKey].push_back(it->value[0]);
     }
     // If datadir is changed in .conf file:
     ClearDatadirCache();
@@ -896,17 +928,20 @@ bool ReadConfigFile(std::string chainName,
     set<string> setOptions;
     setOptions.insert("*");
 
-    for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
     {
-        // Don't overwrite existing settings so command line settings override komodo.conf
-        string strKey = string("-") + it->string_key;
-        if (mapSettingsRet.count(strKey) == 0)
+        LOCK(cs_args);
+        for (boost::program_options::detail::config_file_iterator it(streamConfig, setOptions), end; it != end; ++it)
         {
-            mapSettingsRet[strKey] = it->value[0];
-            // interpret nofoo=1 as foo=0 (and nofoo=0 as foo=1) as long as foo not set)
-            InterpretNegativeSetting(strKey, mapSettingsRet);
+            // Don't overwrite existing settings so command line settings override komodo.conf
+            string strKey = string("-") + it->string_key;
+            if (mapSettingsRet.count(strKey) == 0)
+            {
+                mapSettingsRet[strKey] = it->value[0];
+                // interpret nofoo=1 as foo=0 (and nofoo=0 as foo=1) as long as foo not set)
+                InterpretNegativeSetting(strKey, mapSettingsRet);
+            }
+            mapMultiSettingsRet[strKey].push_back(it->value[0]);
         }
-        mapMultiSettingsRet[strKey].push_back(it->value[0]);
     }
     return true;
 }

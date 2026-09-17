@@ -55,13 +55,18 @@ bool DefaultCCContextualPreCheck(const CTransaction &tx, int32_t outNum, CValida
 {
     // make sure that if the destinations include identities that those identities are valid on this blockchain
     auto upgradeVersion = CConstVerusSolutionVector::GetVersionByHeight(height);
+
     if (upgradeVersion < CActivationHeight::ACTIVATE_VERUSVAULT)
     {
         return true;
     }
     else if (upgradeVersion < CActivationHeight::ACTIVATE_PBAAS)
     {
-        return false;
+        return state.Error("Invalid output at txid: " + tx.GetHash().GetHex() + ", output: " + std::to_string(outNum));
+    }
+    //if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+    {
+        return state.Error("Invalid output at " + tx.GetHash().GetHex() + " : " + std::to_string(outNum));
     }
     return true;
 }
@@ -162,7 +167,7 @@ std::string EvalToStr(EvalCode c)
 {
     FOREACH_EVAL(EVAL_GENERATE_STRING);
     char s[10];
-    sprintf(s, "0x%x", c);
+    snprintf(s, sizeof(s), "0x%x", c);
     return std::string(s);
 
 }

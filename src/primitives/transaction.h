@@ -1045,7 +1045,37 @@ public:
     CMMRProof elProof;
 
     CTransactionComponentProof() : elType(0), elIdx(0) {}
-    CTransactionComponentProof(const CTransactionComponentProof &obj) : elType(obj.elType), elIdx(obj.elIdx), elVchObj(obj.elVchObj), elProof(obj.elProof) {}
+    CTransactionComponentProof(const CTransactionComponentProof &obj) :
+        elType(obj.elType), elIdx(obj.elIdx), elVchObj(obj.elVchObj), elProof(obj.elProof) {}
+    CTransactionComponentProof &operator=(const CTransactionComponentProof &obj)
+    {
+        elType = obj.elType;
+        elIdx = obj.elIdx;
+        elVchObj = obj.elVchObj;
+        elProof = obj.elProof;
+        return *this;
+    }
+
+    // do not remove "noexcept"
+    CTransactionComponentProof(CTransactionComponentProof &&obj) noexcept :
+        elType(obj.elType), elIdx(obj.elIdx),
+        elVchObj(std::move(obj.elVchObj)), elProof(std::move(obj.elProof))
+    {
+        obj.elType = CTransactionHeader::TX_FULL;
+    }
+    CTransactionComponentProof &operator=(CTransactionComponentProof &&obj) noexcept
+    {
+        if (this != &obj)
+        {
+            elType = obj.elType;
+            elIdx = obj.elIdx;
+            elVchObj = std::move(obj.elVchObj);
+            elProof = std::move(obj.elProof);
+            obj.elType = CTransactionHeader::TX_FULL;
+        }
+        return *this;
+    }
+
     CTransactionComponentProof(int type, int subIndex, const std::vector<unsigned char> &vch, const CMMRProof &proof) :
         elType(type), elIdx(subIndex), elVchObj(vch), elProof(proof) {}
 
@@ -1318,7 +1348,41 @@ public:
 
     CPartialTransactionProof(const UniValue &uni);
 
-    CPartialTransactionProof(const CPartialTransactionProof &obj) : version(obj.version), type(obj.type), txProof(obj.txProof), components(obj.components) {}
+    CPartialTransactionProof(const CPartialTransactionProof &obj) :
+        version(obj.version), type(obj.type), txProof(obj.txProof), components(obj.components) {}
+
+    const CPartialTransactionProof &operator=(const CPartialTransactionProof &operand)
+    {
+        version = operand.version;
+        type = operand.type;
+        txProof = operand.txProof;
+        components = operand.components;
+        return *this;
+    }
+
+    // do not remove "noexcept"
+    CPartialTransactionProof(CPartialTransactionProof &&obj) noexcept :
+        version(obj.version), type(obj.type),
+        txProof(std::move(obj.txProof)), components(std::move(obj.components))
+    {
+        obj.version = VERSION_INVALID;
+        obj.type = TYPE_INVALID;
+    }
+
+    // do not remove "noexcept"
+    CPartialTransactionProof &operator=(CPartialTransactionProof &&obj) noexcept
+    {
+        if (this != &obj)
+        {
+            version = obj.version;
+            type = obj.type;
+            txProof = std::move(obj.txProof);
+            components = std::move(obj.components);
+            obj.version = VERSION_INVALID;
+            obj.type = TYPE_INVALID;
+        }
+        return *this;
+    }
 
     CPartialTransactionProof(const CMMRProof &proof,
                              const std::vector<CTransactionComponentProof> &Components,
@@ -1356,15 +1420,15 @@ public:
             }
         }
         CMultiPartProof assembled = CMultiPartProof(chunkVec);
-        ::FromVector(assembled.vch, *this);
-    }
-
-    const CPartialTransactionProof &operator=(const CPartialTransactionProof &operand)
-    {
-        CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
-        s << operand;
-        s >> *this;
-        return *this;
+        bool success = false;
+        ::FromVector(assembled.vch, *this, &success);
+        if (!success)
+        {
+            version = VERSION_INVALID;
+            type = TYPE_INVALID;
+            txProof = CMMRProof();
+            components.clear();
+        }
     }
 
     ADD_SERIALIZE_METHODS;
@@ -1374,7 +1438,37 @@ public:
         READWRITE(version);
         READWRITE(type);
         READWRITE(txProof);
-        READWRITE(components);
+        uint64_t numComponents = 0;
+        if (ser_action.ForRead())
+        {
+            READWRITE(COMPACTSIZE(numComponents));
+            if (numComponents > UINT16_MAX)
+            {
+                throw std::ios_base::failure("CPartialTransactionProof: component count exceeds maximum");
+            }
+            components.clear();
+            // never pre-allocate on an untrusted count; the vector grows only as elements
+            // actually arrive, so a short stream throws long before memory is a problem
+            components.reserve(numComponents < 64 ? numComponents : 64);
+            for (uint64_t i = 0; i < numComponents; i++)
+            {
+                components.emplace_back();
+                READWRITE(components.back());
+            }
+        }
+        else
+        {
+            numComponents = components.size();
+            if (numComponents > UINT16_MAX)
+            {
+                throw std::ios_base::failure("CPartialTransactionProof: component count exceeds maximum");
+            }
+            READWRITE(COMPACTSIZE(numComponents));
+            for (auto &oneComponent : components)
+            {
+                READWRITE(oneComponent);
+            }
+        }
     }
 
     uint256 TransactionHash() const
@@ -1628,7 +1722,8 @@ public:
 
     bool IsValid()
     {
-        return (sigType == SIGTYPE_SECP256K1 || sigType == SIGTYPE_FALCON) &&
+        return sigType == SIGTYPE_SECP256K1 &&
+               signature.size() == SIGTYPE_SECP256K1_LEN &&
                CPubKey(pubKeyData).IsFullyValid();
     }
 };
@@ -1722,23 +1817,9 @@ public:
         {
             return false;
         }
-        for (auto oneSig : signatures)
+        for (auto &oneSig : signatures)
         {
-            if (oneSig.second.sigType == oneSig.second.SIGTYPE_SECP256K1)
-            {
-                CPubKey pk(oneSig.second.pubKeyData);
-                uint160 pubKeyHash = pk.GetID();
-                //printf("pk.IsFullyValid(): %s, pk.GetID(): %s, oneSig.first: %s\n", pk.IsFullyValid() ? "true" : "false", pk.GetID().GetHex().c_str(), oneSig.first.GetHex().c_str());
-                if (!pk.IsFullyValid() || pk.GetID() != oneSig.first)
-                {
-                    return false;
-                }
-            }
-            else if (oneSig.second.sigType == oneSig.second.SIGTYPE_FALCON)
-            {
-                return false;
-            }
-            else
+            if (!oneSig.second.IsValid() || CPubKey(oneSig.second.pubKeyData).GetID() != oneSig.first)
             {
                 return false;
             }

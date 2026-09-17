@@ -64,12 +64,20 @@ static void evalToJSON(const CC *cond, cJSON *code) {
 
 static CC *evalFromFulfillment(const Fulfillment_t *ffill) {
     CC *cond = cc_new(CC_Eval);
+    if (!cond)
+    {
+        return NULL;
+    }
 
     EvalFulfillment_t *eval = &ffill->choice.evalSha256;
 
     OCTET_STRING_t octets = eval->code;
     cond->codeLength = octets.size;
     cond->code = calloc(1,octets.size);
+    if (!cond->code) {
+        cc_free(cond);
+        return NULL;
+    }
     memcpy(cond->code, octets.buf, octets.size);
 
     return cond;

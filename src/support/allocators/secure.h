@@ -6,8 +6,11 @@
 #ifndef BITCOIN_SUPPORT_ALLOCATORS_SECURE_H
 #define BITCOIN_SUPPORT_ALLOCATORS_SECURE_H
 
-#include "support/pagelocker.h"
+#include "support/lockedpool.h"
+#include "support/cleanse.h"
 
+#include <cassert>
+#include <memory>
 #include <string>
 
 //
@@ -15,44 +18,38 @@
 // out of memory and clears its contents before deletion.
 //
 template <typename T>
-struct secure_allocator : public std::allocator<T> {
-    // MSVC8 default copy constructor is broken
-    typedef std::allocator<T> base;
-    typedef typename base::size_type size_type;
-    typedef typename base::difference_type difference_type;
-    typedef typename base::pointer pointer;
-    typedef typename base::const_pointer const_pointer;
-    typedef typename base::reference reference;
-    typedef typename base::const_reference const_reference;
-    typedef typename base::value_type value_type;
-    secure_allocator() throw() {}
-    secure_allocator(const secure_allocator& a) throw() : base(a) {}
+struct secure_allocator {
+    using value_type = T;
+
+    secure_allocator() = default;
     template <typename U>
-    secure_allocator(const secure_allocator<U>& a) throw() : base(a)
-    {
-    }
-    ~secure_allocator() throw() {}
-    template <typename _Other>
-    struct rebind {
-        typedef secure_allocator<_Other> other;
-    };
+    secure_allocator(const secure_allocator<U>&) noexcept {}
 
-    T* allocate(std::size_t n, const void* hint = 0)
+    T* allocate(std::size_t n)
     {
-        T* p;
-        p = std::allocator<T>::allocate(n, hint);
-        if (p != NULL)
-            LockedPageManager::Instance().LockRange(p, sizeof(T) * n);
-        return p;
-    }
-
-    void deallocate(T* p, std::size_t n)
-    {
-        if (p != NULL) {
-            memory_cleanse(p, sizeof(T) * n);
-            LockedPageManager::Instance().UnlockRange(p, sizeof(T) * n);
+        T* allocation = static_cast<T*>(LockedPoolManager::Instance().alloc(sizeof(T) * n));
+        if (!allocation) {
+            throw std::bad_alloc();
         }
-        std::allocator<T>::deallocate(p, n);
+        return allocation;
+    }
+
+    void deallocate(T* p, std::size_t n) noexcept
+    {
+        assert(p != nullptr);
+        memory_cleanse(p, sizeof(T) * n);
+        LockedPoolManager::Instance().free(p);
+    }
+
+    template <typename U>
+    friend bool operator==(const secure_allocator&, const secure_allocator<U>&) noexcept
+    {
+        return true;
+    }
+    template <typename U>
+    friend bool operator!=(const secure_allocator&, const secure_allocator<U>&) noexcept
+    {
+        return false;
     }
 };
 

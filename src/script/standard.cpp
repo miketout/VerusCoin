@@ -43,15 +43,11 @@ COptCCParams::COptCCParams(const std::vector<unsigned char> &vch)
             {
                 if (opcode == OP_0)
                 {
-                    param.resize(1);
-                    param[0] = 0;
-                    data.push_back(param);
+                    data.push_back(valtype(1, 0));
                 }
                 else if (opcode >= OP_1 && opcode <= OP_16)
                 {
-                    param.resize(1);
-                    param[0] = (opcode - OP_1) + 1;
-                    data.push_back(param);
+                    data.push_back(valtype(1, static_cast<unsigned char>((opcode - OP_1) + 1)));
                 }
                 else if (opcode > 0 && opcode <= OP_PUSHDATA4 && param.size() > 0)
                 {

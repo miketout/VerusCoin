@@ -6,7 +6,7 @@ $(package)_sha256_hash=cf3098950cb4d853ad95c0841f1f9c6d3dc102dccfcacd521d9392520
 
 define $(package)_set_vars
 $(package)_config_env=AR="$($(package)_ar)" RANLIB="$($(package)_ranlib)" CC="$($(package)_cc)"
-$(package)_config_opts=--prefix=$(host_prefix) --openssldir=$(host_prefix)/etc/openssl
+$(package)_config_opts=--prefix=$(host_prefix) --openssldir=/etc/ssl
 $(package)_config_opts+=no-afalgeng
 $(package)_config_opts+=no-asm
 $(package)_config_opts+=no-async
@@ -54,12 +54,13 @@ $(package)_config_opts+=no-ts
 $(package)_config_opts+=no-unit-test
 $(package)_config_opts+=no-weak-ssl-ciphers
 $(package)_config_opts+=no-whirlpool
-$(package)_config_opts+=$($(package)_cflags) $($(package)_cppflags)
+$(package)_config_opts+=$(filter-out -arch arm64 x86_64,$($(package)_cflags) $($(package)_cppflags))
 $(package)_config_opts+=-DPURIFY
 $(package)_config_opts_linux=-fPIC -Wa,--noexecstack
 $(package)_config_opts_x86_64_linux=linux-x86_64
 $(package)_config_opts_i686_linux=linux-generic32
 $(package)_config_opts_arm_linux=linux-generic32
+$(package)_config_opts_armv7l_linux=linux-generic32
 $(package)_config_opts_aarch64_linux=linux-generic64
 $(package)_config_opts_mipsel_linux=linux-generic32
 $(package)_config_opts_mips_linux=linux-generic32
@@ -85,7 +86,7 @@ define $(package)_build_cmds
 endef
 
 define $(package)_stage_cmds
-  $(MAKE) DESTDIR=$($(package)_staging_dir) -j1 install_sw
+  $(MAKE) DESTDIR=$($(package)_staging_dir) -j1 install_dev
 endef
 
 define $(package)_postprocess_cmds

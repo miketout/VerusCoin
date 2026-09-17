@@ -84,7 +84,7 @@ $(1)_extracted=$$($(1)_extract_dir)/.stamp_extracted
 $(1)_preprocessed=$$($(1)_extract_dir)/.stamp_preprocessed
 $(1)_cleaned=$$($(1)_extract_dir)/.stamp_cleaned
 $(1)_built=$$($(1)_build_dir)/.stamp_built
-$(1)_configured=$$($(1)_build_dir)/.stamp_configured
+$(1)_configured=$(host_prefix)/.$(1)_stamp_configured
 $(1)_staged=$$($(1)_staging_dir)/.stamp_staged
 $(1)_postprocessed=$$($(1)_staging_prefix_dir)/.stamp_postprocessed
 $(1)_download_path_fixed=$(subst :,\:,$$($(1)_download_path))
@@ -94,9 +94,9 @@ $(1)_download_path_fixed=$(subst :,\:,$$($(1)_download_path))
 $(1)_fetch_cmds ?= $(call fetch_file,$(1),$(subst \:,:,$$($(1)_download_path_fixed)),$$($(1)_download_file),$($(1)_file_name),$($(1)_sha256_hash))
 $(1)_extract_cmds ?= mkdir -p $$($(1)_extract_dir) && echo "$$($(1)_sha256_hash)  $$($(1)_source)" > $$($(1)_extract_dir)/.$$($(1)_file_name).hash &&  $(build_SHA256SUM) -c $$($(1)_extract_dir)/.$$($(1)_file_name).hash && tar --no-same-owner --strip-components=1 -xf $$($(1)_source)
 $(1)_preprocess_cmds ?=
-$(1)_build_cmds ?=
-$(1)_config_cmds ?=
-$(1)_stage_cmds ?=
+$(1)_build_cmds ?= true
+$(1)_config_cmds ?= true
+$(1)_stage_cmds ?= true
 $(1)_set_vars ?=
 
 
@@ -194,18 +194,18 @@ $($(1)_preprocessed): | $($(1)_dependencies) $($(1)_extracted)
 $($(1)_configured): | $($(1)_preprocessed)
 	$(AT)echo Configuring $(1)...
 	$(AT)rm -rf $(host_prefix); mkdir -p $(host_prefix)/lib; cd $(host_prefix); $(foreach package,$($(1)_all_dependencies), tar xf $($(package)_cached); )
-	$(AT)mkdir -p $$(@D)
-	$(AT)+cd $$(@D); $($(1)_config_env) $(call $(1)_config_cmds, $(1))
+	$(AT)mkdir -p $$($(1)_build_dir)
+	$(AT)+cd $$($(1)_build_dir); export $($(1)_config_env); $(call $(1)_config_cmds, $(1))
 	$(AT)touch $$@
 $($(1)_built): | $($(1)_configured)
 	$(AT)echo Building $(1)...
 	$(AT)mkdir -p $$(@D)
-	$(AT)+cd $$(@D); $($(1)_build_env) $(call $(1)_build_cmds, $(1))
+	$(AT)+cd $$(@D); export $($(1)_build_env); $(call $(1)_build_cmds, $(1))
 	$(AT)touch $$@
 $($(1)_staged): | $($(1)_built)
 	$(AT)echo Staging $(1)...
 	$(AT)mkdir -p $($(1)_staging_dir)/$(host_prefix)
-	$(AT)cd $($(1)_build_dir); $($(1)_stage_env) $(call $(1)_stage_cmds, $(1))
+	$(AT)cd $($(1)_build_dir); export $($(1)_stage_env); $(call $(1)_stage_cmds, $(1))
 	$(AT)rm -rf $($(1)_extract_dir)
 	$(AT)touch $$@
 $($(1)_postprocessed): | $($(1)_staged)
