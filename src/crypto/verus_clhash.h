@@ -20,6 +20,10 @@
 #ifndef INCLUDE_VERUS_CLHASH_H
 #define INCLUDE_VERUS_CLHASH_H
 
+#if defined(HAVE_CONFIG_H)
+#include "config/bitcoin-config.h"
+#endif
+
 
 
 #include <stdlib.h>
@@ -33,6 +37,7 @@
 #endif
 
 #if defined(__arm__)  || defined(__aarch64__)
+#define SSE2NEON_SUPPRESS_WARNINGS
 #if !defined(__clang__) && defined(__GNUC__) && __GNUC__ < 10
 #include "crypto/compat/sse2neon.h"
 #else
@@ -93,8 +98,8 @@ struct thread_specific_ptr {
 
     }
     void *get() { return ptr; }
-#if defined(__APPLE__) || defined(_WIN32)
-    // horrible MingW and Mac with gcc thread local storage bug workaround
+#if defined(_WIN32)
+    // horrible MingW thread local storage bug workaround
     ~thread_specific_ptr();
 #else
     ~thread_specific_ptr() {
@@ -117,7 +122,9 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2_port(__m128i *randomso
 
 inline bool IsCPUVerusOptimized()
 {
-    #if defined(__arm__)  || defined(__aarch64__)
+    #if !defined(ENABLE_VERUS_ISA)
+    __cpuverusoptimized = false;
+    #elif defined(__arm__)  || defined(__aarch64__)
     #if defined(__APPLE__)
     __cpuverusoptimized = true;
 #else
@@ -138,7 +145,8 @@ inline bool IsCPUVerusOptimized()
         }
         else
         {
-            __cpuverusoptimized = ((ecx & (bit_AVX | bit_AES | bit_PCLMUL)) == (bit_AVX | bit_AES | bit_PCLMUL));
+            const unsigned int required = bit_AES | bit_PCLMUL;
+            __cpuverusoptimized = (ecx & required) == required;
         }
     }
     #endif
@@ -209,6 +217,7 @@ struct verusclhasher {
     // align on 256 bit boundary at end
     verusclhasher(uint64_t keysize=VERUSKEYSIZE, int solutionVersion=SOLUTION_VERUSHHASH_V2) : keySizeInBytes((keysize >> 5) << 5)
     {
+#if defined(ENABLE_VERUS_ISA)
         if (IsCPUVerusOptimized())
         {
             if (solutionVersion >= SOLUTION_VERUSHHASH_V2_1)
@@ -231,6 +240,7 @@ struct verusclhasher {
             }
         }
         else
+#endif
         {
             if (solutionVersion >= SOLUTION_VERUSHHASH_V2_1)
             {

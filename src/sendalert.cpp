@@ -56,7 +56,7 @@ static const int64_t DAYS = 24 * 60 * 60;
 
 void ThreadSendAlert()
 {
-    if (!mapArgs.count("-sendalert") && !mapArgs.count("-printalert"))
+    if (!IsArgSet("-sendalert") && !IsArgSet("-printalert"))
         return;
 
     MilliSleep(60*1000); // Wait a minute so we get connected
@@ -147,7 +147,7 @@ void ThreadSendAlert()
     printf("vchSig=%s\n", HexStr(alert2.vchSig).c_str());
 
     // Confirm
-    if (!mapArgs.count("-sendalert"))
+    if (!IsArgSet("-sendalert"))
         return;
     while (vNodes.size() < 1 && !ShutdownRequested())
         MilliSleep(500);

@@ -310,7 +310,7 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
             }
             else
             {
-                LogPrint("txbuilder", "Invalid reserve transaction descriptor\n", __func__);
+                LogPrint("txbuilder", "%s: Invalid reserve transaction descriptor\n", __func__);
                 return TransactionBuilderResult("Invalid reserve transaction descriptor");
             }
         }

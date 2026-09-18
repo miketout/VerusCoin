@@ -24,6 +24,7 @@ SOFTWARE.
 Optimized Implementations for Haraka256 and Haraka512
 */
 #if defined(__arm__)  || defined(__aarch64__)
+#define SSE2NEON_SUPPRESS_WARNINGS
 #if !defined(__clang__) && defined(__GNUC__) && __GNUC__ < 10
 #include "crypto/compat/sse2neon.h"
 #else

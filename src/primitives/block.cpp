@@ -159,14 +159,10 @@ bool CBlockHeader::CheckNonCanonicalData() const
     else
     {
         CPBaaSSolutionDescriptor d = CVerusSolutionVector::solutionTools.GetDescriptor(nSolution);
-        if (CVerusSolutionVector::solutionTools.HasPBaaSHeader(nSolution) != 0)
+        if (CVerusSolutionVector::solutionTools.HasPBaaSHeader(nSolution) != 0 &&
+            CConstVerusSolutionVector::IsDescriptorValid(nSolution))
         {
-            int32_t len = CVerusSolutionVector::solutionTools.ExtraDataLen(nSolution, true);
             int32_t numHeaders = d.numPBaaSHeaders;
-            if (numHeaders * sizeof(CPBaaSBlockHeader) > len)
-            {
-                numHeaders = len / sizeof(CPBaaSBlockHeader);
-            }
             const CPBaaSBlockHeader *ppbbh = CVerusSolutionVector::solutionTools.GetFirstPBaaSHeader(nSolution);
             for (int32_t i = 0; i < numHeaders; i++)
             {
@@ -189,26 +185,20 @@ int32_t CBlockHeader::GetPBaaSHeader(CPBaaSBlockHeader &pbh, const uint160 &cID)
 {
     // find the specified PBaaS header in the solution and return its index if present
     // if not present, return -1
-    if (nVersion == VERUS_V2)
+    if (nVersion == VERUS_V2 &&
+        CVerusSolutionVector::solutionTools.HasPBaaSHeader(nSolution) != 0 &&
+        CConstVerusSolutionVector::IsDescriptorValid(nSolution))
     {
         // search in the solution for this header index and return it if found
         CPBaaSSolutionDescriptor d = CVerusSolutionVector::solutionTools.GetDescriptor(nSolution);
-        if (CVerusSolutionVector::solutionTools.HasPBaaSHeader(nSolution) != 0)
+        int32_t numHeaders = d.numPBaaSHeaders;
+        const CPBaaSBlockHeader *ppbbh = CVerusSolutionVector::solutionTools.GetFirstPBaaSHeader(nSolution);
+        for (int32_t i = 0; i < numHeaders; i++)
         {
-            int32_t len = CVerusSolutionVector::solutionTools.ExtraDataLen(nSolution, true);
-            int32_t numHeaders = d.numPBaaSHeaders;
-            if (numHeaders * sizeof(CPBaaSBlockHeader) > len)
+            if ((ppbbh + i)->chainID == cID)
             {
-                numHeaders = len / sizeof(CPBaaSBlockHeader);
-            }
-            const CPBaaSBlockHeader *ppbbh = CVerusSolutionVector::solutionTools.GetFirstPBaaSHeader(nSolution);
-            for (int32_t i = 0; i < numHeaders; i++)
-            {
-                if ((ppbbh + i)->chainID == cID)
-                {
-                    pbh = *(ppbbh + i);
-                    return i;
-                }
+                pbh = *(ppbbh + i);
+                return i;
             }
         }
     }
@@ -530,7 +520,7 @@ CPBaaSPreHeader CBlockHeader::GetSubstitutedPreHeader(const uint256 &entropyHash
 
 uint32_t CBlock::GetHeight() const
 {
-    if (!vtx.size())
+    if (!vtx.size() || !vtx[0].vin.size())
     {
         return 0;
     }
@@ -869,8 +859,24 @@ CNotaryEvidence::CNotaryEvidence(const std::vector<CNotaryEvidence> &evidenceVec
         }
         std::vector<unsigned char> &onePartVec = ((CChainObject<CEvidenceData> *)(onePart.evidence.chainObjects[0]))->object.dataVec;
         fullVec.insert(fullVec.end(), onePartVec.begin(), onePartVec.end());
+        if (!onePartVec.size() || fullVec.size() > fullLength)
+        {
+            version = VERSION_INVALID;
+            return;
+        }
     }
-    ::FromVector(fullVec, *this);
+    if (fullVec.size() != fullLength)
+    {
+        version = VERSION_INVALID;
+        return;
+    }
+    bool success = false;
+    ::FromVector(fullVec, *this, &success);
+    if (!success)
+    {
+        version = VERSION_INVALID;
+        return;
+    }
 }
 
 CHashCommitments::CHashCommitments(const std::vector<__uint128_t> &smallCommitmentsLowBool, uint32_t nVersion) :

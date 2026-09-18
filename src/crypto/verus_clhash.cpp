@@ -26,9 +26,9 @@
 #pragma warning (disable : 4146)
 #include <intrin.h>
 #endif
-int __cpuverusoptimized = 0x80;
 
 #if defined(__arm__)  || defined(__aarch64__)
+#define SSE2NEON_SUPPRESS_WARNINGS
 #if !defined(__clang__) && defined(__GNUC__) && __GNUC__ < 10
 #include "crypto/compat/sse2neon.h"
 #else
@@ -41,25 +41,6 @@ int __cpuverusoptimized = 0x80;
 #ifdef _WIN32
 #define posix_memalign(p, a, s) (((*(p)) = _aligned_malloc((s), (a))), *(p) ?0 :errno)
 #endif
-
-thread_local thread_specific_ptr verusclhasher_key;
-thread_local thread_specific_ptr verusclhasher_descr;
-
-#if defined(__APPLE__) || defined(_WIN32)
-// attempt to workaround horrible mingw/gcc destructor bug on Windows and Mac, which passes garbage in the this pointer
-// we use the opportunity of control here to clean up all of our tls variables. we could keep a list, but this is a safe,
-// functional hack
-thread_specific_ptr::~thread_specific_ptr() {
-    if (verusclhasher_key.ptr)
-    {
-        verusclhasher_key.reset();
-    }
-    if (verusclhasher_descr.ptr)
-    {
-        verusclhasher_descr.reset();
-    }
-}
-#endif // defined(__APPLE__) || defined(_WIN32)
 
 // multiply the length and the some key, no modulo
     static inline __attribute__((always_inline)) __m128i lazyLengthHash(uint64_t keylength, uint64_t length) {
@@ -142,7 +123,7 @@ bool mine_verus_v2(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &finalHas
 	CVerusHashV2 &vh = vhw.GetState();
     verusclhasher &vclh = vh.vclh;
 
-	alignas(32) uint256 curHash, curTarget = target;
+	alignas(16) uint256 curHash, curTarget = target;
 
     const uint64_t *compResult = (uint64_t *)&curHash;
     const uint64_t *compTarget = (uint64_t *)&curTarget;
@@ -1079,17 +1060,4 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2(__m128i *randomsource,
         }
     }
     return acc;
-}
-
-void *alloc_aligned_buffer(uint64_t bufSize)
-{
-    void *answer = NULL;
-    if (posix_memalign(&answer, sizeof(__m128i)*2, bufSize))
-    {
-        return NULL;
-    }
-    else
-    {
-        return answer;
-    }
 }

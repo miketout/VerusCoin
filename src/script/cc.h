@@ -17,10 +17,19 @@ bool IsCryptoConditionsEnabled();
 const int CCEnabledTypes = 1 << CC_Secp256k1 | \
                            1 << CC_Threshold | \
                            1 << CC_Eval | \
+                           1 << CC_Preimage;
+
+const int CCSigningNodes = 1 << CC_Secp256k1;
+
+/*
+const int CCEnabledTypes = 1 << CC_Secp256k1 | \
+                           1 << CC_Threshold | \
+                           1 << CC_Eval | \
                            1 << CC_Preimage | \
                            1 << CC_Ed25519;
 
 const int CCSigningNodes = 1 << CC_Ed25519 | 1 << CC_Secp256k1;
+*/
 
 const int CCEvalNode = 1 << CC_Eval;
 

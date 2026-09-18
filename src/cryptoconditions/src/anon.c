@@ -31,9 +31,16 @@ CC *mkAnon(const Condition_t *asnCond) {
         fprintf(stderr, "Unknown ASN type: %i", asnCond->present);
         return 0;
     }
-    CC *cond = cc_new(CC_Anon);
-    cond->conditionType = realType;
     const CompoundSha256Condition_t *deets = &asnCond->choice.thresholdSha256;
+    if (deets->fingerprint.size != 32) {
+        return NULL;
+    }
+    CC *cond = cc_new(CC_Anon);
+    if (!cond)
+    {
+        return NULL;
+    }
+    cond->conditionType = realType;
     memcpy(cond->fingerprint, deets->fingerprint.buf, 32);
     cond->cost = deets->cost;
     if (realType->getSubtypes) {
@@ -53,6 +60,10 @@ static void anonToJSON(const CC *cond, cJSON *params) {
 
 static unsigned char *anonFingerprint(const CC *cond) {
     unsigned char *out = calloc(1, 32);
+    if (!out)
+    {
+        return NULL;
+    }
     //fprintf(stderr,"anon fingerprint %p %p\n",out,cond->fingerprint);
     memcpy(out, cond->fingerprint, 32);
     return out;

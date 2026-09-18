@@ -916,6 +916,21 @@ public:
         }
     }
 
+    bool HasExpectedProofRoot(const CCurrencyDefinition &system, bool *absenceAllowed=nullptr) const
+    {
+        uint160 systemID = system.GetID();
+        bool haveRoot = proofRoots.count(systemID);
+        if (!haveRoot && absenceAllowed)
+        {
+            *absenceAllowed = (IsDefinitionNotarization() ||
+                               IsPreLaunch() ||
+                               (IsRefunding() &&
+                                (system.launchSystemID == ASSETCHAINS_CHAINID ||
+                                 systemID == ASSETCHAINS_CHAINID)));
+        }
+        return haveRoot;
+    }
+
     UniValue ToUniValue() const;
 };
 
@@ -1264,7 +1279,7 @@ public:
     bool BlockOneIDUpgrade() const;
     bool IsPromoteExchangeRate(uint32_t height) const;
     bool IsEnhancedUnderflowCheck(uint32_t height) const;
-    int CheckPastRealTime(uint32_t nTime, int64_t height=0) const;
+    bool CheckPastRealTime(uint32_t nTime, int64_t height=0) const;
     bool IsUpgrade01Active(int64_t height=0) const;
     bool IsUpgrade02Active(int64_t height=0) const;
     bool IsPBaaSRefundFixActive(int64_t height=0) const;

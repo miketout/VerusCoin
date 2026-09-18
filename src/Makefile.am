@@ -11,17 +11,10 @@ DIST_SUBDIRS = secp256k1 univalue cryptoconditions
 # AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS) $(SAN_LDFLAGS) $(HARDENED_LDFLAGS) -Wl,--no-as-needed,-lprofiler,--as-needed
 # AM_CXXFLAGS = $(SAN_CXXFLAGS) $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS) -Wl,--no-as-needed -lprofiler -Wl,--as-needed
 # AM_CPPFLAGS = $(HARDENED_CPPFLAGS) -Wl,--no-as-needed -lprofiler -Wl,--as-needed
-AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS) $(SAN_LDFLAGS) $(HARDENED_LDFLAGS)
-AM_CXXFLAGS = $(SAN_CXXFLAGS) $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS)
-AM_CPPFLAGS = $(HARDENED_CPPFLAGS)
+AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS) $(HARDENED_LDFLAGS) $(GPROF_LDFLAGS) $(SANITIZER_LDFLAGS)
+AM_CXXFLAGS = $(DEBUG_CXXFLAGS) $(HARDENED_CXXFLAGS) $(ERROR_CXXFLAGS) $(GPROF_CXXFLAGS) $(SANITIZER_CXXFLAGS)
+AM_CPPFLAGS = $(DEBUG_CPPFLAGS) $(HARDENED_CPPFLAGS)
 EXTRA_LIBRARIES =
-
-if ARCH_ARM
-PLATFORM_VARIANT = armv8.1-a+crypto
-else
-PLATFORM_VARIANT = x86-64
-endif
-
 
 if EMBEDDED_LEVELDB
 LEVELDB_CPPFLAGS += -I$(srcdir)/leveldb/include
@@ -35,7 +28,7 @@ $(LIBLEVELDB): $(LIBMEMENV)
 $(LIBLEVELDB) $(LIBMEMENV):
 	@echo "Building LevelDB ..." && $(MAKE) -C $(@D) $(@F) CXX="$(CXX)" \
 	  CC="$(CC)" PLATFORM=$(TARGET_OS) AR="$(AR)" $(LEVELDB_TARGET_FLAGS) \
-          OPT="$(AM_CXXFLAGS) $(PIE_FLAGS) $(CXXFLAGS) $(AM_CPPFLAGS) $(CPPFLAGS) -D__STDC_LIMIT_MACROS"
+          OPT="$(AM_CXXFLAGS) $(PIE_FLAGS) $(CXXFLAGS) $(AM_CPPFLAGS) $(CPPFLAGS) -D__STDC_LIMIT_MACROS -Wno-error"
 endif
 
 BITCOIN_CONFIG_INCLUDES=-I$(builddir)/config
@@ -55,7 +48,11 @@ LIBBITCOIN_COMMON=libbitcoin_common.a
 LIBBITCOIN_CLI=libbitcoin_cli.a
 LIBBITCOIN_UTIL=libbitcoin_util.a
 LIBBITCOIN_CRYPTO=crypto/libbitcoin_crypto.a
+if ENABLE_VERUS_ISA
 LIBVERUS_CRYPTO=crypto/libverus_crypto.a
+else
+LIBVERUS_CRYPTO=
+endif
 LIBVERUS_PORTABLE_CRYPTO=crypto/libverus_portable_crypto.a
 LIBSECP256K1=secp256k1/libsecp256k1.la
 LIBCRYPTOCONDITIONS=cryptoconditions/libcryptoconditions_core.la
@@ -66,21 +63,18 @@ LIBTLS=libtls.a
 if ENABLE_ZMQ
 LIBBITCOIN_ZMQ=libbitcoin_zmq.a
 endif
-if ENABLE_PROTON
-LIBBITCOIN_PROTON=libbitcoin_proton.a
-endif
 if BUILD_BITCOIN_LIBS
 LIBZCASH_CONSENSUS=libzcashconsensus.la
 endif
 
 $(LIBSECP256K1): $(wildcard secp256k1/src/*) $(wildcard secp256k1/include/*)
-	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F) OPTFLAGS="-O3 -march=$(PLATFORM_VARIANT) -g "
+	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
 
 $(LIBUNIVALUE): $(wildcard univalue/lib/*)
-	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F) OPTFLAGS="-O3 -march=$(PLATFORM_VARIANT) -g "
+	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
 
 $(LIBCRYPTOCONDITIONS): $(wildcard cryptoconditions/src/*) $(wildcard cryptoconditions/include/*)
-	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F) OPTFLAGS="-O3 -march=$(PLATFORM_VARIANT) -g "
+	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
 
 # Make is not made aware of per-object dependencies to avoid limiting building parallelization
 # But to build the less dependent modules first, we manually select their order here:
@@ -101,9 +95,6 @@ EXTRA_LIBRARIES += $(LIBBITCOIN_WALLET)
 endif
 if ENABLE_ZMQ
 EXTRA_LIBRARIES += $(LIBBITCOIN_ZMQ)
-endif
-if ENABLE_PROTON
-EXTRA_LIBRARIES += $(LIBBITCOIN_PROTON)
 endif
 
 lib_LTLIBRARIES = $(LIBZCASH_CONSENSUS)
@@ -146,11 +137,6 @@ BITCOIN_CORE_H = \
   addrman.h \
   alert.h \
   amount.h \
-  amqp/amqpabstractnotifier.h \
-  amqp/amqpconfig.h \
-  amqp/amqpnotificationinterface.h \
-  amqp/amqppublishnotifier.h \
-  amqp/amqpsender.h \
   arith_uint256.h \
   asyncrpcoperation.h \
   asyncrpcqueue.h \
@@ -239,7 +225,7 @@ BITCOIN_CORE_H = \
   support/allocators/zeroafterfree.h \
   support/cleanse.h \
   support/events.h \
-  support/pagelocker.h \
+  support/lockedpool.h \
   sync.h \
   threadsafety.h \
   timedata.h \
@@ -360,15 +346,6 @@ libbitcoin_zmq_a_SOURCES = \
 	zmq/zmqpublishnotifier.cpp
 endif
 
-if ENABLE_PROTON
-libbitcoin_proton_a_CPPFLAGS = $(BITCOIN_INCLUDES)
-libbitcoin_proton_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-libbitcoin_proton_a_SOURCES = \
-  amqp/amqpabstractnotifier.cpp \
-  amqp/amqpnotificationinterface.cpp \
-  amqp/amqppublishnotifier.cpp
-endif
-
 # wallet: zcashd, but only linked when wallet enabled
 libbitcoin_wallet_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 libbitcoin_wallet_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
@@ -436,13 +413,9 @@ crypto_libbitcoin_crypto_a_SOURCES += \
 endif
 
 # Verus hash specific library - optimized
-if ARCH_ARM
-crypto_libverus_crypto_a_CPPFLAGS = -O3 -g -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_crypto_a_CXXFLAGS = -O3 -Wno-error=attributes -Wint-conversion -g -march=armv8.1-a+crypto -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
-else
-crypto_libverus_crypto_a_CPPFLAGS = -O3 -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_crypto_a_CXXFLAGS = -O3 -Wint-conversion -mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
-endif
+crypto_libverus_crypto_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+crypto_libverus_crypto_a_CFLAGS = -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(SSE2NEON_CFLAGS) $(VERUS_ISA_CFLAGS)
+crypto_libverus_crypto_a_CXXFLAGS = -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS) $(SSE2NEON_CXXFLAGS) $(VERUS_ISA_CXXFLAGS)
 
 crypto_libverus_crypto_a_SOURCES = \
   crypto/haraka.h \
@@ -451,13 +424,9 @@ crypto_libverus_crypto_a_SOURCES = \
   crypto/verus_clhash.cpp
 
 # Verus hash specific library - portable
-if ARCH_ARM
-crypto_libverus_portable_crypto_a_CPPFLAGS = -O3 -g -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-crypto_libverus_portable_crypto_a_CXXFLAGS = -O3 -Wno-error=attributes -Wint-conversion -g -march=$(PLATFORM_VARIANT) -flax-vector-conversions -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
-else
-crypto_libverus_portable_crypto_a_CPPFLAGS = -O3 -march=$(PLATFORM_VARIANT) -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CPPFLAGS) -w $(BITCOIN_INCLUDES)
-crypto_libverus_portable_crypto_a_CXXFLAGS = -O3 -Wint-conversion -march=$(PLATFORM_VARIANT) -g -funroll-loops -fomit-frame-pointer -fPIC $(AM_CXXFLAGS)
-endif
+crypto_libverus_portable_crypto_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+crypto_libverus_portable_crypto_a_CFLAGS = -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(SSE2NEON_CFLAGS)
+crypto_libverus_portable_crypto_a_CXXFLAGS = -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS) $(SSE2NEON_CXXFLAGS)
 
 crypto_libverus_portable_crypto_a_SOURCES = \
   crypto/haraka_portable.h \
@@ -466,8 +435,8 @@ crypto_libverus_portable_crypto_a_SOURCES = \
   crypto/verus_clhash_portable.cpp
 
 # common: shared between zcashd and non-server tools
-libbitcoin_common_a_CPPFLAGS = -fPIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-libbitcoin_common_a_CXXFLAGS = -fPIC $(AM_CXXFLAGS) $(PIE_FLAGS)
+libbitcoin_common_a_CPPFLAGS = $(PIC_FLAGS) $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+libbitcoin_common_a_CXXFLAGS = $(PIC_FLAGS) $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_common_a_SOURCES = \
   amount.cpp \
   arith_uint256.cpp \
@@ -522,7 +491,7 @@ libbitcoin_common_a_SOURCES = \
 libbitcoin_util_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 libbitcoin_util_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_util_a_SOURCES = \
-  support/pagelocker.cpp \
+  support/lockedpool.cpp \
   chainparamsbase.cpp \
   clientversion.cpp \
   compat/glibc_sanity.cpp \
@@ -573,7 +542,6 @@ verusd_LDADD = \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_ZMQ) \
-  $(LIBBITCOIN_PROTON) \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBVERUS_CRYPTO) \
   $(LIBVERUS_PORTABLE_CRYPTO) \
@@ -596,15 +564,10 @@ verusd_LDADD += \
   $(EVENT_PTHREADS_LIBS) \
   $(EVENT_LIBS) \
   $(ZMQ_LIBS) \
-  $(PROTON_LIBS) \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBVERUS_CRYPTO) \
   $(LIBVERUS_PORTABLE_CRYPTO) \
   $(LIBZCASH_LIBS)
-
-if ENABLE_PROTON
-verusd_LDADD += $(LIBBITCOIN_PROTON) $(PROTON_LIBS)
-endif
 
 # bitcoin-cli binary #
 verus_SOURCES = bitcoin-cli.cpp
@@ -744,11 +707,11 @@ libtls_a_SOURCES = \
     tls/utiltls.cpp\
     tls/tlsmanager.cpp
 
-libtls_a_CPPFLAGS = -DMULTICORE -fPIC -DBINARY_OUTPUT -DCURVE_ALT_BN128 -DBOOST_SPIRIT_THREADSAFE -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS $(HARDENED_CPPFLAGS) -pipe -O2 -g  -Wstack-protector -fstack-protector-all -fPIE -fvisibility=hidden -DSTATIC $(BITCOIN_INCLUDES)
+libtls_a_CPPFLAGS = $(PIC_FLAGS) -DBOOST_SPIRIT_THREADSAFE -DSTATIC $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 
-libtls_a_CXXFLAGS = $(HARDENED_CXXFLAGS) -fwrapv -fno-strict-aliasing
+libtls_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
-libtls_a_LDFLAGS = $(HARDENED_LDFLAGS)
+libtls_a_LDFLAGS = $(AM_LDFLAGS)
 
 libtls_a_CPPFLAGS += -DMONTGOMERY_OUTPUT
 
@@ -762,6 +725,7 @@ clean-local:
 	-$(MAKE) -C leveldb clean
 	-$(MAKE) -C secp256k1 clean
 	-$(MAKE) -C univalue clean
+	-$(MAKE) -C cryptoconditions clean
 	rm -f leveldb/*/*.gcno leveldb/helpers/memenv/*.gcno
 	-rm -f config.h
 

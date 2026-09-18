@@ -147,7 +147,6 @@ void vcalc_sha256(char deprecated[(256 >> 3) * 2 + 1],uint8_t hash[256 >> 3],uin
 int32_t komodo_baseid(char *origbase);
 int32_t komodo_validate_interest(const CTransaction &tx,int32_t txheight,uint32_t nTime,int32_t dispflag);
 uint64_t komodo_commission(const CBlock *block);
-int32_t komodo_staked(CMutableTransaction &txNew,uint32_t nBits,uint32_t *blocktimep,uint32_t *txtimep,uint256 *utxotxidp,int32_t *utxovoutp,uint64_t *utxovaluep,uint8_t *utxosig);
 int32_t verus_staked(CBlock *pBlock, CMutableTransaction &txNew, uint32_t &nBits, arith_uint256 &hashResult, std::vector<unsigned char> &utxosig, CTxDestination &rewardDest);
 int32_t komodo_notaryvin(CMutableTransaction &txNew,uint8_t *notarypub33);
 UniValue getminingdistribution(const UniValue& params, bool fHelp);
@@ -477,7 +476,7 @@ void ProcessNewImports(const uint160 &sourceChainID, CPBaaSNotarization &lastCon
                     UniValue fullResult = RPCCallRoot("getexports", params);
                     result = find_value(fullResult, "result");
                 }
-            } catch (exception e)
+            } catch (const std::exception &e)
             {
                 LogPrint("notarization", "Could not get latest export from external chain %s for %s\n", EncodeDestination(CIdentityID(sourceChainID)).c_str(), uni_get_str(params[0]).c_str());
                 return;
@@ -707,15 +706,15 @@ bool GetBlockOneLaunchNotarization(const CRPCChainData &notarySystem,
                 {
                     LogPrintf("%s: invalid launch notarization for currency %s\nerror: %s\ncurrencydefinition: %s\nnotarization: %s\ntransactionproof: %s\n",
                         __func__,
-                        error.write().c_str(),
                         EncodeDestination(CIdentityID(currencyID)).c_str(),
+                        error.write().c_str(),
                         currency.ToUniValue().write(1,2).c_str(),
                         notarization.ToUniValue().write(1,2).c_str(),
                         notarizationProof.ToUniValue().write(1,2).c_str());
                     printf("%s: invalid launch notarization for currency %s\nerror: %s\ncurrencydefinition: %s\nnotarization: %s\ntransactionproof: %s\n",
                         __func__,
-                        error.write().c_str(),
                         EncodeDestination(CIdentityID(currencyID)).c_str(),
+                        error.write().c_str(),
                         currency.ToUniValue().write(1,2).c_str(),
                         notarization.ToUniValue().write(1,2).c_str(),
                         notarizationProof.ToUniValue().write(1,2).c_str());
@@ -964,7 +963,7 @@ bool AddOneCurrencyImport(const CCurrencyDefinition &newCurrency,
             CTransaction firstExportTx;
             if (!pFirstExport || !(pFirstExport->second.IsValid() && !pFirstExport->second.GetPartialTransaction(firstExportTx).IsNull()))
             {
-                LogPrintf("%s: invalid first export for PBaaS or converter launch\n");
+                LogPrintf("%s: invalid first export for PBaaS or converter launch\n", __func__);
                 return false;
             }
 
@@ -972,7 +971,7 @@ bool AddOneCurrencyImport(const CCurrencyDefinition &newCurrency,
             CCrossChainExport ccx(firstExportTx.vout[pFirstExport->first.n].scriptPubKey);
             if (!ccx.IsValid())
             {
-                LogPrintf("%s: invalid export output for PBaaS or converter launch\n");
+                LogPrintf("%s: invalid export output for PBaaS or converter launch\n", __func__);
                 return false;
             }
 
@@ -2093,11 +2092,6 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
 
     pblock->SetVersionByHeight(chainActive.LastTip()->GetHeight() + 1);
 
-    // -regtest only: allow overriding block.nVersion with
-    // -blockversion=N to test forking scenarios
-    if (chainparams.MineBlocksOnDemand())
-        pblock->nVersion = GetArg("-blockversion", pblock->nVersion);
-
     // Add dummy coinbase tx placeholder as first transaction
     pblock->vtx.push_back(CTransaction());
 
@@ -2916,22 +2910,6 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
         std::set<std::pair<uint160, uint160>> idDestAndExport;
         std::set<std::pair<uint160, uint160>> currencyDestAndExport;
 
-        std::set<std::tuple<uint160, uint160>> idSecondLegExport;
-        std::set<std::tuple<uint160, uint160>> currencySecondLegExport;
-
-        // we enforce the numeric limits on transactions in precheck exports
-        std::map<uint160, std::pair<int32_t, int32_t>> tmpExportTransfers;
-        std::map<uint160, int32_t> tmpCurrencyExportTransfers;
-        std::map<uint160, int32_t> tmpIdentityExportTransfers;
-
-        std::set<uint160> tmpNewIDRegistrations;
-        std::set<uint160> tmpCurrencyImports;
-        std::set<std::pair<uint160, uint160>> tmpIDDestAndExport;
-        std::set<std::pair<uint160, uint160>> tmpCurrencyDestAndExport;
-
-        std::set<std::tuple<uint160, uint160>> tmpIDSecondLegExport;
-        std::set<std::tuple<uint160, uint160>> tmpCurrencySecondLegExport;
-
         std::list<CTransaction> txesToRemove;
         std::set<CUTXORef> orphanArbs;
 
@@ -3278,6 +3256,16 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
         // now loop and fill the block, leaving space for reserve exchange limit transactions
         while (!vecPriority.empty())
         {
+            // we enforce the numeric limits on transactions in precheck exports
+            std::map<uint160, std::pair<int32_t, int32_t>> tmpExportTransfers;
+            std::map<uint160, int32_t> tmpCurrencyExportTransfers;
+            std::map<uint160, int32_t> tmpIdentityExportTransfers;
+
+            std::set<uint160> tmpNewIDRegistrations;
+            std::set<uint160> tmpCurrencyImports;
+            std::set<std::pair<uint160, uint160>> tmpIDDestAndExport;
+            std::set<std::pair<uint160, uint160>> tmpCurrencyDestAndExport;
+
             // Take highest priority transaction off the priority queue:
             double dPriority = vecPriority.front().get<0>();
             CFeeRate feeRate = vecPriority.front().get<1>();
@@ -4623,7 +4611,11 @@ void static BitcoinMiner_noeq()
             u128 *hashKey;
             verusclhasher &vclh = vh2->vclh;
             minefunction mine_verus;
+#if defined(ENABLE_VERUS_ISA)
             mine_verus = IsCPUVerusOptimized() ? &mine_verus_v2 : &mine_verus_v2_port;
+#else
+            mine_verus = &mine_verus_v2_port;
+#endif
 
             while (true)
             {
@@ -4886,7 +4878,7 @@ void static BitcoinMiner_noeq()
 
         if (fGenerate == true || VERUS_MINTBLOCKS)
         {
-            mapArgs["-gen"] = "1";
+            OverrideSetArg("-gen", "1");
 
             if (VERUS_DEFAULT_ZADDR.size() > 0)
             {

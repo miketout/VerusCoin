@@ -282,7 +282,7 @@ public:
     SSL *ssl;
 
     // socket
-    uint64_t nServices;
+    std::atomic<uint64_t> nServices;
     SOCKET hSocket;
     CCriticalSection cs_hSocket;
     CDataStream ssSend;
@@ -291,6 +291,7 @@ public:
     uint64_t nSendBytes;
     std::deque<CSerializeData> vSendMsg;
     CCriticalSection cs_vSend;
+    CCriticalSection cs_vRecv;
 
     std::deque<CInv> vRecvGetData;
     std::deque<CNetMessage> vRecvMsg;
@@ -298,13 +299,11 @@ public:
     uint64_t nRecvBytes;
     int nRecvVersion;
 
-    int64_t nLastSend;
-    int64_t nLastRecv;
-    int64_t nTimeConnected;
-    int64_t nTimeOffset;
+    std::atomic<int64_t> nLastSend;
+    std::atomic<int64_t> nLastRecv;
+    const int64_t nTimeConnected;
+    std::atomic<int64_t> nTimeOffset;
     CAddress addr;
-    std::string addrName;
-    CService addrLocal;
     int nVersion;
     int lasthdrsreq,sendhdrsreq;
     // strSubVer is whatever byte array we read from the wire. However, this field is intended
@@ -312,13 +311,14 @@ public:
     // store the sanitized version in cleanSubVer. The original should be used when dealing with
     // the network or wire types and the cleaned string used when displayed or logged.
     std::string strSubVer, cleanSubVer;
+    CCriticalSection cs_SubVer; // used for both cleanSubVer and strSubVer
     bool fWhitelisted; // This peer can bypass DoS banning.
     bool fOneShot;
     bool fClient;
     bool fInbound;
     bool fNetworkNode;
     bool fSuccessfullyConnected;
-    bool fDisconnect;
+    std::atomic_bool fDisconnect;
     // We use fRelayTxes for two purposes -
     // a) it allows us to not relay tx invs before receiving the peer's version message
     // b) the peer may tell us in its version message that we should not relay tx invs
@@ -362,18 +362,26 @@ protected:
     static eTlsOption tlsFallbackNonTls;
     static eTlsOption tlsValidate;
 
+private:
+    mutable CCriticalSection cs_addrName;
+    std::string addrName;
+
+    CService addrLocal;
+    mutable CCriticalSection cs_addrLocal;
+
 public:
     // for PBaaS nodes, each node may be associated with the hash of a pubkey as a payment address to receive rewards for supporting a
     // PBaaS chain
     uint160 hashPaymentAddress;
 
     uint256 hashContinue;
-    int nStartingHeight;
+    std::atomic<int> nStartingHeight;
 
     // flood relay
     std::vector<CAddress> vAddrToSend;
     bool fGetAddr;
     std::set<uint256> setKnown;
+    CCriticalSection cs_setKnown;
 
     int64_t nNextAddrSend;
     int64_t nNextLocalAddrSend;
@@ -773,6 +781,12 @@ public:
     // returns the value of the tlsfallbacknontls and tlsvalidate flags set at zend startup (see init.cpp)
     static bool GetTlsFallbackNonTls();
     static bool GetTlsValidate();
+    std::string GetAddrName() const;
+    //! Sets the addrName only if it was not previously set
+    void MaybeSetAddrName(const std::string& addrNameIn);
+    CService GetAddrLocal() const;
+    //! May not be called more than once
+    void SetAddrLocal(const CService& addrLocalIn);
 };
 
 

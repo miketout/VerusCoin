@@ -134,6 +134,9 @@ static CC *thresholdFromFulfillment(const Fulfillment_t *ffill) {
     int size = threshold + t->subconditions.list.count;
 
     CC **subconditions = calloc(size, sizeof(CC*));
+    if (!subconditions) {
+        return NULL;
+    }
 
     for (int i=0; i<size; i++)
     {
@@ -142,13 +145,22 @@ static CC *thresholdFromFulfillment(const Fulfillment_t *ffill) {
             mkAnon(t->subconditions.list.array[i-threshold]);
 
         if (!subconditions[i]) {
-            for (int j=0; j<i; j++) free(subconditions[j]);
+            for (int j=0; j<i; j++) cc_free(subconditions[j]);
             free(subconditions);
             return 0;
         }
     }
 
     CC *cond = cc_new(CC_Threshold);
+    if (!cond)
+    {
+        for (int j = 0; j < size; j++)
+        {
+            cc_free(subconditions[j]);
+        }
+        free(subconditions);
+        return NULL;
+    }
     cond->threshold = threshold;
     cond->size = size;
     cond->subconditions = subconditions;
@@ -171,6 +183,9 @@ static CC *thresholdFromPartialFulfillment(const Fulfillment_t *ffill) {
     }
 
     CC **subconditions = calloc(size, sizeof(CC*));
+    if (!subconditions) {
+        return NULL;
+    }
 
     if (optimized)
     {
@@ -181,7 +196,7 @@ static CC *thresholdFromPartialFulfillment(const Fulfillment_t *ffill) {
                 mkAnon(t->subconditions.list.array[i]);
 
             if (!subconditions[i]) {
-                for (int j=0; j<i; j++) free(subconditions[j]);
+                for (int j=0; j<i; j++) cc_free(subconditions[j]);
                 free(subconditions);
                 return 0;
             }
@@ -194,7 +209,7 @@ static CC *thresholdFromPartialFulfillment(const Fulfillment_t *ffill) {
             subconditions[i] = partialFulfillmentToCC(t->subfulfillments.list.array[i]);
 
             if (!subconditions[i]) {
-                for (int j=0; j<i; j++) free(subconditions[j]);
+                for (int j=0; j<i; j++) cc_free(subconditions[j]);
                 free(subconditions);
                 return 0;
             }
@@ -202,6 +217,15 @@ static CC *thresholdFromPartialFulfillment(const Fulfillment_t *ffill) {
     }
 
     CC *cond = cc_new(CC_Threshold);
+    if (!cond)
+    {
+        for (int j = 0; j < size; j++)
+        {
+            cc_free(subconditions[j]);
+        }
+        free(subconditions);
+        return NULL;
+    }
     cond->threshold = threshold;
     cond->size = size;
     cond->subconditions = subconditions;
@@ -224,6 +248,9 @@ static Fulfillment_t *thresholdToPartialFulfillment(const CC *cond) {
 
     // Make a copy of subconditions so we can leave original order alone
     CC** subconditions = malloc(cond->size*sizeof(CC*));
+    if (!subconditions) {
+        return NULL;
+    }
     memcpy(subconditions, cond->subconditions, cond->size*sizeof(CC*));
     
     qsort(subconditions, cond->size, sizeof(CC*), cmpConditionCost);
@@ -407,15 +434,28 @@ static CC *thresholdFromJSON(const cJSON *params, char *err) {
     }
 
     CC *cond = cc_new(CC_Threshold);
+    if (!cond)
+    {
+        return NULL;
+    }
     cond->threshold = (long) threshold_item->valuedouble;
     cond->size = cJSON_GetArraySize(subfulfillments_item);
     cond->subconditions = calloc(cond->size, sizeof(CC*));
-    
+    if (!cond->subconditions)
+    {
+        cc_free(cond);
+        return NULL;
+    }
+
     cJSON *sub;
     for (int i=0; i<cond->size; i++) {
         sub = cJSON_GetArrayItem(subfulfillments_item, i);
         cond->subconditions[i] = cc_conditionFromJSON(sub, err);
-        if (err[0]) return NULL;
+        if (!cond->subconditions[i])
+        {
+            cc_free(cond);
+            return NULL;
+        }
     }
 
     return cond;

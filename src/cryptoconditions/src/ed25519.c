@@ -117,12 +117,14 @@ static CC *ed25519FromJSON(const cJSON *params, char *err) {
     if (signature_item && !cJSON_IsNull(signature_item)) {
         if (!cJSON_IsString(signature_item)) {
             strcpy(err, "signature must be null or a string");
+            free(pk);
             return NULL;
         }
         sig = base64_decode(signature_item->valuestring, &binsz);
         if (64 != binsz) {
             strcpy(err, "signature has incorrect length");
             free(sig);
+            free(pk);
             return NULL;
         }
     }
@@ -147,10 +149,24 @@ static void ed25519ToJSON(const CC *cond, cJSON *params) {
 
 
 static CC *ed25519FromFulfillment(const Fulfillment_t *ffill) {
+    if (ffill->choice.ed25519Sha256.publicKey.size != 32 ||
+        ffill->choice.ed25519Sha256.signature.size != 64) {
+        return NULL;
+    }
+
     CC *cond = cc_new(CC_Ed25519);
-    cond->publicKey = calloc(1,32);
+    if (!cond) {
+        return NULL;
+    }
+
+    cond->publicKey = calloc(1, 32);
+    cond->signature = calloc(1, 64);
+    if (!cond->publicKey || !cond->signature) {
+        cc_free(cond);
+        return NULL;
+    }
+
     memcpy(cond->publicKey, ffill->choice.ed25519Sha256.publicKey.buf, 32);
-    cond->signature = calloc(1,64);
     memcpy(cond->signature, ffill->choice.ed25519Sha256.signature.buf, 64);
     return cond;
 }
@@ -170,12 +186,28 @@ static Fulfillment_t *ed25519ToFulfillment(const CC *cond) {
 
 
 static CC *ed25519FromPartialFulfillment(const Fulfillment_t *ffill) {
+    if (ffill->choice.ed25519Sha256.publicKey.size != 32 ||
+        (ffill->choice.ed25519Sha256.signature.buf &&
+        ffill->choice.ed25519Sha256.signature.size != 64)) {
+        return NULL;
+    }
     CC *cond = cc_new(CC_Ed25519);
+    if (!cond) {
+        return NULL;
+    }
     cond->publicKey = calloc(1,32);
+    if (!cond->publicKey) {
+        cc_free(cond);
+        return NULL;
+    }
     memcpy(cond->publicKey, ffill->choice.ed25519Sha256.publicKey.buf, 32);
     if (ffill->choice.ed25519Sha256.signature.buf)
     {
         cond->signature = calloc(1,64);
+        if (!cond->signature) {
+            cc_free(cond);
+            return NULL;
+        }
         memcpy(cond->signature, ffill->choice.ed25519Sha256.signature.buf, 64);
     }
     else

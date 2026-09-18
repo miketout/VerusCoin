@@ -1771,11 +1771,17 @@ CNameReservation::CNameReservation(const CTransaction &tx, int *pOutNum)
     for (int i = 0; i < tx.vout.size(); i++)
     {
         COptCCParams p;
-        if (IsPayToCryptoCondition(tx.vout[i].scriptPubKey, p))
+        if (IsPayToCryptoCondition(tx.vout[i].scriptPubKey, p) &&
+            p.IsValid() &&
+            p.vData.size())
         {
             if (p.evalCode == EVAL_IDENTITY_RESERVATION)
             {
                 FromVector(p.vData[0], *this);
+                if (pOutNum)
+                {
+                    *pOutNum = i;
+                }
                 return;
             }
         }

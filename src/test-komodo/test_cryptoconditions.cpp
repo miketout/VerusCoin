@@ -48,16 +48,16 @@ TEST_F(CCTest, testMayAcceptCryptoCondition)
 {
     CC *cond;
 
-    // ok
-    CCFromJson(cond, R"!!(
+    // falcon512 was removed from the condition registry: its JSON must no longer
+    // parse, alone or nested inside a threshold
+    cond = cc_conditionFromJSONString(R"!!(
     { "type": "threshold-sha-256",
-      "threshold": 2,
-      "subfulfillments": [
-          { "type": "falcon512-sha-256", "publicKey": "0205a8ad0c1dbc515f149af377981aab58b836af008d4d7ab21bd76faf80550b47" }
-      ]
-    })!!");
-    ASSERT_TRUE(CCPubKey(cond).MayAcceptCryptoCondition(0));
-
+    "threshold": 2,
+    "subfulfillments": [
+        { "type": "falcon512-sha-256", "publicKey": "0205a8ad0c1dbc515f149af377981aab58b836af008d4d7ab21bd76faf80550b47" }
+    ]
+    })!!", ccjsonerr);
+    ASSERT_EQ(cond, nullptr);
 
     // prefix not allowed
     CCFromJson(cond, R"!!(

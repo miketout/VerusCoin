@@ -183,13 +183,28 @@ static CC *cc_falcon512Condition(const unsigned char *publicKey, const unsigned 
     unsigned char *pk = 0, *sig = 0;
 
     pk = calloc(1, FALCON_PUBKEY_SIZE(9));
+    if (!pk)
+    {
+        return NULL;
+    }
     memcpy(pk, publicKey, FALCON_PUBKEY_SIZE(9));
     if (signature) {
         sig = calloc(1, signatureSize);
+        if (!sig)
+        {
+            free(pk);
+            return NULL;
+        }
         memcpy(sig, signature, signatureSize);
     }
 
     CC *cond = cc_new(CC_Falcon512);
+    if (!cond)
+    {
+        free(sig);
+        free(pk);
+        return NULL;
+    }
     cond->publicKey = pk;
     cond->signature = sig;
     return cond;

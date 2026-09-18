@@ -764,6 +764,25 @@ public:
         return vChain[nHeight];
     }
 
+    // Returns the block index at min(height, tip), or nullptr if the chain has no blocks.
+    // Safe for height == 0 and for height - 1 having underflowed to UINT32_MAX.
+    inline CBlockIndex *ChainIndexAtOrBefore(uint32_t height) const
+    {
+        if (Height() == -1)
+        {
+            return nullptr;
+        }
+        uint32_t nTip = Height();
+        return (*this)[height > nTip ? nTip : height];
+    }
+
+    // Returns nTime of that block, or 0 when the chain has no blocks.
+    inline uint32_t ChainTimeAtOrBefore(uint32_t height) const
+    {
+        CBlockIndex *pIndex = ChainIndexAtOrBefore(height);
+        return pIndex ? pIndex->nTime : 0;
+    }
+
     uint256 GetVerusEntropyHash(int forHeight, int *pPOSheight=nullptr, int *pPOWheight=nullptr, int *pALTheight=nullptr, int *pFirstBlockHeight=nullptr, int *pSecondBlockHeight=nullptr) const;
     static uint256 CombineForPastHash(const uint256 &firstComponent, const uint256 &secondComponent);
 

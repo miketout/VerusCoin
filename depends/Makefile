@@ -1,5 +1,33 @@
 .NOTPARALLEL :
 
+# Pattern rule to print variables, e.g. make print-top_srcdir
+print-%:
+	@echo $* = $($*)
+
+# When invoking a sub-make, keep only the command line variable definitions
+# matching the pattern in the filter function.
+#
+# e.g. invoking:
+#   $ make A=1 C=1 print-MAKEOVERRIDES print-MAKEFLAGS
+#
+# with the following in the Makefile:
+#   MAKEOVERRIDES := $(filter A=% B=%,$(MAKEOVERRIDES))
+#
+# will print:
+#   MAKEOVERRIDES = A=1
+#   MAKEFLAGS = -- A=1
+#
+# this is because as the GNU make manual says:
+#   The command line variable definitions really appear in the variable
+#   MAKEOVERRIDES, and MAKEFLAGS contains a reference to this variable.
+#
+# and since the GNU make manual also says:
+#   variables defined on the command line are passed to the sub-make through
+#   MAKEFLAGS
+#
+# this means that sub-makes will be invoked as if:
+#   $(MAKE) A=1 blah blah
+MAKEOVERRIDES := $(filter V=%,$(MAKEOVERRIDES))
 SOURCES_PATH ?= $(BASEDIR)/sources
 BASE_CACHE ?= $(BASEDIR)/built
 SDK_PATH ?= $(BASEDIR)/SDKs
@@ -20,7 +48,6 @@ CRATE_REGISTRY:=vendored-sources
 host:=$(BUILD)
 ifneq ($(HOST),)
 host:=$(HOST)
-host_toolchain:=$(HOST)-
 endif
 
 ifneq ($(DEBUG),)
@@ -75,9 +102,8 @@ include builders/default.mk
 include packages/packages.mk
 
 wallet_packages_$(NO_WALLET) = $(wallet_packages)
-proton_packages_$(NO_PROTON) = $(proton_packages)
 
-packages += $($(host_arch)_$(host_os)_packages) $($(host_os)_packages) $(rust_packages) $(proton_packages_) $(wallet_packages_)
+packages += $($(host_arch)_$(host_os)_packages) $($(host_os)_packages) $(rust_packages) $(wallet_packages_)
 native_packages += $($(host_arch)_$(host_os)_native_packages) $($(host_os)_native_packages)
 all_packages = $(packages) $(native_packages)
 
@@ -129,7 +155,7 @@ endef
 define check_or_remove_sources
   mkdir -p $($(package)_source_dir); cd $($(package)_source_dir); \
   $(build_SHA256SUM) -c $($(package)_fetched) >/dev/null 2>/dev/null || \
-    ( if test -f $($(package)_all_sources); then echo "Checksum missing or mismatched for $(package) source. Forcing re-download."; fi; \
+    ( test -z "$($(package)_all_sources)" || ( echo $($(package)_all_sources) | xargs -n 1 test ! -f ) || echo "Checksum missing or mismatched for $(package) source. Forcing re-download."; \
       rm -f $($(package)_all_sources) $($(1)_fetched))
 endef
 
@@ -148,7 +174,7 @@ install: check-packages $(host_prefix)/share/config.site
 download-one: check-sources $(all_sources)
 
 download-osx:
-	@$(MAKE) -s HOST=x86_64-apple-darwin11 download-one
+	@$(MAKE) -s HOST=x86_64-apple-darwin download-one
 download-linux:
 	@$(MAKE) -s HOST=x86_64-pc-linux-gnu download-one
 download-win:

@@ -280,6 +280,11 @@ class CPBaaSSolutionDescriptor
 
         void SetVectorBase(std::vector<unsigned char> &vch)
         {
+            if (vch.size() < sizeof(*this))
+            {
+                throw std::runtime_error("CPBaaSSolutionDescriptor::CPBaaSSolutionDescriptor(vch): vector of insufficient size");
+            }
+
             if (vch.size() >= sizeof(*this))
             {
                 vch[0] = version & 0xff;
@@ -316,7 +321,8 @@ class CConstVerusSolutionVector
 
         static uint32_t Version(const std::vector<unsigned char> &vch)
         {
-            if (activationHeight.ActiveVersion(0x7fffffff) > 0)
+            if (vch.size() >= sizeof(CPBaaSSolutionDescriptor) &&
+                activationHeight.ActiveVersion(0x7fffffff) > 0)
             {
                 return CPBaaSSolutionDescriptor(vch).version;
             }
@@ -351,8 +357,19 @@ class CConstVerusSolutionVector
             d.SetVectorBase(vch);
         }
 
+        // serialized remainder of the block header modulo 32, using the actual CompactSize
+        // width of the solution: 1 byte below 253, 3 bytes up to the UINT16_MAX cap
+        static uint32_t ReservedTail(const std::vector<unsigned char> &vch)
+        {
+            return ((HEADER_BASESIZE - 3) + (vch.size() < 253 ? 1 : 3) + vch.size()) % 32;
+        }
+
         static CPBaaSSolutionDescriptor GetDescriptor(const std::vector<unsigned char> &vch)
         {
+            if (vch.size() < sizeof(CPBaaSSolutionDescriptor))
+            {
+                return CPBaaSSolutionDescriptor();
+            }
             return CPBaaSSolutionDescriptor(vch);
         }
 
@@ -419,6 +436,38 @@ class CConstVerusSolutionVector
             return GetDescriptor(vch).numPBaaSHeaders * sizeof(CPBaaSBlockHeader) + OVERHEAD_SIZE;
         }
 
+        // true if the descriptor's claims fit the buffer, leaving the VerusHash tail intact
+        static bool IsDescriptorValid(const std::vector<unsigned char> &vch)
+        {
+            if (vch.size() < OVERHEAD_SIZE || vch.size() > UINT16_MAX)
+            {
+                return false;
+            }
+
+            auto descr = GetDescriptor(vch);
+
+            // trailing partial 32 byte chunk is reserved for the VerusHash 2.x scratch pad
+            // and is never available for solution content
+            uint32_t reservedTail = ReservedTail(vch);
+
+            if (reservedTail < 1 || reservedTail > 16)
+            {
+                return false;
+            }
+
+            // headers must fit with the tail reserved -- computed directly from vch.size(),
+            // NOT via ExtraDataLen, which already assumes the header count is good
+            uint64_t headerBytes = (uint64_t)descr.numPBaaSHeaders * sizeof(CPBaaSBlockHeader);
+            if ((uint64_t)OVERHEAD_SIZE + headerBytes + reservedTail > vch.size())
+            {
+                return false;
+            }
+
+            // header count now known good, so ExtraDataLen is meaningful -- and this is exactly
+            // the bound SetExtraData enforces on the way in
+            return descr.extraDataSize <= ExtraDataLen(vch, true);
+        }
+
         static uint32_t ExtraDataLen(const std::vector<unsigned char> &vch, bool allowPBaaSHeader=false)
         {
             int len;
@@ -430,7 +479,7 @@ class CConstVerusSolutionVector
             else
             {
                 // calculate number of bytes, minus the OVERHEAD_SIZE byte version and extra nonce at the end of the solution
-                len = (vch.size() - ((HEADER_BASESIZE + vch.size()) % 32 + HeadersOverheadSize(vch)));
+                len = (vch.size() - (ReservedTail(vch) + HeadersOverheadSize(vch)));
             }
 
             return len < 0 ? 0 : (uint32_t)len;
@@ -546,7 +595,7 @@ class CVerusSolutionVector
             else
             {
                 // calculate number of bytes, minus the OVERHEAD_SIZE byte version and extra nonce at the end of the solution
-                len = (vch.size() - ((solutionTools.HEADER_BASESIZE + vch.size()) % 32 + HeadersOverheadSize()));
+                len = (vch.size() - (CConstVerusSolutionVector::ReservedTail(vch) + HeadersOverheadSize()));
             }
 
             return len < 0 ? 0 : (uint32_t)len;
@@ -569,7 +618,7 @@ class CVerusSolutionVector
         // return a pointer to bytes that contain the internal data for this solution vector
         unsigned char *ExtraDataPtr()
         {
-            if (ExtraDataLen())
+            if (solutionTools.IsDescriptorValid(vch) && ExtraDataLen())
             {
                 return &(vch.data()[HeadersOverheadSize()]);
             }
@@ -585,10 +634,11 @@ class CVerusSolutionVector
         {
             int len = Descriptor().extraDataSize;
 
-            if (len > 0)
+            unsigned char *pExtra = ExtraDataPtr();
+            if (len > 0 && pExtra)
             {
                 dataVec.resize(len);
-                std::memcpy(dataVec.data(), ExtraDataPtr(), len);
+                std::memcpy(dataVec.data(), pExtra, len);
             }
             else
             {
@@ -605,9 +655,17 @@ class CVerusSolutionVector
             }
             auto descr = Descriptor();
             descr.extraDataSize = len;
-            SetDescriptor(descr);
-            std::memcpy(ExtraDataPtr(), pbegin, len);
-            return true;
+            auto pData = ExtraDataPtr();
+            if (pData)
+            {
+                SetDescriptor(descr);
+                std::memcpy(pData, pbegin, len);
+                return true;
+            }
+            else
+            {
+                return false;
+            }
         }
 };
 
@@ -626,15 +684,20 @@ class CCompactSolutionVector
         std::vector<unsigned char> vch;
         uint16_t _size;
 
-        CCompactSolutionVector(const std::vector<unsigned char> &_vch) : _size(_vch.size())
+        CCompactSolutionVector(const std::vector<unsigned char> &_vch) : _size(0)
         {
+            if (_vch.size() > UINT16_MAX)
+            {
+                return;
+            }
+            _size = _vch.size();
             if (!useCompression)
             {
                 vch = _vch;
                 return;
             }
             std::vector<unsigned char> tVch;
-            if (!_size)
+            if (!_size || _vch.size() > UINT16_MAX)
             {
                 return;
             }

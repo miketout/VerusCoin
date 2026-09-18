@@ -85,8 +85,8 @@ AC_PATH_TOOL(CPPFILT,c++filt)
 
 # Enable wallet
 AC_ARG_ENABLE([wallet],
-  [AS_HELP_STRING([--enable-wallet],
-  [enable wallet (default is yes)])],
+  [AS_HELP_STRING([--disable-wallet],
+  [disable wallet (enabled by default)])],
   [enable_wallet=$enableval],
   [enable_wallet=yes])
 
@@ -96,42 +96,16 @@ AC_ARG_ENABLE([mining],
   [enable_mining=$enableval],
   [enable_mining=yes])
 
-AC_ARG_ENABLE([proton],
-  [AS_HELP_STRING([--disable-proton],
-  [disable Proton (AMQP messaging)])],
-  [use_proton=$enableval],
-  [use_proton=yes])
-
 AC_ARG_ENABLE(tests,
-    AS_HELP_STRING([--enable-tests],[compile tests (default is yes)]),
+    AS_HELP_STRING([--disable-tests],[do not compile tests (default is to compile)]),
     [use_tests=$enableval],
     [use_tests=yes])
 
-AC_ARG_ENABLE([asan],
-  [AS_HELP_STRING([--enable-asan],
-  [instrument the executables with asan (default is no)])],
-  [use_asan=$enableval],
-  [use_asan=no])
-
-AC_ARG_ENABLE([tsan],
-  [AS_HELP_STRING([--enable-tsan],
-  [instrument the executables with tsan (default is no)])],
-  [use_tsan=$enableval],
-  [use_tsan=no])
-
-if test x$TARGET_OS = xdarwin; then
 AC_ARG_ENABLE([hardening],
-  [AS_HELP_STRING([--enable-hardening],
-  [attempt to harden the resulting executables (default is yes)])],
-  [use_hardening=$enableval],
-  [use_hardening=no])
-else
-AC_ARG_ENABLE([hardening],
-  [AS_HELP_STRING([--enable-hardening],
-  [attempt to harden the resulting executables (default is yes)])],
+  [AS_HELP_STRING([--disable-hardening],
+  [do not attempt to harden the resulting executables (default is to harden when possible)])],
   [use_hardening=$enableval],
   [use_hardening=yes])
-fi
 
 AC_ARG_ENABLE([reduce-exports],
   [AS_HELP_STRING([--enable-reduce-exports],
@@ -140,8 +114,8 @@ AC_ARG_ENABLE([reduce-exports],
   [use_reduce_exports=no])
 
 AC_ARG_ENABLE([ccache],
-  [AS_HELP_STRING([--enable-ccache],
-  [use ccache for building (default is yes if ccache is found)])],
+  [AS_HELP_STRING([--disable-ccache],
+  [do not use ccache for building (default is to use if found)])],
   [use_ccache=$enableval],
   [use_ccache=auto])
 
@@ -174,29 +148,103 @@ AM_CONDITIONAL(ENABLE_MAN, test "$enable_man" != no)
 # Enable debug
 AC_ARG_ENABLE([debug],
     [AS_HELP_STRING([--enable-debug],
-                    [use debug compiler flags and macros (default is no)])],
+                    [use compiler flags and macros suited for debugging (default is no)])],
     [enable_debug=$enableval],
     [enable_debug=no])
 
+# Enable different -fsanitize options
+AC_ARG_WITH([sanitizers],
+    [AS_HELP_STRING([--with-sanitizers],
+                    [comma separated list of extra sanitizers to build with (default is none enabled)])],
+    [use_sanitizers=$withval])
+
+# Enable gprof profiling
+AC_ARG_ENABLE([gprof],
+    [AS_HELP_STRING([--enable-gprof],
+                    [use gprof profiling compiler flags (default is no)])],
+    [enable_gprof=$enableval],
+    [enable_gprof=no])
+
 # Turn warnings into errors
 AC_ARG_ENABLE([werror],
-    [AS_HELP_STRING([--enable-werror],
-                    [Treat all compiler warnings as errors (default is no)])],
+    [AS_HELP_STRING([--disable-werror],
+                    [Do not treat compiler warnings as errors (default is to treat them as errors)])],
     [enable_werror=$enableval],
-    [enable_werror=no])
+    [enable_werror=yes])
 
 AC_LANG_PUSH([C++])
 AX_CHECK_COMPILE_FLAG([-Werror],[CXXFLAG_WERROR="-Werror"],[CXXFLAG_WERROR=""])
 
 if test "x$enable_debug" = xyes; then
-    CPPFLAGS="$CPPFLAGS -DDEBUG -DDEBUG_LOCKORDER"
-    if test "x$GCC" = xyes; then
-        CFLAGS="$CFLAGS -g3 -O0"
-    fi
+  CXXFLAGS=`echo "$CXXFLAGS" | sed -e 's/-O[[^ ]]*//g'`
 
-    if test "x$GXX" = xyes; then
-        CXXFLAGS="$CXXFLAGS -g3 -O0"
-    fi
+  # Disable all optimizations
+  AX_CHECK_COMPILE_FLAG([-O0], [[DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -O0"]],,[[$CXXFLAG_WERROR]])
+
+  # Prefer -g3, fall back to -g if that is unavailable.
+  AX_CHECK_COMPILE_FLAG(
+    [-g3],
+    [[DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -g3"]],
+    [AX_CHECK_COMPILE_FLAG([-g],[[DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -g"]],,[[$CXXFLAG_WERROR]])],
+    [[$CXXFLAG_WERROR]])
+
+  AX_CHECK_PREPROC_FLAG([-DDEBUG],[[DEBUG_CPPFLAGS="$DEBUG_CPPFLAGS -DDEBUG"]],,[[$CXXFLAG_WERROR]])
+  AX_CHECK_PREPROC_FLAG([-DDEBUG_LOCKORDER],[[DEBUG_CPPFLAGS="$DEBUG_CPPFLAGS -DDEBUG_LOCKORDER"]],,[[$CXXFLAG_WERROR]])
+  AX_CHECK_COMPILE_FLAG([-ftrapv],[DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -ftrapv"],,[[$CXXFLAG_WERROR]])
+else
+  # Even with enable_debug=no we build with standard debug symbols
+  AX_CHECK_COMPILE_FLAG([-g],[[DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -g"]],,[[$CXXFLAG_WERROR]])
+
+  # -ftrapv and -fwrapv conflict, so we only set this if enable_debug=no
+  AX_CHECK_COMPILE_FLAG([-fwrapv],[CXXFLAGS="$CXXFLAGS -fwrapv"],,[[$CXXFLAG_WERROR]])
+fi
+
+if test x$use_sanitizers != x; then
+  # First check if the compiler accepts flags. If an incompatible pair like
+  # -fsanitize=address,thread is used here, this check will fail. This will also
+  # fail if a bad argument is passed, e.g. -fsanitize=undfeined
+  AX_CHECK_COMPILE_FLAG(
+    [[-fsanitize=$use_sanitizers]],
+    [[SANITIZER_CXXFLAGS=-fsanitize=$use_sanitizers]],
+    [AC_MSG_ERROR([compiler did not accept requested flags])])
+
+  # Some compilers (e.g. GCC) require additional libraries like libasan,
+  # libtsan, libubsan, etc. Make sure linking still works with the sanitize
+  # flag. This is a separate check so we can give a better error message when
+  # the sanitize flags are supported by the compiler but the actual sanitizer
+  # libs are missing.
+  AX_CHECK_LINK_FLAG(
+    [[-fsanitize=$use_sanitizers]],
+    [[SANITIZER_LDFLAGS=-fsanitize=$use_sanitizers]],
+    [AC_MSG_ERROR([linker did not accept requested flags, you are missing required libraries])])
+
+  AX_CHECK_COMPILE_FLAG(
+    [-fno-omit-frame-pointer],
+    [SANITIZER_CXXFLAGS="$SANITIZER_CXXFLAGS -fno-omit-frame-pointer"],
+    [AC_MSG_ERROR(Cannot enable -fno-omit-frame-pointer)])
+
+  # libc/libstdc++ static linking is not supported for TSan
+  case $use_sanitizers in
+    *thread*)
+      ;;
+    *)
+      AX_CHECK_LINK_FLAG(
+        [-static-libstdc++],
+        [SANITIZER_LDFLAGS="$SANITIZER_LDFLAGS -static-libstdc++"],
+        [AC_MSG_ERROR(Cannot statically link -static-libstdc++)])
+      ;;
+  esac
+
+  case $use_sanitizers in
+    *address*)
+      AX_CHECK_LINK_FLAG(
+        [-static-libasan],
+        [SANITIZER_LDFLAGS="$SANITIZER_LDFLAGS -static-libasan"],
+        [AC_MSG_ERROR(Cannot statically link -static-libasan)])
+      ;;
+    *)
+      ;;
+  esac
 fi
 
 ERROR_CXXFLAGS=
@@ -242,8 +290,16 @@ AC_ARG_WITH([daemon],
   [build_bitcoind=$withval],
   [build_bitcoind=yes])
 
-GCC_TARGET=`$CC -dumpmachine 2>&1`
-case $GCC_TARGET in
+AC_ARG_ENABLE([verus-isa],
+  [AS_HELP_STRING([--enable-verus-isa@<:@=auto|yes|no@:>@],
+  [build the instruction set optimized Verus hash. "yes" fails configure if the
+   toolchain cannot build it, rather than silently falling back to the much
+   slower portable implementation. "no" forces the portable implementation
+   (default=auto)])],
+  [],
+  [enable_verus_isa=auto])
+
+case $host in
   arm*-*-*)
     have_arm=true
     ;;
@@ -251,6 +307,72 @@ case $GCC_TARGET in
     have_arm=true
     ;;
 esac
+
+have_verus_isa=no
+VERUS_ISA_ARCH_FLAGS=
+VERUS_ISA_CFLAGS=
+VERUS_ISA_CXXFLAGS=
+SSE2NEON_CFLAGS=
+SSE2NEON_CXXFLAGS=
+
+if test x$enable_verus_isa = xno; then
+  :
+elif test x$have_arm = xtrue; then
+  AX_CHECK_COMPILE_FLAG([-march=armv8-a+crypto],[[VERUS_ISA_ARCH_FLAGS="-march=armv8-a+crypto"]],,[[$CXXFLAG_WERROR]])
+  AX_CHECK_COMPILE_FLAG([-flax-vector-conversions],[[SSE2NEON_CFLAGS="-flax-vector-conversions"]],,[[$CXXFLAG_WERROR]])
+  AX_CHECK_COMPILE_FLAG([-Wno-error=attributes],[[SSE2NEON_CXXFLAGS="-Wno-error=attributes"]],,[[$CXXFLAG_WERROR]])
+  SSE2NEON_CXXFLAGS="$SSE2NEON_CXXFLAGS $SSE2NEON_CFLAGS"
+
+  TEMP_CXXFLAGS="$CXXFLAGS"
+  CXXFLAGS="$CXXFLAGS $VERUS_ISA_ARCH_FLAGS"
+  AC_MSG_CHECKING(for ARM AES and PMULL intrinsics)
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+      #include <arm_neon.h>
+    ]],[[
+      uint8x16_t a = vdupq_n_u8(0);
+      a = vaesmcq_u8(vaeseq_u8(a, a));
+      vmull_p64(0, 0);
+      return vgetq_lane_u8(a, 0);
+    ]])],
+   [ AC_MSG_RESULT(yes); have_verus_isa=yes ],
+   [ AC_MSG_RESULT(no) ])
+  CXXFLAGS="$TEMP_CXXFLAGS"
+else
+  AX_CHECK_COMPILE_FLAG(
+    [-mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes],
+    [[VERUS_ISA_ARCH_FLAGS="-mpclmul -msse4 -msse4.1 -msse4.2 -mssse3 -maes"]],,
+    [[$CXXFLAG_WERROR]])
+
+  TEMP_CXXFLAGS="$CXXFLAGS"
+  CXXFLAGS="$CXXFLAGS $VERUS_ISA_ARCH_FLAGS"
+  AC_MSG_CHECKING([for x86 SSSE3, SSE4, AES-NI and PCLMUL intrinsics])
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+      #include <stdint.h>
+      #include <immintrin.h>
+    ]],[[
+      __m128i a = _mm_set_epi32(0, 0, 0, 0);
+      __m128i b = _mm_load_si128(&a);
+      a = _mm_aesenc_si128(a, b);
+      a = _mm_clmulepi64_si128(a, b, 0x10);
+      a = _mm_shuffle_epi8(a, b);
+      a = _mm_mulhrs_epi16(a, b);
+      return (int)_mm_cvtsi128_si64(a);
+    ]])],
+   [ AC_MSG_RESULT(yes); have_verus_isa=yes ],
+   [ AC_MSG_RESULT(no) ])
+  CXXFLAGS="$TEMP_CXXFLAGS"
+fi
+
+if test x$have_verus_isa = xyes; then
+  VERUS_ISA_CFLAGS="$VERUS_ISA_ARCH_FLAGS"
+  VERUS_ISA_CXXFLAGS="$VERUS_ISA_ARCH_FLAGS"
+  AC_DEFINE(ENABLE_VERUS_ISA, 1,
+    [Define this symbol to build the instruction set optimized Verus hash])
+elif test x$enable_verus_isa = xyes; then
+  AC_MSG_ERROR([--enable-verus-isa=yes was given but the compiler cannot build the instruction set optimized Verus hash for $host; only the much slower portable implementation would be available])
+elif test x$enable_verus_isa != xno; then
+  AC_MSG_WARN([the compiler cannot build the instruction set optimized Verus hash; only the portable implementation will be available and Verus hash will be much slower])
+fi
 
 use_pkgconfig=yes
 case $host in
@@ -279,6 +401,7 @@ case $host in
      AC_CHECK_LIB([shlwapi],      [main],, AC_MSG_ERROR(lib missing))
      AC_CHECK_LIB([iphlpapi],      [main],, AC_MSG_ERROR(lib missing))
      AC_CHECK_LIB([crypt32],      [main],, AC_MSG_ERROR(lib missing))
+     AC_CHECK_LIB([bcrypt],      [main],, AC_MSG_ERROR(lib missing))
 
      # -static is interpreted by libtool, where it has a different meaning.
      # In libtool-speak, it's -all-static.
@@ -294,7 +417,7 @@ case $host in
        AC_MSG_ERROR("windres not found")
      fi
 
-     CPPFLAGS="$CPPFLAGS -D_MT -DWIN32 -D_WINDOWS -DBOOST_THREAD_USE_LIB"
+     CPPFLAGS="$CPPFLAGS -D_MT -DWIN32 -D_WINDOWS -DBOOST_THREAD_USE_LIB -DCURL_STATICLIB"
      LEVELDB_TARGET_FLAGS="TARGET_OS=OS_WINDOWS_CROSSCOMPILE"
      if test "x$CXXFLAGS_overridden" = "xno"; then
        CXXFLAGS="$CXXFLAGS -w"
@@ -416,6 +539,8 @@ AC_C_BIGENDIAN
 
 dnl Check for pthread compile/link requirements
 AX_PTHREAD
+CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
+CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS"
 
 # The following macro will add the necessary defines to bitcoin-config.h, but
 # they also need to be passed down to any subprojects. Pull the results out of
@@ -465,35 +590,30 @@ else
   AC_SEARCH_LIBS([clock_gettime],[rt])
 fi
 
+if test "x$enable_gprof" = xyes; then
+    dnl -pg is incompatible with -pie. Since hardening and profiling together doesn't make sense,
+    dnl we simply make them mutually exclusive here. Additionally, hardened toolchains may force
+    dnl -pie by default, in which case it needs to be turned off with -no-pie.
+
+    if test x$use_hardening = xyes; then
+        AC_MSG_ERROR(gprof profiling is not compatible with hardening. Reconfigure with --disable-hardening or --disable-gprof)
+    fi
+    use_hardening=no
+    AX_CHECK_COMPILE_FLAG([-pg],[GPROF_CXXFLAGS="-pg"],
+        [AC_MSG_ERROR(gprof profiling requested but not available)], [[$CXXFLAG_WERROR]])
+
+    AX_CHECK_LINK_FLAG([[-no-pie]], [GPROF_LDFLAGS="-no-pie"])
+    AX_CHECK_LINK_FLAG([[-pg]],[GPROF_LDFLAGS="$GPROF_LDFLAGS -pg"],
+        [AC_MSG_ERROR(gprof profiling requested but not available)], [[$GPROF_LDFLAGS]])
+fi
+
 if test x$TARGET_OS != xwindows; then
   # All windows code is PIC, forcing it on just adds useless compile warnings
   AX_CHECK_COMPILE_FLAG([-fPIC],[PIC_FLAGS="-fPIC"])
 fi
 
-#asan and tsan cannot be used together
-if test x$use_asan$use_tsan == xyesyes; then
-  AC_MSG_ERROR(asan and tsan cannot be simultaneously enabled)
-fi
-
-# using asan flag to enable address sanitizer and undefined behavior sanitizer
-if test x$use_asan == xyes; then
-  AX_CHECK_LINK_FLAG([-static-libstdc++],[SAN_LDFLAGS="$SAN_LDFLAGS -static-libstdc++"],[AC_MSG_ERROR(Cannot statically link -static-libstdc++)])
-  AX_CHECK_LINK_FLAG([-static-libasan],[SAN_LDFLAGS="$SAN_LDFLAGS -static-libasan"],[AC_MSG_ERROR(Cannot statically link -static-libasan)])
-  AX_CHECK_COMPILE_FLAG([-fsanitize=address],[SAN_CXXFLAGS="$SAN_CXXFLAGS -fsanitize=address"],[AC_MSG_ERROR(Cannot enable -fsanitize=address)])
-  AX_CHECK_COMPILE_FLAG([-fsanitize=undefined],[SAN_CXXFLAGS="$SAN_CXXFLAGS -fsanitize=undefined"],[AC_MSG_ERROR(Cannot enable -fsanitize=undefined)])
-  AX_CHECK_COMPILE_FLAG([-fno-omit-frame-pointer],[SAN_CXXFLAGS="$SAN_CXXFLAGS -fno-omit-frame-pointer"],[AC_MSG_ERROR(Cannot enable -fno-omit-frame-pointer)])
-fi
-
-# using tsan flag to enable address thread sanitizer
-# TSAN is supported on Linux x84_64 and tested on Ubuntu 12.04
-# Non-position-independent executables are not supported.  Use with -fPIE and -pie flags
-# libc/libstdc++ static linking is not supported
-if test x$use_tsan == xyes; then
-  AX_CHECK_COMPILE_FLAG([-fsanitize=thread],[SAN_CXXFLAGS="$SAN_CXXFLAGS -fsanitize=thread"],[AC_MSG_ERROR(Cannot enable -fsanitize=thread)])
-  AX_CHECK_COMPILE_FLAG([-fno-omit-frame-pointer],[SAN_CXXFLAGS="$SAN_CXXFLAGS -fno-omit-frame-pointer"],[AC_MSG_ERROR(Cannot enable -fno-omit-frame-pointer)])
-fi
-
 if test x$use_hardening != xno; then
+  use_hardening=yes
   AX_CHECK_COMPILE_FLAG([-Wformat],[HARDENED_CXXFLAGS="$HARDENED_CXXFLAGS -Wformat"],[AC_MSG_ERROR(Cannot enable -Wformat)])
   AX_CHECK_COMPILE_FLAG([-Wformat-security],[HARDENED_CXXFLAGS="$HARDENED_CXXFLAGS -Wformat-security"],[AC_MSG_ERROR(Cannot enable -Wformat-security)],[-Wformat])
   AX_CHECK_COMPILE_FLAG([-Wstack-protector],[HARDENED_CXXFLAGS="$HARDENED_CXXFLAGS -Wstack-protector"],[AC_MSG_ERROR(Cannot enable -Wstack-protector)])
@@ -503,7 +623,9 @@ if test x$use_hardening != xno; then
     AX_CHECK_PREPROC_FLAG([-U_FORTIFY_SOURCE],[
       HARDENED_CPPFLAGS="$HARDENED_CPPFLAGS -U_FORTIFY_SOURCE"
     ],[AC_MSG_ERROR(Cannot enable -U_FORTIFY_SOURCE)])
-    HARDENED_CPPFLAGS="$HARDENED_CPPFLAGS -D_FORTIFY_SOURCE=2"
+    if test "x$enable_debug" != xyes; then
+      HARDENED_CPPFLAGS="$HARDENED_CPPFLAGS -D_FORTIFY_SOURCE=2"
+    fi
   ],[AC_MSG_ERROR(Cannot enable -D_FORTIFY_SOURCE=2)])
 
   #AX_CHECK_LINK_FLAG([[-Wl,-z,relro]], [HARDENED_LDFLAGS="$HARDENED_LDFLAGS -Wl,-z,relro"],[AC_MSG_ERROR(Cannot enable RELRO)])
@@ -630,31 +752,6 @@ AC_SUBST(LIBMEMENV)
 if test x$enable_wallet != xno; then
     dnl Check for libdb_cxx only if wallet enabled
     BITCOIN_FIND_BDB62
-fi
-
-dnl Check Qpid Proton headers and library exist
-if test x$use_proton = xyes; then
-  AC_CHECK_HEADERS([proton/connection.hpp],
-    [],
-    [AC_MSG_WARN([Proton headers not found, disabling Proton support])
-    use_proton=no])
- AC_CHECK_LIB([qpid-proton-cpp-static], [main],
-    [PROTON_LIBS="-lqpid-proton-cpp-static"],
-    [AC_MSG_WARN([Proton qpid-proton-cpp-static library not found, disabling Proton support])
-    use_proton=no])
- AC_CHECK_LIB([qpid-proton-core-static], [main],
-    [PROTON_LIBS+=" -lqpid-proton-core-static"],
-    [AC_MSG_WARN([Proton qpid-proton-core-static library not found, disabling Proton support])
-    use_proton=no])
- AC_CHECK_LIB([qpid-proton-static], [main],
-    [PROTON_LIBS+=" -lqpid-proton-static"],
-    [AC_MSG_WARN([Proton qpid-proton-static library not found, disabling Proton support])
-    use_proton=no])
-fi
-if test x$use_proton = xyes; then
-    AC_DEFINE(ENABLE_PROTON, 1, [Define to 1 to enable Proton functions])
-else
-    AC_DEFINE(ENABLE_PROTON, 0, [Define to 1 to enable Proton functions])
 fi
 
 if test x$build_bitcoin_utils$build_bitcoind$use_tests = xnonono; then
@@ -794,7 +891,6 @@ case $host in
 esac
 
 # Additional Zcash flags
-AX_CHECK_COMPILE_FLAG([-fwrapv],[CXXFLAGS="$CXXFLAGS -fwrapv"])
 AX_CHECK_COMPILE_FLAG([-fno-strict-aliasing],[CXXFLAGS="$CXXFLAGS -fno-strict-aliasing"])
 AX_CHECK_COMPILE_FLAG([-Wno-builtin-declaration-mismatch],[CXXFLAGS="$CXXFLAGS -Wno-builtin-declaration-mismatch"],,[[$CXXFLAG_WERROR]])
 
@@ -860,8 +956,6 @@ fi
 
 AM_CONDITIONAL([ENABLE_ZMQ], [test "x$use_zmq" = "xyes"])
 
-AM_CONDITIONAL([ENABLE_PROTON], [test "x$use_proton" = "xyes"])
-
 AC_MSG_CHECKING([whether to build test_bitcoin])
 if test x$use_tests = xyes; then
   AC_MSG_RESULT([yes])
@@ -888,12 +982,10 @@ AM_CONDITIONAL([TARGET_WINDOWS], [test x$TARGET_OS = xwindows])
 AM_CONDITIONAL([ENABLE_WALLET],[test x$enable_wallet = xyes])
 AM_CONDITIONAL([ENABLE_MINING],[test x$enable_mining = xyes])
 AM_CONDITIONAL([ENABLE_TESTS],[test x$BUILD_TEST = xyes])
-AM_CONDITIONAL([ARCH_ARM], [test x$have_arm = xtrue])
+AM_CONDITIONAL([ENABLE_VERUS_ISA], [test x$have_verus_isa = xyes])
 AM_CONDITIONAL([USE_LCOV],[test x$use_lcov = xyes])
 AM_CONDITIONAL([GLIBC_BACK_COMPAT],[test x$use_glibc_compat = xyes])
 AM_CONDITIONAL([HARDEN],[test x$use_hardening = xyes])
-AM_CONDITIONAL([ASAN],[test x$use_asan = xyes])
-AM_CONDITIONAL([TSAN],[test x$use_tsan = xyes])
 
 AC_DEFINE(CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MAJOR, [Major version])
 AC_DEFINE(CLIENT_VERSION_MINOR, _CLIENT_VERSION_MINOR, [Minor version])
@@ -912,14 +1004,22 @@ AC_SUBST(BITCOIN_CLI_NAME)
 AC_SUBST(BITCOIN_TX_NAME)
 
 AC_SUBST(RELDFLAGS)
+AC_SUBST(DEBUG_CPPFLAGS)
+AC_SUBST(DEBUG_CXXFLAGS)
 AC_SUBST(ERROR_CXXFLAGS)
-AC_SUBST(SAN_CXXFLAGS)
-AC_SUBST(SAN_LDFLAGS)
+AC_SUBST(GPROF_CXXFLAGS)
+AC_SUBST(GPROF_LDFLAGS)
 AC_SUBST(HARDENED_CXXFLAGS)
 AC_SUBST(HARDENED_CPPFLAGS)
 AC_SUBST(HARDENED_LDFLAGS)
 AC_SUBST(PIC_FLAGS)
 AC_SUBST(PIE_FLAGS)
+AC_SUBST(SSE2NEON_CFLAGS)
+AC_SUBST(SSE2NEON_CXXFLAGS)
+AC_SUBST(VERUS_ISA_CFLAGS)
+AC_SUBST(VERUS_ISA_CXXFLAGS)
+AC_SUBST(SANITIZER_CXXFLAGS)
+AC_SUBST(SANITIZER_LDFLAGS)
 AC_SUBST(LIBTOOL_APP_LDFLAGS)
 AC_SUBST(BOOST_LIBS)
 AC_SUBST(TESTDEFS)
@@ -930,7 +1030,6 @@ AC_SUBST(EVENT_LIBS)
 AC_SUBST(EVENT_PTHREADS_LIBS)
 AC_SUBST(ZMQ_LIBS)
 AC_SUBST(LIBZCASH_LIBS)
-AC_SUBST(PROTON_LIBS)
 AC_CONFIG_FILES([Makefile src/Makefile doc/man/Makefile src/test/buildenv.py])
 AC_CONFIG_FILES([qa/pull-tester/run-bitcoind-for-test.sh],[chmod +x qa/pull-tester/run-bitcoind-for-test.sh])
 AC_CONFIG_FILES([qa/pull-tester/tests-config.sh],[chmod +x qa/pull-tester/tests-config.sh])
@@ -977,20 +1076,23 @@ esac
 echo 
 echo "Options used to compile and link:"
 echo "  with wallet   = $enable_wallet"
-echo "  with proton   = $use_proton"
 echo "  with zmq      = $use_zmq"
 echo "  with test     = $use_tests"
+echo "  sanitizers    = $use_sanitizers"
 echo "  debug enabled = $enable_debug"
+echo "  gprof enabled = $enable_gprof"
 echo "  werror        = $enable_werror"
+echo "  verus hash isa= $have_verus_isa"
 echo 
 echo "  target os     = $TARGET_OS"
 echo "  build os      = $BUILD_OS"
 echo
 echo "  CC            = $CC"
 echo "  CFLAGS        = $CFLAGS"
-echo "  CPPFLAGS      = $CPPFLAGS"
+echo "  CPPFLAGS      = $DEBUG_CPPFLAGS $HARDENED_CPPFLAGS $CPPFLAGS"
 echo "  CXX           = $CXX"
-echo "  CXXFLAGS      = $CXXFLAGS"
-echo "  LDFLAGS       = $LDFLAGS"
+echo "  CXXFLAGS      = $DEBUG_CXXFLAGS $HARDENED_CXXFLAGS $ERROR_CXXFLAGS $GPROF_CXXFLAGS $CXXFLAGS"
+echo "  LDFLAGS       = $PTHREAD_CFLAGS $HARDENED_LDFLAGS $GPROF_LDFLAGS $LDFLAGS"
+echo "  AR            = $AR"
 echo "  ARFLAGS       = $ARFLAGS"
 echo 

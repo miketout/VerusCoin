@@ -233,7 +233,7 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             memcpy(cp->CCpriv,DecodeSecret(ReserveOutputWIF).begin(),32);
             cp->validate = ValidateReserveOutput;
             cp->ismyvin = IsReserveOutputInput;
-            cp->contextualprecheck = DefaultCCContextualPreCheck;
+            cp->contextualprecheck = PrecheckReserveOutput;
             break;
 
         case EVAL_IDENTITY_ADVANCEDRESERVATION:

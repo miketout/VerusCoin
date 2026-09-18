@@ -1442,7 +1442,7 @@ TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txT
     }
 }
 
-TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const PrecomputedTransactionData& txdataIn, const CScript *pScriptPubKeyIn, const CKeyStore *pKeyStore, uint32_t spendHeight) : txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(NULL), idMapSet(false)
+TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const PrecomputedTransactionData& txdataIn, const CScript *pScriptPubKeyIn, const CKeyStore *pKeyStore, uint32_t spendHeight) : txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(&txdataIn), idMapSet(false)
 {
     if (pScriptPubKeyIn && pKeyStore)
     {
@@ -1476,7 +1476,7 @@ bool TransactionSignatureChecker::CheckSig(
     uint256 sighash;
     try {
         sighash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, consensusBranchId, this->txdata);
-    } catch (logic_error ex) {
+    } catch (const std::logic_error &ex) {
         return false;
     }
 
@@ -1521,12 +1521,10 @@ int TransactionSignatureChecker::CheckCryptoCondition(
         bool failToTrue = false;
 
         CIdentity identity;
-        bool identitySpend = false;
         uint160 idID;
         if (p.evalCode == EVAL_IDENTITY_PRIMARY)
         {
             identity = CIdentity(p.vData[0]);
-            identitySpend = identity.IsValid();
             idID = identity.GetID();
         }
 
@@ -1706,7 +1704,7 @@ int TransactionSignatureChecker::CheckCryptoCondition(
                 nHashType = signatures.sigHashType;
                 for (auto &sig : signatures.signatures)
                 {
-                    if (sig.second.sigType != sig.second.SIGTYPE_SECP256K1 || !sig.second.signature.size() || !cc_ApplySecp256k1Signature(outputCC, sig.second.pubKeyData.data(), sig.first.begin(), sig.second.signature.data()))
+                    if (sig.second.sigType != sig.second.SIGTYPE_SECP256K1 || sig.second.signature.size() != 64 || !cc_ApplySecp256k1Signature(outputCC, sig.second.pubKeyData.data(), sig.first.begin(), sig.second.signature.data()))
                     {
                         success = false;
                     }
@@ -1766,7 +1764,7 @@ int TransactionSignatureChecker::CheckCryptoCondition(
     uint256 sighash;
     try {
         sighash = SignatureHash(signScript, *txTo, nIn, nHashType, amount, consensusBranchId, this->txdata);
-    } catch (logic_error ex) {
+    } catch (const std::logic_error &ex) {
         cc_free(cond);
         return 0;
     }

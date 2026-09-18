@@ -133,9 +133,19 @@ bool CAlert::RelayTo(CNode* pnode) const
     if (pnode->nVersion == 0)
         return false;
     // returns true if wasn't already contained in the set
-    if (pnode->setKnown.insert(GetHash()).second)
+    bool fInserted;
     {
-        if (AppliesTo(pnode->nVersion, pnode->strSubVer) ||
+        LOCK(pnode->cs_setKnown);
+        fInserted = pnode->setKnown.insert(GetHash()).second;
+    }
+    if (fInserted)
+    {
+        std::string strSubVerCopy;
+        {
+            LOCK(pnode->cs_SubVer);
+            strSubVerCopy = pnode->strSubVer;
+        }
+        if (AppliesTo(pnode->nVersion, strSubVerCopy) ||
             AppliesToMe() ||
             GetAdjustedTime() < nRelayUntil)
         {

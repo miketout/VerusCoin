@@ -69,7 +69,7 @@ bool CVDXF_StructuredData::IsValid() const
         for (auto &oneVec : data)
         {
             VDXFData deserObject = DeserializeVDXFData(oneVec);
-            if (deserObject.empty())
+            if (deserObject.which() == 0)
             {
                 return false;
             }
@@ -525,7 +525,8 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
         notarizationProtocol = (ENotarizationProtocol)uni_get_int(find_value(obj, "notarizationprotocol"), (int32_t)NOTARIZATION_AUTO);
         if (notarizationProtocol != NOTARIZATION_AUTO && notarizationProtocol != NOTARIZATION_NOTARY_CONFIRM)
         {
-            LogPrintf("%s: notarization protocol for PBaaS chains must be %d (NOTARIZATION_AUTO) or %d (NOTARIZATION_NOTARY_CONFIRM)\n", __func__, (int)NOTARIZATION_NOTARY_CONFIRM);
+            LogPrintf("%s: notarization protocol for PBaaS chains must be %d (NOTARIZATION_AUTO) or %d (NOTARIZATION_NOTARY_CONFIRM)\n",
+                    __func__, (int)NOTARIZATION_AUTO, (int)NOTARIZATION_NOTARY_CONFIRM);
             nVersion = PBAAS_VERSION_INVALID;
             return;
         }
@@ -910,14 +911,14 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
 
             if (!rewards.size())
             {
-                LogPrintf("%s: PBaaS chain does not have valid rewards eras");
+                LogPrintf("%s: PBaaS chain does not have valid rewards eras", __func__);
                 nVersion = PBAAS_VERSION_INVALID;
             }
         }
     }
-    catch (exception e)
+    catch (const std::exception &e)
     {
-        LogPrintf("%s: exception reading currency definition JSON\n", __func__, e.what());
+        LogPrintf("%s: exception reading currency definition JSON: %s\n", __func__, e.what());
         nVersion = PBAAS_VERSION_INVALID;
     }
 }

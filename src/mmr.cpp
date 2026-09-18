@@ -272,6 +272,12 @@ uint256 CMMRProof::CheckProof(uint256 hash, bool optimized) const
 uint64_t CMerkleBranchBase::GetMMRProofIndex(uint64_t pos, uint64_t mmvSize, int extrahashes)
 {
     uint64_t retIndex = 0;
+
+    if (mmvSize == 0 || pos >= mmvSize)
+    {
+        return (uint64_t)-1;
+    }
+
     int bitPos = 0;
     std::vector<uint64_t> Sizes;
     std::vector<unsigned char> PeakIndexes;
@@ -358,6 +364,10 @@ uint64_t CMerkleBranchBase::GetMMRProofIndex(uint64_t pos, uint64_t mmvSize, int
                     }
 
                     // p is the position in the merkle tree of peaks
+                    if (p >= PeakIndexes.size())
+                    {
+                        return (uint64_t)-1;
+                    }
                     assert(p < PeakIndexes.size());
 
                     // move up to the top, which is always a peak of size 1

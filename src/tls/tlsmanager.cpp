@@ -514,7 +514,7 @@ bool TLSManager::prepareCredentials()
     bool bPrepared = (credStatus == credOk);
 
     if (!bPrepared) {
-        if (!mapArgs.count("-tlskeypath") && !mapArgs.count("-tlscertpath")) {
+        if (!IsArgSet("-tlskeypath") && !IsArgSet("-tlscertpath")) {
             // Default paths were used
 
             if (credStatus == credAbsent) {
@@ -693,7 +693,10 @@ int TLSManager::threadSocketHandler(CNode* pnode, fd_set& fdsetRecv, fd_set& fds
                         }
                     }
                     pnode->nLastRecv = GetTime();
-                    pnode->nRecvBytes += nBytes;
+                    {
+                        LOCK(pnode->cs_vRecv);
+                        pnode->nRecvBytes += nBytes;
+                    }
                     pnode->RecordBytesRecv(nBytes);
                 } else if (nBytes == 0) {
 
