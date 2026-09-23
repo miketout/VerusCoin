@@ -924,10 +924,7 @@ void SocketSendData(CNode *pnode)
         if (nBytes > 0)
         {
             pnode->nLastSend = GetTime();
-            {
-                LOCK(pnode->cs_vSend);
-                pnode->nSendBytes += nBytes;
-            }
+            pnode->nSendBytes += nBytes;
             pnode->nSendOffset += nBytes;
             pnode->RecordBytesSent(nBytes);
             if (pnode->nSendOffset == data.size())
