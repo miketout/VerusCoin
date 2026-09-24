@@ -924,10 +924,7 @@ void SocketSendData(CNode *pnode)
         if (nBytes > 0)
         {
             pnode->nLastSend = GetTime();
-            {
-                LOCK(pnode->cs_vSend);
-                pnode->nSendBytes += nBytes;
-            }
+            pnode->nSendBytes += nBytes;
             pnode->nSendOffset += nBytes;
             pnode->RecordBytesSent(nBytes);
             if (pnode->nSendOffset == data.size())
@@ -1480,8 +1477,8 @@ void ThreadSocketHandler()
 
                 bool select_send;
                 {
-                    TRY_LOCK(pnode->cs_vSend, lockSend);
-                    select_send = lockSend && !pnode->vSendMsg.empty();
+                    LOCK(pnode->cs_vSend);
+                    select_send = !pnode->vSendMsg.empty();
                 }
 
                 bool select_recv;
@@ -1960,9 +1957,8 @@ void ThreadMessageHandler()
 
             // Send messages
             {
-                TRY_LOCK(pnode->cs_vSend, lockSend);
-                if (lockSend)
-                    g_signals.SendMessages(pnode, pnode == pnodeTrickle || pnode->fWhitelisted);
+                LOCK(pnode->cs_sendProcessing);
+                g_signals.SendMessages(pnode, pnode == pnodeTrickle || pnode->fWhitelisted);
             }
             boost::this_thread::interruption_point();
         }

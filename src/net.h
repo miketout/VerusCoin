@@ -293,6 +293,8 @@ public:
     CCriticalSection cs_vSend;
     CCriticalSection cs_vRecv;
 
+    CCriticalSection cs_sendProcessing;
+
     std::deque<CInv> vRecvGetData;
     std::deque<CNetMessage> vRecvMsg;
     CCriticalSection cs_vRecvMsg;
