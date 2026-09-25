@@ -141,7 +141,7 @@ public:
     CTokenOutput(uint32_t ver=VERSION_CURRENT) : nVersion(ver) {}
 
     CTokenOutput(const uint160 &curID, CAmount value) : nVersion(VERSION_CURRENT), reserveValues(std::vector<uint160>({curID}), std::vector<int64_t>({value})) {}
-    CTokenOutput(CCurrencyValueMap values) : nVersion(VERSION_CURRENT), reserveValues(values) {}
+    CTokenOutput(const CCurrencyValueMap &values) : nVersion(VERSION_CURRENT), reserveValues(values) {}
 
     ADD_SERIALIZE_METHODS;
 

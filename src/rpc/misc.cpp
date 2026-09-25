@@ -2251,7 +2251,7 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
                     {
                         const CScript &scriptPubKey = curTx.vout[it->first.index].scriptPubKey;
                         COptCCParams p;
-                        
+
                         if (scriptPubKey.IsPayToCryptoCondition(p) && p.IsValid())
                         {
                             // VDXF tags are stored in the master COptCCParams vKeys array (last element of vData)
@@ -2273,7 +2273,7 @@ UniValue getaddressdeltas(const UniValue& params, bool fHelp)
                                 }
                             }
                         }
-                        
+
                         // Skip this output if it doesn't have the matching tag
                         if (!outputHasTag)
                         {
@@ -2588,6 +2588,7 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
 			    "\nArguments:\n"
 			    "  \"{\"                        (object, required) Adjustement data object\n"
                 "      \"currencyadjustments\": {\"currencyname\":fractionofsatoshi,..},\n"
+                "      \"restitutionconversions\": {\"currencyname\":conversionratetorestitutioncurrency,..},\n"
                 "      \"currencydefinitions\": [{currencydefinition},..],              \n"
                 "      \"currencystates\":      [{currencystate},..],                   \n"
                 "      \"adjustingaddresses\":  {\"chainid\":\"address\",...},          \n"
@@ -2626,6 +2627,7 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
     }
 
     UniValue currencyAdjustmentsUni = find_value(params[0], "currencyadjustments");
+    UniValue restitutionConversionsUni = find_value(params[0], "restitutionconversions");
     UniValue currenciesUni = find_value(params[0], "currencydefinitions");
     UniValue currencyStatesUni = find_value(params[0], "currencystates");
     UniValue adjustingDestinationsUni = find_value(params[0], "adjustingaddresses");
@@ -2635,13 +2637,14 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
     bool sendTransactions = uni_get_bool(find_value(params[0], "sendtransactions"));
 
     if (!currencyAdjustmentsUni.isObject() ||
+        !restitutionConversionsUni.isObject() ||
         !(currenciesUni.isArray() && currenciesUni.size() != 0 && currenciesUni[0].isObject()) ||
         !(currencyStatesUni.isArray() && currencyStatesUni.size() != 0 && currencyStatesUni[0].isObject()) ||
         !adjustingDestinationsUni.isObject() ||
         !chainExpiriesUni.isObject() ||
         (!offChainTransactionsUni.isNull() && !offChainTransactionsUni.isArray()))
     {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. Must include currencyadjustments {}, currencydefinitions [], currencystates [], adjustingaddresses {}, and expirybychain {}.");
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. Must include currencyadjustments {}, restitutionconversions {}, currencydefinitions [], currencystates [], adjustingaddresses {}, and expirybychain {}.");
     }
 
     std::vector<CMutableTransaction> offChainTransactions;
@@ -2677,6 +2680,23 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. currencyadjustments must specify each adjusting valid currency and non-0 value fraction to reduce.");
         }
         currencyAdjustments.valueMap[curID] = nValue;
+    }
+
+    CCurrencyValueMap restitutionConversions;
+    for (auto oneKey : restitutionConversionsUni.getKeys())
+    {
+        uint160 curID = ValidateCurrencyName(oneKey);
+        CAmount nValue = AmountFromValueNoErr(find_value(restitutionConversionsUni, oneKey));
+        if (curID.IsNull() || nValue == 0)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. restitutionconversions must specify each adjusting valid currency and non-0 value as a conversion rate to restitution.");
+        }
+        restitutionConversions.valueMap[curID] = nValue;
+    }
+    if (currencyAdjustments.valueMap.size() != restitutionConversions.valueMap.size() ||
+        currencyAdjustments.valueMap.size() != restitutionConversions.IntersectingValues(currencyAdjustments).valueMap.size())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. restitutionconversions must include conversion rates for all currencies in currencyadjustments.");
     }
 
     std::map<uint160,CCurrencyDefinition> crossChainCurrencies;
@@ -2727,6 +2747,7 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
 
     LOCK(cs_main);
     return pblocktree->GenerateAdjustmentTransactions(currencyAdjustments,
+                                                      restitutionConversions,
                                                       crossChainCurrencies,
                                                       crossChainCurrencyStates,
                                                       adjustingDestinations,

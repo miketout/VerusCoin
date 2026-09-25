@@ -341,6 +341,10 @@ public:
     // This filter is protected by cs_inventory and contains both txids and wtxids.
     CRollingBloomFilter filterInventoryKnown;
 
+    uint64_t nBytesServedRelay;
+    uint32_t nGetDataUnannounced;
+    int64_t nLastMempoolReq;
+
 protected:
 
     // Denial-of-service detection/prevention

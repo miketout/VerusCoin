@@ -5859,7 +5859,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
             if (newOut.nValue < 0)
             {
                 // if we get here, we have absorbed the entire transfer
-                LogPrintf("%s: skip creating output for import to %s\n", __func__, ConnectedChains.GetFriendlyCurrencyName(currencyDest.GetID()).c_str());
+                LogPrint("defi","%s: skip creating output for import to %s\n", __func__, ConnectedChains.GetFriendlyCurrencyName(currencyDest.GetID()).c_str());
             }
             else
             {
@@ -5868,12 +5868,15 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
         }
         else
         {
-            if (!curTransfer.destination.IsValid())
+            if (LogAcceptCategory("defi"))
             {
-                printf("%s: Invalid destination for reserve transfer\n", __func__);
+                if (!curTransfer.destination.IsValid())
+                {
+                    printf("%s: Invalid destination for reserve transfer\n", __func__);
+                }
+                printf("%s: Invalid reserve transfer on transfer %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
+                LogPrintf("%s: Invalid reserve transfer: %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
             }
-            printf("%s: Invalid reserve transfer on transfer %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
-            LogPrintf("%s: Invalid reserve transfer: %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
             return false;
         }
     }
@@ -8035,11 +8038,10 @@ CAmount GetMinRelayFeeByOutputs(const CReserveTransactionDescriptor &txDesc, con
             if (extraSize || isStorageTx)
             {
                 COptCCParams evP;
-                if ((isStorageTx &&
-                     ((extraSize && isOpRet) ||
+                if (((extraSize && isOpRet) ||
                       (oneOut.scriptPubKey.IsPayToCryptoCondition(evP) &&
                        evP.IsValid() &&
-                       evP.evalCode == EVAL_NOTARY_EVIDENCE))))
+                       evP.evalCode == EVAL_NOTARY_EVIDENCE)))
                 {
                     extraStorageSpace += (int64_t)oneOut.scriptPubKey.size();
                 }

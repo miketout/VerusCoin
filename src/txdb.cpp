@@ -56,7 +56,7 @@ static const char DB_LAST_BLOCK = 'l';
 CCoinsViewDB::CCoinsViewDB(std::string dbName, size_t nCacheSize, bool fMemory, bool fWipe) : db(GetDataDir() / dbName, nCacheSize, fMemory, fWipe) {
 }
 
-CCoinsViewDB::CCoinsViewDB(size_t nCacheSize, bool fMemory, bool fWipe) : db(GetDataDir() / "chainstate", nCacheSize, fMemory, fWipe) 
+CCoinsViewDB::CCoinsViewDB(size_t nCacheSize, bool fMemory, bool fWipe) : db(GetDataDir() / "chainstate", nCacheSize, fMemory, fWipe)
 {
 }
 
@@ -118,7 +118,7 @@ uint256 CCoinsViewDB::GetBestBlock() const {
 
 uint256 CCoinsViewDB::GetBestAnchor(ShieldedType type) const {
     uint256 hashBestAnchor;
-    
+
     switch (type) {
         case SPROUT:
             if (!db.Read(DB_BEST_SPROUT_ANCHOR, hashBestAnchor))
@@ -450,12 +450,12 @@ bool CBlockTreeDB::UpdateAddressReserveBalance(const std::vector<CAddressReserve
 }
 
 bool CBlockTreeDB::ReadAddressReserveBalance(
-    uint160 addressHash, 
-    int type, 
+    uint160 addressHash,
+    int type,
     std::map<uint160, CAddressReserveBalanceValue> &balanceMap)
 {
     boost::scoped_ptr<CDBIterator> pcursor(NewIterator());
-    
+
     // Seek to the first entry for this address
     CAddressReserveBalanceKey seekKey(type, addressHash, uint160());
     pcursor->Seek(make_pair(DB_ADDRESSRESERVEBALANCE, seekKey));
@@ -469,8 +469,8 @@ bool CBlockTreeDB::ReadAddressReserveBalance(
             CAddressReserveBalanceKey key = keyObj.second;
 
             // Check if we're still on the correct address
-            if (chType == DB_ADDRESSRESERVEBALANCE && 
-                key.type == type && 
+            if (chType == DB_ADDRESSRESERVEBALANCE &&
+                key.type == type &&
                 key.hashBytes == addressHash) {
                 try {
                     CAddressReserveBalanceValue value;
@@ -733,6 +733,7 @@ CAmount GetMinRelayFeeForOutputs(const std::vector<SendManyRecipient> &tOutputs,
 //
 //
 UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &currencyAdjustments,
+                                                      const CCurrencyValueMap &restitutionConversionRates,
                                                       const std::map<uint160,CCurrencyDefinition> &crossChainCurrencies,
                                                       const std::map<uint160,CCoinbaseCurrencyState> &crossChainCurrencyStates,
                                                       const std::map<uint160,CTxDestination> &_adjustingDestinations,
@@ -1315,7 +1316,6 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
 
     std::map<int,int> evalCodePriority({{EVAL_RESERVE_OUTPUT,0}, {EVAL_RESERVE_TRANSFER,1}, {EVAL_IDENTITY_COMMITMENT,2}, {EVAL_RESERVE_DEPOSIT,3}});
 
-    static const CAmount tBTCRestitutionConversionRate = 3666659260;
     std::map<CTxDestination, std::pair<CCurrencyValueMap,CCurrencyValueMap>> thisChainAddressRestitutionCredit;
 
     // first go through addresses of all UTXOs needing reduction and create the spends and outputs to do so
@@ -2073,17 +2073,25 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
     }
 
     UniValue adjustmentsByAddressUni(UniValue::VOBJ);
-    uint160 vethID = CVDXF::GetID("veth");
-    uint160 tbtcID = CVDXF::GetID("tbtc.veth");
     for (auto &oneAddress : adjustmentsByAddress)
     {
-        CAmount totalRestitutionCurrencyCredit = thisChainAddressRestitutionCredit[oneAddress.first].second.valueMap.count(vethID) ?
-                                                    thisChainAddressRestitutionCredit[oneAddress.first].second.valueMap[vethID] :
-                                                    0;
-        totalRestitutionCurrencyCredit += thisChainAddressRestitutionCredit[oneAddress.first].second.valueMap.count(tbtcID) ?
-                                                    CCurrencyState::NativeToReserveRaw(thisChainAddressRestitutionCredit[oneAddress.first].second.valueMap[tbtcID],
-                                                                                        tBTCRestitutionConversionRate) :
-                                                    0;
+        CCurrencyValueMap totalRestitutionMap = thisChainAddressRestitutionCredit[oneAddress.first].second.IntersectingValues(restitutionConversionRates);
+        CAmount totalRestitutionCurrencyCredit = 0;
+        for (auto &oneCurrencyCredit : totalRestitutionMap.valueMap)
+        {
+            if (oneCurrencyCredit.second > 0)
+            {
+                CAmount restitutionCurrencyCredit = CCurrencyState::NativeToReserveRaw(oneCurrencyCredit.second, restitutionConversionRates.valueMap.find(oneCurrencyCredit.first)->second);
+                if (restitutionCurrencyCredit < 0)
+                {
+                    errors.push_back("restitution conversion overflow: " + std::to_string(restitutionCurrencyCredit));
+                }
+                else
+                {
+                    totalRestitutionCurrencyCredit += restitutionCurrencyCredit;
+                }
+            }
+        }
         oneAddress.second.pushKV("totalrestitutioncredit", thisChainAddressRestitutionCredit[oneAddress.first].second.ToUniValue());
         oneAddress.second.pushKV("restitutioncurrencycredit", ValueFromAmount(totalRestitutionCurrencyCredit));
         adjustmentsByAddressUni.pushKV(EncodeDestination(oneAddress.first), oneAddress.second);

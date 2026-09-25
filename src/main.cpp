@@ -2276,37 +2276,43 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
         unsigned int nSize = entry.GetTxSize();
 
-        int64_t maxFreeSizeLimit = GetArg("-limitfreerelay", 15)*1000;
+        int64_t maxFreeSizeLimit = GetArg("-limitfreerelay", 0)*1000;
         int64_t defaultLimitRate = maxFreeSizeLimit * 10;
         CAmount minFee = GetMinRelayFeeByOutputs(txDesc, tx, state, identityFeeFactor);
 
-        if (fLimitFree)
+        if (!state.IsValid())
         {
-            if (state.IsError())
-            {
-                return false;
-            }
+            return false;
+        }
 
-            if (GetBoolArg("-relaypriority", false) &&
-                nFees < minFee &&
-                !AllowFree(view.GetPriority(tx, chainActive.Height() + 1)))
+        // Continuously rate-limit free or very-low-fee transactions
+        // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
+        // be annoying or make others' transactions take longer to confirm.
+        //
+        // protect against low fee spam via imports
+        // or notarizations before mainnet, use priority, flags, or ensure that there is always
+        // sufficient fee on txes that don't have it and remove these exemptions. right now,
+        // there are some beginning and end imports that don't have fees on a launch. We can
+        // recognize those imports, exempt block 1, or consider using fees from the initial
+        // currency definition. Exports pay delayed fees back, imports allow fees to keep flowing.
+        bool feeExempt = (txDesc.IsValid() && (txDesc.IsImport() || txDesc.IsExport() || txDesc.IsNotaryPrioritized()));
+        if (!feeExempt && nFees < minFee)
+        {
+            if (maxFreeSizeLimit == 0)
             {
-                fprintf(stderr,"accept failure.6\n");
-                return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient priority for fee");
+                // no free lane: the fee model's floor applies on every entry path, RPC included
+                return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient fee");
             }
-
-            // Continuously rate-limit free or very-low-fee transactions
-            // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
-            // be annoying or make others' transactions take longer to confirm.
-            //
-            // protect against low fee spam via imports
-            // or notarizations before mainnet, use priority, flags, or ensure that there is always
-            // sufficient fee on txes that don't have it and remove these exemptions. right now,
-            // there are some beginning and end imports that don't have fees on a launch. We can
-            // recognize those imports, exempt block 1, or consider using fees from the initial
-            // currency definition. Exports pay delayed fees back, imports allow fees to keep flowing.
-            if (!(txDesc.IsValid() && (txDesc.IsImport() || txDesc.IsExport() || txDesc.IsNotaryPrioritized())) && nFees < minFee)
+            if (fLimitFree)
             {
+                if (GetBoolArg("-relaypriority", false) &&
+                    nFees < minFee &&
+                    !AllowFree(view.GetPriority(tx, chainActive.Height() + 1)))
+                {
+                    fprintf(stderr,"accept failure.6\n");
+                    return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient priority for fee");
+                }
+
                 static CCriticalSection csFreeLimiter;
                 static double dFreeCount;
                 static int64_t nLastTime;
@@ -5939,8 +5945,7 @@ static bool ActivateBestChainStep(CValidationState& state, const CChainParams& c
             if ( !DisconnectTip(state, chainparams) )
                 break;
         }
-        fprintf(stderr,"reached rewind.%d, best to do: ./verus -ac_name=%s stop\n",KOMODO_REWIND,ASSETCHAINS_SYMBOL);
-        sleep(20);
+        fprintf(stderr,"reached rewind target.%d\n",KOMODO_REWIND);
         fprintf(stderr,"resuming normal operations\n");
         KOMODO_REWIND = 0;
         if (pindexMostWork->GetHeight() > chainActive.Height())
@@ -8443,6 +8448,14 @@ bool static AlreadyHave(const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
     return true;
 }
 
+// in the future, this can be used as a gate for paid content serving
+enum class TxServeClass { ANNOUNCED, UNANNOUNCED };
+static TxServeClass ClassifyTxRequest(CNode *pfrom, const uint256 &txid)
+{
+    // relay lane: we announced it to this peer (inv or mempool response), or the peer is trusted
+    return (pfrom->fWhitelisted || pfrom->HasKnownTxId(txid)) ? TxServeClass::ANNOUNCED : TxServeClass::UNANNOUNCED;
+}
+
 void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParams)
 {
     int currentHeight = GetHeight();
@@ -8450,8 +8463,6 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
     std::deque<CInv>::iterator it = pfrom->vRecvGetData.begin();
 
     vector<CInv> vNotFound;
-
-    LOCK(cs_main);
 
     LogPrint("getdata", "%s\n", __func__);
 
@@ -8476,27 +8487,34 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                 LogPrint("getdata", "%s: inv %s\n", __func__, inv.type == MSG_BLOCK ? "MSG_BLOCK" : "MSG_FILTERED_BLOCK");
 
                 bool send = false;
-                BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
-                if (mi != mapBlockIndex.end())
+                BlockMap::iterator mi;
+                bool blockHaveData = false;
                 {
-                    if (chainActive.Contains(mi->second)) {
-                        send = true;
-                    } else {
-                        static const int nOneMonth = 30 * 24 * 60 * 60;
-                        // To prevent fingerprinting attacks, only send blocks outside of the active
-                        // chain if they are valid, and no more than a month older (both in time, and in
-                        // best equivalent proof of work) than the best header chain we know about.
-                        send = mi->second->IsValid(BLOCK_VALID_SCRIPTS) && (pindexBestHeader != NULL) &&
-                            (pindexBestHeader->GetBlockTime() - mi->second->GetBlockTime() < nOneMonth) &&
-                            (GetBlockProofEquivalentTime(*pindexBestHeader, *mi->second, *pindexBestHeader, consensusParams) < nOneMonth);
-                        if (!send) {
-                            LogPrintf("%s: ignoring request from peer=%i for old block that isn't in the main chain\n", __func__, pfrom->GetId());
+                    LOCK(cs_main);
+                    mi = mapBlockIndex.find(inv.hash);
+                    if (mi != mapBlockIndex.end())
+                    {
+                        if (chainActive.Contains(mi->second)) {
+                            send = true;
+                        } else {
+                            static const int nOneMonth = 30 * 24 * 60 * 60;
+                            // To prevent fingerprinting attacks, only send blocks outside of the active
+                            // chain if they are valid, and no more than a month older (both in time, and in
+                            // best equivalent proof of work) than the best header chain we know about.
+                            send = mi->second->IsValid(BLOCK_VALID_SCRIPTS) && (pindexBestHeader != NULL) &&
+                                (pindexBestHeader->GetBlockTime() - mi->second->GetBlockTime() < nOneMonth) &&
+                                (GetBlockProofEquivalentTime(*pindexBestHeader, *mi->second, *pindexBestHeader, consensusParams) < nOneMonth);
+                            if (!send) {
+                                LogPrintf("%s: ignoring request from peer=%i for old block that isn't in the main chain\n", __func__, pfrom->GetId());
+                            }
                         }
+                        blockHaveData = (mi->second->nStatus & BLOCK_HAVE_DATA);
                     }
                 }
+
                 // Pruned nodes may have deleted the block, so check whether
                 // it's available before trying to send.
-                if (send && (mi->second->nStatus & BLOCK_HAVE_DATA))
+                if (send && blockHaveData)
                 {
                     LogPrint("getdata", "%s: is send\n", __func__);
 
@@ -8548,13 +8566,17 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                     // Trigger the peer node to send a getblocks request for the next batch of inventory
                     if (inv.hash == pfrom->hashContinue)
                     {
-                        // Bypass PushInventory, this must send even if redundant,
-                        // and we want it right after the last block so they don't
-                        // wait for other stuff first.
-                        vector<CInv> vInv;
-                        vInv.push_back(CInv(MSG_BLOCK, chainActive.Tip()->GetBlockHash()));
-                        pfrom->PushMessage("inv", vInv);
-                        pfrom->hashContinue.SetNull();
+                        uint256 tipHash = chainActive.LastTip() ? chainActive.LastTip()->GetBlockHash() : uint256();
+                        if (!tipHash.IsNull())
+                        {
+                            // Bypass PushInventory, this must send even if redundant,
+                            // and we want it right after the last block so they don't
+                            // wait for other stuff first.
+                            vector<CInv> vInv;
+                            vInv.push_back(CInv(MSG_BLOCK, tipHash));
+                            pfrom->PushMessage("inv", vInv);
+                            pfrom->hashContinue.SetNull();
+                        }
                     }
                 }
             }
@@ -8565,6 +8587,18 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
 
                 if (inv.type == MSG_TX)
                 {
+                    if (ClassifyTxRequest(pfrom, inv.hash) == TxServeClass::UNANNOUNCED)
+                    {
+                        pfrom->nGetDataUnannounced++;
+                        if ((pfrom->nGetDataUnannounced % 100) == 0)
+                        {
+                            LOCK(cs_main);
+                            Misbehaving(pfrom->GetId(), 10);
+                        }
+                        vNotFound.push_back(inv);
+                        continue;   // (structure: fall through to the notfound path)
+                    }
+
                     // Check the mempool to see if a transaction is expiring soon.  If so, do not send to peer.
                     // Note that a transaction enters the mempool first, before the serialized form is cached
                     // in mapRelay after a successful relay.
@@ -8579,19 +8613,26 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                     if (!isExpiringSoon) {
                         // Send stream from relay memory
                         MapRelay::iterator mi;
-                        LOCK(cs_mapRelay);
+                        std::shared_ptr<const CTransaction> relayTx;
                         {
+                            LOCK(cs_mapRelay);
                             mi = mapRelay.find(inv.hash);
                             if (mi != mapRelay.end()) {
-                                pfrom->PushMessage(inv.GetCommand(), *(*mi).second);
-                                pushed = true;
+                                relayTx = mi->second;
                             }
+                        }
+                        if (relayTx)
+                        {
+                            pfrom->PushMessage(inv.GetCommand(), *relayTx);
+                            pfrom->nBytesServedRelay += GetSerializeSize(*relayTx, SER_NETWORK, PROTOCOL_VERSION);
+                            pushed = true;
                         }
                         if (!pushed && inv.type == MSG_TX) {
                             if (isInMempool) {
                                 CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
                                 ss.reserve(1000);
                                 ss << *txinfo.tx;
+                                pfrom->nBytesServedRelay += ss.size();
                                 pfrom->PushMessage("tx", ss);
                                 pushed = true;
                             }
@@ -9625,9 +9666,17 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
     else if (strCommand == "mempool")
     {
-        int currentHeight = GetHeight();
+        // if we open a paid lane, we may want to check the ID of the requestor
+        if ((GetTime() - pfrom->nLastMempoolReq) < MEMPOOL_REQUEST_INTERVAL)
+        {
+            return true;
+        }
 
         LOCK2(cs_main, pfrom->cs_filter);
+
+        pfrom->nLastMempoolReq = GetTime();
+
+        int currentHeight = GetHeight();
 
         std::vector<uint256> vtxid;
         mempool.queryHashes(vtxid);
@@ -9645,6 +9694,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 if (!pfrom->pfilter->IsRelevantAndUpdate(tx)) continue;
             }
             vInv.push_back(inv);
+            pfrom->AddKnownTxId(hash);
             if (vInv.size() == MAX_INV_SZ) {
                 pfrom->PushMessage("inv", vInv);
                 vInv.clear();
@@ -10288,16 +10338,18 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
 
                     for (auto &oneTx : toRelayThisRound)
                     {
-                        vInv.push_back(CInv(MSG_TX, oneTx.first));
-                        nRelayedTransactions++;
-                        CTransaction txToSend = oneTx.second;
-
                         if (nRelayedTransactions >= INVENTORY_BROADCAST_MAX)
                         {
                             break;
                         }
 
+                        vInv.push_back(CInv(MSG_TX, oneTx.first));
+                        nRelayedTransactions++;
+                        CTransaction txToSend = oneTx.second;
+
                         {
+                            LOCK(cs_mapRelay);
+
                             // Expire old relay messages
                             while (!vRelayExpiration.empty() && vRelayExpiration.front().first < nNow)
                             {
@@ -10314,7 +10366,7 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
                             pto->PushMessage("inv", vInv);
                             vInv.clear();
                         }
-                        pto->AddKnownTxId(hash);
+                        pto->AddKnownTxId(oneTx.first);
                     }
                 }
             }

@@ -313,6 +313,12 @@ bool CWalletDB::WriteWitnessCacheSize(int64_t nWitnessCacheSize)
     return Write(std::string("witnesscachesize"), nWitnessCacheSize);
 }
 
+bool CWalletDB::WriteNeedsRescan(bool needsRescan)
+{
+    nWalletDBUpdateCounter++;
+    return Write(std::string("needsrescan"), needsRescan);
+}
+
 bool CWalletDB::ReadPool(int64_t nPool, CKeyPool& keypool)
 {
     return Read(std::make_pair(std::string("pool"), nPool), keypool);
@@ -894,6 +900,10 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         {
             ssValue >> pwallet->nWitnessCacheSize;
         }
+        else if (strType == "needsrescan")
+        {
+            ssValue >> pwallet->needsRescan;
+        }
         else if (strType == "hdseed")
         {
             uint256 seedFp;
@@ -1190,7 +1200,7 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
 
     if (wss.fAnyUnordered)
         result = ReorderTransactions(pwallet);
-    
+
     return result;
 }
 

@@ -2449,7 +2449,7 @@ unsigned int ReceiveFloodSize() { return 1000*GetArg("-maxreceivebuffer", 5*1000
 unsigned int SendBufferSize() { return 1000*GetArg("-maxsendbuffer", 1*1000); }
 
 CNode::CNode(SOCKET hSocketIn, const CAddress& addrIn, const std::string& addrNameIn, bool fInboundIn, SSL *sslIn) :
-    ssSend(SER_NETWORK, INIT_PROTO_VERSION), nTimeConnected(GetTime()), addrKnown(5000, 0.001)
+    ssSend(SER_NETWORK, INIT_PROTO_VERSION), nTimeConnected(GetTime()), addrKnown(5000, 0.001), filterInventoryKnown(50000, 0.000001)
 {
     ssl = sslIn;
     nServices = 0;
@@ -2488,6 +2488,10 @@ CNode::CNode(SOCKET hSocketIn, const CAddress& addrIn, const std::string& addrNa
     nPingUsecTime = 0;
     fPingQueued = false;
     nMinPingUsecTime = std::numeric_limits<int64_t>::max();
+
+    nBytesServedRelay = 0;
+    nGetDataUnannounced = 0;
+    nLastMempoolReq = 0;
 
     {
         LOCK(cs_nLastNodeId);

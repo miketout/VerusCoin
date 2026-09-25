@@ -34,6 +34,8 @@
 using namespace std;
 
 extern void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry);
+extern int32_t KOMODO_REWIND;
+
 int32_t komodo_longestchain();
 
 double GetDifficultyINTERNAL(const CBlockIndex* blockindex, bool networkDifficulty)
@@ -1885,12 +1887,24 @@ UniValue invalidateblock(const UniValue& params, bool fHelp)
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
 
         CBlockIndex* pblockindex = mapBlockIndex[hash];
+        if (chainActive.Height() > pblockindex->GetHeight() &&
+            (chainActive.Height() - pblockindex->GetHeight()) > MAX_REORG_LENGTH)
+        {
+            KOMODO_REWIND = pblockindex->GetHeight() - 1;
+        }
         InvalidateBlock(state, Params(), pblockindex);
     }
 
     if (state.IsValid()) {
         ActivateBestChain(state, Params());
     }
+
+#ifdef ENABLE_WALLET
+    if (pwalletMain && pwalletMain->needsRescan)
+    {
+        pwalletMain->RescanWallet();
+    }
+#endif
 
     if (!state.IsValid()) {
         throw JSONRPCError(RPC_DATABASE_ERROR, state.GetRejectReason());

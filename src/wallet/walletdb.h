@@ -205,6 +205,7 @@ public:
     bool WriteDefaultKey(const CPubKey& vchPubKey);
 
     bool WriteWitnessCacheSize(int64_t nWitnessCacheSize);
+    bool WriteNeedsRescan(bool needsRescan);
 
     bool ReadPool(int64_t nPool, CKeyPool& keypool);
     bool WritePool(int64_t nPool, const CKeyPool& keypool);
@@ -226,7 +227,7 @@ public:
 
     DBErrors ReorderTransactions(CWallet* pwallet);
     DBErrors InitalizeCryptedLoad(CWallet* pwallet);
-    DBErrors LoadCryptedSeedFromDB(CWallet* pwallet); 
+    DBErrors LoadCryptedSeedFromDB(CWallet* pwallet);
     DBErrors LoadWallet(CWallet* pwallet);
     DBErrors FindWalletTxToZap(CWallet* pwallet, std::vector<uint256>& vTxHash, std::vector<CWalletTx>& vWtx);
     DBErrors ZapWalletTx(CWallet* pwallet, std::vector<CWalletTx>& vWtx);

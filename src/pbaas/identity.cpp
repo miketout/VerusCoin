@@ -2530,6 +2530,14 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                         return state.Error("Invalid identity on transaction output " + std::to_string(i));
                     }
 
+                    if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) &&
+                        !checkIdentity.HasTokenizedControl() &&
+                        checkIdentity.IsRevoked() &&
+                        checkIdentity.recoveryAuthority == checkIdentity.GetID())
+                    {
+                        return state.Error("Irrecoverable identity on new transaction output " + std::to_string(i));
+                    }
+
                     if (isPBaaS && isInSync)
                     {
                         std::set<uint160> primaryDests;

@@ -1006,6 +1006,14 @@ void CWallet::SetBestChain(const CBlockLocator& loc)
     SetBestChainINTERNAL(walletdb, loc);
 }
 
+void CWallet::UpdatedBlockTip(const CBlockIndex *pindex)
+{
+    if (needsRescan)
+    {
+        RescanWallet();      // takes its own LOCK2(cs_main, cs_wallet); caller holds nothing
+    }
+}
+
 std::set<std::pair<libzcash::PaymentAddress, uint256>> CWallet::GetNullifiersForAddresses(
         const std::set<libzcash::PaymentAddress> & addresses)
 {
@@ -1767,7 +1775,6 @@ static bool DecrementNoteWitnesses(NoteDataMap& noteDataMap, int indexHeight, in
             assert((nWitnessCacheSize - 1) >= nd->witnesses.size());
         }
     }
-    assert(KOMODO_REWIND != 0 || nWitnessCacheSize > 0);
     return true;
 }
 
@@ -1787,6 +1794,7 @@ void CWallet::DecrementNoteWitnesses(const CBlockIndex* pindex)
         if (nWitnessCacheSize == 0)
         {
             ClearNoteWitnessCache();
+            needsRescan = true;
         }
         //assert(nWitnessCacheSize > 0);
     }
@@ -3685,6 +3693,7 @@ void CWallet::RescanWallet()
         if (start)
             ScanForWalletTransactions(start, true);
         needsRescan = false;
+        CWalletDB(strWalletFile).WriteNeedsRescan(false);
     }
 }
 
