@@ -76,7 +76,9 @@ std::map<uint160,CTransferDestination> bridgeAdjustingAddresses =
 
 bool IsBridgeCleanupWindowOpen(uint32_t chainTime)
 {
-    return !PBAAS_TESTMODE && chainTime >= PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_START && chainTime < PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_END &&
+    return !PBAAS_TESTMODE &&
+            ((chainTime >= PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_START && chainTime < PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_END) ||
+             (chainTime >= PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START && chainTime < PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_END)) &&
             !ConnectedChains.activeUpgradesByKey.count(ConnectedChains.BridgeCleanupWindowClosedKey());
 }
 
@@ -87,7 +89,7 @@ bool IsAfterBridgeCleanupWindowStarts(uint32_t chainTime)
 
 bool IsAfterSecondBridgeCleanupWindowStarts(uint32_t chainTime)
 {
-    return chainTime >= PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_START;
+    return chainTime >= PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START;
 }
 
 /**

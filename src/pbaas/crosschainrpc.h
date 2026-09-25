@@ -1868,6 +1868,9 @@ static const uint32_t PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_START = 1783443600; // ""
 static const uint32_t PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_END = 1783620000; // Thursday, July 9, 2026 at 6:00:00 PM UTC
 static const uint32_t PBAAS_TESTNET_IDENTITY_START_CHECKSER = 1786147200; // Saturday, August 8, 2026 at 12:00:00 AM UTC
 
+static const uint32_t PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START = 1790294400; // Friday, September 25, 2026 at 12:00:00 AM UTC
+static const uint32_t PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_END = 1790294400; // Friday, September 25, 2026 at 12:00:00 AM UTC
+
 extern std::map<uint160,CTransferDestination> bridgeAdjustingAddresses;
 CCurrencyValueMap &BridgeCurrencyAdjustmentMap();
 bool IsBridgeCleanupWindowOpen(uint32_t chainTime);
