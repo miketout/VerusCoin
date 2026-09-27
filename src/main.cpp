@@ -2298,13 +2298,14 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
         bool feeExempt = (txDesc.IsValid() && (txDesc.IsImport() || txDesc.IsExport() || txDesc.IsNotaryPrioritized()));
         if (!feeExempt && nFees < minFee)
         {
-            if (maxFreeSizeLimit == 0)
-            {
-                // no free lane: the fee model's floor applies on every entry path, RPC included
-                return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient fee");
-            }
             if (fLimitFree)
             {
+                if (maxFreeSizeLimit == 0)
+                {
+                    // no free lane: the fee model's floor applies on every entry path, RPC included
+                    return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient fee");
+                }
+
                 if (GetBoolArg("-relaypriority", false) &&
                     nFees < minFee &&
                     !AllowFree(view.GetPriority(tx, chainActive.Height() + 1)))
