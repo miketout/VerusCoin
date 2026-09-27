@@ -2302,7 +2302,8 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
             {
                 if (maxFreeSizeLimit == 0)
                 {
-                    // no free lane: the fee model's floor applies on every entry path, RPC included
+                    // no free lane: the fee model's floor applies on every entry path, RPC included, except block validation,
+                    // which calls with fLimitFree set to false
                     return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient fee");
                 }
 
