@@ -2722,6 +2722,28 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                                             }
                                             if (isPBaaS)
                                             {
+                                                CPBaaSNotarization currentNotarization;
+                                                uint256 hashBlock;
+                                                CTransaction priorNotTx;
+                                                CBlockIndex *pBlkIndex;
+                                                if (p.IsValid() &&
+                                                    p.evalCode == EVAL_EARNEDNOTARIZATION &&
+                                                    p.vData.size() &&
+                                                    (currentNotarization = CPBaaSNotarization(p.vData[0])).IsValid())
+                                                {
+                                                    if (height > CPBaaSNotarization::BlocksBeforeAlternateStakeEnforcement() &&
+                                                        (currentNotarization.prevNotarization.IsNull() ||
+                                                         !myGetTransaction(currentNotarization.prevNotarization.hash, priorNotTx, hashBlock) ||
+                                                         hashBlock.IsNull() ||
+                                                         !mapBlockIndex.count(hashBlock) ||
+                                                         !chainActive.Contains(pBlkIndex = mapBlockIndex[hashBlock]) ||
+                                                         pBlkIndex->IsVerusPOSBlock()))
+                                                    {
+                                                        printf("%s: ERROR: invalid notarization in staking block %s\n", __func__, blkHash.ToString().c_str());
+                                                        LogPrintf("%s: ERROR: invalid notarization in staking block %s\n", __func__, blkHash.ToString().c_str());
+                                                        return false;
+                                                    }
+                                                }
                                                 // check the header to ensure that it contains the correct transaction and proofs
                                                 auto mmv = chainActive.GetMMV();
                                                 // resize to be sure
