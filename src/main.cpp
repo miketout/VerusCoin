@@ -7162,11 +7162,12 @@ bool ProcessNewBlock(bool from_miner, int32_t height, CValidationState &state, c
     bool checked; uint256 hash; int32_t futureblock=0;
     auto verifier = libzcash::ProofVerifier::Disabled();
     hash = pblock->GetHash();
-    uint32_t nHeight = height != 0 ? height : komodo_block2height(pblock);
+    uint32_t nHeight;
 
     //fprintf(stderr,"ProcessBlock %d\n",(int32_t)chainActive.LastTip()->GetHeight());
     {
         LOCK(cs_main);
+        nHeight = height != 0 ? height : komodo_block2height(pblock);
         checked = CheckBlock(&futureblock, nHeight, 0, *pblock, state, chainparams, verifier, 0, true, false);
         bool fRequested = MarkBlockAsReceived(hash);
         fRequested |= fForceProcessing;

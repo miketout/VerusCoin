@@ -74,7 +74,7 @@ public:
     virtual bool SetCurrencyTrust(const uint160 &currencyID, const CRating &trust) = 0;
     virtual bool SetCurrencyTrustMode(int trustMode=CRating::TRUSTMODE_NORESTRICTION) = 0;
     virtual int GetCurrencyTrustMode() const = 0;
-    virtual const std::map<uint160, CRating> &GetCurrencyTrustMap() const = 0;
+    virtual const std::map<uint160, CRating> GetCurrencyTrustMap() const = 0;
     virtual CCurrencyValueMap RemoveBlockedCurrencies(const CCurrencyValueMap inputMap) const = 0;
 
     //! Support for trust and ratings for identities
@@ -84,7 +84,7 @@ public:
     virtual bool SetIdentityTrust(const CIdentityID &idID, const CRating &trust) = 0;
     virtual bool SetIdentityTrustMode(int trustMode=CRating::TRUSTMODE_NORESTRICTION) = 0;
     virtual int GetIdentityTrustMode() const = 0;
-    virtual const std::map<uint160, CRating> &GetIdentityTrustMap() const = 0;
+    virtual const std::map<uint160, CRating> GetIdentityTrustMap() const = 0;
     virtual bool IsBlockedIdentity(const CIdentityID &idID) const = 0;
 
     //! Add a spending key to the store.
@@ -94,10 +94,10 @@ public:
     virtual bool HaveSproutSpendingKey(const libzcash::SproutPaymentAddress &address) const =0;
     virtual bool GetSproutSpendingKey(const libzcash::SproutPaymentAddress &address, libzcash::SproutSpendingKey& skOut) const =0;
     virtual void GetSproutPaymentAddresses(std::set<libzcash::SproutPaymentAddress> &setAddress) const =0;
-    
+
     //! Add a Sapling spending key to the store.
     virtual bool AddSaplingSpendingKey(const libzcash::SaplingExtendedSpendingKey &sk) =0;
-    
+
     //! Check whether a Sapling spending key corresponding to a given Sapling viewing key is present in the store.
     virtual bool HaveSaplingSpendingKey(
         const libzcash::SaplingExtendedFullViewingKey &extfvk) const =0;
@@ -109,16 +109,16 @@ public:
     virtual bool AddSaplingFullViewingKey(const libzcash::SaplingExtendedFullViewingKey &extfvk) =0;
     virtual bool HaveSaplingFullViewingKey(const libzcash::SaplingIncomingViewingKey &ivk) const =0;
     virtual bool GetSaplingFullViewingKey(
-        const libzcash::SaplingIncomingViewingKey &ivk, 
+        const libzcash::SaplingIncomingViewingKey &ivk,
         libzcash::SaplingExtendedFullViewingKey& extfvkOut) const =0;
 
-    //! Sapling incoming viewing keys 
+    //! Sapling incoming viewing keys
     virtual bool AddSaplingIncomingViewingKey(
         const libzcash::SaplingIncomingViewingKey &ivk,
         const libzcash::SaplingPaymentAddress &addr) =0;
     virtual bool HaveSaplingIncomingViewingKey(const libzcash::SaplingPaymentAddress &addr) const =0;
     virtual bool GetSaplingIncomingViewingKey(
-        const libzcash::SaplingPaymentAddress &addr, 
+        const libzcash::SaplingPaymentAddress &addr,
         libzcash::SaplingIncomingViewingKey& ivkOut) const =0;
     virtual void GetSaplingPaymentAddresses(std::set<libzcash::SaplingPaymentAddress> &setAddress) const =0;
 
@@ -147,7 +147,7 @@ typedef std::map<
 typedef std::map<
     libzcash::SaplingIncomingViewingKey,
     libzcash::SaplingExtendedFullViewingKey> SaplingFullViewingKeyMap;
-// Only maps from default addresses to ivk, may need to be reworked when adding diversified addresses. 
+// Only maps from default addresses to ivk, may need to be reworked when adding diversified addresses.
 typedef std::map<libzcash::SaplingPaymentAddress, libzcash::SaplingIncomingViewingKey> SaplingIncomingViewingKeyMap;
 
 /** Basic key store, that keeps keys in an address->secret map */
@@ -244,8 +244,9 @@ public:
     virtual bool SetCurrencyTrust(const uint160 &currencyID, const CRating &trust);
     virtual bool SetCurrencyTrustMode(int trustMode=CRating::TRUSTMODE_NORESTRICTION);
     virtual int GetCurrencyTrustMode() const;
-    virtual const std::map<uint160, CRating> &GetCurrencyTrustMap() const
+    virtual const std::map<uint160, CRating> GetCurrencyTrustMap() const
     {
+        LOCK(cs_KeyStore);
         return mapCurrencyTrust;
     }
     virtual CCurrencyValueMap RemoveBlockedCurrencies(const CCurrencyValueMap inputMap) const;
@@ -256,8 +257,9 @@ public:
     virtual bool SetIdentityTrust(const CIdentityID &idID, const CRating &trust);
     virtual bool SetIdentityTrustMode(int trustMode=CRating::TRUSTMODE_NORESTRICTION);
     virtual int GetIdentityTrustMode() const;
-    virtual const std::map<uint160, CRating> &GetIdentityTrustMap() const
+    virtual const std::map<uint160, CRating> GetIdentityTrustMap() const
     {
+        LOCK(cs_KeyStore);
         return mapIdentityTrust;
     }
     virtual bool IsBlockedIdentity(const CIdentityID &idID) const;
@@ -323,7 +325,7 @@ public:
         }
     }
 
-    //! Sapling 
+    //! Sapling
     bool AddSaplingSpendingKey(const libzcash::SaplingExtendedSpendingKey &sk);
     bool HaveSaplingSpendingKey(const libzcash::SaplingExtendedFullViewingKey &extfvk) const
     {
@@ -362,15 +364,15 @@ public:
         const libzcash::SaplingPaymentAddress &addr);
     virtual bool HaveSaplingIncomingViewingKey(const libzcash::SaplingPaymentAddress &addr) const;
     virtual bool GetSaplingIncomingViewingKey(
-        const libzcash::SaplingPaymentAddress &addr, 
+        const libzcash::SaplingPaymentAddress &addr,
         libzcash::SaplingIncomingViewingKey& ivkOut) const;
 
     virtual bool DecryptWithSaplingViewingKey(const CDataDescriptor &dataDescr, CDataDescriptor &decryptedDescr, libzcash::SaplingIncomingViewingKey *pIvkOut=nullptr) const;
 
     bool GetSaplingExtendedSpendingKey(
-        const libzcash::SaplingPaymentAddress &addr, 
+        const libzcash::SaplingPaymentAddress &addr,
         libzcash::SaplingExtendedSpendingKey &extskOut) const;
-    
+
     void GetSaplingPaymentAddresses(std::set<libzcash::SaplingPaymentAddress> &setAddress) const
     {
         setAddress.clear();
@@ -397,7 +399,7 @@ typedef std::vector<unsigned char, secure_allocator<unsigned char> > CKeyingMate
 typedef std::map<CKeyID, std::pair<CPubKey, std::vector<unsigned char> > > CryptedKeyMap;
 typedef std::map<libzcash::SproutPaymentAddress, std::vector<unsigned char> > CryptedSproutSpendingKeyMap;
 
-//! Sapling 
+//! Sapling
 typedef std::map<libzcash::SaplingExtendedFullViewingKey, std::vector<unsigned char> > CryptedSaplingSpendingKeyMap;
 
 CScriptID ScriptOrIdentityID(const CScript& scr);

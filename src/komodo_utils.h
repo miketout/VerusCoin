@@ -1601,7 +1601,9 @@ uint64_t komodo_ac_block_subsidy(int nHeight)
     int64_t numerator, denominator, subsidy = 0;
     int64_t subsidyDifference;
     int32_t numhalvings, curEra = 0, sign = 1;
-    static uint64_t cached_subsidy; static int32_t cached_numhalvings; static int cached_era;
+    static thread_local uint64_t cached_subsidy;
+    static thread_local int32_t cached_numhalvings;
+    static thread_local int cached_era;
 
     // check for backwards compat, older chains with no explicit rewards had 0.0001 block reward
     if ( ASSETCHAINS_ENDSUBSIDY[0] == 0 && ASSETCHAINS_REWARD[0] == 0 )

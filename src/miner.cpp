@@ -2422,13 +2422,15 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
         bool notaryConnected = ConnectedChains.IsNotaryAvailable();
         uint32_t solutionVersion = CConstVerusSolutionVector::GetVersionByHeight(nHeight);
 
+        CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
+
         if (isVerusActive &&
             solutionVersion >= CActivationHeight::ACTIVATE_PBAAS &&
             !notaryConnected)
         {
             // until we have connected to the ETH bridge, after PBaaS has launched, we check each block to see if there is now an
             // ETH bridge defined
-            if (ConnectedChains.FirstNotaryChain().IsValid())
+            if (notaryChain.IsValid())
             {
                 // once PBaaS is active, we attempt to connect to the Ethereum bridge, in case it is active
                 notaryConnected = ConnectedChains.IsNotaryAvailable(true);
@@ -2436,6 +2438,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             else
             {
                 notaryConnected = ConnectedChains.ConfigureEthBridge(true);
+                notaryChain = ConnectedChains.FirstNotaryChain();
             }
         }
 
@@ -2486,9 +2489,8 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             std::vector<TransactionBuilder> notarizationBuilders;
             std::vector<CTransaction> notarizations;
             CTransaction notarizationTx;
-            const CRPCChainData &notaryChain = ConnectedChains.FirstNotaryChain();
             if (notaryChain.IsValid() &&
-                CPBaaSNotarization::ConfirmOrRejectNotarizations(pwalletMain, ConnectedChains.FirstNotaryChain(), state, notarizationBuilders, Mining_height) &&
+                CPBaaSNotarization::ConfirmOrRejectNotarizations(pwalletMain, notaryChain, state, notarizationBuilders, Mining_height) &&
                 notarizationBuilders.size())
             {
                 int txCount = 0;
@@ -2549,7 +2551,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                 else
                                 {
                                     // first try to pay with native currency, then the notary chain's currency
-                                    CCurrencyValueMap totalTxFees({ConnectedChains.FirstNotaryChain().chainDefinition.GetID(), ASSETCHAINS_CHAINID},
+                                    CCurrencyValueMap totalTxFees({notaryChain.chainDefinition.GetID(), ASSETCHAINS_CHAINID},
                                                                    {CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE, CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE});
                                     nativeValueOut = CPBaaSNotarization::DEFAULT_NOTARIZATION_FEE;
                                     notarizationBuilder.SetReserveFee(CCurrencyValueMap());
@@ -2784,8 +2786,8 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                     CUTXORef lastImportNotarizationUTXO;
                     CValidationState state;
 
-                    CPBaaSNotarization::SubmitFinalizedNotarizations(ConnectedChains.FirstNotaryChain(), state);
-                    ProcessNewImports(ConnectedChains.FirstNotaryChain().chainDefinition.GetID(), lastImportNotarization, lastImportNotarizationUTXO, nHeight);
+                    CPBaaSNotarization::SubmitFinalizedNotarizations(notaryChain, state);
+                    ProcessNewImports(notaryChain.chainDefinition.GetID(), lastImportNotarization, lastImportNotarizationUTXO, nHeight);
                 }
                 return NULL;
             }
@@ -2824,7 +2826,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                 CPBaaSNotarization earnedNotarization;
 
                 int numOuts = coinbaseTx.vout.size();
-                if (CPBaaSNotarization::CreateEarnedNotarization(ConnectedChains.FirstNotaryChain(),
+                if (CPBaaSNotarization::CreateEarnedNotarization(notaryChain,
                                                                  proposer,
                                                                  isStake,
                                                                  state,
@@ -2838,8 +2840,8 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                 CPBaaSNotarization lastImportNotarization;
                 CUTXORef lastImportNotarizationUTXO;
 
-                CPBaaSNotarization::SubmitFinalizedNotarizations(ConnectedChains.FirstNotaryChain(), state);
-                ProcessNewImports(ConnectedChains.FirstNotaryChain().chainDefinition.GetID(), lastImportNotarization, lastImportNotarizationUTXO, nHeight);
+                CPBaaSNotarization::SubmitFinalizedNotarizations(notaryChain, state);
+                ProcessNewImports(notaryChain.chainDefinition.GetID(), lastImportNotarization, lastImportNotarizationUTXO, nHeight);
             }
         }
 
@@ -3088,7 +3090,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                         fMissingInputs = true;
 
                         txesToRemove.push_back(tx);
-        
+
                         if (porphan)
                         {
                             for (int inNumStart = 0; inNumStart < inNum; inNumStart++)

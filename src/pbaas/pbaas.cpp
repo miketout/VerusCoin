@@ -6522,9 +6522,11 @@ uint32_t CConnectedChains::CombineBlocks(CBlockHeader &bh)
 bool CConnectedChains::IsVerusPBaaSAvailable()
 {
     uint160 parent = VERUS_CHAINID;
-    return IsNotaryAvailable() &&
-           ((_IsVerusActive() && FirstNotaryChain().chainDefinition.GetID() == CIdentity::GetID("veth", parent)) ||
-            FirstNotaryChain().chainDefinition.GetID() == VERUS_CHAINID);
+    const CRPCChainData notaryChain = IsNotaryAvailable() ? FirstNotaryChain() : CRPCChainData();
+
+    return notaryChain.IsValid() &&
+           ((_IsVerusActive() && notaryChain.chainDefinition.GetID() == CIdentity::GetID("veth", parent)) ||
+            notaryChain.chainDefinition.GetID() == VERUS_CHAINID);
 }
 
 int atoicatch(const std::string &istr)
@@ -6625,7 +6627,8 @@ CProofRoot CConnectedChains::FinalizedChainRoot()
 
 bool CConnectedChains::CheckVerusPBaaSAvailable()
 {
-    if (FirstNotaryChain().IsValid())
+    const CRPCChainData notaryChain = FirstNotaryChain();
+    if (notaryChain.IsValid())
     {
         // if this is a PBaaS chain, poll for presence of Verus / root chain and current Verus block and version number
         // tolerate only 15 second timeout
@@ -6636,9 +6639,9 @@ bool CConnectedChains::CheckVerusPBaaSAvailable()
             chainInfo = find_value(RPCCallRoot("getinfo", params), "result");
             if (!chainInfo.isNull())
             {
-                params.push_back(EncodeDestination(CIdentityID(FirstNotaryChain().chainDefinition.GetID())));
-                chainDef = FirstNotaryChain().chainDefinition.launchSystemID == ASSETCHAINS_CHAINID ?
-                            FirstNotaryChain().chainDefinition.ToUniValue() :
+                params.push_back(EncodeDestination(CIdentityID(notaryChain.chainDefinition.GetID())));
+                chainDef = notaryChain.chainDefinition.launchSystemID == ASSETCHAINS_CHAINID ?
+                            notaryChain.chainDefinition.ToUniValue() :
                             find_value(RPCCallRoot("getcurrency", params), "result");
 
                 if (!chainDef.isNull() && CheckVerusPBaaSAvailable(chainInfo, chainDef))
@@ -6687,7 +6690,7 @@ bool CConnectedChains::CheckVerusPBaaSAvailable()
         }
         catch (const exception &e)
         {
-            LogPrint("crosschain", "%s: Error communicating with %s\n", __func__, FirstNotaryChain().chainDefinition.name.c_str());
+            LogPrint("crosschain", "%s: Error communicating with %s\n", __func__, notaryChain.chainDefinition.name.c_str());
         }
         catch (const boost::thread_interrupted&)
         {
@@ -6695,7 +6698,7 @@ bool CConnectedChains::CheckVerusPBaaSAvailable()
         }
         catch (...)
         {
-            LogPrint("crosschain", "%s: Error communicating with %s\n", __func__, FirstNotaryChain().chainDefinition.name.c_str());
+            LogPrint("crosschain", "%s: Error communicating with %s\n", __func__, notaryChain.chainDefinition.name.c_str());
         }
     }
     return false;
@@ -6703,12 +6706,13 @@ bool CConnectedChains::CheckVerusPBaaSAvailable()
 
 bool CConnectedChains::IsNotaryAvailable(bool callToCheck)
 {
+    const CRPCChainData notaryChain = FirstNotaryChain();
     if (!callToCheck)
     {
         // if we aren't checking, we consider unavailable no contact in the last two minutes
-        return FirstNotaryChain().IsValid() && (GetTime() - FirstNotaryChain().LastConnectionTime() < (120));
+        return notaryChain.IsValid() && (GetTime() - notaryChain.LastConnectionTime() < (120));
     }
-    return !(FirstNotaryChain().rpcHost.empty() || FirstNotaryChain().rpcPort == 0 || FirstNotaryChain().rpcUserPass.empty()) &&
+    return !(notaryChain.rpcHost.empty() || notaryChain.rpcPort == 0 || notaryChain.rpcUserPass.empty()) &&
            CheckVerusPBaaSAvailable();
 }
 
@@ -7351,12 +7355,15 @@ bool CConnectedChains::ConfigureEthBridge(bool callToCheck)
             return false;
         }
 
-        notarySystems.insert(std::make_pair(gatewayID,
-                                            CNotarySystemInfo(cnd.IsConfirmed() ? cnd.vtx[cnd.lastConfirmed].second.notarizationHeight : 0,
-                                            vethNotaryChain,
-                                            cnd.vtx.size() ? cnd.vtx[cnd.forks[cnd.bestChain].back()].second : CPBaaSNotarization(),
-                                            CNotarySystemInfo::TYPE_ETH,
-                                            CNotarySystemInfo::VERSION_CURRENT)));
+        {
+            LOCK(cs_mergemining);
+            notarySystems.insert(std::make_pair(gatewayID,
+                                                CNotarySystemInfo(cnd.IsConfirmed() ? cnd.vtx[cnd.lastConfirmed].second.notarizationHeight : 0,
+                                                vethNotaryChain,
+                                                cnd.vtx.size() ? cnd.vtx[cnd.forks[cnd.bestChain].back()].second : CPBaaSNotarization(),
+                                                CNotarySystemInfo::TYPE_ETH,
+                                                CNotarySystemInfo::VERSION_CURRENT)));
+        }
         return IsNotaryAvailable(callToCheck);
     }
     return false;
@@ -12509,6 +12516,7 @@ void CConnectedChains::SubmissionThread()
 
             uint32_t height = chainActive.LastTip() ? chainActive.LastTip()->GetHeight() : 0;
             bool isNotaryAvailable = IsNotaryAvailable(true);
+            const CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
 
             // if this is a PBaaS chain, poll for presence of Verus / root chain and current Verus block and version number
             if (isNotaryAvailable)
@@ -12648,7 +12656,7 @@ void CConnectedChains::SubmissionThread()
                     CPBaaSNotarization lastConfirmed;
                     CUTXORef lastConfirmedUTXO;
                     exports = GetPendingExports(ConnectedChains.ThisChain(),
-                                                ConnectedChains.FirstNotaryChain().chainDefinition,
+                                                notaryChain.chainDefinition,
                                                 lastConfirmed,
                                                 lastConfirmedUTXO);
 
@@ -12657,7 +12665,7 @@ void CConnectedChains::SubmissionThread()
                         bool submitImport = true;
                         bool amNotary = false;
 
-                        const CCurrencyDefinition &notaryCurrency = ConnectedChains.FirstNotaryChain().chainDefinition;
+                        const CCurrencyDefinition &notaryCurrency = notaryChain.chainDefinition;
                         // if this is an ETH protocol, we could get reverted and still have to pay, so if we are a notary,
                         // to prevent funds loss, sort notaries and make sure we are in the top 2 before we try to submit
                         if (notaryCurrency.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION)
@@ -12812,7 +12820,7 @@ void CConnectedChains::SubmissionThread()
                 // prune outdated blocks
                 PruneOldChains(GetAdjustedTime() - 90);
             }
-            if (!submit && !FirstNotaryChain().IsValid())
+            if (!submit && !notaryChain.IsValid())
             {
                 sem_submitthread.wait();
             }

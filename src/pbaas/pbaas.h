@@ -1014,7 +1014,7 @@ public:
 
     std::map<arith_uint256, CBlockHeader> qualifiedHeaders;
 
-    CCriticalSection cs_mergemining;
+    mutable CCriticalSection cs_mergemining;
     CSemaphore sem_submitthread;
 
     CConnectedChains() :
@@ -1187,8 +1187,9 @@ public:
                              std::map<uint160, std::vector<std::pair<int, CTransaction>>> &newImports);
 
     // returns the first notary system, if there is more than one
-    const CRPCChainData &FirstNotaryChain() const
+    const CRPCChainData FirstNotaryChain() const
     {
+        LOCK(cs_mergemining);
         if (notarySystems.size())
         {
             return notarySystems.begin()->second.notaryChain;

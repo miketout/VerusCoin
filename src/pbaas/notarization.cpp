@@ -12410,6 +12410,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                 }
 
                 // if we get here, store the verified proof root of this chain as notarized
+                LOCK(ConnectedChains.cs_mergemining);
                 ConnectedChains.notarySystems[notarization.currencyID].lastConfirmedNotarization = notarization;
                 // we should persist this notarization off-chain as a checkpoint
                 // NOTE: this should be the last check before a return true

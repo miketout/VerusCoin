@@ -259,9 +259,10 @@ bool GetCurrencyDefinition(const uint160 &chainID, CCurrencyDefinition &chainDef
         }
         else if (!isVerusActive && chainActive.Height() == 0)
         {
-            if (ConnectedChains.FirstNotaryChain().IsValid() && (chainID == ConnectedChains.FirstNotaryChain().chainDefinition.GetID()))
+            CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
+            if (notaryChain.IsValid() && (chainID == notaryChain.chainDefinition.GetID()))
             {
-                chainDef = ConnectedChains.FirstNotaryChain().chainDefinition;
+                chainDef = notaryChain.chainDefinition;
                 if (pDefHeight)
                 {
                     *pDefHeight = 0;
@@ -5299,9 +5300,10 @@ UniValue getbestproofroot(const UniValue& params, bool fHelp)
     //
     std::vector<std::pair<CTransaction, uint256>> notaryTxVec;
     CChainNotarizationData notaryCND;
-    if (ConnectedChains.FirstNotaryChain().IsValid())
+    CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
+    if (notaryChain.IsValid())
     {
-        if (GetNotarizationData(ConnectedChains.FirstNotaryChain().GetID(), notaryCND, &notaryTxVec) &&
+        if (GetNotarizationData(notaryChain.GetID(), notaryCND, &notaryTxVec) &&
             notaryCND.IsConfirmed() &&
             notaryCND.vtx[notaryCND.lastConfirmed].second.proofRoots.count(ASSETCHAINS_CHAINID))
         {
@@ -5581,13 +5583,14 @@ UniValue getnotarizationproofs(const UniValue& params, bool fHelp)
                     //
 
                     CProofRoot lastConfirmedRoot(CProofRoot::TYPE_PBAAS, CProofRoot::VERSION_INVALID);
+                    CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
 
                     if (confirmNotarizationRef.IsNull() &&
-                        ConnectedChains.FirstNotaryChain().IsValid())
+                        notaryChain.IsValid())
                     {
                         std::vector<std::pair<CTransaction, uint256>> notaryTxVec;
                         CChainNotarizationData notaryCND;
-                        if (GetNotarizationData(ConnectedChains.FirstNotaryChain().GetID(), notaryCND, &notaryTxVec) &&
+                        if (GetNotarizationData(notaryChain.GetID(), notaryCND, &notaryTxVec) &&
                             notaryCND.IsConfirmed() &&
                             notaryCND.vtx[notaryCND.lastConfirmed].second.proofRoots.count(ASSETCHAINS_CHAINID))
                         {

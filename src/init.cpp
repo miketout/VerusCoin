@@ -1996,21 +1996,24 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                 }
 
                 CChainNotarizationData cnd;
-                if (ConnectedChains.FirstNotaryChain().IsValid())
+                CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
+                if (notaryChain.IsValid())
                 {
-                    uint160 notaryChainID = ConnectedChains.FirstNotaryChain().GetID();
+                    uint160 notaryChainID = notaryChain.GetID();
                     CNotarySystemInfo &notarySystem = ConnectedChains.notarySystems[notaryChainID];
                     LOCK(cs_main);
-                    if (GetNotarizationData(notaryChainID, cnd) &&
-                        cnd.IsConfirmed() &&
-                        cnd.vtx[cnd.lastConfirmed].second.proofRoots.count(notaryChainID) &&
-                        (!notarySystem.lastConfirmedNotarization.IsValid() ||
-                        !notarySystem.lastConfirmedNotarization.proofRoots.count(notaryChainID) ||
-                        notarySystem.lastConfirmedNotarization.proofRoots[notaryChainID].rootHeight <
-                            cnd.vtx[cnd.lastConfirmed].second.proofRoots[notaryChainID].rootHeight))
+                    if (GetNotarizationData(notaryChainID, cnd))
                     {
-
-                        ConnectedChains.notarySystems[ConnectedChains.FirstNotaryChain().GetID()].lastConfirmedNotarization = cnd.vtx[cnd.lastConfirmed].second;
+                        if (cnd.IsConfirmed() &&
+                            cnd.vtx[cnd.lastConfirmed].second.proofRoots.count(notaryChainID) &&
+                            (!notarySystem.lastConfirmedNotarization.IsValid() ||
+                            !notarySystem.lastConfirmedNotarization.proofRoots.count(notaryChainID) ||
+                            notarySystem.lastConfirmedNotarization.proofRoots[notaryChainID].rootHeight <
+                                cnd.vtx[cnd.lastConfirmed].second.proofRoots[notaryChainID].rootHeight))
+                        {
+                            LOCK(ConnectedChains.cs_mergemining);
+                            ConnectedChains.notarySystems[notaryChainID].lastConfirmedNotarization = cnd.vtx[cnd.lastConfirmed].second;
+                        }
                     }
                 }
 
@@ -2347,6 +2350,10 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         BOOST_FOREACH(const std::string& strFile, GetArgs("-loadblock"))
             vImportFiles.push_back(strFile);
     }
+
+    if (!CheckDiskSpace())
+        return false;
+
     threadGroup.create_thread(boost::bind(&ThreadImport, vImportFiles));
 
     // Wait for genesis block to be processed
@@ -2366,9 +2373,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
 
     // ********************************************************* Step 11: start node
-
-    if (!CheckDiskSpace())
-        return false;
 
     if (!strErrors.str().empty())
         return InitError(strErrors.str());

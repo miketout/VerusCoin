@@ -291,7 +291,7 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
     CAmount nValueIn = 0;
 
     {
-        LOCK(mempool.cs);
+        LOCK2(cs_main, mempool.cs);
         CCoinsView dummy;
         CCoinsViewCache view(&dummy);
         CCoinsViewMemPool viewMemPool(pcoinsTip, mempool);

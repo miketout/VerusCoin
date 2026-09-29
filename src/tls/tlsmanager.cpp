@@ -196,6 +196,8 @@ int TLSManager::waitFor(SSLConnectionRoutine eRoutine, SOCKET hSocket, SSL* ssl,
     int retOp = 0;
     err_code = 0;
 
+    int64_t deadline = GetTimeMillis() + ((int64_t)timeoutSec * 1000);
+
     while (true) {
         // clear the current thread's error queue
         ERR_clear_error();
@@ -296,6 +298,28 @@ int TLSManager::waitFor(SSLConnectionRoutine eRoutine, SOCKET hSocket, SSL* ssl,
         FD_SET(hSocket, &socketSet);
 
         struct timeval timeout = {timeoutSec, 0};
+
+        if (deadline < GetTimeMillis())
+        {
+            if (sslErr == SSL_ERROR_WANT_READ)
+            {
+                LogPrint("tls", "TLS: ERROR: %s: %s():%d - WANT_READ timeout on %s\n", __FILE__, __func__, __LINE__,
+                    (eRoutine == SSL_CONNECT ? "SSL_CONNECT" :
+                        (eRoutine == SSL_ACCEPT ? "SSL_ACCEPT" : "SSL_SHUTDOWN" )));
+                err_code = SELECT_TIMEDOUT;
+                retOp = -1;
+                break;
+            }
+            else
+            {
+                LogPrint("tls", "TLS: ERROR: %s: %s():%d - WANT_WRITE timeout on %s\n", __FILE__, __func__, __LINE__,
+                    (eRoutine == SSL_CONNECT ? "SSL_CONNECT" :
+                        (eRoutine == SSL_ACCEPT ? "SSL_ACCEPT" : "SSL_SHUTDOWN" )));
+                err_code = SELECT_TIMEDOUT;
+                retOp = -1;
+                break;
+            }
+        }
 
         if (sslErr == SSL_ERROR_WANT_READ) {
             int result = select(hSocket + 1, &socketSet, NULL, NULL, &timeout);

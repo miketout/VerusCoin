@@ -113,9 +113,11 @@ UniValue getinfo(const UniValue& params, bool fHelp)
     obj.push_back(Pair("version", CLIENT_VERSION));
     obj.push_back(Pair("protocolversion", PROTOCOL_VERSION));
     obj.push_back(Pair("chainid", EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID))));
-    if (ConnectedChains.FirstNotaryChain().IsValid())
+
+    CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
+    if (notaryChain.IsValid())
     {
-        obj.push_back(Pair("notarychainid", EncodeDestination(CIdentityID(ConnectedChains.FirstNotaryChain().GetID()))));
+        obj.push_back(Pair("notarychainid", EncodeDestination(CIdentityID(notaryChain.GetID()))));
     }
     obj.push_back(Pair("name", ConnectedChains.GetFriendlyCurrencyName(ASSETCHAINS_CHAINID)));
     if (confirmedRoot.IsValid())

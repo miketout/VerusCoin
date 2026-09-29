@@ -2933,8 +2933,9 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                     if (i == outNum)
                     {
                         bool knownCapped = false;
-                        if (ConnectedChains.FirstNotaryChain().IsValid() &&
-                            IsValidBlockOneCoinbase(tx.vout, ConnectedChains.FirstNotaryChain(), ConnectedChains.ThisChain(), state, knownCapped))
+                        const CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
+                        if (notaryChain.IsValid() &&
+                            IsValidBlockOneCoinbase(tx.vout, notaryChain, ConnectedChains.ThisChain(), state, knownCapped))
                         {
                             return true;
                         }

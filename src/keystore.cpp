@@ -106,6 +106,7 @@ bool CBasicKeyStore::GetCScript(const CScriptID &hash, CScript& redeemScriptOut)
 
 void CBasicKeyStore::ClearIdentities(uint32_t fromHeight)
 {
+    LOCK(cs_KeyStore);
     if (fromHeight <= 1)
     {
         mapIdentities.clear();
@@ -129,11 +130,13 @@ void CBasicKeyStore::ClearIdentities(uint32_t fromHeight)
 
 bool CBasicKeyStore::HaveIdentity(const CIdentityID &idID) const
 {
+    LOCK(cs_KeyStore);
     return mapIdentities.count(CIdentityMapKey(idID).MapKey()) != 0;
 }
 
 bool CBasicKeyStore::AddIdentity(const CIdentityMapKey &mapKey, const CIdentityMapValue &identity)
 {
+    LOCK(cs_KeyStore);
     if (mapIdentities.count(mapKey.MapKey()) || !mapKey.IsValid())
     {
         return false;
@@ -144,6 +147,7 @@ bool CBasicKeyStore::AddIdentity(const CIdentityMapKey &mapKey, const CIdentityM
 
 bool CBasicKeyStore::UpdateIdentity(const CIdentityMapKey &mapKey, const CIdentityMapValue &identity)
 {
+    LOCK(cs_KeyStore);
     if (!mapIdentities.count(mapKey.MapKey()) || !mapKey.IsValid())
     {
         return false;
@@ -167,6 +171,7 @@ bool CBasicKeyStore::RemoveIdentity(const CIdentityMapKey &mapKey, const uint256
     {
         return false;
     }
+    LOCK(cs_KeyStore);
     auto startIt = mapIdentities.lower_bound(localKey.MapKey());
     if (localKey.blockHeight == 0)
     {
@@ -200,6 +205,7 @@ bool CBasicKeyStore::RemoveIdentity(const CIdentityMapKey &mapKey, const uint256
 // return an identity if it is in the store
 bool CBasicKeyStore::GetIdentity(const CIdentityID &idID, std::pair<CIdentityMapKey, CIdentityMapValue> &keyAndIdentity, uint32_t lteHeight) const
 {
+    LOCK(cs_KeyStore);
     // debug test - comment normally
     // printf("lower_bound: %s\n", CIdentityMapKey(idID).ToString().c_str());
     // printf("upper_bound: %s\n", CIdentityMapKey(idID, lteHeight >= INT32_MAX ? INT32_MAX : lteHeight + 1).ToString().c_str());
@@ -231,6 +237,7 @@ bool CBasicKeyStore::GetIdentity(const CIdentityID &idID, std::pair<CIdentityMap
 // return all identities between two map keys, inclusive
 bool CBasicKeyStore::GetIdentity(const CIdentityMapKey &keyStart, const CIdentityMapKey &keyEnd, std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &keysAndIdentityUpdates) const
 {
+    LOCK(cs_KeyStore);
     auto itStart = mapIdentities.lower_bound(keyStart.MapKey());
     if (itStart == mapIdentities.end())
     {
@@ -246,6 +253,7 @@ bool CBasicKeyStore::GetIdentity(const CIdentityMapKey &keyStart, const CIdentit
 
 bool CBasicKeyStore::GetIdentity(const CIdentityMapKey &mapKey, const uint256 &txid, std::pair<CIdentityMapKey, CIdentityMapValue> &keyAndIdentity) const
 {
+    LOCK(cs_KeyStore);
     CIdentityMapKey localKey = mapKey;
     std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> toCheck;
     bool found = false;
@@ -273,6 +281,7 @@ bool CBasicKeyStore::GetIdentity(const CIdentityMapKey &mapKey, const uint256 &t
 // return the first identity not less than a specific key
 bool CBasicKeyStore::GetFirstIdentity(const CIdentityID &idID, std::pair<CIdentityMapKey, CIdentityMapValue> &keyAndIdentity, uint32_t gteHeight) const
 {
+    LOCK(cs_KeyStore);
     auto it = mapIdentities.lower_bound(CIdentityMapKey(idID, gteHeight).MapKey());
     if (it == mapIdentities.end())
     {
@@ -285,6 +294,7 @@ bool CBasicKeyStore::GetFirstIdentity(const CIdentityID &idID, std::pair<CIdenti
 // return the first identity not less than a specific key
 bool CBasicKeyStore::GetPriorIdentity(const CIdentityMapKey &idMapKey, std::pair<CIdentityMapKey, CIdentityMapValue> &keyAndIdentity) const
 {
+    LOCK(cs_KeyStore);
     auto it = mapIdentities.lower_bound(idMapKey.MapKey());
     if (it == mapIdentities.end() || it == mapIdentities.begin() || CIdentityMapKey((--it)->first).idID != idMapKey.idID)
     {
@@ -299,6 +309,7 @@ bool CBasicKeyStore::GetIdentities(const std::vector<uint160> &queryList,
                                    std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &imsigner,
                                    std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &notmine) const
 {
+    LOCK(cs_KeyStore);
     std::set<CIdentityID> identitySet;
 
     for (auto &identity : queryList)
@@ -354,6 +365,7 @@ bool CBasicKeyStore::GetIdentities(std::vector<std::pair<CIdentityMapKey, CIdent
                                    std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &imsigner,
                                    std::vector<std::pair<CIdentityMapKey, CIdentityMapValue>> &notmine) const
 {
+    LOCK(cs_KeyStore);
     std::set<CIdentityID> identitySet;
 
     for (auto &identity : mapIdentities)
@@ -443,6 +455,7 @@ std::set<CKeyID> CBasicKeyStore::GetIdentityKeyIDs() const
 
 void CBasicKeyStore::ClearCurrencyTrust()
 {
+    LOCK(cs_KeyStore);
     mapCurrencyTrust.clear();
     currencyTrustMode = CRating::TRUSTMODE_NORESTRICTION;
 }
@@ -454,6 +467,7 @@ bool CBasicKeyStore::RemoveCurrencyTrust(const uint160 &currencyID)
 
 CRating CBasicKeyStore::GetCurrencyTrust(const uint160 &currencyID) const
 {
+    LOCK(cs_KeyStore);
     auto it = mapCurrencyTrust.find(currencyID);
     if (it == mapCurrencyTrust.end())
     {
@@ -467,12 +481,14 @@ CRating CBasicKeyStore::GetCurrencyTrust(const uint160 &currencyID) const
 
 bool CBasicKeyStore::SetCurrencyTrust(const uint160 &currencyID, const CRating &trust)
 {
+    LOCK(cs_KeyStore);
     mapCurrencyTrust[currencyID] = trust;
     return true;
 }
 
 bool CBasicKeyStore::SetCurrencyTrustMode(int trustMode)
 {
+    LOCK(cs_KeyStore);
     if (trustMode >= CRating::TRUSTMODE_FIRST && trustMode <= CRating::TRUSTMODE_LAST)
     {
         currencyTrustMode = trustMode;
@@ -530,17 +546,20 @@ CCurrencyValueMap CBasicKeyStore::RemoveBlockedCurrencies(const CCurrencyValueMa
 
 void CBasicKeyStore::ClearIdentityTrust()
 {
+    LOCK(cs_KeyStore);
     mapIdentityTrust.clear();
     identityTrustMode = CRating::TRUSTMODE_NORESTRICTION;
 }
 
 bool CBasicKeyStore::RemoveIdentityTrust(const CIdentityID &idID)
 {
+    LOCK(cs_KeyStore);
     return (bool)mapIdentityTrust.erase(idID);
 }
 
 CRating CBasicKeyStore::GetIdentityTrust(const CIdentityID &idID) const
 {
+    LOCK(cs_KeyStore);
     auto it = mapIdentityTrust.find(idID);
     if (it == mapIdentityTrust.end())
     {
@@ -554,12 +573,14 @@ CRating CBasicKeyStore::GetIdentityTrust(const CIdentityID &idID) const
 
 bool CBasicKeyStore::SetIdentityTrust(const CIdentityID &idID, const CRating &trust)
 {
+    LOCK(cs_KeyStore);
     mapIdentityTrust[idID] = trust;
     return true;
 }
 
 bool CBasicKeyStore::SetIdentityTrustMode(int trustMode)
 {
+    LOCK(cs_KeyStore);
     if (trustMode >= CRating::TRUSTMODE_FIRST && trustMode <= CRating::TRUSTMODE_LAST)
     {
         identityTrustMode = trustMode;
@@ -578,6 +599,7 @@ int CBasicKeyStore::GetIdentityTrustMode() const
 
 bool CBasicKeyStore::IsBlockedIdentity(const CIdentityID &idID) const
 {
+    LOCK(cs_KeyStore);
     if (identityTrustMode != CRating::TRUSTMODE_NORESTRICTION)
     {
         if (identityTrustMode == CRating::TRUSTMODE_WHITELISTONLY)
@@ -633,7 +655,7 @@ bool CBasicKeyStore::AddSproutSpendingKey(const libzcash::SproutSpendingKey &sk)
     return true;
 }
 
-//! Sapling 
+//! Sapling
 bool CBasicKeyStore::AddSaplingSpendingKey(
     const libzcash::SaplingExtendedSpendingKey &sk)
 {
@@ -669,7 +691,7 @@ bool CBasicKeyStore::AddSaplingFullViewingKey(
     return CBasicKeyStore::AddSaplingIncomingViewingKey(ivk, extfvk.DefaultAddress());
 }
 
-// This function updates the wallet's internal address->ivk map. 
+// This function updates the wallet's internal address->ivk map.
 // If we add an address that is already in the map, the map will
 // remain unchanged as each address only has one ivk.
 bool CBasicKeyStore::AddSaplingIncomingViewingKey(
