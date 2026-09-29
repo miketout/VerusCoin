@@ -1,17 +1,17 @@
 /*
  * This uses veriations of the clhash algorithm for Verus Coin, licensed
  * with the Apache-2.0 open source license.
- * 
+ *
  * Copyright (c) 2018 Michael Toutonghi
  * Distributed under the Apache 2.0 software license, available in the original form for clhash
  * here: https://github.com/lemire/clhash/commit/934da700a2a54d8202929a826e2763831bd43cf7#diff-9879d6db96fd29134fc802214163b95a
- * 
+ *
  * Original CLHash code and any portions herein, (C) 2017, 2018 Daniel Lemire and Owen Kaser
  * Faster 64-bit universal hashing
  * using carry-less multiplications, Journal of Cryptographic Engineering (to appear)
  *
  * Best used on recent x64 processors (Haswell or better).
- * 
+ *
  * This implements an intermediate step in the last part of a Verus block hash. The intent of this step
  * is to more effectively equalize FPGAs over GPUs and CPUs.
  *
@@ -27,7 +27,7 @@
 #include <sys/types.h>
 #endif// APPLE
 
-#ifdef __linux__ 
+#ifdef __linux__
 
 #if defined(__i386__) || defined(__X86_64__)
 #include <x86intrin.h>
@@ -38,7 +38,7 @@
 #else
 #include "crypto/sse2neon.h"
 #endif
-#endif 
+#endif
 
 #elif _WIN32
 #pragma warning (disable : 4146)
@@ -98,7 +98,7 @@ void clmul64(uint64_t a, uint64_t b, uint64_t* r)
     r[0] = u[a & smask]; //first window only affects lower word
     r[1] = 0;
     for(i = s ; i < 64 ; i += s){
-        tmp = u[a >> i & smask];     
+        tmp = u[a >> i & smask];
         r[0] ^= tmp << i;
         r[1] ^= tmp >> (64 - i);
     }
@@ -129,7 +129,7 @@ u128 _mm_clmulepi64_si128_emu(const __m128i &a, const __m128i &b, int imm)
     }
     else
     {
-        printf("_mm_clmulepi64_si128_emu: Portable version failed! a: %lxh %lxl, b: %lxh %lxl, imm: %x, emu: %lxh %lxl, intrin: %lxh %lxl\n", 
+        printf("_mm_clmulepi64_si128_emu: Portable version failed! a: %lxh %lxl, b: %lxh %lxl, imm: %x, emu: %lxh %lxl, intrin: %lxh %lxl\n",
                *((uint64_t *)&a + 1), *(uint64_t *)&a,
                *((uint64_t *)&b + 1), *(uint64_t *)&b,
                imm,
@@ -159,7 +159,7 @@ u128 _mm_mulhrs_epi16_emu(__m128i _a, __m128i _b)
     }
     else
     {
-        printf("_mm_mulhrs_epi16_emu: Portable version failed! a: %lxh %lxl, b: %lxh %lxl, emu: %lxh %lxl, intrin: %lxh %lxl\n", 
+        printf("_mm_mulhrs_epi16_emu: Portable version failed! a: %lxh %lxl, b: %lxh %lxl, emu: %lxh %lxl, intrin: %lxh %lxl\n",
                *((uint64_t *)&a + 1), *(uint64_t *)&a,
                *((uint64_t *)&b + 1), *(uint64_t *)&b,
                *((uint64_t *)result + 1), *(uint64_t *)result,
@@ -278,7 +278,7 @@ inline __m128i _mm_srli_si128_emu(__m128i a, int imm8)
     }
     else
     {
-        printf("_mm_srli_si128_emu: Portable version failed! val: %lx%lx imm: %x emu: %lx%lx, intrin: %lx%lx\n", 
+        printf("_mm_srli_si128_emu: Portable version failed! val: %lx%lx imm: %x emu: %lx%lx, intrin: %lx%lx\n",
                *((uint64_t *)&a + 1), *(uint64_t *)&a,
                imm8,
                *((uint64_t *)result + 1), *(uint64_t *)result,
@@ -391,7 +391,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_port(__m128i *randomsource, 
     for (int64_t i = 0; i < 32; i++)
     {
         //std::cout << "LOOP " << i << " acc: " << LEToHex(acc) << std::endl;
-        
+
         const uint64_t selector = _mm_cvtsi128_si64_emu(acc);
 
         // get two random locations in the key, which will be mutated and swapped
@@ -681,8 +681,8 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_port(__m128i *randomsource, 
 // verus intermediate hash extra
 __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_1_port(__m128i *randomsource, const __m128i buf[4], uint64_t keyMask, __m128i **pMoveScratch)
 {
-    const __m128i pbuf_copy[4] = {_mm_xor_si128(buf[0],buf[2]), _mm_xor_si128(buf[1],buf[3]), buf[2], buf[3]}; 
-    const  __m128i *pbuf; 
+    const __m128i pbuf_copy[4] = {_mm_xor_si128(buf[0],buf[2]), _mm_xor_si128(buf[1],buf[3]), buf[2], buf[3]};
+    const  __m128i *pbuf;
 
     // divide key mask by 16 from bytes to __m128i
     keyMask >>= 4;
@@ -695,7 +695,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_1_port(__m128i *randomso
     for (int64_t i = 0; i < 32; i++)
     {
         //std::cout << "LOOP " << i << " acc: " << LEToHex(acc) << std::endl;
-        
+
         const uint64_t selector = _mm_cvtsi128_si64_emu(acc);
 
         // get two random locations in the key, which will be mutated and swapped
@@ -968,8 +968,8 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_1_port(__m128i *randomso
 // verus intermediate hash extra
 __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2_port(__m128i *randomsource, const __m128i buf[4], uint64_t keyMask, __m128i **pMoveScratch)
 {
-    const __m128i pbuf_copy[4] = {_mm_xor_si128(buf[0],buf[2]), _mm_xor_si128(buf[1],buf[3]), buf[2], buf[3]}; 
-    const  __m128i *pbuf; 
+    const __m128i pbuf_copy[4] = {_mm_xor_si128(buf[0],buf[2]), _mm_xor_si128(buf[1],buf[3]), buf[2], buf[3]};
+    const  __m128i *pbuf;
 
     // divide key mask by 16 from bytes to __m128i
     keyMask >>= 4;
@@ -982,7 +982,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2_port(__m128i *randomso
     for (int64_t i = 0; i < 32; i++)
     {
         //std::cout << "LOOP " << i << " acc: " << LEToHex(acc) << std::endl;
-        
+
         const uint64_t selector = _mm_cvtsi128_si64_emu(acc);
 
         // get two random locations in the key, which will be mutated and swapped
@@ -1245,7 +1245,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2_port(__m128i *randomso
 
                 acc = _mm_xor_si128_emu(tempa3, acc);
                 const __m128i temp4 = _mm_load_si128_emu(pbuf - (((selector & 1) << 1) - 1));
-                acc = _mm_xor_si128_emu(temp4,acc);  
+                acc = _mm_xor_si128_emu(temp4,acc);
                 const __m128i tempb1 = _mm_mulhrs_epi16_emu(acc, tempa3);
                 const __m128i tempb2 = _mm_xor_si128_emu(tempb1, tempa3);
                 _mm_store_si128_emu(prandex, tempb2);
@@ -1256,7 +1256,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2_port(__m128i *randomso
     return acc;
 }
 
-// hashes 64 bytes only by doing a carryless multiplication and reduction of the repeated 64 byte sequence 16 times, 
+// hashes 64 bytes only by doing a carryless multiplication and reduction of the repeated 64 byte sequence 16 times,
 // returning a 64 bit hash value
 uint64_t verusclhash_port(void * random, const unsigned char buf[64], uint64_t keyMask, __m128i **pMoveScratch) {
     __m128i * rs64 = (__m128i *)random;
@@ -1267,7 +1267,7 @@ uint64_t verusclhash_port(void * random, const unsigned char buf[64], uint64_t k
     return precompReduction64_port(acc);
 }
 
-// hashes 64 bytes only by doing a carryless multiplication and reduction of the repeated 64 byte sequence 16 times, 
+// hashes 64 bytes only by doing a carryless multiplication and reduction of the repeated 64 byte sequence 16 times,
 // returning a 64 bit hash value
 uint64_t verusclhash_sv2_1_port(void * random, const unsigned char buf[64], uint64_t keyMask, __m128i **pMoveScratch) {
     __m128i * rs64 = (__m128i *)random;
@@ -1331,8 +1331,8 @@ bool mine_verus_v2_port(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &fin
         vclh.gethashkey();
     }
 
-	// loop the requested number of times or until canceled. determine if we 
-	// found a winner, and send all winners found as solutions. count only one hash. 
+	// loop the requested number of times or until canceled. determine if we
+	// found a winner, and send all winners found as solutions. count only one hash.
 	// hashrate is determined by multiplying hash by VERUSHASHES_PER_SOLVE, with VerusHash, only
 	// hashrate and sharerate are valid, solutionrate will equal sharerate
     uint64_t i, end = start + *count;
@@ -1361,7 +1361,7 @@ bool mine_verus_v2_port(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &fin
         std::vector<unsigned char> solution = bh.nSolution;
 		int extraSpace = (solution.size() % 32) + 15;
 		assert(solution.size() > 32);
-		*((int64_t *)&(solution.data()[solution.size() - extraSpace])) = i;
+        memcpy(&solution[solution.size() - extraSpace], &i, sizeof(i));
         bh.nSolution = solution;
         finalHash = curHash;
         *count = (i - start) + 1;

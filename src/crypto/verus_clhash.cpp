@@ -1,17 +1,17 @@
 /*
  * This uses veriations of the clhash algorithm for Verus Coin, licensed
  * with the Apache-2.0 open source license.
- * 
+ *
  * Copyright (c) 2018 Michael Toutonghi
  * Distributed under the Apache 2.0 software license, available in the original form for clhash
  * here: https://github.com/lemire/clhash/commit/934da700a2a54d8202929a826e2763831bd43cf7#diff-9879d6db96fd29134fc802214163b95a
- * 
+ *
  * Original CLHash code and any portions herein, (C) 2017, 2018 Daniel Lemire and Owen Kaser
  * Faster 64-bit universal hashing
  * using carry-less multiplications, Journal of Cryptographic Engineering (to appear)
  *
  * Best used on recent x64 processors (Haswell or better).
- * 
+ *
  * This implements an intermediate step in the last part of a Verus block hash. The intent of this step
  * is to more effectively equalize FPGAs over GPUs and CPUs.
  *
@@ -169,8 +169,8 @@ bool mine_verus_v2(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &finalHas
     const __m128i shuf2 = _mm_setr_epi8(1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0);
     unsigned char ch = curBuf[0];
 
-	// loop the requested number of times or until canceled. determine if we 
-	// found a winner, and send all winners found as solutions. count only one hash. 
+	// loop the requested number of times or until canceled. determine if we
+	// found a winner, and send all winners found as solutions. count only one hash.
 	// hashrate is determined by multiplying hash by VERUSHASHES_PER_SOLVE, with VerusHash, only
 	// hashrate and sharerate are valid, solutionrate will equal sharerate
     uint64_t i, end = start + *count;
@@ -207,7 +207,7 @@ bool mine_verus_v2(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &finalHas
         std::vector<unsigned char> solution = bh.nSolution;
 		int extraSpace = (solution.size() % 32) + 15;
 		assert(solution.size() > 32);
-		*((int64_t *)&(solution.data()[solution.size() - extraSpace])) = i;
+        memcpy(&solution[solution.size() - extraSpace], &i, sizeof(i));
         bh.nSolution = solution;
         finalHash = curHash;
         *count = (i - start) + 1;
@@ -238,7 +238,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat(__m128i *randomsource, const
         __m128i *prandex = randomsource + ((selector >> 32) & keyMask);
 
         *(pMoveScratch++) = prand;
-        *(pMoveScratch++) = prandex;        
+        *(pMoveScratch++) = prandex;
 
         // select random start and order of pbuf processing
         pbuf = buf + (selector & 3);
@@ -474,7 +474,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat(__m128i *randomsource, const
     return acc;
 }
 
-// hashes 64 bytes only by doing a carryless multiplication and reduction of the repeated 64 byte sequence 16 times, 
+// hashes 64 bytes only by doing a carryless multiplication and reduction of the repeated 64 byte sequence 16 times,
 // returning a 64 bit hash value
 uint64_t verusclhash(void * random, const unsigned char buf[64], uint64_t keyMask, __m128i **pMoveScratch) {
     __m128i  acc = __verusclmulwithoutreduction64alignedrepeat((__m128i *)random, (const __m128i *)buf, keyMask, pMoveScratch);
@@ -482,7 +482,7 @@ uint64_t verusclhash(void * random, const unsigned char buf[64], uint64_t keyMas
     return precompReduction64(acc);
 }
 
-// hashes 64 bytes only by doing a carryless multiplication and reduction of the repeated 64 byte sequence 16 times, 
+// hashes 64 bytes only by doing a carryless multiplication and reduction of the repeated 64 byte sequence 16 times,
 // returning a 64 bit hash value
 uint64_t verusclhash_sv2_1(void * random, const unsigned char buf[64], uint64_t keyMask, __m128i **pMoveScratch) {
     __m128i acc = __verusclmulwithoutreduction64alignedrepeat_sv2_1((__m128i *)random, (const __m128i *)buf, keyMask, pMoveScratch);
@@ -518,7 +518,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_1(__m128i *randomsource,
         __m128i *prandex = randomsource + ((selector >> 32) & keyMask);
 
         *(pMoveScratch++) = prand;
-        *(pMoveScratch++) = prandex;        
+        *(pMoveScratch++) = prandex;
 
         // select random start and order of pbuf processing
         pbuf = pbuf_copy + (selector & 3);
@@ -799,7 +799,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2(__m128i *randomsource,
         __m128i *prandex = randomsource + ((selector >> 32) & keyMask);
 
         *(pMoveScratch++) = prand;
-        *(pMoveScratch++) = prandex;        
+        *(pMoveScratch++) = prandex;
 
         // select random start and order of pbuf processing
         pbuf = pbuf_copy + (selector & 3);
@@ -1050,8 +1050,8 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2(__m128i *randomsource,
                 _mm_store_si128(prand, tempa2);
 
                 acc = _mm_xor_si128(tempa3, acc);
-                const __m128i temp4 = _mm_load_si128(pbuf - (((selector & 1) << 1) - 1)); 
-                acc = _mm_xor_si128(temp4,acc);  
+                const __m128i temp4 = _mm_load_si128(pbuf - (((selector & 1) << 1) - 1));
+                acc = _mm_xor_si128(temp4,acc);
                 const __m128i tempb1 = _mm_mulhrs_epi16(acc, tempa3);
                 const __m128i tempb2 = _mm_xor_si128(tempb1, tempa3);
                 _mm_store_si128(prandex, tempb2);

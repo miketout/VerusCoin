@@ -13,6 +13,10 @@
 
 void memory_cleanse(void *ptr, size_t len)
 {
+    if (ptr == nullptr || len == 0)
+    {
+        return;
+    }
 #if defined(_MSC_VER)
     /* SecureZeroMemory is guaranteed not to be optimized out by MSVC. */
     SecureZeroMemory(ptr, len);
