@@ -9656,25 +9656,25 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                 }
             }
         }
-    }
 
-    // our latest confirmed is what we may submit.
-    // if it is already on that chain, we have nothing to do
-    if (cnd.forks[cnd.bestChain].size() <= 1 ||
-        (!cnd.vtx[cnd.forks[cnd.bestChain][1]].second.proofRoots.count(ASSETCHAINS_CHAINID) &&
-         !cnd.vtx[cnd.forks[cnd.bestChain][1]].second.IsDefinitionNotarization()))
-    {
-        LogPrint("notarization", "No confirming notarization with root for %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
-    }
+        // our latest confirmed is what we may submit.
+        // if it is already on that chain, we have nothing to do
+        if (cnd.forks[cnd.bestChain].size() <= 1 ||
+            (!cnd.vtx[cnd.forks[cnd.bestChain][1]].second.proofRoots.count(ASSETCHAINS_CHAINID) &&
+            !cnd.vtx[cnd.forks[cnd.bestChain][1]].second.IsDefinitionNotarization()))
+        {
+            LogPrint("notarization", "No confirming notarization with root for %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
+        }
 
-    // if the alternate chain has knowledge of is prelaunch,
-    // we will prove the block 1 coinbase with the new confirmed notarization
-    // and the confirmed notarization with the next
-    auto pfirstProofIdxIt = mapBlockIndex.find(notarizationTxes[cnd.lastConfirmed].second);
-    if (pfirstProofIdxIt == mapBlockIndex.end())
-    {
-        LogPrintf("%s: ERROR: block for notarization invalid\n", __func__);
-        return retVal;
+        // if the alternate chain has knowledge of is prelaunch,
+        // we will prove the block 1 coinbase with the new confirmed notarization
+        // and the confirmed notarization with the next
+        auto pfirstProofIdxIt = mapBlockIndex.find(notarizationTxes[cnd.lastConfirmed].second);
+        if (pfirstProofIdxIt == mapBlockIndex.end())
+        {
+            LogPrintf("%s: ERROR: block for notarization invalid\n", __func__);
+            return retVal;
+        }
     }
 
     CPBaaSNotarization newConfirmedNotarization = cnd.vtx[cnd.lastConfirmed].second;
