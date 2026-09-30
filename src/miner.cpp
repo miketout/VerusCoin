@@ -4297,6 +4297,7 @@ void static VerusStaker(CWallet *pwallet)
 
             if (ProcessBlockFound(pblock, *pwallet, reservekey))
             {
+                LOCK(cs_main);
                 LogPrintf("Using %s algorithm:\n", ASSETCHAINS_ALGORITHMS[ASSETCHAINS_ALGO]);
                 LogPrintf("Staked block found  \n  hash: %s  \ntarget: %s\n", pblock->GetHash().GetHex(), hashTarget.GetHex());
                 printf("Found block %d \n", newHeight);
