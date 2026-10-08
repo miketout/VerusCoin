@@ -1930,7 +1930,7 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
     return AcceptToMemoryPoolInt(pool, state, tx, fLimitFree, fLimitDust, pfMissingInputs, fRejectAbsurdFee, dosLevel);
 }
 
-bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree, bool fLimitDust, bool* pfMissingInputs, bool fRejectAbsurdFee, int dosLevel, int32_t simHeight, int expireThreshold)
+bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree, bool fLimitDust, bool* pfMissingInputs, bool fRejectAbsurdFee, int dosLevel, int32_t simHeight, int expireThreshold, bool fEnforceMempoolLimit)
 {
     AssertLockHeld(cs_main);
     if (pfMissingInputs)
@@ -1962,11 +1962,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
     }
 
     auto verifier = libzcash::ProofVerifier::Strict();
-    if ( komodo_validate_interest(tx,chainActive.LastTip()->GetHeight()+1,chainActive.LastTip()->GetMedianTimePast() + 777,0) < 0 )
-    {
-        //fprintf(stderr,"AcceptToMemoryPool komodo_validate_interest failure\n");
-        return error("AcceptToMemoryPool: komodo_validate_interest failed");
-    }
+
     if (!CheckTransaction(tx, state, verifier))
     {
         return error("AcceptToMemoryPool: CheckTransaction failed");
@@ -2272,7 +2268,9 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
         // it has passed ContextualCheckInputs and therefore this is correct.
         auto consensusBranchId = CurrentEpochBranchId(chainActive.Height() + 1, Params().GetConsensus());
 
-        CTxMemPoolEntry entry(tx, nFees, GetTime(), dPriority, chainActive.Height(), mempool.HasNoInputsOf(tx), fSpendsCoinbase, consensusBranchId);
+        CAmount dummyTotal = 0;
+        CCurrencyValueMap dummyReserveTotal;
+        CTxMemPoolEntry entry(tx, nFees, GetTime(), dPriority, chainActive.Height(), mempool.HasNoInputsOf(tx), fSpendsCoinbase, consensusBranchId, 0, txDesc.CalculateDelayedFees(dummyTotal, dummyReserveTotal, nextBlockHeight));
 
         unsigned int nSize = entry.GetTxSize();
 
@@ -2295,7 +2293,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
         // there are some beginning and end imports that don't have fees on a launch. We can
         // recognize those imports, exempt block 1, or consider using fees from the initial
         // currency definition. Exports pay delayed fees back, imports allow fees to keep flowing.
-        bool feeExempt = (txDesc.IsValid() && (txDesc.IsImport() || txDesc.IsExport() || txDesc.IsNotaryPrioritized()));
+        bool feeExempt = pool.IsProtocolTransaction(hash);
         if (!feeExempt && nFees < minFee)
         {
             if (fLimitFree)
@@ -2350,6 +2348,37 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
                                     nFees, ::minRelayTxFee.GetFee(nSize) * 10000);
             LogPrint("mempool", errmsg.c_str());
             return state.Error("AcceptToMemoryPool: " + errmsg);
+        }
+
+        if (fEnforceMempoolLimit)
+        {
+            size_t maxMempoolSize = GetArg("-maxmempool", (mempool.DEFAULT_MAX_MEMPOOL_SIZE)) * (1024 * 1024);
+            if (!feeExempt && maxMempoolSize != 0 && (mempool.DynamicMemoryUsage() + entry.DynamicMemoryUsage()) > maxMempoolSize)
+            {
+                const auto &feeIndex = pool.mapTx.get<2>();
+                if (!feeIndex.empty())
+                {
+                    auto lowFeeIt = feeIndex.rbegin();
+                    for (; lowFeeIt != feeIndex.rend(); lowFeeIt++)
+                    {
+                        const CTransaction &rTx = lowFeeIt->GetTx();
+                        CReserveTransactionDescriptor rtxd;
+
+                        // skip protocol transactions
+                        if (!(pool.IsKnownReserveTransaction(rTx.GetHash(), rtxd) &&
+                            rtxd.IsValid() &&
+                            (rtxd.IsImport() || rtxd.IsExport() || rtxd.IsNotaryPrioritized())))
+                        {
+                            break;
+                        }
+                    }
+                    if (lowFeeIt != feeIndex.rend() &&
+                        entry.GetEffectiveFeeRate() <= lowFeeIt->GetEffectiveFeeRate())
+                    {
+                        return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "mempool full");
+                    }
+                }
+            }
         }
 
         // Check against previous transactions
@@ -4132,7 +4161,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                   chainActive.Height() >= pindex->GetHeight()) &&
                  !ContextualCheckTransaction(tx, state, chainparams, nHeight, 10)) ||
                 (!(tx.IsCoinBase() || isPosTx || chainActive.Height() >= pindex->GetHeight()) &&
-                 !AcceptToMemoryPoolInt(mempool, state, tx, false, !ConnectedChains.IsEnhancedDustCheck(nHeight), &missingInputs, false, 10, nHeight, 0) &&
+                 !AcceptToMemoryPoolInt(mempool, state, tx, false, !ConnectedChains.IsEnhancedDustCheck(nHeight), &missingInputs, false, 10, nHeight, 0, false) &&
                  !(state.GetRejectReason() == "already in mempool" ||
                    state.GetRejectReason() == "already have coins") &&
                  !(state.GetRejectReason() == "staking" &&
@@ -5726,12 +5755,17 @@ bool static ConnectTip(CValidationState& state, const CChainParams& chainparams,
     LogPrint("bench", "  - Writing chainstate: %.2fms [%.2fs]\n", (nTime5 - nTime4) * 0.001, nTimeChainState * 0.000001);
 
     list<CTransaction> txConflicted;
+    list<CTransaction> txEvicted;
     {
         LOCK(mempool.cs);
         // Remove conflicting transactions from the mempool.
         mempool.removeForBlock(pblock->vtx, pindexNew->GetHeight(), txConflicted, !IsInitialBlockDownload(chainparams));
         // Remove transactions that expire at new block height from mempool
         mempool.removeExpired(pindexNew->GetHeight());
+        // Enforce memory and age limits now that the block's own transactions are out of the pool
+        mempool.LimitSize((size_t)GetArg("-maxmempool", CTxMemPool::DEFAULT_MAX_MEMPOOL_SIZE) * (1024 * 1024),
+                        GetArg("-mempoolexpiry", CTxMemPool::DEFAULT_MEMPOOL_EXPIRY_HOURS) * 60 * 60,
+                        txEvicted);
     }
 
     // Update chainActive & related variables.
@@ -6100,7 +6134,6 @@ bool InvalidateBlock(CValidationState& state, const CChainParams& chainparams, C
             return false;
         }
     }
-    //LimitMempoolSize(mempool, GetArg("-maxmempool", DEFAULT_MAX_MEMPOOL_SIZE) * 1000000, GetArg("-mempoolexpiry", DEFAULT_MEMPOOL_EXPIRY) * 60 * 60);
 
     // The resulting new best tip may not be in setBlockIndexCandidates anymore, so
     // add it again.

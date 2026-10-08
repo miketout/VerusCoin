@@ -349,7 +349,9 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-exportdir=<dir>", _("Specify directory to be used when exporting data"));
     strUsage += HelpMessageOpt("-loadblock=<file>", _("Imports blocks from external blk000??.dat file") + " " + _("on startup"));
     strUsage += HelpMessageOpt("-maxorphantx=<n>", strprintf(_("Keep at most <n> unconnectable transactions in memory (default: %u)"), DEFAULT_MAX_ORPHAN_TRANSACTIONS));
-    strUsage += HelpMessageOpt("-mempooltxinputlimit=<n>", _("[DEPRECATED FROM OVERWINTER] Set the maximum number of transparent inputs in a transaction that the mempool will accept (default: 0 = no limit applied)"));
+    //strUsage += HelpMessageOpt("-mempooltxinputlimit=<n>", _("[DEPRECATED FROM OVERWINTER] Set the maximum number of transparent inputs in a transaction that the mempool will accept (default: 0 = no limit applied)"));
+    strUsage += HelpMessageOpt("-maxmempool=<n>", strprintf(_("Megabyte limit to the total size of transactions in the mempool (default: %d, use 0 for unlimited)"), CTxMemPool::DEFAULT_MAX_MEMPOOL_SIZE));
+    strUsage += HelpMessageOpt("-mempoolexpiry=<n>", strprintf(_("Hours after which transactions in the mempool expire, regardless of height expiry (default: %d)"), CTxMemPool::DEFAULT_MEMPOOL_EXPIRY_HOURS));
     strUsage += HelpMessageOpt("-notarydatadir=<dir>", _("Specify data directory for notary chain"));
     strUsage += HelpMessageOpt("-par=<n>", strprintf(_("Set the number of script verification threads (%u to %d, 0 = auto, <0 = leave that many cores free, default: %d)"),
         -(int)boost::thread::hardware_concurrency(), MAX_SCRIPTCHECK_THREADS, DEFAULT_SCRIPTCHECK_THREADS));

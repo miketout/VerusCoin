@@ -24,7 +24,7 @@
 using namespace std;
 
 CTxMemPoolEntry::CTxMemPoolEntry():
-    nFee(0), nTxSize(0), nModSize(0), nUsageSize(0), nTime(0), dPriority(0.0),
+    nFee(0), nEffectiveFee(0), nTxSize(0), nModSize(0), nUsageSize(0), nTime(0), dPriority(0.0),
     hadNoDependencies(false), spendsCoinbase(false), feeDelta(0)
 {
     nHeight = MEMPOOL_HEIGHT;
@@ -33,8 +33,8 @@ CTxMemPoolEntry::CTxMemPoolEntry():
 CTxMemPoolEntry::CTxMemPoolEntry(const CTransaction& _tx, const CAmount& _nFee,
                                  int64_t _nTime, double _dPriority,
                                  unsigned int _nHeight, bool poolHasNoInputsOf,
-                                 bool _spendsCoinbase, uint32_t _nBranchId, int64_t FeeDelta):
-    tx(std::make_shared<CTransaction>(_tx)), nFee(_nFee), nTime(_nTime), dPriority(_dPriority), nHeight(_nHeight),
+                                 bool _spendsCoinbase, uint32_t _nBranchId, int64_t FeeDelta, CAmount _nEffectiveFeeDelta):
+    tx(std::make_shared<CTransaction>(_tx)), nFee(_nFee), nEffectiveFee(_nFee + _nEffectiveFeeDelta), nTime(_nTime), dPriority(_dPriority), nHeight(_nHeight),
     hadNoDependencies(poolHasNoInputsOf),
     spendsCoinbase(_spendsCoinbase), feeDelta(FeeDelta), nBranchId(_nBranchId)
 {
@@ -42,6 +42,7 @@ CTxMemPoolEntry::CTxMemPoolEntry(const CTransaction& _tx, const CAmount& _nFee,
     nModSize = _tx.CalculateModifiedSize(nTxSize);
     nUsageSize = RecursiveDynamicUsage(*tx) + memusage::DynamicUsage(tx);
     feeRate = CFeeRate(nFee, nTxSize);
+    effectiveFeeRate = CFeeRate(nEffectiveFee, nTxSize);
 }
 
 CTxMemPoolEntry::CTxMemPoolEntry(const CTxMemPoolEntry& other)
@@ -129,7 +130,7 @@ bool CTxMemPool::addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry,
     nRecentlyAddedSequence += 1;
     for (unsigned int i = 0; i < tx.vin.size(); i++)
         mapNextTx[tx.vin[i].prevout] = CInPoint(&tx, i);
-        
+
     BOOST_FOREACH(const JSDescription &joinsplit, tx.vJoinSplit) {
         BOOST_FOREACH(const uint256 &nf, joinsplit.nullifiers) {
             mapSproutNullifiers[nf] = &tx;
@@ -1228,6 +1229,64 @@ bool CTxMemPool::HasNoInputsOf(const CTransaction &tx) const
         if (exists(tx.vin[i].prevout.hash))
             return false;
     return true;
+}
+
+bool CTxMemPool::IsProtocolTransaction(const uint256 &hash)
+{
+    LOCK(cs);
+    CReserveTransactionDescriptor rtxd;
+    return IsKnownReserveTransaction(hash, rtxd) &&
+            rtxd.IsValid() &&
+            (rtxd.IsImport() || rtxd.IsExport() || rtxd.IsNotaryPrioritized());
+}
+
+void CTxMemPool::LimitSize(size_t limitBytes, int64_t maxAgeSeconds, std::list<CTransaction> &removed)
+{
+    LOCK(cs);
+
+    // 1. age: anything older than the cutoff goes, with its descendants
+    if (maxAgeSeconds > 0)
+    {
+        int64_t cutoff = GetTime() - maxAgeSeconds;
+        std::vector<CTransaction> expired;
+        for (auto it = mapTx.begin(); it != mapTx.end(); it++)
+        {
+            if (it->GetTime() < cutoff && !IsProtocolTransaction(it->GetTx().GetHash()))
+            {
+                expired.push_back(it->GetTx());
+            }
+        }
+        for (auto &tx : expired)
+        {
+            remove(tx, removed, true);      // safe if already removed as a descendant
+        }
+    }
+
+    // 2. size: walk up from the lowest effective fee rate, skipping protocol transactions
+    if (limitBytes == 0)
+    {
+        return;
+    }
+    while (DynamicMemoryUsage() > limitBytes)
+    {
+        const auto &feeIndex = mapTx.get<2>();
+        auto it = feeIndex.rbegin();
+        while (it != feeIndex.rend() && IsProtocolTransaction(it->GetTx().GetHash()))
+        {
+            it++;
+        }
+        if (it == feeIndex.rend())
+        {
+            break;                          // only protocol transactions remain
+        }
+        size_t before = removed.size();
+        CTransaction evict = it->GetTx();   // copy before erasing: remove() invalidates `it`
+        remove(evict, removed, true);
+        if (removed.size() == before)
+        {
+            break;                          // defensive: never spin
+        }
+    }
 }
 
 bool CTxMemPool::nullifierExists(const uint256& nullifier, ShieldedType type) const

@@ -6914,7 +6914,7 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                     params.push_back(submitParams);
                     try
                     {
-                        challengeResult = find_value(RPCCallRoot("submitchallenges", params), "result");
+                        challengeResult = find_value(RPCCallRoot("submitchallenges", params, 60), "result");
                     } catch (const exception &e)
                     {
                         challengeResult = NullUniValue;
@@ -9167,7 +9167,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
     return retVal;
 }
 
-bool CallNotary(const CRPCChainData &notarySystem, std::string command, const UniValue &params, UniValue &result, UniValue &error);
+bool CallNotary(const CRPCChainData &notarySystem, std::string command, const UniValue &params, UniValue &result, UniValue &error, int timeout=15);
 
 bool CPBaaSNotarization::FindFinalizedIndexByVDXFKey(const uint160 &notarizationIdxKey,
                                                      CObjectFinalization &confirmedFinalization,
@@ -10252,7 +10252,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
     printf("%s: hex after univalue:\n%s\n", __func__, HexBytes(&(notVec2[0]), notVec2.size()).c_str());
     printf("%s: hex after reserialization:\n%s\n", __func__, HexBytes(&(notVec3[0]), notVec3.size()).c_str()); */
 
-    if (!CallNotary(externalSystem, "submitacceptednotarization", params, result, error) ||
+    if (!CallNotary(externalSystem, "submitacceptednotarization", params, result, error, 60) ||
         !error.isNull() ||
         (strTxId = uni_get_str(result)).empty() ||
         !IsHex(strTxId))
@@ -10636,6 +10636,23 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
         currentNotarization.nVersion < CPBaaSNotarization::VERSION_PBAAS_MAINNET)
     {
         return state.Error("Invalid notarization version " + std::to_string(CPBaaSNotarization::VERSION_PBAAS_MAINNET));
+    }
+
+    if (IsAfterSecondBridgeCleanupWindowStarts(curChainTipTime))
+    {
+        switch (currentNotarization.proposer.TypeNoFlags())
+        {
+            case CTransferDestination::DEST_PK:
+            case CTransferDestination::DEST_PKH:
+            case CTransferDestination::DEST_ID:
+                break;
+            default:
+                return state.Error("Notarization proposer must be a public key, public key hash, or ID destination");
+        }
+        if (currentNotarization.proposer.HasGatewayLeg())
+        {
+            return state.Error("Notarization proposer may not specify a gateway");
+        }
     }
 
     // check aux destinations if this is an earned notarization, it cannot have auxdests

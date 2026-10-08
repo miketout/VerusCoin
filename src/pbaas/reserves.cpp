@@ -6837,6 +6837,141 @@ std::vector<CAmount> CReserveTransactionDescriptor::ReserveConversionFeesVec(con
     return retVal;
 }
 
+CAmount CReserveTransactionDescriptor::CalculateDelayedFees(CAmount &nTotalIn, CCurrencyValueMap &totalReserveIn, uint32_t nHeight, std::set<CUTXORef> *pOrphanArbs, std::list<CTransaction> *pTxesToRemove) const
+{
+    CAmount delayedFee = 0;
+    if (IsValid())
+    {
+        nTotalIn += nativeIn;
+        totalReserveIn = ReserveInputMap();
+        assert(!totalReserveIn.valueMap.count(ASSETCHAINS_CHAINID));
+
+        if (IsReserveTransfer() || IsImport())
+        {
+            for (int j = 0; j < ptx->vout.size(); j++)
+            {
+                auto &oneOut = ptx->vout[j];
+                COptCCParams p;
+                uint160 oneIdID;
+                if (oneOut.scriptPubKey.IsPayToCryptoCondition(p) &&
+                    p.IsValid() &&
+                    p.version >= p.VERSION_V3 &&
+                    p.vData.size())
+                {
+                    if (p.evalCode == EVAL_CROSSCHAIN_IMPORT)
+                    {
+                        // make sure we spend all of our arbs via imports
+                        CCrossChainImport cci, sysCCI;
+                        CCrossChainExport ccx;
+                        int primaryImportOut;
+                        int32_t sysCCIOut, notarizationOut, evidenceOutStart, evidenceOutEnd;
+                        CPBaaSNotarization importNotarization;
+                        CCurrencyDefinition destSystem;
+                        std::vector<CReserveTransfer> reserveTransfers;
+                        std::vector<CTransaction> arbTxes;
+                        std::vector<CUTXORef> arbTxOuts;
+                        CValidationState state;
+                        if (pOrphanArbs &&
+                            (cci = CCrossChainImport(p.vData[0])).IsValid() &&
+                            !cci.IsSourceSystemImport() &&
+                            (reserveTransfers = cci.GetArbitrageTransfers(*ptx, state, nHeight, &arbTxes, &arbTxOuts)).size() &&
+                            state.IsValid())
+                        {
+                            for (auto &oneRef : arbTxOuts)
+                            {
+                                pOrphanArbs->erase(oneRef);
+                            }
+                        }
+                    }
+                    else if (p.evalCode == EVAL_RESERVE_TRANSFER)
+                    {
+                        //if the destination currency is fractional, this considers the total fee that
+                        // will actually be realized on import as fee for prioritization
+
+                        // make sure we don't export the same identity or currency to the same destination more than once in any block
+                        // we cover the single block case here, and the protocol for each must reject anything relating to prior blocks
+                        CReserveTransfer rt;
+                        CCurrencyDefinition destSystem;
+                        if ((rt = CReserveTransfer(p.vData[0])).IsValid())
+                        {
+                            if (pOrphanArbs && rt.IsArbitrageOnly())
+                            {
+                                pOrphanArbs->insert(CUTXORef(ptx->GetHash(), j));
+                            }
+                            uint160 destCurrencyID = rt.GetImportCurrency();
+                            CCurrencyDefinition destCurrency = ConnectedChains.GetCachedCurrency(destCurrencyID);
+                            CCurrencyDefinition destSystem = ConnectedChains.GetCachedCurrency(destCurrency.SystemOrGatewayID());
+                            CCurrencyDefinition secondLegSystem;
+
+                            if (!destCurrency.IsValid() || !destSystem.IsValid())
+                            {
+                                if (LogAcceptCategory("crosschainexports"))
+                                {
+                                    UniValue jsonTx(UniValue::VOBJ);
+                                    TxToUniv(*ptx, uint256(), jsonTx);
+                                    printf("%s: invalid or inaccessible destination currency/system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
+                                    LogPrintf("%s: invalid or inaccessible destination currency/system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
+                                }
+                                if (pTxesToRemove)
+                                {
+                                    pTxesToRemove->push_back(*ptx);
+                                }
+                                continue;
+                            }
+
+                            // determine second system dest if there is any, and enforce limits to that system as well
+                            if (rt.destination.HasGatewayLeg() && rt.destination.gatewayID != destSystem.GetID())
+                            {
+                                secondLegSystem = ConnectedChains.GetCachedCurrency(rt.destination.gatewayID);
+                                if (!secondLegSystem.IsValid())
+                                {
+                                    if (LogAcceptCategory("crosschainexports"))
+                                    {
+                                        UniValue jsonTx(UniValue::VOBJ);
+                                        TxToUniv(*ptx, uint256(), jsonTx);
+                                        printf("%s: invalid or inaccessible second leg destination system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
+                                        LogPrintf("%s: invalid or inaccessible second leg destination system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
+                                    }
+                                    if (pTxesToRemove)
+                                    {
+                                        pTxesToRemove->push_back(*ptx);
+                                    }
+                                    continue;
+                                }
+                            }
+
+                            // if this is a conversion, estimate delayed converted fees
+                            if (destCurrency.IsFractional() &&
+                                rt.IsConversion() &&
+                                !rt.IsPreConversion() &&
+                                nHeight > destCurrency.startBlock)
+                            {
+                                CCurrencyValueMap delayedFees = rt.CalculateFee();
+                                if (delayedFees.valueMap.count(ASSETCHAINS_CHAINID))
+                                {
+                                    delayedFee += delayedFees.valueMap[ASSETCHAINS_CHAINID];
+                                    delayedFees.valueMap.erase(ASSETCHAINS_CHAINID);
+                                }
+                                if (delayedFees.valueMap.size())
+                                {
+                                    CCoinbaseCurrencyState pricingState = ConnectedChains.GetCurrencyState(destCurrency, nHeight);
+                                    for (auto &oneCurFee : delayedFees.valueMap)
+                                    {
+                                        delayedFee += pricingState.ReserveToNativeRaw(
+                                                            oneCurFee.second,
+                                                            pricingState.TargetConversionPrice(oneCurFee.first, ASSETCHAINS_CHAINID));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return delayedFee;
+}
+
 // this should be done no more than once to prepare a currency state to be updated to the next state
 // emission occurs for a block before any conversion or exchange and that impact on the currency state is calculated
 CCoinbaseCurrencyState &CCoinbaseCurrencyState::UpdateWithEmission(CAmount toEmit, int32_t excessRatio)

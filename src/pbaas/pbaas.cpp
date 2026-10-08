@@ -1523,6 +1523,28 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
         return true;
     }
 
+    uint32_t exportChainTime = chainActive.ChainTimeAtOrBefore(height - 1);
+    if (IsAfterSecondBridgeCleanupWindowStarts(exportChainTime))
+    {
+        auto isPayeeType = [&ccx, &destSystem](int t) {
+            return t == CTransferDestination::DEST_PK || t == CTransferDestination::DEST_PKH ||
+                   t == CTransferDestination::DEST_ID || t == CTransferDestination::DEST_SH ||
+                   (destSystem.proofProtocol == destSystem.PROOF_ETHNOTARIZATION && t == CTransferDestination::DEST_ETH);
+        };
+        int exporterType = ccx.exporter.TypeNoFlags();
+
+        bool exporterOk = exporterType == CTransferDestination::DEST_INVALID ?
+                              (ccx.exporter.destination.empty() && ccx.exporter.AuxDestCount() == 0) :
+                              isPayeeType(exporterType);
+        if (!exporterOk ||
+            ccx.exporter.HasGatewayLeg() ||
+            ccx.exporter.AuxDestCount() > 1 ||
+            (ccx.exporter.AuxDestCount() == 1 && !isPayeeType(ccx.exporter.GetAuxDest(0).TypeNoFlags())))
+        {
+            return state.Error("Invalid exporter destination in cross chain export");
+        }
+    }
+
     // if we are not the primary export out and not supplemental, we should be system thread. check conformity
     if (outNum != primaryExportOut && !ccx.IsSystemThreadExport())
     {
@@ -4133,6 +4155,24 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
           ::AsVector(newCurrency) == currencyOptParams.vData[0]))
     {
         return state.Error("Invalid currency definition in output");
+    }
+
+    if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+    {
+        switch (newCurrency.nativeCurrencyID.TypeNoFlags())
+        {
+            case CTransferDestination::DEST_INVALID:
+            case CTransferDestination::DEST_ETH:
+            case CTransferDestination::DEST_ETHNFT:
+            case CTransferDestination::DEST_ID:
+                break;
+            default:
+                return state.Error("Invalid native currency ID type in currency definition");
+        }
+        if (newCurrency.nativeCurrencyID.AuxDestCount() || newCurrency.nativeCurrencyID.HasGatewayLeg())
+        {
+            return state.Error("Native currency ID may not carry auxiliary or gateway destinations");
+        }
     }
 
     CDataStream ss(SER_DISK, PROTOCOL_VERSION);
@@ -12280,7 +12320,7 @@ GetPendingExports(const CCurrencyDefinition &sourceChain,
                                 UniValue rpcResult(UniValue::VARR);
                                 rpcParams.push_back(exportTxRef.hash.GetHex());
                                 rpcParams.push_back(!rejectImport);
-                                rpcResult = find_value(RPCCallRoot("approveorrejectacceptedimport", rpcParams), "result");
+                                rpcResult = find_value(RPCCallRoot("approveorrejectacceptedimport", rpcParams, 60), "result");
                                 if (!find_value(rpcResult, "error").isNull())
                                 {
                                     LogPrintf("%s: Error (%s) %s pending cross-chain export\n",
@@ -12766,7 +12806,7 @@ void CConnectedChains::SubmissionThread()
                                 UniValue result = NullUniValue;
                                 try
                                 {
-                                    result = find_value(RPCCallRoot("submitimports", params), "result");
+                                    result = find_value(RPCCallRoot("submitimports", params, 60), "result");
                                 } catch (const exception &e)
                                 {
                                     LogPrintf("%s: Error submitting imports to notary chain %s\n", __func__, uni_get_str(params[0]).c_str());

@@ -39,7 +39,7 @@ void pbaas_shuffle(RAIterator first, RAIterator last, RNG&& rng)
 #endif
 }
 
-static const int DEFAULT_RPC_TIMEOUT=900;
+static const int DEFAULT_RPC_TIMEOUT=15;
 static const uint32_t PBAAS_VERSION = 1;
 static const uint32_t PBAAS_VERSION_INVALID = 0;
 

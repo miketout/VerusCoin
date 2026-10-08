@@ -604,7 +604,8 @@ bool CheckNotaryConnection(const CRPCChainData &notarySystem)
     return true;
 }
 
-bool CallNotary(const CRPCChainData &notarySystem, std::string command, const UniValue &params, UniValue &result, UniValue &error)
+bool CallNotary(const CRPCChainData &notarySystem, std::string command, const UniValue &params, UniValue &result, UniValue &error, int timeout=15);
+bool CallNotary(const CRPCChainData &notarySystem, std::string command, const UniValue &params, UniValue &result, UniValue &error, int timeout)
 {
     // ensure we have connection parameters, or we fail
     if (!CheckNotaryConnection(notarySystem))
@@ -614,7 +615,7 @@ bool CallNotary(const CRPCChainData &notarySystem, std::string command, const Un
 
     try
     {
-        UniValue rpcResult = RPCCall(command, params, notarySystem.rpcUserPass, notarySystem.rpcPort, notarySystem.rpcHost);
+        UniValue rpcResult = RPCCall(command, params, notarySystem.rpcUserPass, notarySystem.rpcPort, notarySystem.rpcHost, timeout);
         result = find_value(rpcResult, "result");
         error = find_value(rpcResult, "error");
     } catch (std::exception e)
@@ -2949,127 +2950,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             CReserveTransactionDescriptor rtxd;
             bool isReserve = mempool.IsKnownReserveTransaction(hash, rtxd);
 
-            CAmount delayedFee = 0;
-            if (isReserve)
-            {
-                nTotalIn += rtxd.nativeIn;
-                totalReserveIn = rtxd.ReserveInputMap();
-                assert(!totalReserveIn.valueMap.count(ASSETCHAINS_CHAINID));
-
-                if (rtxd.IsReserveTransfer() || rtxd.IsImport())
-                {
-                    for (int j = 0; j < tx.vout.size(); j++)
-                    {
-                        auto &oneOut = tx.vout[j];
-                        COptCCParams p;
-                        uint160 oneIdID;
-                        if (oneOut.scriptPubKey.IsPayToCryptoCondition(p) &&
-                            p.IsValid() &&
-                            p.version >= p.VERSION_V3 &&
-                            p.vData.size())
-                        {
-                            if (p.evalCode == EVAL_CROSSCHAIN_IMPORT)
-                            {
-                                // make sure we spend all of our arbs via imports
-                                CCrossChainImport cci, sysCCI;
-                                CCrossChainExport ccx;
-                                int primaryImportOut;
-                                int32_t sysCCIOut, notarizationOut, evidenceOutStart, evidenceOutEnd;
-                                CPBaaSNotarization importNotarization;
-                                CCurrencyDefinition destSystem;
-                                std::vector<CReserveTransfer> reserveTransfers;
-                                std::vector<CTransaction> arbTxes;
-                                std::vector<CUTXORef> arbTxOuts;
-                                if ((cci = CCrossChainImport(p.vData[0])).IsValid() &&
-                                    !cci.IsSourceSystemImport() &&
-                                    (reserveTransfers = cci.GetArbitrageTransfers(tx, state, nHeight, &arbTxes, &arbTxOuts)).size())
-                                {
-                                    for (auto &oneRef : arbTxOuts)
-                                    {
-                                        orphanArbs.erase(oneRef);
-                                    }
-                                }
-                            }
-                            else if (p.evalCode == EVAL_RESERVE_TRANSFER)
-                            {
-                                //if the destination currency is fractional, this considers the total fee that
-                                // will actually be realized on import as fee for prioritization
-
-                                // make sure we don't export the same identity or currency to the same destination more than once in any block
-                                // we cover the single block case here, and the protocol for each must reject anything relating to prior blocks
-                                CReserveTransfer rt;
-                                CCurrencyDefinition destSystem;
-                                if ((rt = CReserveTransfer(p.vData[0])).IsValid())
-                                {
-                                    if (rt.IsArbitrageOnly())
-                                    {
-                                        orphanArbs.insert(CUTXORef(tx.GetHash(), j));
-                                    }
-                                    uint160 destCurrencyID = rt.GetImportCurrency();
-                                    CCurrencyDefinition destCurrency = ConnectedChains.GetCachedCurrency(destCurrencyID);
-                                    CCurrencyDefinition destSystem = ConnectedChains.GetCachedCurrency(destCurrency.SystemOrGatewayID());
-                                    CCurrencyDefinition secondLegSystem;
-
-                                    if (!destCurrency.IsValid() || !destSystem.IsValid())
-                                    {
-                                        if (LogAcceptCategory("crosschainexports"))
-                                        {
-                                            UniValue jsonTx(UniValue::VOBJ);
-                                            TxToUniv(tx, uint256(), jsonTx);
-                                            printf("%s: invalid or inaccessible destination currency/system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
-                                            LogPrintf("%s: invalid or inaccessible destination currency/system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
-                                        }
-                                        txesToRemove.push_back(tx);
-                                        continue;
-                                    }
-
-                                    // determine second system dest if there is any, and enforce limits to that system as well
-                                    if (rt.destination.HasGatewayLeg() && rt.destination.gatewayID != destSystem.GetID())
-                                    {
-                                        secondLegSystem = ConnectedChains.GetCachedCurrency(rt.destination.gatewayID);
-                                        if (!secondLegSystem.IsValid())
-                                        {
-                                            if (LogAcceptCategory("crosschainexports"))
-                                            {
-                                                UniValue jsonTx(UniValue::VOBJ);
-                                                TxToUniv(tx, uint256(), jsonTx);
-                                                printf("%s: invalid or inaccessible second leg destination system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
-                                                LogPrintf("%s: invalid or inaccessible second leg destination system in reserve transfer in output %d on tx: %s\n", __func__, j, jsonTx.write(1,2).c_str());
-                                            }
-                                            txesToRemove.push_back(tx);
-                                            continue;
-                                        }
-                                    }
-
-                                    // if this is a conversion, estimate delayed converted fees
-                                    if (destCurrency.IsFractional() &&
-                                        rt.IsConversion() &&
-                                        !rt.IsPreConversion() &&
-                                        nHeight > destCurrency.startBlock)
-                                    {
-                                        CCurrencyValueMap delayedFees = rt.CalculateFee();
-                                        if (delayedFees.valueMap.count(ASSETCHAINS_CHAINID))
-                                        {
-                                            delayedFee += delayedFees.valueMap[ASSETCHAINS_CHAINID];
-                                            delayedFees.valueMap.erase(ASSETCHAINS_CHAINID);
-                                        }
-                                        if (delayedFees.valueMap.size())
-                                        {
-                                            CCoinbaseCurrencyState pricingState = ConnectedChains.GetCurrencyState(destCurrency, nHeight);
-                                            for (auto &oneCurFee : delayedFees.valueMap)
-                                            {
-                                                delayedFee += pricingState.ReserveToNativeRaw(
-                                                                    oneCurFee.second,
-                                                                    pricingState.TargetConversionPrice(oneCurFee.first, ASSETCHAINS_CHAINID));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            CAmount delayedFee = isReserve ? rtxd.CalculateDelayedFees(nTotalIn, totalReserveIn, nHeight, &orphanArbs, &txesToRemove) : 0;
 
             for (int inNum = 0; inNum < tx.vin.size(); inNum++)
             {

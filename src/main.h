@@ -55,7 +55,6 @@ class CValidationState;
 class PrecomputedTransactionData;
 
 struct CNodeStateStats;
-#define DEFAULT_MEMPOOL_EXPIRY 1
 
 /** Default for -blockmaxsize and -blockminsize, which control the range of sizes the mining code will create **/
 static const unsigned int DEFAULT_BLOCK_MAX_SIZE = MAX_BLOCK_SIZE;
@@ -332,7 +331,7 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
                         bool* pfMissingInputs, bool fRejectAbsurdFee=false, int dosLevel=-1);
 bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree, bool fLimitDust,
                            bool* pfMissingInputs, bool fRejectAbsurdFee=false, int dosLevel=-1, int32_t simHeight = 0,
-                           int expireThreshold=TX_EXPIRING_SOON_THRESHOLD);
+                           int expireThreshold=TX_EXPIRING_SOON_THRESHOLD, bool fEnforceMempoolLimit=true);
 
 
 struct CNodeStateStats {
