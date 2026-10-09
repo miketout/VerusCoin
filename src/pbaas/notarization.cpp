@@ -10640,14 +10640,23 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
 
     if (IsAfterSecondBridgeCleanupWindowStarts(curChainTipTime))
     {
+        bool proposerOk = false;
         switch (currentNotarization.proposer.TypeNoFlags())
         {
             case CTransferDestination::DEST_PK:
             case CTransferDestination::DEST_PKH:
             case CTransferDestination::DEST_ID:
+                proposerOk = true;
                 break;
-            default:
-                return state.Error("Notarization proposer must be a public key, public key hash, or ID destination");
+            case CTransferDestination::DEST_INVALID:
+                // definition, import and block-one notarizations carry no proposer
+                proposerOk = currentNotarization.proposer.destination.empty() &&
+                             currentNotarization.proposer.AuxDestCount() == 0;
+                break;
+        }
+        if (!proposerOk)
+        {
+            return state.Error("Notarization proposer must be empty, a public key, public key hash, or ID destination");
         }
         if (currentNotarization.proposer.HasGatewayLeg())
         {

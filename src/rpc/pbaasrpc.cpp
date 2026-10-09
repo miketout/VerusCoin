@@ -16880,6 +16880,12 @@ UniValue revokeidentity(const UniValue& params, bool fHelp)
 
     CIdentity newID(oldID);
     newID.UpgradeVersion(chainActive.Height() + 1);
+
+    if (!newID.HasTokenizedControl() && newID.recoveryAuthority == newID.GetID())
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity's recovery authority is itself; revoking would make it irrecoverable");
+    }
+
     newID.Revoke();
 
     UniValue newParams(UniValue::VARR);

@@ -2809,7 +2809,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             if (nHeight != 1 && !(VERUS_NOTARYID.IsNull() && VERUS_DEFAULTID.IsNull() && VERUS_NODEID.IsNull()))
             {
                 CTransferDestination proposer;
-                if (firstDestination.which() == COptCCParams::ADDRTYPE_INVALID)
+                if (firstDestination.which() != COptCCParams::ADDRTYPE_ID && firstDestination.which() != COptCCParams::ADDRTYPE_PK && firstDestination.which() != COptCCParams::ADDRTYPE_PKH)
                 {
                     proposer = DestinationToTransferDestination(CIdentityID(VERUS_DEFAULTID.IsNull() ? (VERUS_NODEID.IsNull() ? VERUS_NOTARYID : VERUS_NODEID) : VERUS_DEFAULTID));
                 }

@@ -4159,7 +4159,8 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
 
     if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
     {
-        switch (newCurrency.nativeCurrencyID.TypeNoFlags())
+        int nativeType = newCurrency.nativeCurrencyID.TypeNoFlags();
+        switch (nativeType)
         {
             case CTransferDestination::DEST_INVALID:
             case CTransferDestination::DEST_ETH:
@@ -4169,9 +4170,25 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
             default:
                 return state.Error("Invalid native currency ID type in currency definition");
         }
-        if (newCurrency.nativeCurrencyID.AuxDestCount() || newCurrency.nativeCurrencyID.HasGatewayLeg())
+        if (newCurrency.nativeCurrencyID.HasGatewayLeg())
         {
-            return state.Error("Native currency ID may not carry auxiliary or gateway destinations");
+            return state.Error("Native currency ID may not have gateway destinations");
+        }
+        int auxCount = newCurrency.nativeCurrencyID.AuxDestCount();
+        if (auxCount)
+        {
+            // ERC1155 mappings carry the token ID as one DEST_PK auxiliary destination
+            // on a DEST_ETH or DEST_ETHNFT native currency ID
+            CTransferDestination auxDest = newCurrency.nativeCurrencyID.GetAuxDest(0);
+            if (auxCount != 1 ||
+                !(nativeType == CTransferDestination::DEST_ETH || nativeType == CTransferDestination::DEST_ETHNFT) ||
+                auxDest.TypeNoFlags() != CTransferDestination::DEST_PK ||
+                auxDest.destination.size() != 33 ||
+                auxDest.AuxDestCount() ||
+                auxDest.HasGatewayLeg())
+            {
+                return state.Error("Native currency ID may carry only one public key auxiliary destination, for an ERC1155 mapping");
+            }
         }
     }
 
