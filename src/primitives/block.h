@@ -1171,6 +1171,13 @@ public:
 
     bool IsValid() const
     {
+        for (auto &oneSig : signatures)
+        {
+            if (!CIdentitySignature::IsValidHashType((CCurrencyDefinition::EHashTypes)oneSig.second.hashType))
+            {
+                return false;
+            }
+        }
         return version >= VERSION_FIRST &&
                version <= VERSION_LAST &&
                !systemID.IsNull() &&

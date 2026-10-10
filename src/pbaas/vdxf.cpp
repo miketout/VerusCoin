@@ -553,6 +553,10 @@ CVDXFEncryptor::CVDXFEncryptor(const UniValue &uni) :
 bool CVDXFEncryptor::GetDecryptionKey(const libzcash::SaplingIncomingViewingKey &ivk, std::vector<unsigned char> &decryptionKey)
 {
     uint256 dhsecret;
+    if (keyData.size() != 32)
+    {
+        return false;
+    }
     uint256 pk(keyData);
 
     if (cipherData.size() <= CHACHA20POLY1305_CIPHEROVERHEAD ||
@@ -571,9 +575,13 @@ bool CVDXFEncryptor::GetDecryptionKey(const libzcash::SaplingIncomingViewingKey 
 bool CVDXFEncryptor::Decrypt(const libzcash::SaplingIncomingViewingKey &ivk, std::vector<unsigned char> &plainText, std::vector<unsigned char> *pSsk)
 {
     uint256 dhsecret;
+    if (keyData.size() != 32)
+    {
+        return false;
+    }
     uint256 pk(keyData);
 
-    if (encType != ENCRYPTION_CHACHA20POLY1305 || 
+    if (encType != ENCRYPTION_CHACHA20POLY1305 ||
         cipherData.size() <= CHACHA20POLY1305_CIPHEROVERHEAD ||
         !librustzcash_sapling_ka_agree(pk.begin(), ivk.begin(), dhsecret.begin())) {
         return false;
@@ -610,7 +618,7 @@ bool CVDXFEncryptor::Decrypt(const libzcash::SaplingIncomingViewingKey &ivk, std
 
 bool CVDXFEncryptor::Decrypt(const std::vector<unsigned char> &decryptionKey, std::vector<unsigned char> &plainText)
 {
-    if (encType != ENCRYPTION_CHACHA20POLY1305 || 
+    if (encType != ENCRYPTION_CHACHA20POLY1305 ||
         cipherData.size() <= CHACHA20POLY1305_CIPHEROVERHEAD) {
         return false;
     }
@@ -620,7 +628,8 @@ bool CVDXFEncryptor::Decrypt(const std::vector<unsigned char> &decryptionKey, st
 
     plainText.resize(cipherData.size() - CHACHA20POLY1305_CIPHEROVERHEAD);
 
-    if (crypto_aead_chacha20poly1305_ietf_decrypt(
+    if (decryptionKey.size() != 32 ||
+        crypto_aead_chacha20poly1305_ietf_decrypt(
         plainText.data(), NULL,
         NULL,
         cipherData.data(), cipherData.size(),
@@ -644,7 +653,7 @@ bool CVDXFEncryptor::Encrypt(const libzcash::SaplingPaymentAddress &saplingAddre
     // Pick random esk
     librustzcash_sapling_generate_r(esk.begin());
 
-    if (encType != ENCRYPTION_CHACHA20POLY1305 || 
+    if (encType != ENCRYPTION_CHACHA20POLY1305 ||
         !librustzcash_sapling_ka_derivepublic(saplingAddress.d.begin(), esk.begin(), pk.begin())) {
         return false;
     }
@@ -726,6 +735,13 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
     ivk(ParseHex(uni_get_str(find_value(uni, "ivk")))),
     ssk(ParseHex(uni_get_str(find_value(uni, "ssk"))))
 {
+    if ((epk.size() && epk.size() != 32) ||
+        (ivk.size() && ivk.size() != 32) ||
+        (ssk.size() && ssk.size() != 32))
+    {
+        version = VERSION_INVALID;
+        return;
+    }
     if (uni.isNull())
     {
         version = VERSION_INVALID;
@@ -740,7 +756,7 @@ CDataDescriptor::CDataDescriptor(const UniValue &uni) :
         mimeType.resize(128);
     }
     SetFlags();
-    
+
     UniValue objUni = find_value(uni, "objectdata");
 
     if (objUni.isArray())
@@ -831,7 +847,7 @@ bool CDataDescriptor::DecryptData(std::vector<unsigned char> &plainText, std::ve
             return true;
         }
     }
-    if (!ivk.size() || !epk.size())
+    if (ivk.size() != 32 || epk.size() != 32)
     {
         return false;
     }
@@ -883,7 +899,7 @@ bool CDataDescriptor::GetSSK(std::vector<unsigned char> &Ssk) const
         return true;
     }
 
-    if (!ivk.size() || !epk.size())
+    if (ivk.size() != 32 || epk.size() != 32)
     {
         return false;
     }
@@ -1024,7 +1040,7 @@ bool CDataDescriptor::UnwrapEncryption(const std::vector<unsigned char> &decrypt
 bool CDataDescriptor::IsValid() const
 {
     bool basicValidation = version >= FIRST_VERSION && version <= LAST_VERSION && (flags & ~FLAG_MASK) == 0;
-    
+
     // Additional validation: ensure the label contains valid UTF-8
     if (basicValidation && HasLabel())
     {
@@ -1072,7 +1088,7 @@ UniValue CDataDescriptor::ToUniValue() const
     {
         // Create a string from the binary data
         std::string messageStr(objectData.begin(), objectData.end());
-        
+
         if (utf8valid(messageStr.c_str()) == 0) {
             // Safe to use as a message string
             UniValue objectDataUni(UniValue::VOBJ);
@@ -1134,13 +1150,20 @@ CSignatureData::CSignatureData(const UniValue &uni) :
     sigType(uni_get_int(find_value(uni, "signaturetype"), TYPE_VERUSID_DEFAULT))
 {
     uint256 dataHash;
+    std::string hashStr = uni_get_str(find_value(uni, "signaturehash"));
+    if (hashStr.size() != 64 || !IsHex(hashStr))
+    {
+        version = VERSION_INVALID;
+        return;
+    }
     if (hashType == CVDXF::EHashTypes::HASH_SHA256)
     {
-        dataHash = uint256(ParseHex(uni_get_str(find_value(uni, "signaturehash"))));
+        std::vector<unsigned char> hashVec = ParseHex(hashStr);
+        dataHash = uint256(hashVec);
     }
     else
     {
-        dataHash.SetHex(uni_get_str(find_value(uni, "signaturehash")));
+        dataHash.SetHex(hashStr);
     }
     signatureHash = std::vector<unsigned char>(dataHash.begin(), dataHash.end());
 
@@ -1671,7 +1694,7 @@ UniValue CVDXFMMRDescriptor::ToUniValue() const
 bool CCredential::IsValid() const
 {
     bool basicValid = (version >= VERSION_FIRST && version <= VERSION_LAST) && credentialKey != uint160();
-    
+
     // Validate UTF-8 in label field
     if (basicValid && !label.empty())
     {
@@ -1680,7 +1703,7 @@ bool CCredential::IsValid() const
             return false;
         }
     }
-    
+
     return basicValid;
 }
 

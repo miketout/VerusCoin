@@ -11256,6 +11256,10 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                     if (notarySignatures.size() && notarySignatures[0].signatures.size())
                     {
                         hashType = (CCurrencyDefinition::EHashTypes)(notarySignatures[0].signatures.begin()->second.hashType);
+                        if (!CIdentitySignature::IsValidHashType(hashType))
+                        {
+                            return state.Error("Invalid hash type in notary signature");
+                        }
                     }
 
                     if (ConnectedChains.activeUpgradesByKey.count(ConnectedChains.DisablePBaaSCrossChainKey()))

@@ -1,9 +1,9 @@
 /********************************************************************
  * (C) 2019 Michael Toutonghi
- * 
+ *
  * Distributed under the MIT software license, see the accompanying
  * file COPYING or http://www.opensource.org/licenses/mit-license.php.
- * 
+ *
  * This is an implementation of a Merkle Mountain Range that can work on a variety of node types and is optimized for the following uses:
  * 1. Easy append of new elements without invalidate or change of any prior proofs
  * 2. Fast, simple rewind/truncate to previous size
@@ -12,7 +12,7 @@
  * 4. Support for additional information to be captured and propagated along with the
  *    MMR through nodes that may have a more complex combination step, for example, to track aggregate work and stake (power) across all
  *    headers in a chain.
- * 
+ *
  * 2/23/2020 - added support for alternate hash algorithms
  */
 
@@ -323,7 +323,7 @@ public:
     CMerkleBranchBase(BRANCH_TYPE type) : branchType(type) {}
 
     ADD_SERIALIZE_METHODS;
-    
+
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(branchType);
@@ -367,7 +367,7 @@ public:
     }
 
     ADD_SERIALIZE_METHODS;
-    
+
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(*(CMerkleBranchBase *)this);
@@ -391,9 +391,9 @@ public:
         for (auto it(branch.begin()); it != branch.end(); it++)
         {
             HASHALGOWRITER hw(SER_GETHASH, 0);
-            if (index & 1) 
+            if (index & 1)
             {
-                if (*it == hash) 
+                if (*it == hash)
                 {
                     // non canonical. hash may be equal to node but never on the right.
                     //printf("returning null 2\n");
@@ -441,7 +441,7 @@ public:
     }
 
     ADD_SERIALIZE_METHODS;
-    
+
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(*(CMerkleBranchBase *)this);
@@ -461,9 +461,9 @@ public:
         for (auto it(branch.begin()); it != branch.end(); ++it)
         {
             HASHALGOWRITER hw(SER_GETHASH, 0);
-            if (index & 1) 
+            if (index & 1)
             {
-                if (*it == hash) 
+                if (*it == hash)
                 {
                     // non canonical. hash may be equal to node but never on the right.
                     return uint256();
@@ -520,9 +520,9 @@ public:
             {
                 std::vector<unsigned char> temp;
                 READWRITE(temp);
-                proof_branch.push_back(temp);            
+                proof_branch.push_back(temp);
             }
-        } 
+        }
         else
         {
             int32_t proofSize = proof_branch.size();
@@ -530,7 +530,7 @@ public:
             for (int i = 0; i < proofSize; i++)
             {
                 std::vector<unsigned char> temp(proof_branch[i].begin(), proof_branch[i].end());
-                READWRITE(temp);     
+                READWRITE(temp);
             }
         }
     }
@@ -546,10 +546,10 @@ public:
     uint64_t nonce;
     uint256 storageHash;
     uint256 storageProofKey;
-    uint256 stateRoot, storageProofValue,codeHash, rootProof; 
+    uint256 stateRoot, storageProofValue,codeHash, rootProof;
     std::vector<uint256> branch;
     CRLPProof proofdata;
-    CRLPProof storageProof; 
+    CRLPProof storageProof;
     uint160 address;
     CPATRICIABranch() : CMerkleBranchBase(BRANCH_ETH) {}
     CPATRICIABranch(
@@ -568,10 +568,10 @@ public:
     std::vector<unsigned char> verifyProof(uint256& rootHash,std::vector<unsigned char> key,std::vector<std::vector<unsigned char>>& proof);
     uint256 verifyStorageProof(uint256 hash, bool optimizedProof);
     bool verifyStorageValue(std::vector<unsigned char> testStorageValue);
-    bool CheckStorageKeyHash(uint32_t height) const; 
+    bool CheckStorageKeyHash(uint32_t height) const;
 
     ADD_SERIALIZE_METHODS;
-    
+
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(*(CMerkleBranchBase *)this);
@@ -607,7 +607,7 @@ public:
     };
     struct rlpDecoded {
         std::vector<std::vector<unsigned char>> data;
-        std::vector<unsigned char> remainder; 
+        std::vector<unsigned char> remainder;
     };
     bool optimized;
     RLP(bool Optimized=true) : optimized(Optimized){};
@@ -620,7 +620,7 @@ public:
 };
 
 class TrieNode {
-public: 
+public:
     enum nodeType{
         BRANCH,
         LEAF,
@@ -638,7 +638,7 @@ public:
         setValue();
     }
 
-private: 
+private:
     nodeType setType();
     void setKey();
     void setValue();
@@ -668,7 +668,7 @@ public:
     }
 
     ADD_SERIALIZE_METHODS;
-    
+
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(*(CMerkleBranchBase *)this);
@@ -735,7 +735,7 @@ public:
     void DeleteProofSequenceEntry(int index);
 
     ADD_SERIALIZE_METHODS;
-    
+
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         if (ser_action.ForRead())
@@ -1369,7 +1369,10 @@ public:
                         }
 
                         // p is the position in the merkle tree of peaks
-                        assert(p < peaks.size());
+                        if (p >= peaks.size())
+                        {
+                            return false;
+                        }
 
                         // move up to the top, which is always a peak of size 1
                         uint32_t layerNum, layerSize;

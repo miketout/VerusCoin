@@ -1381,12 +1381,21 @@ UniValue signdata(const UniValue& params, bool fHelp)
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "If mmrsalt is specified for array data, it must be as an array of salt values with the same length as the data");
             }
+            for (int idx = 0; idx < mmrSaltUni.size(); idx++)
+            {
+                std::string mmrSaltStr = uni_get_str(mmrSaltUni[idx]);
+                if (!mmrSaltStr.empty() && !(mmrSaltStr.size() == 64 && IsHex(mmrSaltStr)))
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "If mmrsalt is specified for object data, it must be as a salt value in hex");
+                }
+            }
             priorMMRUni = find_value(params[0], "priormmr");
         }
         else if (mmrDataUni.isObject())
         {
             mmrSaltUni = find_value(params[0], "mmrsalt");
-            if (!mmrSaltUni.isNull() && !(mmrSaltUni.isStr() && IsHex(uni_get_str(mmrSaltUni))))
+            std::string mmrSaltStr = uni_get_str(mmrSaltUni);
+            if (!mmrSaltStr.empty() && !(mmrSaltStr.size() == 64 && IsHex(mmrSaltStr)))
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "If mmrsalt is specified for object data, it must be as a salt value in hex");
             }
@@ -1612,7 +1621,19 @@ UniValue signdata(const UniValue& params, bool fHelp)
                 // salt is not used if we already have the object hash, but retain it anyhow
                 if (mmrSaltUni.size() || createMMR)
                 {
-                    mmrSalt.push_back(mmrSaltUni.size() > i ? uint256(ParseHex(uni_get_str(mmrSaltUni[i]))) : uint256());
+                    if (mmrSaltUni.size() > i)
+                    {
+                        std::string saltStr = uni_get_str(mmrSaltUni[i]);
+                        if (!(saltStr.size() == 64 && IsHex(saltStr)))
+                        {
+                            throw JSONRPCError(RPC_INVALID_PARAMETER, "mmrsalt entries must be 32 byte hex strings");
+                        }
+                        mmrSalt.push_back(uint256(ParseHex(saltStr)));
+                    }
+                    else
+                    {
+                        mmrSalt.push_back(uint256());
+                    }
                 }
                 msgHash = uint256(dataVec);
                 UniValue oneItemObj = find_value(oneItem, "vdxfdata");
@@ -1640,7 +1661,12 @@ UniValue signdata(const UniValue& params, bool fHelp)
                     CSaltedData saltedObject(dataVec);
                     if (mmrSaltUni.size() > i)
                     {
-                        saltedObject.salt = uint256(ParseHex(uni_get_str(mmrSaltUni[i])));
+                        std::string saltStr = uni_get_str(mmrSaltUni[i]);
+                        if (!(saltStr.size() == 64 && IsHex(saltStr)))
+                        {
+                            throw JSONRPCError(RPC_INVALID_PARAMETER, "salt entries must be 32 byte hex strings");
+                        }
+                        saltedObject.salt = uint256(ParseHex(saltStr));
                     }
                     mmrSalt.push_back(saltedObject.salt);
                     msgHash = saltedObject.GetHash(hw);

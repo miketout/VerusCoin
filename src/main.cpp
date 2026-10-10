@@ -8462,13 +8462,18 @@ bool static AlreadyHave(const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
         case MSG_TX:
         {
             assert(recentRejects);
-            if (chainActive.Tip()->GetBlockHash() != hashRecentRejectsChainTip)
+            if (!chainActive.LastTip())
+            {
+                return false;
+            }
+            uint256 lastBlockHash = chainActive.LastTip()->GetBlockHash();
+            if (lastBlockHash != hashRecentRejectsChainTip)
             {
                 // If the chain tip has changed previously rejected transactions
                 // might be now valid, e.g. due to a nLockTime'd tx becoming valid,
                 // or a double-spend. Reset the rejects filter and give those
                 // txs a second chance.
-                hashRecentRejectsChainTip = chainActive.Tip()->GetBlockHash();
+                hashRecentRejectsChainTip = lastBlockHash;
                 recentRejects->reset();
             }
 
@@ -8556,9 +8561,11 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
 
                     // Send block from disk
                     CBlock block;
+                    bool found = true;
                     if (!ReadBlockFromDisk(block, (*mi).second, consensusParams, 1))
                     {
-                        assert(!"cannot load block from disk");
+                        LogPrintf("%s: cannot load block (%s) from disk\n", __func__, (*mi).second->GetBlockHash().GetHex().c_str());
+                        found = false;
                     }
                     else
                     {
@@ -8600,7 +8607,11 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                         }
                     }
                     // Trigger the peer node to send a getblocks request for the next batch of inventory
-                    if (inv.hash == pfrom->hashContinue)
+                    if (!found)
+                    {
+                        vNotFound.push_back(inv);
+                    }
+                    else if (inv.hash == pfrom->hashContinue)
                     {
                         uint256 tipHash = chainActive.LastTip() ? chainActive.LastTip()->GetBlockHash() : uint256();
                         if (!tipHash.IsNull())
