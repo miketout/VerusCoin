@@ -1235,9 +1235,7 @@ bool CTxMemPool::IsProtocolTransaction(const uint256 &hash)
 {
     LOCK(cs);
     CReserveTransactionDescriptor rtxd;
-    return IsKnownReserveTransaction(hash, rtxd) &&
-            rtxd.IsValid() &&
-            (rtxd.IsImport() || rtxd.IsExport() || rtxd.IsNotaryPrioritized());
+    return IsKnownReserveTransaction(hash, rtxd) && rtxd.IsProtocolTransaction();
 }
 
 void CTxMemPool::LimitSize(size_t limitBytes, int64_t maxAgeSeconds, std::list<CTransaction> &removed)

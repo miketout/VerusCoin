@@ -1911,6 +1911,7 @@ public:
     bool IsStorage() const { return IsEvidenceOrStorage() && !(IsImport() || IsNotaryPrioritized()); }
     bool IsIdentityDefinition() const { return flags & IS_IDENTITY_DEFINITION; }
     bool IsHighFee() const { return flags & IS_HIGH_FEE; }
+    bool IsProtocolTransaction() const { return IsValid() && (IsImport() || IsExport() || IsNotaryPrioritized()); }
 
     static CAmount CalculateConversionFee(CAmount inputAmount);
     static CAmount CalculateConversionFeeNoMin(CAmount inputAmount);

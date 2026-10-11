@@ -2293,13 +2293,20 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
         // there are some beginning and end imports that don't have fees on a launch. We can
         // recognize those imports, exempt block 1, or consider using fees from the initial
         // currency definition. Exports pay delayed fees back, imports allow fees to keep flowing.
-        bool feeExempt = pool.IsProtocolTransaction(hash);
+        bool feeExempt = txDesc.IsProtocolTransaction();
         if (!feeExempt && nFees < minFee)
         {
             if (fLimitFree)
             {
                 if (maxFreeSizeLimit == 0)
                 {
+                    if (LogAcceptCategory("feechecks"))
+                    {
+                        UniValue txJSON(UniValue::VOBJ);
+                        uint256 blkHash;
+                        TxToUniv(tx, blkHash, txJSON);
+                        LogPrintf("%s: transaction with insufficient fee: %s\n", __func__, txJSON.write(1,2).c_str());
+                    }
                     // no free lane: the fee model's floor applies on every entry path, RPC included, except block validation,
                     // which calls with fLimitFree set to false
                     return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient fee");
@@ -2365,9 +2372,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
                         CReserveTransactionDescriptor rtxd;
 
                         // skip protocol transactions
-                        if (!(pool.IsKnownReserveTransaction(rTx.GetHash(), rtxd) &&
-                            rtxd.IsValid() &&
-                            (rtxd.IsImport() || rtxd.IsExport() || rtxd.IsNotaryPrioritized())))
+                        if (!(pool.IsKnownReserveTransaction(rTx.GetHash(), rtxd) && rtxd.IsProtocolTransaction()))
                         {
                             break;
                         }
@@ -2375,7 +2380,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
                     if (lowFeeIt != feeIndex.rend() &&
                         entry.GetEffectiveFeeRate() <= lowFeeIt->GetEffectiveFeeRate())
                     {
-                        return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "mempool full");
+                        return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient fee to enter mempool");
                     }
                 }
             }
