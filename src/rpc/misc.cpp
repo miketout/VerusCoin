@@ -2598,6 +2598,7 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
                 "      \"offchaintransactions\": [\"hextx\",...],         \n"
                 "      \"allfundedtransactions\": [\"hextx\",...],         \n"
                 "      \"sendtransactions\":    bool - default false, sends transactions if funded and signed\n"
+                "      \"currencyreportonly\":  bool - default false, do not run full report and only output currencies and states\n"
 			    "  \"}\"\n"
 			    "\nResult:\n"
 			    "{\n"
@@ -2637,6 +2638,7 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
     UniValue offChainTransactionsUni = find_value(params[0], "offchaintransactions");
     UniValue fundedTransactionsUni = find_value(params[0], "allfundedtransactions");
     bool sendTransactions = uni_get_bool(find_value(params[0], "sendtransactions"));
+    bool currencyReportOnly = uni_get_bool(find_value(params[0], "currencyreportonly"));
 
     if (!currencyAdjustmentsUni.isObject() ||
         !restitutionConversionsUni.isObject() ||
@@ -2756,7 +2758,8 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
                                                       expiryForAllChains,
                                                       offChainTransactions,
                                                       fundedTransactionsToSign,
-                                                      sendTransactions);
+                                                      sendTransactions,
+                                                      currencyReportOnly);
 }
 
 UniValue getaddresstxids(const UniValue& params, bool fHelp)

@@ -141,7 +141,8 @@ public:
                                             const std::map<uint160,uint32_t> &expiryForAllChains,
                                             const std::vector<CMutableTransaction> &unfundedTransactionsFromOtherChains,
                                             const std::vector<CMutableTransaction> &fundedTransactionsForSigning,
-                                            bool sendFullySignedTransactions=false);
+                                            bool sendFullySignedTransactions=false,
+                                            bool outputCurrencyStatesOnly=false);
                                             // {chain, fractional currency}, {specific amount of currency reduced, destination}
 };
 

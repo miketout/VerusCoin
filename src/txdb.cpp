@@ -740,7 +740,8 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                                                       const std::map<uint160,uint32_t> &expiryForAllChains,
                                                       const std::vector<CMutableTransaction> &unfundedTransactionsFromOtherChains,
                                                       const std::vector<CMutableTransaction> &fundedTransactionsForSigning,
-                                                      bool sendFullySignedTransactions)
+                                                      bool sendFullySignedTransactions,
+                                                      bool outputCurrencyStatesOnly)
 {
     boost::scoped_ptr<CDBIterator> iter(NewIterator());
 
@@ -851,7 +852,7 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
         }
     }
 
-    if (debugExit)
+    if (outputCurrencyStatesOnly || debugExit)
     {
         UniValue allCurrenciesUni(UniValue::VARR);
         UniValue allCurrencyStatesUni(UniValue::VARR);
