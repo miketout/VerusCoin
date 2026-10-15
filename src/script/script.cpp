@@ -947,20 +947,23 @@ bool CScript::IsCheckLockTimeVerify(int64_t *unlockTime) const
     std::vector<unsigned char> unlockTimeParam = std::vector<unsigned char>();
     CScript::const_iterator it = this->begin();
 
-    if (this->GetOp2(it, op, &unlockTimeParam))
+    if (this->GetOp2(it, op, &unlockTimeParam) &&
+        op >= 1 && op <= 5 &&                                   // direct push, 1..5 bytes (CLTV reads a 5-byte max CScriptNum)
+        unlockTimeParam.size() == (size_t)op &&
+        this->size() > unlockTimeParam.size() + 2 &&
+        (*this)[unlockTimeParam.size() + 1] == OP_CHECKLOCKTIMEVERIFY &&
+        (*this)[unlockTimeParam.size() + 2] == OP_DROP)
     {
-        if (unlockTimeParam.size() >= 0 && unlockTimeParam.size() < 6 &&
-            this->size() > (unlockTimeParam.size() + 1) &&
-            (*this)[unlockTimeParam.size() + 1] == OP_CHECKLOCKTIMEVERIFY)
+        if (unlockTime)
         {
-            int i = unlockTimeParam.size() - 1;
-            for (*unlockTime = 0; i >= 0; i--)
+            *unlockTime = 0;
+            for (int i = unlockTimeParam.size() - 1; i >= 0; i--)
             {
                 *unlockTime <<= 8;
-                *unlockTime |= *((unsigned char *)unlockTimeParam.data() + i);
+                *unlockTime |= unlockTimeParam[i];
             }
-            return true;
         }
+        return true;
     }
     return false;
 }
