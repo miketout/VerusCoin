@@ -8936,7 +8936,7 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
                                                         0));
         cci.SetSameChain(!useProofs);
 
-        TransactionBuilder tb = TransactionBuilder(Params().GetConsensus(), nHeight + 1);
+        TransactionBuilder tb = TransactionBuilder(Params().GetConsensus(), nHeight + 1, arbitrageTransfersIn.size() ? pwalletMain : nullptr);
 
         CCcontract_info CC;
         CCcontract_info *cp;
