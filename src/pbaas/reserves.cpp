@@ -761,8 +761,8 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
             for (int i = 0; i < reserveTransfers.size(); i++)
             {
                 nhw1 << reserveTransfers[i];
-                // if this is not the last, add it into the 2nd hash, which should then match the export
-                if (i + 1 < reserveTransfers.size())
+                // all transfers except arbitrage go into the second hash, which must match the export
+                if ((i + arbitrageTransfers.size()) < reserveTransfers.size())
                 {
                     nhw2 << reserveTransfers[i];
                 }
