@@ -2056,6 +2056,22 @@ bool GetOpRetChainOffer(const CTransaction &postedTx,
                         uint256 &offerBlockHash)
 {
     std::vector<CBaseChainObject *> opRetArray;
+
+    // free whatever is in opRetArray on every exit; DeleteOpRetObjects does not clear
+    struct COpRetArrayGuard
+    {
+        std::vector<CBaseChainObject *> &v;
+        ~COpRetArrayGuard() { DeleteOpRetObjects(v); v.clear(); }
+    } opRetGuard{opRetArray};
+
+    // replace, never overwrite, so the first array is not lost when the second is needed
+    auto RetrieveInto = [&opRetArray](const CScript &script) -> size_t
+    {
+        DeleteOpRetObjects(opRetArray);
+        opRetArray = RetrieveOpRetArray(script);
+        return opRetArray.size();
+    };
+
     CPartialTransactionProof offerTxProof;
     bool isPartial = false, incompleteTx = false;
     COptCCParams p;
@@ -2070,10 +2086,10 @@ bool GetOpRetChainOffer(const CTransaction &postedTx,
         (p.evalCode == EVAL_IDENTITY_COMMITMENT || p.evalCode == EVAL_IDENTITY_PRIMARY) &&
         postedTx.vout[0].nValue >= DEFAULT_TRANSACTION_FEE &&
         ((postedTx.vout.back().scriptPubKey.IsOpReturn() &&
-          (opRetArray = RetrieveOpRetArray((opRetTx = postedTx).vout.back().scriptPubKey)).size() == 1) ||
+          RetrieveInto((opRetTx = postedTx).vout.back().scriptPubKey) == 1) ||
          (GetSpentIndex(spentKey, spentValue) &&
           myGetTransaction(spentValue.txid, opRetTx, opRetBlockHash)  &&
-          (opRetArray = RetrieveOpRetArray(opRetTx.vout.back().scriptPubKey)).size() == 1)) &&
+          RetrieveInto(opRetTx.vout.back().scriptPubKey) == 1)) &&
         opRetArray[0]->objectType == CHAINOBJ_TRANSACTION_PROOF &&
         (offerTxProof = ((CChainObject<CPartialTransactionProof> *)(opRetArray[0]))->object).IsValid() &&
         !offerTxProof.GetPartialTransaction(offerTx, &isPartial).IsNull() &&
@@ -2102,7 +2118,7 @@ bool GetOpRetChainOffer(const CTransaction &postedTx,
         CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), height);
         mtx.vin.push_back(CTxIn(postedTx.GetHash(), 0));
         mtx.vout.push_back(postedTx.vout[0]);
-        mtx.nExpiryHeight = std::min(height - 1, (uint32_t)0);
+        mtx.nExpiryHeight = height - 1;
         offerTx = mtx;
         return true;
     }

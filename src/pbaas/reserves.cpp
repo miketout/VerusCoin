@@ -6837,7 +6837,10 @@ std::vector<CAmount> CReserveTransactionDescriptor::ReserveConversionFeesVec(con
     return retVal;
 }
 
-CAmount CReserveTransactionDescriptor::CalculateDelayedFees(CAmount &nTotalIn, CCurrencyValueMap &totalReserveIn, uint32_t nHeight, std::set<CUTXORef> *pOrphanArbs, std::list<CTransaction> *pTxesToRemove) const
+CAmount CReserveTransactionDescriptor::CalculateDelayedFees(CAmount &nTotalIn, CCurrencyValueMap &totalReserveIn, uint32_t nHeight,
+                                                            std::set<CUTXORef> *pOrphanArbs,
+                                                            std::list<CTransaction> *pTxesToRemove,
+                                                            std::map<CUTXORef, uint256> *pArbImports) const
 {
     CAmount delayedFee = 0;
     if (IsValid())
@@ -6880,6 +6883,10 @@ CAmount CReserveTransactionDescriptor::CalculateDelayedFees(CAmount &nTotalIn, C
                             for (auto &oneRef : arbTxOuts)
                             {
                                 pOrphanArbs->erase(oneRef);
+                                if (pArbImports)
+                                {
+                                    (*pArbImports)[oneRef] = ptx->GetHash();
+                                }
                             }
                         }
                     }

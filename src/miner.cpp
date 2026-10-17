@@ -2915,6 +2915,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
 
         std::list<CTransaction> txesToRemove;
         std::set<CUTXORef> orphanArbs;
+        std::map<CUTXORef, uint256> arbImports;      // every arbitrage transfer an unexpired import will consume
 
         // now add transactions from the mem pool to the priority heap
         for (CTxMemPool::indexed_transaction_set::iterator mi = mempool.mapTx.begin();
@@ -2950,7 +2951,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             CReserveTransactionDescriptor rtxd;
             bool isReserve = mempool.IsKnownReserveTransaction(hash, rtxd);
 
-            CAmount delayedFee = isReserve ? rtxd.CalculateDelayedFees(nTotalIn, totalReserveIn, nHeight, &orphanArbs, &txesToRemove) : 0;
+            CAmount delayedFee = isReserve ? rtxd.CalculateDelayedFees(nTotalIn, totalReserveIn, nHeight, &orphanArbs, &txesToRemove, &arbImports) : 0;
 
             for (int inNum = 0; inNum < tx.vin.size(); inNum++)
             {
@@ -3076,6 +3077,25 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             {
                 vecPriTxMap.insert({tx.GetHash(), vecPriority.size()});
                 vecPriority.push_back(TxPriority(dPriority, feeRate, &(mi->GetTx())));
+            }
+        }
+
+        //  finish the reconciliation here and drop pairings whose import is queued for removal
+        std::set<uint256> removingTxIds;
+        for (auto &oneTx : txesToRemove)
+        {
+            removingTxIds.insert(oneTx.GetHash());
+        }
+        for (auto arbIt = arbImports.begin(); arbIt != arbImports.end(); )
+        {
+            if (removingTxIds.count(arbIt->second))
+            {
+                arbIt = arbImports.erase(arbIt);
+            }
+            else
+            {
+                orphanArbs.erase(arbIt->first);
+                arbIt++;
             }
         }
 
@@ -3580,6 +3600,51 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                             std::push_heap(vecPriority.begin(), vecPriority.end(), comparer);
                         }
                     }
+                }
+            }
+        }
+
+        // mirror ConnectBlock's rule that no arbitrage-only transfer may be in a block without the import that
+        // consumes it. the scan paired every such transfer with its import; if the transfer was added above and
+        // the import was then skipped, the block would be rejected, so remove the transfer and anything spending it
+        if (arbImports.size())
+        {
+            std::set<uint256> blockTxIds;
+            for (int i = 1; i < pblock->vtx.size(); i++)
+            {
+                blockTxIds.insert(pblock->vtx[i].GetHash());
+            }
+            std::set<uint256> removedTxIds;
+            for (auto &oneArbImport : arbImports)
+            {
+                if (blockTxIds.count(oneArbImport.first.hash) && !blockTxIds.count(oneArbImport.second))
+                {
+                    removedTxIds.insert(oneArbImport.first.hash);
+                }
+            }
+            for (int i = 1; removedTxIds.size() && i < pblock->vtx.size(); )
+            {
+                const CTransaction &oneTx = pblock->vtx[i];
+                bool remove = removedTxIds.count(oneTx.GetHash());
+                for (int k = 0; !remove && k < oneTx.vin.size(); k++)
+                {
+                    remove = removedTxIds.count(oneTx.vin[k].prevout.hash);
+                }
+                if (remove)
+                {
+                    LogPrintf("%s: removing orphaned arbitrage transaction %s from block\n", __func__, oneTx.GetHash().GetHex().c_str());
+                    removedTxIds.insert(oneTx.GetHash());
+                    nBlockSize -= ::GetSerializeSize(oneTx, SER_NETWORK, PROTOCOL_VERSION);
+                    nBlockSigOps -= pblocktemplate->vTxSigOps[i];
+                    nFees -= pblocktemplate->vTxFees[i];
+                    nBlockTx--;
+                    pblock->vtx.erase(pblock->vtx.begin() + i);
+                    pblocktemplate->vTxFees.erase(pblocktemplate->vTxFees.begin() + i);
+                    pblocktemplate->vTxSigOps.erase(pblocktemplate->vTxSigOps.begin() + i);
+                }
+                else
+                {
+                    i++;
                 }
             }
         }

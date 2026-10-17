@@ -2217,6 +2217,15 @@ bool StopNode()
         for (int i=0; i<MAX_OUTBOUND_CONNECTIONS; i++)
             semOutbound->post();
 
+    // Release TLS state and close sockets now, while OpenSSL is still initialized. The static
+    // CNetCleanup destructor runs after OpenSSL's atexit cleanup and must not touch SSL objects.
+    // Network threads are already joined, so no reader or writer is using these nodes.
+    {
+        LOCK(cs_vNodes);
+        BOOST_FOREACH(CNode* pnode, vNodes)
+            pnode->CloseSocketDisconnect(false);
+    }
+
     if (fAddressesInitialized)
     {
         DumpAddresses();

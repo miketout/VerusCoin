@@ -1917,7 +1917,10 @@ public:
     static CAmount CalculateConversionFeeNoMin(CAmount inputAmount);
     static CAmount CalculateAdditionalConversionFee(CAmount inputAmount);
     static CAmount CalculateAdditionalConversionFeeNoMin(CAmount inputAmount);
-    CAmount CalculateDelayedFees(CAmount &nTotalIn, CCurrencyValueMap &totalReserveIn, uint32_t nHeight, std::set<CUTXORef> *pOrphanArbs=nullptr, std::list<CTransaction> *pTxesToRemove=nullptr) const;
+    CAmount CalculateDelayedFees(CAmount &nTotalIn, CCurrencyValueMap &totalReserveIn, uint32_t nHeight,
+                                std::set<CUTXORef> *pOrphanArbs=nullptr,
+                                std::list<CTransaction> *pTxesToRemove=nullptr,
+                                std::map<CUTXORef, uint256> *pArbImports=nullptr) const;   // arb transfer out -> import txid
 
     CAmount TotalNativeOutConverted() const
     {
