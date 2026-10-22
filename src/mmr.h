@@ -1115,6 +1115,7 @@ public:
     const CMerkleMountainRange<NODE_TYPE, LAYER_TYPE, LAYER0_TYPE> &mmr; // the underlying mountain range, which provides the hash vectors
     std::vector<uint64_t> sizes;                    // sizes that we will use as proxies for the size of each vector at each height
     std::vector<NODE_TYPE> peaks;                   // peaks
+    std::vector<uint32_t> peakHeights;              // height (layer) of each entry in peaks, same order; used to select a peak by structural position rather than by hash
     std::vector<std::vector<NODE_TYPE>> peakMerkle; // cached layers for the peak merkle if needed
 
     CMerkleMountainView(const CMerkleMountainRange<NODE_TYPE, LAYER_TYPE, LAYER0_TYPE> &mountainRange, uint64_t viewSize=0) : mmr(mountainRange), peaks(), peakMerkle()
@@ -1170,6 +1171,7 @@ public:
         {
             // reset the peak merkle tree, in case this is forced
             peaks.clear();
+            peakHeights.clear();
             peakMerkle.clear();
             for (int ht = 0; ht < sizes.size(); ht++)
             {
@@ -1177,6 +1179,8 @@ public:
                 if (ht == (sizes.size() - 1) || sizes[ht + 1] < ((sizes[ht] + 1) >> 1))
                 {
                     peaks.insert(peaks.begin(), mmr.GetNode(ht, sizes[ht] - 1));
+                    // keep the peak's structural height in lockstep with peaks (same order)
+                    peakHeights.insert(peakHeights.begin(), (uint32_t)ht);
                 }
             }
         }
@@ -1188,6 +1192,7 @@ public:
         {
             sizes.clear();
             peaks.clear();
+            peakHeights.clear();
             peakMerkle.clear();
 
             uint64_t maxSize = mmr.size();
@@ -1356,13 +1361,14 @@ public:
                             printf("\n");
                         } */
 
-                        // we are at a peak, the alternate peak to us, or the next thing we should be hashed with, if there is one, is next on our path
-                        uint256 peakHash = mmr.GetNode(l, p).hash;
-
-                        // linear search to find out which peak we are in the base of the peakMerkle
-                        for (p = 0; p < peaks.size(); p++)
+                        // we are at a peak, the alternate peak to us, or the next thing we should be hashed with, if there is one, is next on our path.
+                        // select the peak by its structural height l (the layer this node peaked at), consistent with
+                        // GetProofBits / GetMMRProofIndex which select by PeakIndexes[p] == l. Selecting by hash equality
+                        // is incorrect: two peaks can share the same hash, and the first hash match may be the wrong peak,
+                        // producing a branch that does not verify against the root.
+                        for (p = 0; p < peakHeights.size(); p++)
                         {
-                            if (peaks[p].hash == peakHash)
+                            if (peakHeights[p] == (uint32_t)l)
                             {
                                 break;
                             }
