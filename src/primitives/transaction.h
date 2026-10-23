@@ -668,8 +668,11 @@ public:
     }
 
     // returns an MMR node for the block merkle mountain range
-    CDefaultMMRNode GetDefaultMMRNode(bool capped) const;
-    uint256 GetMMRRoot(bool capped) const;
+    CDefaultMMRNode GetDefaultMMRNode(int cappedType) const;
+    CDefaultMMRNode GetDefaultMMRNode(bool) const = delete;
+
+    uint256 GetMMRRoot(int cappedType) const;
+    uint256 GetMMRRoot(bool) const = delete;
 
     /*
      * Context for the two methods below:
@@ -1086,7 +1089,7 @@ public:
         elVchObj = ::AsVector(txPart);
     }
 
-    CTransactionComponentProof(TransactionMMView &txView, const _CTransactionMap &txMap, const CTransaction &tx, uint16_t partType, uint16_t subIndex);
+    CTransactionComponentProof(TransactionMMView &txView, const _CTransactionMap &txMap, const CTransaction &tx, uint16_t partType, uint16_t subIndex, int cappedType);
 
     ADD_SERIALIZE_METHODS;
 
@@ -1117,7 +1120,7 @@ public:
     }
 
     template <typename TXCOMPONENTCLASS>
-    uint256 CheckProof(TXCOMPONENTCLASS &txPart) const
+    uint256 CheckProof(TXCOMPONENTCLASS &txPart, int cappedType) const
     {
         uint256 hash;
         if (Rehydrate(txPart))
@@ -1125,6 +1128,13 @@ public:
             auto hw = CDefaultMMRNode::GetHashWriter();
             hw << txPart;
             hash = elProof.CheckProof(hw.GetHash());
+            // only double hash on the first proof stage, if CAPPED_DOUBLE
+            if (cappedType == CMMRProof::CAPPED_DOUBLE)
+            {
+                hw = CDefaultMMRNode::GetHashWriter();
+                hw << hash;
+                hash = hw.GetHash();
+            }
         }
         return hash;
     }
@@ -1142,7 +1152,7 @@ public:
         return hash;
     }
 
-    uint256 CheckProof() const
+    uint256 CheckProof(int cappedType) const
     {
         switch (elType)
         {
@@ -1167,7 +1177,7 @@ public:
             case CTransactionHeader::TX_HEADER:
             {
                 CTransactionHeader txPart;
-                return CheckProof(txPart);
+                return CheckProof(txPart, cappedType);
             }
 
             case CTransactionHeader::TX_PREVOUTSEQ:
@@ -1178,7 +1188,14 @@ public:
                     auto hw = CDefaultMMRNode::GetHashWriter();
                     hw << txPart.prevout;
                     hw << txPart.nSequence;
-                    return elProof.CheckProof(hw.GetHash());
+                    uint256 hash = elProof.CheckProof(hw.GetHash());
+                    if (cappedType == CMMRProof::CAPPED_DOUBLE)
+                    {
+                        hw = CDefaultMMRNode::GetHashWriter();
+                        hw << hash;
+                        hash = hw.GetHash();
+                    }
+                    return hash;
                 }
                 break;
             }
@@ -1186,13 +1203,13 @@ public:
             case CTransactionHeader::TX_SIGNATURE:
             {
                 CTxIn txPart;
-                return CheckProof(txPart);
+                return CheckProof(txPart, cappedType);
             }
 
             case CTransactionHeader::TX_OUTPUT:
             {
                 CTxOut txPart;
-                return CheckProof(txPart);
+                return CheckProof(txPart, cappedType);
             }
 
             case CTransactionHeader::TX_SHIELDEDSPEND:
@@ -1206,7 +1223,14 @@ public:
                     hw << txPart.nullifier;
                     hw << txPart.rk;
                     hw << txPart.zkproof;
-                    return elProof.CheckProof(hw.GetHash());
+                    uint256 hash = elProof.CheckProof(hw.GetHash());
+                    if (cappedType == CMMRProof::CAPPED_DOUBLE)
+                    {
+                        hw = CDefaultMMRNode::GetHashWriter();
+                        hw << hash;
+                        hash = hw.GetHash();
+                    }
+                    return hash;
                 }
                 break;
             }
@@ -1214,7 +1238,7 @@ public:
             case CTransactionHeader::TX_SHIELDEDOUTPUT:
             {
                 OutputDescription txPart;
-                return CheckProof(txPart);
+                return CheckProof(txPart, cappedType);
             }
         }
         return uint256();
@@ -1282,9 +1306,10 @@ class CTransactionMap
 public:
     _CTransactionMap txMap;
     TransactionMMView txView;
-    bool capped;
+    int capped;
 
-    CTransactionMap(const CTransaction &tx, bool Capped) : txMap(tx), txView(txMap.transactionMMR), capped(Capped) {}
+    CTransactionMap(const CTransaction &tx, int cappedType) : txMap(tx), txView(txMap.transactionMMR), capped(cappedType) {}
+    CTransactionMap(const CTransaction &tx, bool) = delete;
 
     // returns -1 if element is not found
     int32_t GetElementIndex(uint16_t elementType, uint16_t indexInType)
@@ -1298,25 +1323,25 @@ public:
         // if this is capped, the root gets hashed with the
         // number of elements in the MMR
         //
-        if (capped)
+        if (capped == CMMRProof::CAPPED || capped == CMMRProof::CAPPED_DOUBLE)
         {
             auto hw = CDefaultMMRNode::GetHashWriter();
             hw << root;
             hw << ArithToUint256(arith_uint256(txView.size()));
             root = hw.GetHash();
+            if (capped == CMMRProof::CAPPED_DOUBLE)
+            {
+                auto hw = CDefaultMMRNode::GetHashWriter();
+                hw << root;
+                root = hw.GetHash();
+            }
         }
         return root;
     }
 
     CTransactionComponentProof GetComponentProof(const CTransaction &tx, uint16_t elType, uint16_t elIndex)
     {
-        CTransactionComponentProof retVal(txView, txMap, tx, elType, elIndex);
-        if (capped &&
-            retVal.elProof.proofSequence.size())
-        {
-            ((CMMRNodeBranch *)retVal.elProof.proofSequence[0])->branch.push_back(ArithToUint256(arith_uint256(txView.size())));
-        }
-        return retVal;
+        return CTransactionComponentProof(txView, txMap, tx, elType, elIndex, capped);
     }
 };
 
@@ -1329,8 +1354,10 @@ public:
         VERSION_INVALID = 0,
         VERSION_FIRST = 1,
         VERSION_TXHASH_CAP = 2,
-        VERSION_LAST = 2,
-        VERSION_CURRENT = 1
+        VERSION_TXHASH_CAP_DOUBLE = 3,
+        VERSION_NEW = 3,
+        VERSION_LAST = 3,
+        VERSION_CURRENT = 3
     };
     enum EType {
         TYPE_INVALID = 0,
@@ -1406,7 +1433,7 @@ public:
 
     // This creates a proof for the pre-header of a block, which enables proof of sapling txes and other things in a block header
     // without requiring an implementation of VerusHash
-    CPartialTransactionProof(const CMMRProof &txRootProof, const CPBaaSPreHeader &preHeader, int8_t Version=VERSION_CURRENT) :
+    CPartialTransactionProof(const CMMRProof &txRootProof, const CPBaaSPreHeader &preHeader, int8_t Version) :
         version(Version), type(TYPE_PBAAS), txProof(txRootProof), components({CTransactionComponentProof(preHeader, 0, CMMRProof())}) { }
 
     CPartialTransactionProof(const std::vector<CPartialTransactionProof> &parts)
@@ -1523,6 +1550,32 @@ public:
     bool IsCapped() const
     {
         return version >= VERSION_TXHASH_CAP;
+    }
+
+    bool IsDoubleCapped() const
+    {
+        return version == VERSION_TXHASH_CAP_DOUBLE;
+    }
+
+    static int CappedTypeFromVersion(int Version)
+    {
+        if (Version == VERSION_TXHASH_CAP_DOUBLE)
+        {
+            return CMMRProof::CAPPED_DOUBLE;
+        }
+        else if (Version == VERSION_TXHASH_CAP)
+        {
+            return CMMRProof::CAPPED;
+        }
+        else
+        {
+            return CMMRProof::UNCAPPED;
+        }
+    }
+
+    int CappedType() const
+    {
+        return CappedTypeFromVersion(version);
     }
 
     static const int32_t MaxUncappedComponentSequenceSize = 18;

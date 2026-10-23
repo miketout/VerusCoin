@@ -25,7 +25,8 @@ typedef vector<unsigned char> valtype;
 
 unsigned nMaxDatacarrierBytes = MAX_OP_RETURN_RELAY;
 
-COptCCParams::COptCCParams(const std::vector<unsigned char> &vch)
+COptCCParams::COptCCParams(const std::vector<unsigned char> &vch, uint8_t v, uint8_t e, uint8_t _m, uint8_t _n) :
+    version(v), evalCode(e), m(_m), n(_n)
 {
     CScript inScr = CScript(vch.begin(), vch.end());
     if (inScr.size() > 1)

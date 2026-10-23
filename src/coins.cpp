@@ -92,6 +92,11 @@ bool IsAfterSecondBridgeCleanupWindowStarts(uint32_t chainTime)
     return chainTime >= PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START;
 }
 
+bool IsAfterDoubleCapTestTime(uint32_t chainTime)
+{
+    return chainTime >= PBAAS_TESTING_DOUBLE_CAP_TIME_START;
+}
+
 /**
  * calculate number of bytes for the bitmask, and its number of non-zero bytes
  * each bit in the bitmask represents the availability of one output, but the
@@ -752,21 +757,6 @@ CAmount CCoinsViewCache::GetValueIn(int32_t nHeight, int64_t *interestp, const C
         }
 
         nResult += value;
-#ifdef KOMODO_ENABLE_INTEREST
-        if ( ASSETCHAINS_SYMBOL[0] == 0 && nHeight >= 60000 )
-        {
-            if ( value >= 10*COIN )
-            {
-                int64_t interest; int32_t txheight; uint32_t locktime;
-                interest = komodo_accrued_interest(&txheight,&locktime,tx.vin[i].prevout.hash,tx.vin[i].prevout.n,0,value,(int32_t)nHeight);
-                //printf("nResult %.8f += val %.8f interest %.8f ht.%d lock.%u tip.%u\n",(double)nResult/COIN,(double)value/COIN,(double)interest/COIN,txheight,locktime,tiptime);
-                //fprintf(stderr,"nResult %.8f += val %.8f interest %.8f ht.%d lock.%u tip.%u\n",(double)nResult/COIN,(double)value/COIN,(double)interest/COIN,txheight,locktime,tiptime);
-                nResult += interest;
-                if (interestp)
-                    (*interestp) += interest;
-            }
-        }
-#endif
     }
     nResult += tx.GetShieldedValueIn();
 

@@ -572,7 +572,7 @@ CDefaultMMRNode CBlock::GetMMRNode(int index) const
             return CDefaultMMRNode(uint256());
         }
     }
-    return vtx[index].GetDefaultMMRNode(HasCappedTransactionMap());
+    return vtx[index].GetDefaultMMRNode(CPartialTransactionProof::CappedTypeFromVersion(PartialTransactionProofVersion()));
 }
 
 
@@ -590,7 +590,7 @@ BlockMMRange CBlock::BuildBlockMMRTree(const uint256 &entropyHash) const
     BlockMMRange mmRange(BlockMMRNodeLayer(*this));
     for (auto &tx : vtx)
     {
-        mmRange.Add(tx.GetDefaultMMRNode(HasCappedTransactionMap()));
+        mmRange.Add(tx.GetDefaultMMRNode(CPartialTransactionProof::CappedTypeFromVersion(PartialTransactionProofVersion())));
     }
 
     if (IsAdvancedHeader() != 0)
@@ -629,7 +629,7 @@ CPartialTransactionProof CBlock::GetPartialTransactionProof(const CTransaction &
             return CPartialTransactionProof(CPartialTransactionProof::VERSION_INVALID);
         }
 
-        CTransactionMap txMap(tx, HasCappedTransactionMap());
+        CTransactionMap txMap(tx, CPartialTransactionProof::CappedTypeFromVersion(PartialTransactionProofVersion()));
 
         for (auto &partIdx : partIndexes)
         {

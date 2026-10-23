@@ -319,16 +319,16 @@ CTransaction& CTransaction::operator=(const CTransaction &tx) {
 }
 
 
-uint256 CTransaction::GetMMRRoot(bool capped) const
+uint256 CTransaction::GetMMRRoot(int cappedType) const
 {
-    CTransactionMap txMap(*this, capped);
+    CTransactionMap txMap(*this, cappedType);
     return txMap.GetRoot();
 }
 
 
-CDefaultMMRNode CTransaction::GetDefaultMMRNode(bool capped) const
+CDefaultMMRNode CTransaction::GetDefaultMMRNode(int cappedType) const
 {
-    return CDefaultMMRNode(GetMMRRoot(capped));
+    return CDefaultMMRNode(GetMMRRoot(cappedType));
 }
 
 
@@ -425,11 +425,11 @@ CAmount CTransaction::GetShieldedValueIn() const
     {
         // NB: vpub_new "gives" money to the transparent value pool just as inputs do
         nValue += it->vpub_new;
-        
+
         if (!MoneyRange(it->vpub_new) || !MoneyRange(nValue))
             throw std::runtime_error("CTransaction::GetShieldedValueIn(): value out of range");
     }
-    
+
     return nValue;
 }
 
@@ -528,7 +528,7 @@ std::string CTransaction::ToString() const
     return str;
 }
 
-CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView, const _CTransactionMap &txMap, const CTransaction &tx, uint16_t partType, uint16_t subIndex) :
+CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView, const _CTransactionMap &txMap, const CTransaction &tx, uint16_t partType, uint16_t subIndex, int cappedType) :
     elType(partType), elIdx(subIndex)
 {
     std::pair<uint16_t, uint16_t> idx({partType, subIndex});
@@ -539,6 +539,7 @@ CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView
     }
     else
     {
+        bool addCap = false;
         switch(partType)
         {
             case CTransactionHeader::TX_FULL:
@@ -551,6 +552,7 @@ CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView
                 if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
                 {
                     elVchObj = ::AsVector(CTransactionHeader(tx));
+                    addCap = (cappedType == CMMRProof::CAPPED || cappedType == CMMRProof::CAPPED_DOUBLE);
                 }
                 break;
             }
@@ -561,6 +563,7 @@ CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView
                     CTxIn prevOutSeqOnly = tx.vin[subIndex];
                     prevOutSeqOnly.scriptSig = CScript();
                     elVchObj = ::AsVector(prevOutSeqOnly);
+                    addCap = (cappedType == CMMRProof::CAPPED || cappedType == CMMRProof::CAPPED_DOUBLE);
                 }
                 break;
             }
@@ -569,6 +572,7 @@ CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView
                 if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
                 {
                     elVchObj = ::AsVector(tx.vin[subIndex]);
+                    addCap = (cappedType == CMMRProof::CAPPED || cappedType == CMMRProof::CAPPED_DOUBLE);
                 }
                 break;
             }
@@ -577,6 +581,7 @@ CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView
                 if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
                 {
                     elVchObj = ::AsVector(tx.vout[subIndex]);
+                    addCap = (cappedType == CMMRProof::CAPPED || cappedType == CMMRProof::CAPPED_DOUBLE);
                 }
                 break;
             }
@@ -585,6 +590,7 @@ CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView
                 if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
                 {
                     elVchObj = ::AsVector(tx.vShieldedSpend[subIndex]);
+                    addCap = (cappedType == CMMRProof::CAPPED || cappedType == CMMRProof::CAPPED_DOUBLE);
                 }
                 break;
             }
@@ -593,6 +599,7 @@ CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView
                 if (txMap.elementHashMap.count(idx) && txView.GetProof(elProof, txMap.elementHashMap.find(idx)->second))
                 {
                     elVchObj = ::AsVector(tx.vShieldedOutput[subIndex]);
+                    addCap = (cappedType == CMMRProof::CAPPED || cappedType == CMMRProof::CAPPED_DOUBLE);
                 }
                 break;
             }
@@ -601,6 +608,10 @@ CTransactionComponentProof::CTransactionComponentProof(TransactionMMView &txView
                 *this = CTransactionComponentProof();
                 LogPrintf("%s: Invalid transaction proof, unrecognized element\n", __func__);
             }
+        }
+        if (addCap)
+        {
+            ((CMMRNodeBranch *)elProof.proofSequence.back())->branch.push_back(ArithToUint256(arith_uint256(txView.size())));
         }
     }
 }
@@ -650,7 +661,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
             if (components[0].elType == CTransactionHeader::TX_HEADER && components[0].Rehydrate(txh))
             {
                 // validate the header and calculate a transaction root
-                txRoot = components[0].CheckProof();
+                txRoot = components[0].CheckProof(CappedType());
 
                 mtx = txh.RehydrateTransactionScaffold();
                 std::map<std::pair<uint16_t, uint16_t>, int32_t> elHash = txh.GetElementHashMap();
@@ -751,7 +762,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                         components[i].elProof.proofSequence[0]->branchType != CMerkleBranchBase::BRANCH_MMRBLAKE_NODE ||
                         ((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->nSize != elHash.size() ||
                         ((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->branch.size() == 0 ||
-                        components[i].CheckProof() != txRoot ||
+                        components[i].CheckProof(CappedType()) != txRoot ||
                         !elHash.count({components[i].elType, components[i].elIdx}) ||
                         elHash[{components[i].elType, components[i].elIdx}] != ((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->nIndex ||
                         TransactionMMView::GetProofBits(((CMMRNodeBranch *)components[i].elProof.proofSequence[0])->nIndex, elHash.size()).size() !=
@@ -769,7 +780,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                             {
                                 if (mtx.vin.size() > components[i].elIdx)
                                 {
-                                    ::FromVector(components[i].elVchObj, mtx.vin[components[i].elIdx]);
+                                    ::FromVector(components[i].elVchObj, mtx.vin[components[i].elIdx], &checkOK);
                                 }
                                 else
                                 {
@@ -781,7 +792,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                             {
                                 if (mtx.vout.size() > components[i].elIdx)
                                 {
-                                    ::FromVector(components[i].elVchObj, mtx.vout[components[i].elIdx]);
+                                    ::FromVector(components[i].elVchObj, mtx.vout[components[i].elIdx], &checkOK);
                                 }
                                 else
                                 {
@@ -793,7 +804,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                             {
                                 if (mtx.vShieldedSpend.size() > components[i].elIdx)
                                 {
-                                    ::FromVector(components[i].elVchObj, mtx.vShieldedSpend[components[i].elIdx]);
+                                    ::FromVector(components[i].elVchObj, mtx.vShieldedSpend[components[i].elIdx], &checkOK);
                                     mtx.vShieldedSpend[components[i].elIdx].spendAuthSig = SpendDescription::spend_auth_sig_t{0};
                                 }
                                 else
@@ -806,7 +817,7 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                             {
                                 if (mtx.vShieldedOutput.size() > components[i].elIdx)
                                 {
-                                    ::FromVector(components[i].elVchObj, mtx.vShieldedOutput[components[i].elIdx]);
+                                    ::FromVector(components[i].elVchObj, mtx.vShieldedOutput[components[i].elIdx], &checkOK);
                                 }
                                 else
                                 {

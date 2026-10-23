@@ -3592,8 +3592,8 @@ CReserveTransfer CReserveTransfer::GetRefundTransfer(bool clearCrossSystem, bool
         // convert full ID destinations to normal ID outputs, since it's refund, full ID will be on this chain already
         if (rt.destination.type == CTransferDestination::DEST_FULLID)
         {
-            CIdentity(rt.destination.destination);
-            rt.destination = CTransferDestination(CTransferDestination::DEST_ID, rt.destination.destination);
+            CIdentity curIdentity(rt.destination.destination);
+            rt.destination = CTransferDestination(CTransferDestination::DEST_ID, ::AsVector(curIdentity.GetID()));
         }
 
         // if we are clipping a second leg, ensure the destination is valid and recover the fees

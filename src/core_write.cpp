@@ -960,6 +960,7 @@ UniValue CTransferDestination::ToUniValue() const
 {
     UniValue destVal = UniValue(UniValue::VOBJ);
     uint8_t newType = type;
+    size_t dSize = destination.size();
 
     switch (TypeNoFlags())
     {
@@ -972,23 +973,23 @@ UniValue CTransferDestination::ToUniValue() const
         }
 
         case CTransferDestination::DEST_PKH:
-            destVal.push_back(Pair("address", EncodeDestination(CKeyID(uint160(destination)))));
+            destVal.push_back(Pair("address", dSize != 20 ? ("invaliddest:" + (dSize ? HexBytes(&destination[0], dSize) : "")) : EncodeDestination(CKeyID(uint160(destination)))));
             break;
 
         case CTransferDestination::DEST_SH:
-            destVal.push_back(Pair("address", EncodeDestination(CScriptID(uint160(destination)))));
+            destVal.push_back(Pair("address", dSize != 20 ? ("invaliddest:" + (dSize ? HexBytes(&destination[0], dSize) : "")) : EncodeDestination(CScriptID(uint160(destination)))));
             break;
 
         case CTransferDestination::DEST_ID:
-            destVal.push_back(Pair("address", EncodeDestination(CIdentityID(uint160(destination)))));
+            destVal.push_back(Pair("address", dSize != 20 ? ("invaliddest:" + (dSize ? HexBytes(&destination[0], dSize) : "")) : EncodeDestination(CIdentityID(uint160(destination)))));
             break;
 
         case CTransferDestination::DEST_QUANTUM:
-            destVal.push_back(Pair("address", EncodeDestination(CQuantumID(uint160(destination)))));
+            destVal.push_back(Pair("address", dSize != 20 ? ("invaliddest:" + (dSize ? HexBytes(&destination[0], dSize) : "")) : EncodeDestination(CQuantumID(uint160(destination)))));
             break;
 
         case CTransferDestination::DEST_ETH:
-            destVal.push_back(Pair("address", EncodeEthDestination(uint160(destination))));
+            destVal.push_back(Pair("address", dSize != 20 ? ("invaliddest:" + (dSize ? HexBytes(&destination[0], dSize) : "")) : EncodeEthDestination(uint160(destination))));
             break;
 
         case CTransferDestination::DEST_ETHNFT:
@@ -996,32 +997,39 @@ UniValue CTransferDestination::ToUniValue() const
             CETHNFTAddress oneAddr;
             bool success = false;
             ::FromVector(destination, oneAddr, &success);
-            destVal.push_back(Pair("address", success ? oneAddr.ToUniValue() : UniValue(UniValue::VOBJ)));
+            destVal.push_back(Pair("address", (success && (::AsVector(oneAddr) == destination)) ? oneAddr.ToUniValue() : UniValue(UniValue::VOBJ)));
             break;
         }
 
         case CTransferDestination::DEST_FULLID:
-            destVal.push_back(Pair("identity", CIdentity(destination).ToUniValue()));
-            destVal.push_back(Pair("serializeddata", HexBytes(&(destination[0]), destination.size())));
+        {
+            CIdentity _curIdentity(destination);
+            destVal.push_back(Pair("identity", _curIdentity.IsValid() ? _curIdentity.ToUniValue() : "invalid:"));
+            destVal.push_back(Pair("serializeddata", (dSize ? HexBytes(&destination[0], dSize) : "")));
             break;
+        }
 
         case CTransferDestination::DEST_REGISTERCURRENCY:
         {
-            destVal.push_back(Pair("currency", CCurrencyDefinition(destination).ToUniValue()));
-            destVal.push_back(Pair("serializeddata", HexBytes(&(destination[0]), destination.size())));
+            CCurrencyDefinition _curDef(destination);
+            destVal.push_back(Pair("currency", _curDef.IsValid() ? _curDef.ToUniValue() : "invalid"));
+            destVal.push_back(Pair("serializeddata", (dSize ? HexBytes(&destination[0], dSize) : "")));
             break;
         }
 
         case CTransferDestination::DEST_RAW:
-            destVal.push_back(Pair("address", HexBytes(&(destination[0]),destination.size())));
+            destVal.push_back(Pair("address", (dSize ? HexBytes(&destination[0], dSize) : "")));
             break;
 
         case CTransferDestination::DEST_NESTEDTRANSFER:
-            destVal.push_back(Pair("nestedtransfer", CReserveTransfer(destination).ToUniValue()));
+        {
+            CReserveTransfer _curTransfer(destination);
+            destVal.push_back(Pair("nestedtransfer", _curTransfer.IsValid() ? _curTransfer.ToUniValue() : "invalid:" + (dSize ? HexBytes(&destination[0], dSize) : "")));
             break;
+        }
 
         default:
-            destVal.push_back(Pair("undefined", ""));
+            destVal.push_back(Pair("undefined", (dSize ? HexBytes(&destination[0], dSize) : "")));
             break;
     }
     if ((type & FLAG_DEST_AUX))

@@ -2235,7 +2235,7 @@ bool CWallet::VerusSelectStakeOutput(CBlock *pBlock, arith_uint256 &hashResult, 
                 pBlock->AddUpdatePBaaSHeader();
 
                 // get map and MMR for stake source transaction
-                CTransactionMap txMap(stakeSource, chainActive[srcIndex]->HasCappedTransactionMap());
+                CTransactionMap txMap(stakeSource, CPartialTransactionProof::CappedTypeFromVersion(chainActive[srcIndex]->PartialTransactionProofVersion()));
                 uint256 txRoot = txMap.GetRoot();
 
                 std::vector<CTransactionComponentProof> txProofVec;

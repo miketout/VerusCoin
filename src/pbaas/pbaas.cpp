@@ -8042,8 +8042,9 @@ CPartialTransactionProof::CPartialTransactionProof(const CTransaction tx,
         return;
     }
     version = pIndex->PartialTransactionProofVersion();
+
     // get map and MMR for transaction
-    CTransactionMap txMap(tx, IsCapped());
+    CTransactionMap txMap(tx, CappedType());
     uint256 txRoot = txMap.GetRoot();
 
     std::vector<CTransactionComponentProof> txProofVec;
@@ -12302,6 +12303,7 @@ GetPendingExports(const CCurrencyDefinition &sourceChain,
                                                     bool success = false;
                                                     ::FromVector(exportCurDef.nativeCurrencyID.destination, nftAddr, &success);
                                                     if (!success ||
+                                                        ::AsVector(nftAddr) != exportCurDef.nativeCurrencyID.destination ||
                                                         CTransferDestination::DecodeEthDestination(ercContract) != nftAddr.contractID ||
                                                         !IsHex(ercTokenID) || ercTokenID.size() != 64 ||
                                                         uint256S(ercTokenID) != nftAddr.tokenID)

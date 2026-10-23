@@ -265,28 +265,39 @@ CTxDestination TransferDestinationToDestination(const CTransferDestination &tran
     switch (transferDest.TypeNoFlags())
     {
         case CTransferDestination::DEST_PKH:
-            retDest = CKeyID(uint160(transferDest.destination));
+            retDest = transferDest.destination.size() != 20 ? CTxDestination() : CKeyID(uint160(transferDest.destination));
             break;
 
         case CTransferDestination::DEST_PK:
             {
                 CPubKey pk;
-                pk.Set(transferDest.destination.begin(), transferDest.destination.end());
-                retDest = pk;
+                if (transferDest.destination.size() == CPubKey::COMPRESSED_PUBLIC_KEY_SIZE)
+                {
+                    pk.Set(transferDest.destination.begin(), transferDest.destination.end());
+                    retDest = pk;
+                }
             }
             break;
 
         case CTransferDestination::DEST_SH:
-            retDest = CScriptID(uint160(transferDest.destination));
+            retDest = transferDest.destination.size() != 20 ? CTxDestination() : CScriptID(uint160(transferDest.destination));
             break;
 
         case CTransferDestination::DEST_ID:
-            retDest = CIdentityID(uint160(transferDest.destination));
+            retDest = transferDest.destination.size() != 20 ? CTxDestination() : CIdentityID(uint160(transferDest.destination));
             break;
 
         case CTransferDestination::DEST_FULLID:
-            retDest = CIdentityID(CIdentity(transferDest.destination).GetID());
+        {
+            CIdentity _curIdentity;
+            bool success = false;
+            ::FromVector(transferDest.destination, _curIdentity, &success);
+            if (success && _curIdentity.IsValid())
+            {
+                retDest = _curIdentity.GetID();
+            }
             break;
+        }
 
         case CTransferDestination::DEST_REGISTERCURRENCY:
         {
@@ -325,7 +336,7 @@ CTxDestination TransferDestinationToDestination(const CTransferDestination &tran
         }
 
         case CTransferDestination::DEST_QUANTUM:
-            retDest = CQuantumID(uint160(transferDest.destination));
+            retDest = transferDest.destination.size() != 20 ? CTxDestination() : CQuantumID(uint160(transferDest.destination));
             break;
 
         case CTransferDestination::DEST_NESTEDTRANSFER:

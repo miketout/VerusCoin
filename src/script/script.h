@@ -405,7 +405,7 @@ public:
     COptCCParams(uint8_t ver, uint8_t code, uint8_t _m, uint8_t _n, const std::vector<CTxDestination> &vkeys, const std::vector<std::vector<unsigned char>> &vdata) :
         version(ver), evalCode(code), m(_m), n(_n), vKeys(vkeys), vData(vdata) {}
 
-    COptCCParams(const std::vector<unsigned char> &vch);
+    COptCCParams(const std::vector<unsigned char> &vch, uint8_t v=0, uint8_t e=0, uint8_t _m=0, uint8_t _n=0);
 
     bool IsValid(bool strict=false, uint32_t nHeight=1) const;
 

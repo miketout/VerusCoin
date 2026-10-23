@@ -6,8 +6,6 @@
 #ifndef BITCOIN_COINS_H
 #define BITCOIN_COINS_H
 
-#define KOMODO_ENABLE_INTEREST //enabling this is a hardfork, activate with new RR method
-
 #include "compressor.h"
 #include "core_memusage.h"
 #include "memusage.h"
@@ -27,7 +25,7 @@
 #include "veruslaunch.h"
 #include "pbaas/reserves.h"
 
-/** 
+/**
  * Pruned version of CTransaction: only retains metadata and unspent transaction outputs
  *
  * Serialized format:
@@ -429,10 +427,10 @@ public:
 
 class CCoinsViewCache;
 
-/** 
+/**
  * A reference to a mutable cache entry. Encapsulating it allows us to run
  *  cleanup code after the modification is finished, and keeping track of
- *  concurrent modifications. 
+ *  concurrent modifications.
  */
 class CCoinsModifier
 {
@@ -489,7 +487,7 @@ protected:
 
     /**
      * Make mutable so that we can "fill the cache" even from Get-methods
-     * declared as "const".  
+     * declared as "const".
      */
     mutable uint256 hashBlock;
     mutable CCoinsMap cacheCoins;
@@ -575,14 +573,14 @@ public:
     //! Calculate the size of the cache (in bytes)
     size_t DynamicMemoryUsage() const;
 
-    /** 
+    /**
      * Amount of bitcoins coming in to a transaction
      * Note that lightweight clients may not know anything besides the hash of previous transactions,
      * so may not be able to calculate this.
      *
      * @param[in] tx	transaction for which we are checking input total
      * @return	Sum of value of all inputs (scriptSigs), (positive valueBalance or zero) and JoinSplit vpub_new
-     * 
+     *
      * prevblocktime is not currently use and defaults to 0
      */
     CAmount GetValueIn(int32_t nHeight,int64_t *interestp,const CTransaction& tx, uint32_t prevblocktime=0) const;

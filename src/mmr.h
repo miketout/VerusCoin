@@ -688,6 +688,12 @@ public:
 class CMMRProof
 {
 public:
+    enum {
+        UNCAPPED = 0,
+        CAPPED = 1,
+        CAPPED_DOUBLE = 2
+    };
+
     std::vector<CMerkleBranchBase *> proofSequence;
 
     CMMRProof() {}

@@ -563,8 +563,9 @@ CTransferDestination CTransferDestination::GetAuxDest(int destNum) const
     CTransferDestination retVal;
     if (destNum >= 0 && destNum < auxDests.size())
     {
-        ::FromVector(auxDests[destNum], retVal);
-        if (retVal.type & FLAG_DEST_AUX || retVal.auxDests.size())
+        bool success = false;
+        ::FromVector(auxDests[destNum], retVal, &success);
+        if (!success || retVal.type & FLAG_DEST_AUX || retVal.auxDests.size())
         {
             retVal.type = DEST_INVALID;
         }

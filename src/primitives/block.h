@@ -106,7 +106,9 @@ public:
 
     int PartialTransactionProofVersion() const
     {
-        return HasCappedTransactionMap() ? CPartialTransactionProof::VERSION_TXHASH_CAP : CPartialTransactionProof::VERSION_CURRENT;
+        return HasCappedTransactionMap() ?
+                IsAfterDoubleCapTestTime(nTime) ? CPartialTransactionProof::VERSION_TXHASH_CAP_DOUBLE : CPartialTransactionProof::VERSION_TXHASH_CAP :
+                CPartialTransactionProof::VERSION_FIRST;
     }
 
     int32_t HasPBaaSHeader() const

@@ -1,9 +1,9 @@
 /********************************************************************
  * (C) 2020 Michael Toutonghi
- * 
+ *
  * Distributed under the MIT software license, see the accompanying
  * file COPYING or http://www.opensource.org/licenses/mit-license.php.
- * 
+ *
  */
 
 #include "mmr.h"
@@ -232,8 +232,10 @@ bool CMMRProof::CheckStorageKey(uint32_t height) const
 
 uint256 CMMRProof::CheckProof(uint256 hash, bool optimized) const
 {
-    for (auto &pProof : proofSequence)
+    for (int i = 0; i < proofSequence.size(); i++)
     {
+        auto pProof = proofSequence[i];
+
         switch(pProof->branchType)
         {
             case CMerkleBranchBase::BRANCH_BTC:

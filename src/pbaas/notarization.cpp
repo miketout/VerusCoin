@@ -3028,7 +3028,7 @@ std::vector<unsigned char> CreatePoSBlockProof(ChainMerkleMountainView &mmrView,
     }
 
     // get map and MMR for stake source transaction
-    CTransactionMap txMap(stakeSource, chainActive[sourceBlockNum]->HasCappedTransactionMap());
+    CTransactionMap txMap(stakeSource, CPartialTransactionProof::CappedTypeFromVersion(chainActive[sourceBlockNum]->PartialTransactionProofVersion()));
     uint256 txRoot = txMap.GetRoot();
 
     std::vector<CTransactionComponentProof> txProofVec;

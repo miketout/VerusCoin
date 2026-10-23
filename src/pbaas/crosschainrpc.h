@@ -264,10 +264,13 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(type);
-        READWRITE(destination);
         if (ser_action.ForRead())
         {
+            uint8_t _transferType;
+            type = DEST_INVALID;
+            READWRITE(_transferType);
+            READWRITE(destination);
+            type = _transferType;
             switch (TypeNoFlags())
             {
                 case DEST_ETH:
@@ -293,6 +296,11 @@ public:
                     break;
                 }
             }
+        }
+        else
+        {
+            READWRITE(type);
+            READWRITE(destination);
         }
         if (type & FLAG_DEST_GATEWAY)
         {
@@ -1871,10 +1879,13 @@ static const uint32_t PBAAS_TESTNET_IDENTITY_START_CHECKSER = 1786147200; // Sat
 static const uint32_t PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START = 1790294400; // Friday, September 25, 2026 at 12:00:00 AM UTC
 static const uint32_t PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_END = 1790294400; // Friday, September 25, 2026 at 12:00:00 AM UTC
 
+static const uint32_t PBAAS_TESTING_DOUBLE_CAP_TIME_START = 1792800000; // Saturday, October 24, 2026 at 12:00:00 AM UTC
+
 extern std::map<uint160,CTransferDestination> bridgeAdjustingAddresses;
 CCurrencyValueMap &BridgeCurrencyAdjustmentMap();
 bool IsBridgeCleanupWindowOpen(uint32_t chainTime);
 bool IsAfterBridgeCleanupWindowStarts(uint32_t chainTime);
 bool IsAfterSecondBridgeCleanupWindowStarts(uint32_t chainTime);
+bool IsAfterDoubleCapTestTime(uint32_t chainTime);
 
 #endif
