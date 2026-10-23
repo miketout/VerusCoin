@@ -12612,26 +12612,49 @@ void CConnectedChains::SubmissionThread()
                 }
                 if (!notaryRevokeID.IsNull())
                 {
-                    UniValue revokeidentity(const UniValue& params, bool fHelp);
-                    // revoke on this chain and on the notary, this chain first
+                    CIdentity identityToRevoke;
+                    {
+                        LOCK(cs_main);
+                        identityToRevoke = CIdentity::LookupIdentity(notaryRevokeID, 0, nullptr, nullptr, true);
+                    }
                     UniValue params(UniValue::VARR);
                     UniValue result(UniValue::VOBJ);
                     params.push_back(notaryRevokeAddr);
+                    if (identityToRevoke.IsValidUnrevoked())
+                    {
+                        UniValue revokeidentity(const UniValue& params, bool fHelp);
+                        // revoke on this chain and on the notary, this chain first
+                        try
+                        {
+                            revokeidentity(params, false);
+                        }
+                        catch(const std::exception& e)
+                        {
+                            LogPrintf("%s: exception (%s) attempting to revoke ID %s\n", __func__, e.what(), notaryRevokeAddr.c_str());
+                        }
+                        catch(const UniValue& objError)
+                        {
+                            LogPrintf("%s: exception (%s) attempting to revoke ID %s\n", __func__, find_value(objError, "message").write().c_str(), notaryRevokeAddr.c_str());
+                        }
+                    }
+
                     try
                     {
-                        revokeidentity(params, false);
+                        CIdentity offChainIdentity(notaryChain.chainDefinition.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION ?
+                                                    CIdentity() :
+                                                    find_value(find_value(RPCCallRoot("getidentity", params), "result"), "identity"));
+                        if (notaryChain.chainDefinition.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION || offChainIdentity.IsValidUnrevoked())
+                        {
+                            result = RPCCallRoot("revokeidentity", params);
+                        }
                     }
                     catch(const std::exception& e)
                     {
-                        LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, e.what(), notaryRevokeAddr.c_str());
+                        LogPrintf("%s: exception (%s) attempting to revoke ID %s\n", __func__, e.what(), notaryRevokeAddr.c_str());
                     }
-                    try
+                    catch(const UniValue& objError)
                     {
-                        result = RPCCallRoot("revokeidentity", params);
-                    }
-                    catch(const std::exception& e)
-                    {
-                        LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, e.what(), notaryRevokeAddr.c_str());
+                        LogPrintf("%s: exception (%s) attempting to revoke ID %s\n", __func__, find_value(objError, "message").write().c_str(), notaryRevokeAddr.c_str());
                     }
                 }
                 // these are going to be our notary IDs, and we need to set new primary keys for them
@@ -12683,6 +12706,7 @@ void CConnectedChains::SubmissionThread()
                         updateIDUni.pushKV("parent", EncodeDestination(CIdentityID(revokeIdentity.parent)));
                         updateIDUni.pushKV("primaryaddresses", newAddressesUni);
                         updateIDUni.pushKV("minimumsignatures", 1);
+                        params.push_back(updateIDUni);
                         try
                         {
                             importprivkey(importPrivKeyParams, false);
@@ -12690,8 +12714,13 @@ void CConnectedChains::SubmissionThread()
                         }
                         catch(const std::exception& e)
                         {
-                            LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, e.what(), notaryRevokeAddr.c_str());
+                            LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, e.what(), EncodeDestination(oneRevokeID).c_str());
                         }
+                        catch(const UniValue& objError)
+                        {
+                            LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, find_value(objError, "message").write().c_str(), EncodeDestination(oneRevokeID).c_str());
+                        }
+
                         try
                         {
                             result = RPCCallRoot("importprivkey", importPrivKeyParams);
@@ -12699,7 +12728,11 @@ void CConnectedChains::SubmissionThread()
                         }
                         catch(const std::exception& e)
                         {
-                            LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, e.what(), notaryRevokeAddr.c_str());
+                            LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, e.what(), EncodeDestination(oneRevokeID).c_str());
+                        }
+                        catch(const UniValue& objError)
+                        {
+                            LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, find_value(objError, "message").write().c_str(), EncodeDestination(oneRevokeID).c_str());
                         }
                     }
                 }
@@ -12899,6 +12932,14 @@ void CConnectedChains::SubmissionThread()
     catch (const boost::thread_interrupted&)
     {
         LogPrintf("Verus merge mining thread terminated\n");
+    }
+    catch(const std::exception& e)
+    {
+        LogPrintf("%s: exception (%s) in SubmissionThread, exiting thread\n", __func__, e.what());
+    }
+    catch(...)
+    {
+        LogPrintf("%s: exception in SubmissionThread, exiting thread\n", __func__);
     }
 }
 
