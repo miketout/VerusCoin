@@ -1150,71 +1150,12 @@ bool ContextualCheckCoinbaseTransaction(const CTransaction &tx, uint32_t nHeight
     // if there is a new, block one launch, make sure it is the right amount and goes to the correct recipients
     if (!IsVerusActive() && valid && nHeight == 1)
     {
-        // get all currency state information and confirm that all necessary pre-allocations, currencies,
-        // identity and imports are as they should be, given the starting state represented.
-
-        if (ConnectedChains.ThisChain().preAllocation.size())
-        {
-            std::multimap<uint160, std::pair<int, CAmount>> preAllocations;
-            int counter = 0;
-            std::set<int> counted;
-            CAmount totalPreAlloc = 0;
-            for (auto &preAlloc : ConnectedChains.ThisChain().preAllocation)
-            {
-                preAllocations.insert(make_pair(preAlloc.first, make_pair(counter++, preAlloc.second)));
-            }
-
-            // all pre-allocations are done with smart transactions
-            for (int i = 0; i < tx.vout.size(); i++)
-            {
-                auto &output = tx.vout[i];
-                COptCCParams p;
-                std::pair<std::multimap<uint160, std::pair<int, CAmount>>::const_iterator,std::multimap<uint160, std::pair<int, CAmount>>::const_iterator> iterators;
-                if (output.scriptPubKey.IsPayToCryptoCondition(p) &&
-                    p.IsValid() &&
-                    p.version >= p.VERSION_V3 &&
-                    p.m == 1 && p.n == 1 &&
-                    p.evalCode == EVAL_NONE &&
-                    p.vKeys.size() == 1 &&
-                    !p.vData.size() &&
-                    (iterators = preAllocations.equal_range(GetDestinationID(p.vKeys[0]))).first != preAllocations.end())
-                {
-                    for (; iterators.first != iterators.second; iterators.first++)
-                    {
-                        if (!counted.count(iterators.first->second.first) && iterators.first->second.second == output.nValue)
-                        {
-                            counted.insert(iterators.first->second.first);
-                            totalPreAlloc += iterators.first->second.second;
-                        }
-                    }
-                }
-            }
-
-            if (counted.size() != preAllocations.size() ||
-                totalPreAlloc != ConnectedChains.ThisChain().GetTotalPreallocation())
-            {
-                valid = false;
-            }
-        }
-
-        // ensure that if this is a PBaaS chain, block 1 includes notarization appropriately derived from the chain definition
-        // transaction. the coinbase must contain a matching notarization out, and the notarization must agree with our start height
-        CPBaaSNotarization pbn(tx);
-
-        if (!pbn.IsValid() || pbn.notarizationHeight < ConnectedChains.ThisChain().startBlock)
+        bool knownCapped = false;
+        const CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
+        if (!notaryChain.IsValid() ||
+            !IsValidBlockOneCoinbase(tx.vout, notaryChain, ConnectedChains.ThisChain(), state, knownCapped))
         {
             valid = false;
-        }
-
-        if (valid == true)
-        {
-            bool knownCapped = false;
-            const CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
-            if (!notaryChain.IsValid() ||
-                !IsValidBlockOneCoinbase(tx.vout, notaryChain, ConnectedChains.ThisChain(), state, knownCapped))
-            {
-                valid = false;
-            }
         }
     }
 
