@@ -3394,11 +3394,6 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                         {
                             importGeneratedCurrency.valueMap[ASSETCHAINS_CHAINID] += gatewayDeposits.valueMap[ASSETCHAINS_CHAINID];
                         }
-
-                        for (auto &oneOutCur : cci.totalReserveOutMap.valueMap)
-                        {
-                            AddReserveOutput(oneOutCur.first, oneOutCur.second);
-                        }
                     }
                 }
                 break;
@@ -6067,6 +6062,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 if (isLaunchComplete)
                 {
                     // unless all conversions are already refunded, refund them all and try again
+                    bool notRefund = false;
                     std::vector<CReserveTransfer> refundedExports;
                     for (auto oneTransfer : exportObjects)
                     {
@@ -6076,33 +6072,37 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                         }
                         else
                         {
+                            notRefund = true;
                             refundedExports.push_back(oneTransfer.GetRefundTransfer());
                         }
                     }
-                    // reset vOutputs to what they were before processing and recurse once
-                    vOutputs = vOldOutputs;
-                    importedCurrency.valueMap.clear();
-                    gatewayDepositsIn.valueMap.clear();
-                    spentCurrencyOut.valueMap.clear();
-
-                    if (updatedPostLaunch)
+                    if (notRefund)
                     {
-                        *this = checkPointThis;
+                        // reset vOutputs to what they were before processing and recurse once
+                        vOutputs = vOldOutputs;
+                        importedCurrency.valueMap.clear();
+                        gatewayDepositsIn.valueMap.clear();
+                        spentCurrencyOut.valueMap.clear();
+
+                        if (updatedPostLaunch)
+                        {
+                            *this = checkPointThis;
+                        }
+                        return AddReserveTransferImportOutputs(systemSource,
+                                                            systemDest,
+                                                            importCurrencyDef,
+                                                            importCurrencyState,
+                                                            refundedExports,
+                                                            height,
+                                                            vOutputs,
+                                                            importedCurrency,
+                                                            gatewayDepositsIn,
+                                                            spentCurrencyOut,
+                                                            pNewCurrencyState,
+                                                            feeRecipient,
+                                                            blockNotarizer,
+                                                            entropy);
                     }
-                    return AddReserveTransferImportOutputs(systemSource,
-                                                        systemDest,
-                                                        importCurrencyDef,
-                                                        importCurrencyState,
-                                                        refundedExports,
-                                                        height,
-                                                        vOutputs,
-                                                        importedCurrency,
-                                                        gatewayDepositsIn,
-                                                        spentCurrencyOut,
-                                                        pNewCurrencyState,
-                                                        feeRecipient,
-                                                        blockNotarizer,
-                                                        entropy);
                 }
 
                 printf("%s: Invalid currency conversions for import to %s : %s\n", __func__, importCurrencyDef.name.c_str(), EncodeDestination(CIdentityID(importCurrencyDef.GetID())).c_str());

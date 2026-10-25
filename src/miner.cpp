@@ -3414,7 +3414,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                             {
                                                 int32_t exportShiftCount = IsAfterBridgeCleanupWindowStarts(pblock->nTime) ? 1 : 0;
                                                 uint160 secondLegID = secondLegSystem.SystemOrGatewayID();
-                                                if ((++tmpExportTransfers[secondLegID].first + exportTransferCount[secondLegID].first) > (secondLegSystem.MaxTransferExportCount() >> exportShiftCount) ||
+                                                if ((++tmpExportTransfers[secondLegID].first + exportTransferCount[secondLegID].first) > (secondLegSystem.MaxTransferExportCount(pblock->nTime) >> exportShiftCount) ||
                                                     ((tmpExportTransfers[secondLegID].second += rt.NextLegSizeAttribution(oneOut.scriptPubKey.size())) +
                                                         exportTransferCount[secondLegID].second) > (secondLegSystem.MaxTransferExportSize() >> exportShiftCount))
                                                 {
@@ -3485,7 +3485,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                             }
                                         }
 
-                                        if ((++tmpExportTransfers[destCurrencyID].first + exportTransferCount[destCurrencyID].first) > destSystem.MaxTransferExportCount() ||
+                                        if ((++tmpExportTransfers[destCurrencyID].first + exportTransferCount[destCurrencyID].first) > destSystem.MaxTransferExportCount(pblock->nTime) ||
                                             ((tmpExportTransfers[destCurrencyID].second += oneOut.scriptPubKey.size()) +
                                                         exportTransferCount[destCurrencyID].second) > destSystem.MaxTransferExportSize() ||
                                             (rt.IsCurrencyExport() && (++tmpCurrencyExportTransfers[destCurrencyID] + currencyExportTransferCount[destCurrencyID]) > destSystem.MaxCurrencyDefinitionExportCount()) ||

@@ -3440,11 +3440,6 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                                         {
                                             // final check is to be sure that the entire
                                             // coinbase output is valid
-                                            bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &outputs,
-                                                                        const CRPCChainData &launchChain,
-                                                                        const CCurrencyDefinition &newChainCurrency,
-                                                                        CValidationState &state,
-                                                                        bool &knownCapped);
                                             CValidationState state;
                                             bool knownCapped = false;
 
@@ -8626,6 +8621,12 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
 
         if (!pNotaryCurrency->IsPBaaSChain() || confirmIfSigned == -1)
         {
+            if (txBuilder.mtx.vout.size())
+            {
+                // we have signed rejections to publish even though nothing can be confirmed
+                txBuilders.push_back(txBuilder);
+                return true;
+            }
             return state.Error("insufficient validator confirmations after pruning disagreements");
         }
     }
@@ -9547,6 +9548,17 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
             crosschainCND.lastConfirmed = 0;
             crosschainCND.vtx.insert(crosschainCND.vtx.begin(), std::make_pair(CUTXORef(notarizationRef.txIn.prevout), definitionNotarization));
 
+            CTransaction defTx;
+            uint256 defBlockHash;
+            if (!myGetTransaction(notarizationRef.txIn.prevout.hash, defTx, defBlockHash) || defBlockHash.IsNull())
+            {
+                LogPrintf("Unable to locate definition notarization block for %s\n", EncodeDestination(CIdentityID(systemID)).c_str());
+                return retVal;
+            }
+            blockHashes.insert(blockHashes.begin(), defBlockHash);
+            evidence.insert(evidence.begin(), std::vector<std::tuple<CObjectFinalization, CNotaryEvidence>>());
+            counterEvidence.insert(counterEvidence.begin(), std::vector<std::tuple<CObjectFinalization, CNotaryEvidence, CProofRoot, CProofRoot>>());
+
             if (crosschainCND.vtx.size() == 1)
             {
                 crosschainCND.bestChain = 0;
@@ -9930,6 +9942,12 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                                                                     earnedNotarizationIndexEntry.first.index).ToUniValue());
 
             // any roots between our new notarization and the one we are agreeing to/confirming are challenge roots
+            if (confirmingIdx >= blockHashes.size())
+            {
+                LogPrintf("%s: Mismatched index and block hash sizes\n", __func__);
+                return retVal;
+            }
+
             UniValue challengeRoots(UniValue::VARR);
             for (int challengeNum = confirmingIdx + 1; challengeNum < crosschainCND.vtx.size(); challengeNum++)
             {
@@ -10937,7 +10955,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
 
                         if (!std::get<0>(lastConfirmedNotarization))
                         {
-                            return state.Error("Cannot get last confirmed notarization");
+                            return TransientError(state, "Cannot get last confirmed notarization");
                         }
 
                         CPBaaSNotarization lastLocalConfirmed = currentNotarization;
@@ -11087,7 +11105,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                                     !(oneNotarization = CPBaaSNotarization(oneNotarizationTx.vout[oneOutput.first.index].scriptPubKey)).IsValid() ||
                                     oneNotarization.currencyID != currentNotarization.currencyID)
                                 {
-                                    return state.Error("ERROR: corrupt local chain data - should not move forward as a node. Bootstrap or resynchonrize blockchain.");
+                                    return TransientError(state, "ERROR: corrupt local chain data - should not move forward as a node. Bootstrap or resynchonrize blockchain.");
                                 }
                                 challengingRoots.push_back(oneNotarization.proofRoots[currentNotarization.currencyID]);
                             }
@@ -11339,7 +11357,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                         if (!std::get<0>(lastConfirmedNotarizationInfo))
                         {
                             lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(normalizedNotarization.currencyID, height - 1);
-                            return state.Error("Unable to get prior confirmed accepted notarization");
+                            return TransientError(state, "Unable to get prior confirmed accepted notarization");
                         }
 
                         if (!IsNotarizationDescendent(normalizedNotarization, priorNotarizationInfo, lastConfirmedNotarizationInfo, state))
@@ -11376,7 +11394,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                                     !(oneNotarization = CPBaaSNotarization(oneNotarizationTx.vout[oneOutput.first.index].scriptPubKey)).IsValid() ||
                                     oneNotarization.currencyID != normalizedNotarization.currencyID)
                                 {
-                                    return state.Error("ERROR: corrupt local chain data - should not move forward as a node. Bootstrap or resynchonrize blockchain.");
+                                    return TransientError(state, "ERROR: corrupt local chain data - should not move forward as a node. Bootstrap or resynchonrize blockchain.");
                                 }
                                 challengingRoots.push_back(oneNotarization.proofRoots[normalizedNotarization.currencyID]);
                             }
@@ -11756,6 +11774,15 @@ bool PreCheckNotaryEvidence(const CTransaction &tx, int32_t outNum, CValidationS
     // or provide proof of a more powerful chain
     if (currentEvidence.type == currentEvidence.TYPE_NOTARY_EVIDENCE)
     {
+        auto signatures = currentEvidence.GetNotarySignatures();
+        for (auto &oneSig : signatures)
+        {
+            if (!oneSig.IsValid())
+            {
+                return state.Error("Invalid present signature: " + oneSig.ToUniValue().write(1,2));
+            }
+        }
+
         // get notarization
         CTransaction outputTx;
         uint256 blockHash;
@@ -12118,7 +12145,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
         {
             lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1);
         }
-        return state.Error("unable to get last confirmed notarization");
+        return TransientError(state, "unable to get last confirmed notarization");
     }
 
     if (currentFinalization.IsConfirmed() || currentFinalization.IsRejected())
@@ -12319,7 +12346,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                                 !(oneNotarization = CPBaaSNotarization(oneNotarizationTx.vout[oneOutput.first.index].scriptPubKey)).IsValid() ||
                                 oneNotarization.currencyID != notarization.currencyID)
                             {
-                                return state.Error("ERROR: corrupt local chain data - should not move forward as a node. Bootstrap or resynchonrize blockchain.");
+                                return TransientError(state, "ERROR: corrupt local chain data - should not move forward as a node. Bootstrap or resynchonrize blockchain.");
                             }
                             if (CChainPower::ExpandCompactPower(oneNotarization.proofRoots[curID].compactPower) > ourPower)
                             {

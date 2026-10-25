@@ -1205,14 +1205,18 @@ bool ContextualCheckCoinbaseTransaction(const CTransaction &tx, uint32_t nHeight
         {
             valid = false;
         }
-        //if (!valid)
-        //{
-            //UniValue debugUniTx(UniValue::VOBJ);
-            //uint256 blkHash;
-            //TxToUniv(tx, blkHash, debugUniTx);
-            //printf("%s: %s\n", __func__, debugUniTx.write(1,2).c_str());
-        //}
-        valid = true;
+
+        if (valid == true)
+        {
+            CValidationState state;
+            bool knownCapped = false;
+            const CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
+            if (!notaryChain.IsValid() ||
+                !IsValidBlockOneCoinbase(tx.vout, notaryChain, ConnectedChains.ThisChain(), state, knownCapped))
+            {
+                valid = false;
+            }
+        }
     }
 
     return valid;
@@ -1513,13 +1517,9 @@ bool ContextualCheckTransaction(
                         LogPrintf("\n");
                     }
                     std::string rejectReason = state.GetRejectReason().empty() ? "failed-precheck" : state.GetRejectReason();
-                    if (nHeight <= (chainActive.Height() + 1) && !state.IsInvalid())
+                    if (state.GetRejectCode() == REJECT_TRANSIENT)
                     {
-                        // unclassified failure: deterministic rejection of the tx/block, but no ban score.
-                        // do NOT leave this as MODE_ERROR - a block containing it would stall activation
-                        // as a phantom system error instead of being marked invalid (audit round 6)
-                        dosLevel = 0;
-                        state = CValidationState();
+                        return state.Error(rejectReason);
                     }
                     return state.DoS(dosLevel, error("%s", rejectReason.c_str()), REJECT_INVALID, "bad-txns-failed-precheck");
                 }
@@ -4174,8 +4174,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                    nHeight < 1800000)))
             {
                 LogPrintf("%s: ERROR: %s\nBlock %s rejected\n", __func__, state.GetRejectReason().c_str(), block.GetHash().GetHex().c_str());
-                if (state.GetRejectReason() != "unable to get last confirmed notarization" &&
-                    state.IsInvalid())
+                if (state.IsInvalid())
                 {
                     InvalidBlockFound(pindex, state, Params());
                 }
@@ -4380,7 +4379,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                         }
                                     }
 
-                                    if (++exportTransferCount[destCurrencyID].first > destSystem.MaxTransferExportCount() ||
+                                    if (++exportTransferCount[destCurrencyID].first > destSystem.MaxTransferExportCount(pindex->nTime) ||
                                         (exportTransferCount[destCurrencyID].second += oneOut.scriptPubKey.size()) > destSystem.MaxTransferExportSize())
                                     {
                                         return state.DoS(10, error("%s: attempt to submit block with too many transfers exporting to %s", __func__, EncodeDestination(CIdentityID(destCurrencyID)).c_str()), REJECT_INVALID, "bad-txns-too-many-transfers");
@@ -4396,7 +4395,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                         int32_t exportShiftCount = IsAfterBridgeCleanupWindowStarts(pindex->nTime) ? 1 : 0;
                                         secondLegID = secondLegSystem.SystemOrGatewayID();
                                         if (secondLegID.IsNull() ||
-                                            ++exportTransferCount[secondLegID].first > (secondLegSystem.MaxTransferExportCount() >> exportShiftCount) ||
+                                            ++exportTransferCount[secondLegID].first > (secondLegSystem.MaxTransferExportCount(pindex->nTime) >> exportShiftCount) ||
                                             (exportTransferCount[secondLegID].second += rt.NextLegSizeAttribution(oneOut.scriptPubKey.size())) > (secondLegSystem.MaxTransferExportSize() >> exportShiftCount))
                                         {
                                             return state.DoS(10, error("%s: attempt to submit block with too many transfers exporting to %s", __func__, EncodeDestination(CIdentityID(secondLegID)).c_str()), REJECT_INVALID, "bad-txns-too-many-transfers");
@@ -5651,7 +5650,13 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
                 {
                     continue;
                 }
-                AcceptToMemoryPool(mempool, stateDummy, tx, true, true, NULL);
+                if (!AcceptToMemoryPool(mempool, stateDummy, tx, true, true, NULL))
+                {
+                    // a resurrected transaction that no longer validates must not leave spenders of its
+                    // outputs behind in the mempool
+                    std::list<CTransaction> removed;
+                    mempool.remove(tx, removed, true);
+                }
             }
             // if this is a staking tx, and we are on Verus Sapling with nothing at stake solution,
             // save staking tx as a possible cheat

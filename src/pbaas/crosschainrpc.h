@@ -366,7 +366,8 @@ public:
         {
             for (int i = 0; i < auxDests.size(); i++)
             {
-                if (!GetAuxDest(i).IsValid())
+                CTransferDestination oneAux = GetAuxDest(i);
+                if (!oneAux.IsValid() || ::AsVector(oneAux) != auxDests[i])
                 {
                     valid = false;
                     break;
@@ -538,6 +539,7 @@ public:
         MAX_ETH_CURRENCY_DEFINITION_EXPORTS_PER_BLOCK = 1,
         MAX_ETH_IDENTITY_DEFINITION_EXPORTS_PER_BLOCK = 0,
         MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK = 50,
+        MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK_POST_BRIDGE_CLEANUP = 20,
         MAX_ETH_TRANSFER_EXPORTS_SIZE_PER_BLOCK = 50000,
         MIN_DEFAULT_TX_EXPIRY = 20,                 // minimum blocks for transaction expiry
         MAX_DEFAULT_TX_EXPIRY = 60,                 // maximum blocks for transaction expiry
@@ -989,10 +991,7 @@ public:
         }
     }
 
-    int32_t MaxTransferExportCount() const
-    {
-        return proofProtocol == PROOF_ETHNOTARIZATION ? MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK : MAX_TRANSFER_EXPORTS_PER_BLOCK;
-    }
+    int32_t MaxTransferExportCount(uint32_t chainTime) const;
 
     int32_t MaxTransferExportSize() const
     {
@@ -1430,9 +1429,15 @@ public:
         }
     }
 
-    CIdentitySignature(const std::vector<unsigned char> &asVector)
+    CIdentitySignature(const std::vector<unsigned char> &asVector) :
+        version(VERSION_INVALID), hashType(CCurrencyDefinition::EHashTypes::HASH_INVALID), blockHeight(0)
     {
-        ::FromVector(asVector, *this);
+        bool success = false;
+        ::FromVector(asVector, *this, &success);
+        if (!success)
+        {
+            version = VERSION_INVALID;
+        }
     }
 
     template <typename Stream, typename Operation>
@@ -1533,7 +1538,7 @@ public:
                                           const uint256 &msgHash,
                                           std::vector<std::vector<unsigned char>> *pDupSigs=nullptr) const;
 
-    uint32_t Version()
+    uint32_t Version() const
     {
         return version;
     }
@@ -1583,7 +1588,7 @@ public:
         return retObj;
     }
 
-    uint32_t IsValid()
+    uint32_t IsValid() const
     {
         return version <= VERSION_LAST && version >= VERSION_FIRST &&
             (hashType == CCurrencyDefinition::EHashTypes::HASH_BLAKE2BMMR || (version >= VERSION_ETHBRIDGE && IsValidHashType((CCurrencyDefinition::EHashTypes)hashType)));

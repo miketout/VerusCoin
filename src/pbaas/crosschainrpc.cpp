@@ -356,6 +356,10 @@ uint256 CIdentitySignature::IdentitySignatureHash(const std::vector<uint160> &vd
     }
     else
     {
+        if (!IsValidHashType((CCurrencyDefinition::EHashTypes)hashType))
+        {
+            return uint256();
+        }
         CNativeHashWriter ss((CCurrencyDefinition::EHashTypes)hashType);
 
         bool crossChainLogging = LogAcceptCategory("notarysignatures") || LogAcceptCategory("identitysignatures");
@@ -463,6 +467,11 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
                                                                               const uint256 &msgHash,
                                                                               std::vector<std::vector<unsigned char>> *pDupSigs) const
 {
+    if (!IsValid())
+    {
+        return SIGNATURE_INVALID;
+    }
+
     CPubKey checkKey;
     std::set<uint160> keys;
     std::set<uint160> idKeys;
@@ -1399,6 +1408,13 @@ CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool t
     {
         nVersion = VERSION_INVALID;
     }
+}
+
+int32_t CCurrencyDefinition::MaxTransferExportCount(uint32_t chainTime) const
+{
+    return proofProtocol == PROOF_ETHNOTARIZATION ?
+            IsAfterSecondBridgeCleanupWindowStarts(chainTime) ? MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK_POST_BRIDGE_CLEANUP : MAX_ETH_TRANSFER_EXPORTS_PER_BLOCK :
+            MAX_TRANSFER_EXPORTS_PER_BLOCK;
 }
 
 int64_t CCurrencyDefinition::GetTotalPreallocation() const

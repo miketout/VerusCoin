@@ -1612,7 +1612,7 @@ CTxOut MakeCC1of2Vout(uint8_t evalcode, CAmount nValue, CPubKey pk1, CPubKey pk2
 bool IsValidExportCurrency(const CCurrencyDefinition &systemDest, const uint160 &exportCurrencyID, uint32_t height);
 std::set<uint160> BaseBridgeCurrencies(const CCurrencyDefinition &systemDest, uint32_t height, bool feeOnly=false);
 std::set<uint160> ValidExportCurrencies(const CCurrencyDefinition &systemDest, uint32_t height);
-
+inline bool TransientError(CValidationState &state, const std::string &reason) { return state.DoS(0, false, REJECT_TRANSIENT, reason); }
 
 // used to export coins from one chain to another, if they are not native, they are represented on the other
 // chain as tokens
@@ -1684,5 +1684,11 @@ bool ImportHasAdequateFees(const CTransaction &tx,
                            const std::vector<CReserveTransfer> &reserveTransfers,
                            CValidationState &state,
                            uint32_t height);
+
+bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &outputs,
+                             const CRPCChainData &launchChain,
+                             const CCurrencyDefinition &newChainCurrency,
+                             CValidationState &state,
+                             bool &knownCapped);
 
 #endif

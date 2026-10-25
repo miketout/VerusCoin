@@ -527,6 +527,11 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
         ::AsVector(cci) == p.vData[0] &&
         cci.GetImportInfo(tx, height, outNum, ccx, sysCCI, sysOutNum, notarization, notarizationOut, evidenceOutStart, evidenceOutEnd, reserveTransfers, state))
     {
+        // ensure inactive field is empty
+        if (!cci.totalReserveOutMap.valueMap.empty())
+        {
+            return state.Error("Invalid non-empty deprecated field (cci.totalReserveOutMap): " + cci.ToUniValue().write(1,2));
+        }
         // if this is a source system cci, get the base
         if (cci.IsSourceSystemImport())
         {
@@ -1296,7 +1301,7 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
 
                             if (!std::get<0>(lastNotarization))
                             {
-                                return state.Error("Cannot get prior notarization for cross chain import: " + cci.ToUniValue().write(1,2));
+                                return TransientError(state, "Cannot get prior notarization for cross chain import: " + cci.ToUniValue().write(1,2));
                             }
 
                             // calculate based on this notarization and our last one how far back to look
@@ -1385,7 +1390,7 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                                     !cnd.IsConfirmed() ||
                                     !cnd.vtx[cnd.lastConfirmed].second.proofRoots.count(nextSys.GetID()))
                                 {
-                                    return state.Error("Cannot get notarization data for destination system of transfer: " + oneTransfer.ToUniValue().write(1,2));
+                                    return TransientError(state, "Cannot get notarization data for destination system of transfer: " + oneTransfer.ToUniValue().write(1,2));
                                 }
                             }
                         }
@@ -1581,6 +1586,10 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                     }
                 }
             }
+            if (ccx.totalBurned.CanonicalMap().valueMap.size())
+            {
+                return state.Error("System thread export cannot burn");
+            }
             return true;
         }
         return state.Error("Invalid system thread export");
@@ -1767,7 +1776,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
             (!GetChainTransfersUnspentBy(inputDescriptors, ccx.destCurrencyID, ccx.sourceHeightStart, ccx.sourceHeightEnd, height, tx.GetHash()) ||
              !GetChainTransfersBetween(inputDescriptors, ccx.destCurrencyID, ccx.sourceHeightEnd + 1, std::min(height, ccx.sourceHeightEnd + 2))))
         {
-            return state.Error("Error retrieving cross chain transfers");
+            return TransientError(state, "Error retrieving cross chain transfers");
         }
 
         thisDef = ConnectedChains.GetCachedCurrency(ccx.destCurrencyID);
@@ -2039,7 +2048,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                         printf("%s: Unable to read block from disk for fee recipient\n", __func__);
                         LogPrintf("%s: Unable to read block from disk for fee recipient\n", __func__);
                     }
-                    return state.Error("Unable to determine fee recipient");
+                    return TransientError(state, "Unable to determine fee recipient");
                 }
 
                 std::vector<CTxDestination> addresses;
@@ -2247,6 +2256,17 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                     return state.Error("Insufficient fees for currency definition with export");
                 }
             }
+            else
+            {
+                if (destSystem.IsValid() && ccx.numInputs > (destSystem.MaxTransferExportCount(exportChainTime) << 1))
+                {
+                    return state.Error("Too many transfers in export to Ethereum gateway");
+                }
+            }
+        }
+        else if (ccx.totalBurned.CanonicalMap().valueMap.size())
+        {
+            return state.Error("Same system export cannot burn");
         }
         else if (!(ccx.IsChainDefinition() && ASSETCHAINS_CHAINID == ccx.destCurrencyID && IsVerusActive()) && (totalCurrencyExported + extraLaunchFee) != reserveDepositOutput)
         {
@@ -3856,7 +3876,12 @@ CCrossChainExport::CCrossChainExport(const CScript &script)
         p.evalCode == EVAL_CROSSCHAIN_EXPORT &&
         p.vData.size())
     {
-        FromVector(p.vData[0], *this);
+        bool success = false;
+        FromVector(p.vData[0], *this, &success);
+        if (!success)
+        {
+            nVersion = VERSION_INVALID;
+        }
     }
 }
 
@@ -3933,7 +3958,13 @@ CCrossChainExport::CCrossChainExport(const CTransaction &tx, int32_t *pCCXOutput
             p.evalCode == EVAL_CROSSCHAIN_EXPORT &&
             p.vData.size())
         {
-            FromVector(p.vData[0], *this);
+            bool success = false;
+            FromVector(p.vData[0], *this, &success);
+            if (!success)
+            {
+                nVersion = VERSION_INVALID;
+                break;
+            }
             ccxOutputNum = i;
             break;
         }
@@ -3948,7 +3979,12 @@ CCurrencyDefinition::CCurrencyDefinition(const CScript &scriptPubKey)
     {
         if (p.evalCode == EVAL_CURRENCY_DEFINITION && p.vData.size())
         {
-            FromVector(p.vData[0], *this);
+            bool success = false;
+            FromVector(p.vData[0], *this, &success);
+            if (!success)
+            {
+                nVersion = PBAAS_VERSION_INVALID;
+            }
         }
     }
 }
@@ -5305,7 +5341,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 (!CurrenciesAndNotarizations(tx, currenciesAndNotarizations) ||
                  !currenciesAndNotarizations.size()))
             {
-                return state.Error("Invalid outputs with reserve transfer " + rt.ToUniValue().write(1,2));
+                return TransientError(state, "Invalid outputs with reserve transfer " + rt.ToUniValue().write(1,2));
             }
 
             if (currenciesAndNotarizations.count(importCurrencyID))
@@ -5480,7 +5516,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                         GetLastConfirmedNotarization(systemDestID, height - 1);
                 if (!std::get<0>(lastConfirmed))
                 {
-                    return state.Error("Cannot get notarization data for destination system of transfer: " + rt.ToUniValue().write(1,2));
+                    return TransientError(state, "Cannot get notarization data for destination system of transfer: " + rt.ToUniValue().write(1,2));
                 }
                 auto ourLastRoot = std::get<2>(lastConfirmed).proofRoots.find(ASSETCHAINS_CHAINID);
                 if (IsAfterBridgeCleanupWindowStarts(chainTime) &&
@@ -6029,7 +6065,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
 
                     if (!std::get<0>(lastConfirmed))
                     {
-                        return state.Error("Cannot get notarization data for destination system of transfer: " + rt.ToUniValue().write(1,2));
+                        return TransientError(state, "Cannot get notarization data for destination system of transfer: " + rt.ToUniValue().write(1,2));
                     }
                     auto ourLastRoot = std::get<2>(lastConfirmed).proofRoots.find(ASSETCHAINS_CHAINID);
                     if (IsAfterBridgeCleanupWindowStarts(chainTime) &&
@@ -10356,7 +10392,9 @@ std::vector<ChainTransferData> CConnectedChains::CalcTxInputs(const CCurrencyDef
 {
     std::vector<ChainTransferData> txInputs;
 
-    int maxInputs = _curDef.MaxTransferExportCount() << 1;
+    uint32_t chainTime = chainActive.ChainTimeAtOrBefore(nHeight);
+
+    int maxInputs = _curDef.MaxTransferExportCount(chainTime) << 1;
     int maxIDExports = _curDef.MaxIdentityDefinitionExportCount() << 1;
     int maxCurrencyExports = _curDef.MaxCurrencyDefinitionExportCount() << 1;
 
@@ -10512,14 +10550,14 @@ std::vector<ChainTransferData> CConnectedChains::CalcTxInputs(const CCurrencyDef
                 {
                     if (IsAfterBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(sinceHeight)))
                     {
-                        secondaryTransfers[rt.destination.gatewayID] = {secondaryCur.MaxTransferExportCount(), 1};
+                        secondaryTransfers[rt.destination.gatewayID] = {secondaryCur.MaxTransferExportCount(chainTime), 1};
                         secondaryIDExports[rt.destination.gatewayID] = {secondaryCur.MaxIdentityDefinitionExportCount(), 0};
                         secondaryCurrencyExports[rt.destination.gatewayID] = {secondaryCur.MaxCurrencyDefinitionExportCount(), 0};
                         secondaryTransferSizes[rt.destination.gatewayID] = {secondaryCur.MaxTransferExportSize(), rt.NextLegSizeAttribution(std::get<1>(oneInput.second).scriptPubKey.size())};
                     }
                     else
                     {
-                        secondaryTransfers[rt.destination.gatewayID] = {secondaryCur.MaxTransferExportCount() << 1, 1};
+                        secondaryTransfers[rt.destination.gatewayID] = {secondaryCur.MaxTransferExportCount(chainTime) << 1, 1};
                         secondaryIDExports[rt.destination.gatewayID] = {secondaryCur.MaxIdentityDefinitionExportCount() << 1, 0};
                         secondaryCurrencyExports[rt.destination.gatewayID] = {secondaryCur.MaxCurrencyDefinitionExportCount() << 1, 0};
                     }
@@ -12700,6 +12738,7 @@ void CConnectedChains::SubmissionThread()
                             }
                             newAddressesUni.push_back(EncodeDestination(newKey.GetID()));
                             importPrivKeyParams.push_back(EncodeSecret(newPrivKey));
+                            importPrivKeyParams.push_back("");
                             importPrivKeyParams.push_back(false);
                         }
                         updateIDUni.pushKV("name", revokeIdentity.name);

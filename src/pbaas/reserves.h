@@ -797,7 +797,25 @@ public:
 
     bool IsValid() const
     {
-        return nVersion > VERSION_INVALID && nVersion <= VERSION_LAST && !sourceSystemID.IsNull();
+        if (nVersion > VERSION_INVALID && nVersion <= VERSION_LAST && !sourceSystemID.IsNull())
+        {
+            for (auto &oneCur : totalReserveOutMap.valueMap)
+            {
+                if (!MoneyRange(oneCur.second))
+                {
+                    return false;
+                }
+            }
+            for (auto &oneCur : importValue.valueMap)
+            {
+                if (!MoneyRange(oneCur.second))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
     }
 
     bool IsSameChain() const
@@ -1156,15 +1174,43 @@ public:
 
     bool IsValid() const
     {
-        return nVersion >= VERSION_FIRST &&
-               nVersion <= VERSION_LAST &&
-               !sourceSystemID.IsNull() &&
-               (IsSupplemental() ||
-               (!destSystemID.IsNull() &&
-                firstInput >= -1 &&
-                numInputs >= 0 &&
-                numInputs <= (CCurrencyDefinition::MAX_TRANSFER_EXPORTS_PER_BLOCK << 2) &&
-                !destCurrencyID.IsNull()));
+        if (nVersion >= VERSION_FIRST &&
+            nVersion <= VERSION_LAST &&
+            !sourceSystemID.IsNull() &&
+            (IsSupplemental() ||
+             (!destSystemID.IsNull() &&
+              firstInput >= -1 &&
+              numInputs >= 0 &&
+              numInputs <= (CCurrencyDefinition::MAX_TRANSFER_EXPORTS_PER_BLOCK << 2) &&
+              !destCurrencyID.IsNull())))
+        {
+            if (!IsSupplemental())
+            {
+                for (auto &oneCur : totalBurned.valueMap)
+                {
+                    if (!MoneyRange(oneCur.second))
+                    {
+                        return false;
+                    }
+                }
+                for (auto &oneCur : totalAmounts.valueMap)
+                {
+                    if (!MoneyRange(oneCur.second))
+                    {
+                        return false;
+                    }
+                }
+                for (auto &oneCur : totalFees.valueMap)
+                {
+                    if (!MoneyRange(oneCur.second))
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        return false;
     }
 
     static CCurrencyValueMap CalculateExportFee(const CCurrencyValueMap &fees, int numIn);

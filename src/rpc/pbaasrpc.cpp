@@ -2089,6 +2089,7 @@ bool GetOpRetChainOffer(const CTransaction &postedTx,
           RetrieveInto((opRetTx = postedTx).vout.back().scriptPubKey) == 1) ||
          (GetSpentIndex(spentKey, spentValue) &&
           myGetTransaction(spentValue.txid, opRetTx, opRetBlockHash)  &&
+          opRetTx.vout.size() &&
           RetrieveInto(opRetTx.vout.back().scriptPubKey) == 1)) &&
         opRetArray[0]->objectType == CHAINOBJ_TRANSACTION_PROOF &&
         (offerTxProof = ((CChainObject<CPartialTransactionProof> *)(opRetArray[0]))->object).IsValid() &&
@@ -2099,7 +2100,8 @@ bool GetOpRetChainOffer(const CTransaction &postedTx,
         offerTx.vShieldedSpend.size() == 0 &&
         ((spentKey = CSpentIndexKey(offerTx.vin[0].prevout.hash, offerTx.vin[0].prevout.n), !GetSpentIndex(spentKey, spentValue))) &&
         ((getExpired && offerTx.nExpiryHeight <= height) || (getUnexpired && offerTx.nExpiryHeight > height)) &&
-        myGetTransaction(offerTx.vin[0].prevout.hash, inputToOfferTx, offerBlockHash))
+        myGetTransaction(offerTx.vin[0].prevout.hash, inputToOfferTx, offerBlockHash) &&
+        offerTx.vin[0].prevout.n < inputToOfferTx.vout.size())
     {
         return true;
     }
@@ -9117,7 +9119,8 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
                   txToTake.vin.size() == 1 &&
                   txToTake.vShieldedSpend.size() == 0 &&
                   txToTake.nExpiryHeight > (height + 3) &&
-                  myGetTransaction(txToTake.vin[0].prevout.hash, inputTxToOffer, blockHash)))
+                  myGetTransaction(txToTake.vin[0].prevout.hash, inputTxToOffer, blockHash) &&
+                  txToTake.vin[0].prevout.n < inputTxToOffer.vout.size()))
             {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, "Offer transaction supplied is not valid or expired");
             }
