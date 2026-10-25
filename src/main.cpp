@@ -1102,7 +1102,7 @@ bool IsCoinbaseTimeLocked(const CTransaction &tx, uint32_t &outUnlockHeight)
  * Ensure that a coinbase transaction is structured according to the consensus rules of the
  * chain
  */
-bool ContextualCheckCoinbaseTransaction(const CTransaction &tx, uint32_t nHeight)
+bool ContextualCheckCoinbaseTransaction(const CTransaction &tx, uint32_t nHeight, CValidationState &state)
 {
     bool valid = true, timelocked = false;
     CTxDestination firstDest;
@@ -1208,7 +1208,6 @@ bool ContextualCheckCoinbaseTransaction(const CTransaction &tx, uint32_t nHeight
 
         if (valid == true)
         {
-            CValidationState state;
             bool knownCapped = false;
             const CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
             if (!notaryChain.IsValid() ||
@@ -1403,9 +1402,18 @@ bool ContextualCheckTransaction(
                                     REJECT_INVALID, "bad-txns-invalid-instantspend-for-coinbase");
             }
         }
-        if (!ContextualCheckCoinbaseTransaction(tx, nHeight))
-            return state.DoS(100, error("CheckTransaction(): invalid script data for coinbase"),
-                                REJECT_INVALID, "bad-txns-invalid-script-data-for-coinbase");
+        if (!ContextualCheckCoinbaseTransaction(tx, nHeight, state))
+        {
+            if (state.GetRejectCode() == REJECT_TRANSIENT)
+            {
+                return state.Error(state.GetRejectReason());
+            }
+            if (!state.IsInvalid())
+            {
+                state = CValidationState();
+            }
+            return state.DoS(100, error("CheckTransaction(): invalid script data for coinbase"), REJECT_INVALID, "bad-txns-invalid-script-data-for-coinbase");
+        }
     }
 
     if (!tx.vShieldedSpend.empty() ||
@@ -1520,6 +1528,10 @@ bool ContextualCheckTransaction(
                     if (state.GetRejectCode() == REJECT_TRANSIENT)
                     {
                         return state.Error(rejectReason);
+                    }
+                    if (!state.IsInvalid())
+                    {
+                        state = CValidationState();
                     }
                     return state.DoS(dosLevel, error("%s", rejectReason.c_str()), REJECT_INVALID, "bad-txns-failed-precheck");
                 }

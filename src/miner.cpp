@@ -1553,7 +1553,7 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
 
         if (!validOutputs)
         {
-            return state.Error("Unable to make comparison outputs");
+            return TransientError(state, "Unable to make comparison outputs");
         }
 
         // setup fee pool
