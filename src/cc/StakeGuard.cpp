@@ -49,58 +49,51 @@ bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTra
         }
         else if (myGetTransaction(stakeTx.vin[0].prevout.hash, srcTx, blkHash))
         {
-            // see if we should only allow staking with funds held under IDs native to this chain
-            // if so, only outputs specifically to a valid ID and no other destination can stake
             if (sourceChain.IDStaking() && sourceChain.GetID() == ASSETCHAINS_CHAINID)
             {
                 txnouttype txType;
                 std::vector<CTxDestination> addressesRet;
                 int nRequiredRet;
-                bool canSpend;
-                extern CWallet *pwalletMain;
-                if (ExtractDestinations(srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey,
-                                        txType,
-                                        addressesRet,
-                                        nRequiredRet,
-                                        pwalletMain,
-                                        nullptr,
-                                        &canSpend) &&
-                    canSpend)
+                COptCCParams p;
+                const CScript &srcScript = srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey;
+                // only smart transaction outputs spendable solely by IDs native to this chain (plus the eval's own
+                // CC address) may stake on an ID staking chain, regardless of which keys this node holds
+                if (!srcScript.IsPayToCryptoCondition(p) || !p.IsValid() ||
+                    !ExtractDestinations(srcScript, txType, addressesRet, nRequiredRet) || !addressesRet.size())
                 {
-                    bool invalidOutput = false;
-                    for (auto &oneAddr : addressesRet)
+                    LogPrint("staking", "%s: Invalid stake for OPTION_IDSTAKING -- stake source must be a smart transaction output to a native ID\n", __func__);
+                    return false;
+                }
+                bool invalidOutput = false;
+                for (auto &oneAddr : addressesRet)
+                {
+                    if (oneAddr.which() == COptCCParams::ADDRTYPE_ID)
                     {
-                        if (oneAddr.which() == COptCCParams::ADDRTYPE_ID)
+                        CIdentity stakingIdentity = CIdentity::LookupIdentity(GetDestinationID(oneAddr));
+                        if (stakingIdentity.parent != ASSETCHAINS_CHAINID)
                         {
-                            CIdentity stakingIdentity = CIdentity::LookupIdentity(GetDestinationID(oneAddr));
-                            if (stakingIdentity.parent != ASSETCHAINS_CHAINID)
-                            {
-                                invalidOutput = true;
-                            }
+                            invalidOutput = true;
                         }
-                        else if (oneAddr.which() == COptCCParams::ADDRTYPE_PK ||
-                                 oneAddr.which() == COptCCParams::ADDRTYPE_PKH)
+                    }
+                    else if (oneAddr.which() == COptCCParams::ADDRTYPE_PK ||
+                            oneAddr.which() == COptCCParams::ADDRTYPE_PKH)
+                    {
+                        CCcontract_info CC;
+                        CCcontract_info *cp;
+                        cp = CCinit(&CC, p.evalCode);
+                        if (GetDestinationID(oneAddr) != GetDestinationID(DecodeDestination(CC.unspendableCCaddr)))
                         {
-                            // check for known, standard eval output
-                            COptCCParams p;
-                            if (!srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey.IsPayToCryptoCondition(p))
-                            {
-                                LogPrint("staking", "%s: internal error - this should never happen\n", __func__);
-                                return false;
-                            }
-                            CCcontract_info CC;
-                            CCcontract_info *cp;
-                            cp = CCinit(&CC, p.evalCode);
-                            if (GetDestinationID(oneAddr) != GetDestinationID(DecodeDestination(CC.unspendableCCaddr)))
-                            {
-                                invalidOutput = true;
-                            }
+                            invalidOutput = true;
                         }
-                        if (invalidOutput)
-                        {
-                            LogPrint("staking", "%s: Invalid stake for OPTION_IDSTAKING -- only outputs spendable to native ID of chain may stake\n", __func__);
-                            return false;
-                        }
+                    }
+                    else
+                    {
+                        invalidOutput = true;
+                    }
+                    if (invalidOutput)
+                    {
+                        LogPrint("staking", "%s: Invalid stake for OPTION_IDSTAKING -- only outputs spendable to native ID of chain may stake\n", __func__);
+                        return false;
                     }
                 }
             }

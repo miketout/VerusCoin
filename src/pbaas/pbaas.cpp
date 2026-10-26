@@ -826,6 +826,13 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                                 return state.Error("Invalid prior import tx(" + priorImportTx.GetHash().GetHex() + "): " + cci.ToUniValue().write(1,2));
                             }
 
+                            if (!cci.IsDefinitionImport() && !cci.IsInitialLaunchImport() &&
+                                IsAfterBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) &&
+                                (cci.sourceSystemHeight != ccx.sourceHeightEnd || ccx.destCurrencyID != cci.importCurrencyID))
+                            {
+                                return state.Error(strprintf("%s: import source height or currency does not match its export 1", __func__));
+                            }
+
                             if (ccx.firstInput > 0 && ccx.firstInput < (int32_t)exportTx.vin.size())
                             {
                                 if (!notarization.IsRefunding() &&
@@ -1015,6 +1022,12 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                             }
 
                             haveExportTx = true;
+
+                            if (!cci.IsDefinitionImport() && !cci.IsInitialLaunchImport() &&
+                                (cci.sourceSystemHeight != ccx.sourceHeightEnd || ccx.destCurrencyID != cci.importCurrencyID))
+                            {
+                                return state.Error(strprintf("%s: import source height or currency does not match its export", __func__));
+                            }
 
                             // if this is not first, get prior import from the same source system to this currency,
                             // and verify that it's last height covered is just before this one
@@ -5339,8 +5352,13 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
             // false is error, empty is not false
             if (!std::get<0>(lastConfirmedForImport) &&
                 (!CurrenciesAndNotarizations(tx, currenciesAndNotarizations) ||
-                 !currenciesAndNotarizations.size()))
+                !currenciesAndNotarizations.size()))
             {
+                if (!importCurrencyDef.IsValid())
+                {
+                    // a preconversion to a currency defined neither on chain nor on this transaction is invalid content
+                    return state.Error("Invalid preconversion to undefined currency in reserve transfer " + rt.ToUniValue().write(1,2));
+                }
                 return TransientError(state, "Invalid outputs with reserve transfer " + rt.ToUniValue().write(1,2));
             }
 

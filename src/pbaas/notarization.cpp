@@ -8337,6 +8337,8 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
         // keep looping to erase valid entries from disagreements
     }
 
+    std::set<COutPoint> inputSet;
+
     // for every disagreement, we need to check to ensure that we haven't signed it already
     // and also sign to reject. if we have signed it, we need to revoke our ID, if we are configured to do that
     std::string notaryRevokeAddr = GetArg("-autonotaryrevoke", "");
@@ -8398,6 +8400,47 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                                                                                                         &notarySetRejects,
                                                                                                         &notarySetConfirms);
 
+            if (confirmationResult == CNotaryEvidence::EStates::STATE_REJECTED)
+            {
+                CObjectFinalization rejectOf(CObjectFinalization::FINALIZE_NOTARIZATION, SystemID,
+                                            cnd.vtx[oneD].first.hash, cnd.vtx[oneD].first.n, height);
+
+                rejectOf.SetRejected();
+
+                // spend the pending finalization(s) of the rejected entry
+                for (auto &oneInput : spendsToClose[oneD])
+                {
+                    if (!inputSet.count(oneInput.txIn.prevout))
+                    {
+                        inputSet.insert(oneInput.txIn.prevout);
+                        COptCCParams checkP;
+                        if (!IsScriptTooLargeToSpend(oneInput.scriptPubKey) &&
+                            oneInput.scriptPubKey.IsPayToCryptoCondition(checkP) &&
+                            checkP.IsValid() &&
+                            checkP.evalCode != EVAL_NOTARY_EVIDENCE)
+                        {
+                            txBuilder.AddTransparentInput(oneInput.txIn.prevout, oneInput.scriptPubKey, oneInput.nValue);
+                        }
+                    }
+                    else if (LogAcceptCategory("notarization") && LogAcceptCategory("verbose"))
+                    {
+                        printf("%s: skipping duplicate input: %s\n", __func__, oneInput.txIn.prevout.ToString().c_str());
+                        LogPrintf("%s: skipping duplicate input: %s\n", __func__, oneInput.txIn.prevout.ToString().c_str());
+                    }
+                }
+                // carry the mined signatures as this finalization's evidence
+                rejectOf.evidenceOutputs.push_back(txBuilder.mtx.vout.size() + 1);
+
+                cp = CCinit(&CC, EVAL_FINALIZE_NOTARIZATION);
+                dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
+                txBuilder.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CObjectFinalization>(EVAL_FINALIZE_NOTARIZATION, dests, 1, &rejectOf)), 0);
+
+                cp = CCinit(&CC, EVAL_NOTARY_EVIDENCE);
+                dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
+                txBuilder.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &signatureEvidence)), CNotaryEvidence::DEFAULT_OUTPUT_VALUE);
+                continue;
+            }
+
             // see if it is signed by either a notary we control or the one
             // we should revoke on disagreement, whether or not it is rejected
 
@@ -8430,7 +8473,30 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                             {
                                 ConnectedChains.SetRevokeID(oneID);
                             }
-                            if (notarySetRejects.count(oneID))
+
+                            bool alreadyRejected = false;
+                            std::set<uint32_t> myRejectHeights;
+                            for (auto &oneSigBlock : signatureEvidence.GetNotarySignatures())
+                            {
+                                auto sigIt = oneSigBlock.signatures.find(oneID);
+                                if (oneSigBlock.IsRejected() && sigIt != oneSigBlock.signatures.end())
+                                {
+                                    myRejectHeights.insert(sigIt->second.blockHeight);
+                                }
+                            }
+                            for (auto oneHeight : myRejectHeights)
+                            {
+                                std::map<CIdentityID, CIdentitySignature> rejectsAtHeight;
+                                signatureEvidence.CheckSignatureConfirmation(objHash, hashType, notarySet, minimumNotariesConfirm,
+                                                                             oneHeight, nullptr, &rejectsAtHeight, nullptr);
+                                if (rejectsAtHeight.count(oneID))
+                                {
+                                    alreadyRejected = true;
+                                    break;
+                                }
+                            }
+
+                            if (alreadyRejected)
                             {
                                 // if we already rejected it, nothing to do
                                 continue;
@@ -8925,7 +8991,6 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
         // if we have enough to finalize, do so as a combination of pre-existing evidence and this
         if (confirmationResult == CNotaryEvidence::EStates::STATE_CONFIRMED)
         {
-            std::set<COutPoint> inputSet;
             std::vector<CInputDescriptor> nonEvidenceSpends;
             std::vector<CInputDescriptor> notarizationSpends;
 

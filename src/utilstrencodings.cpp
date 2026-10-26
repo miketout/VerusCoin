@@ -386,28 +386,24 @@ int atoi(const std::string& str)
     return atoi(str.c_str());
 }
 
-/** Upper bound for mantissa.
- * 10^18-1 is the largest arbitrary decimal that will fit in a signed 64-bit integer.
- * Larger integers cannot consist of arbitrary combinations of 0-9:
- *
- *   999999999999999999  1^18-1
- *  9223372036854775807  (1<<63)-1  (max int64_t)
- *  9999999999999999999  1^19-1     (would overflow)
- */
-static const int64_t UPPER_BOUND = 1000000000000000000LL - 1LL;
+/** Upper bound for mantissa: the largest int64_t. The mantissa is accumulated as a
+ *  non-negative magnitude and the sign is applied last, so -INT64_MIN is never needed. */
+static const int64_t MAX_MANTISSA = std::numeric_limits<int64_t>::max();
 
-/** Helper function for ParseFixedPoint */
 static inline bool ProcessMantissaDigit(char ch, int64_t &mantissa, int &mantissa_tzeros)
 {
     if(ch == '0')
         ++mantissa_tzeros;
     else {
         for (int i=0; i<=mantissa_tzeros; ++i) {
-            if (mantissa > (UPPER_BOUND / 10LL))
+            if (mantissa > (MAX_MANTISSA / 10LL))
                 return false; /* overflow */
             mantissa *= 10;
         }
-        mantissa += ch - '0';
+        int64_t digit = ch - '0';
+        if (mantissa > MAX_MANTISSA - digit)
+            return false; /* overflow */
+        mantissa += digit;
         mantissa_tzeros = 0;
     }
     return true;
@@ -465,7 +461,7 @@ bool ParseFixedPoint(const std::string &val, int decimals, int64_t *amount_out)
         }
         if (ptr < end && val[ptr] >= '0' && val[ptr] <= '9') {
             while (ptr < end && val[ptr] >= '0' && val[ptr] <= '9') {
-                if (exponent > (UPPER_BOUND / 10LL))
+                if (exponent > ((MAX_MANTISSA - 9) / 10LL))
                     return false; /* overflow */
                 exponent = exponent * 10 + val[ptr] - '0';
                 ++ptr;
@@ -480,24 +476,22 @@ bool ParseFixedPoint(const std::string &val, int decimals, int64_t *amount_out)
         exponent = -exponent;
     exponent = exponent - point_ofs + mantissa_tzeros;
 
-    /* finalize mantissa */
-    if (mantissa_sign)
-        mantissa = -mantissa;
-
     /* convert to one 64-bit fixed-point value */
     exponent += decimals;
     if (exponent < 0)
         return false; /* cannot represent values smaller than 10^-decimals */
-    if (exponent >= 18)
-        return false; /* cannot represent values larger than or equal to 10^(18-decimals) */
+    if (exponent > 18)
+        return false; /* 10^19 exceeds int64_t, so no nonzero mantissa can be represented */
 
     for (int i=0; i < exponent; ++i) {
-        if (mantissa > (UPPER_BOUND / 10LL) || mantissa < -(UPPER_BOUND / 10LL))
+        if (mantissa > (MAX_MANTISSA / 10LL))
             return false; /* overflow */
         mantissa *= 10;
     }
-    if (mantissa > UPPER_BOUND || mantissa < -UPPER_BOUND)
-        return false; /* overflow */
+
+    /* finalize mantissa */
+    if (mantissa_sign)
+        mantissa = -mantissa;
 
     if (amount_out)
         *amount_out = mantissa;
