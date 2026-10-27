@@ -158,6 +158,18 @@ std::string TrimSpaces(const std::string &Name, bool removeDuals, const std::str
     }
 }
 
+bool HasOnlyUnicodeScalarValues(const std::string &name)
+{
+    const utf8_int8_t *p = (const utf8_int8_t *)name.c_str();
+    utf8_int32_t cp;
+    while (*p)
+    {
+        p = utf8codepoint(p, &cp);
+        if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return false;
+    }
+    return true;
+}
+
 bool CVDXF::HasExplicitParent(const std::string &Name)
 {
     std::string ChainOut;
@@ -1044,7 +1056,7 @@ bool CDataDescriptor::IsValid() const
     // Additional validation: ensure the label contains valid UTF-8
     if (basicValidation && HasLabel())
     {
-        if (utf8valid(label.c_str()) != 0)
+        if (utf8valid(label.c_str()) != 0 || !HasOnlyUnicodeScalarValues(label))
         {
             LogPrint("contentmap", "%s: data descriptor label contains invalid UTF-8: %s\n", __func__, label.substr(0, 50).c_str());
             return false;
@@ -1053,7 +1065,7 @@ bool CDataDescriptor::IsValid() const
 
     if (basicValidation && HasMIME())
     {
-        if (utf8valid(mimeType.c_str()) != 0)
+        if (utf8valid(mimeType.c_str()) != 0 || !HasOnlyUnicodeScalarValues(mimeType))
         {
             LogPrint("contentmap", "%s: data descriptor MIME type contains invalid UTF-8: %s\n", __func__, mimeType.substr(0, 50).c_str());
             return false;
@@ -1089,7 +1101,7 @@ UniValue CDataDescriptor::ToUniValue() const
         // Create a string from the binary data
         std::string messageStr(objectData.begin(), objectData.end());
 
-        if (utf8valid(messageStr.c_str()) == 0) {
+        if (utf8valid(messageStr.c_str()) == 0 && HasOnlyUnicodeScalarValues(messageStr)) {
             // Safe to use as a message string
             UniValue objectDataUni(UniValue::VOBJ);
             objectDataUni.pushKV("message", messageStr);
@@ -1698,7 +1710,7 @@ bool CCredential::IsValid() const
     // Validate UTF-8 in label field
     if (basicValid && !label.empty())
     {
-        if (utf8valid(label.c_str()) != 0)
+        if (utf8valid(label.c_str()) != 0 || !HasOnlyUnicodeScalarValues(label))
         {
             return false;
         }

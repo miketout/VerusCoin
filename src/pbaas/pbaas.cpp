@@ -4206,6 +4206,12 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
         return state.Error("Invalid currency definition in output");
     }
 
+    uint160 newCurParent = newCurrency.parent;
+    if (!HasOnlyUnicodeScalarValues(CleanName(newCurrency.name, newCurParent)))
+    {
+        return state.Error("Invalid, non-unicode scalar name characters specified in currency definition");
+    }
+
     if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
     {
         int nativeType = newCurrency.nativeCurrencyID.TypeNoFlags();
@@ -4223,6 +4229,18 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
         {
             return state.Error("Native currency ID may not have gateway destinations");
         }
+        if (nativeType == CTransferDestination::DEST_ETHNFT)
+        {
+            CETHNFTAddress nftAddr;
+            bool parsed = false;
+            ::FromVector(newCurrency.nativeCurrencyID.destination, nftAddr, &parsed);
+            if (!parsed ||
+                ::AsVector(nftAddr) != newCurrency.nativeCurrencyID.destination ||
+                nftAddr.contractID.IsNull())
+            {
+                return state.Error("Invalid ETH NFT address in native currency ID");
+            }
+        }
         int auxCount = newCurrency.nativeCurrencyID.AuxDestCount();
         if (auxCount)
         {
@@ -4233,8 +4251,12 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
                 !(nativeType == CTransferDestination::DEST_ETH || nativeType == CTransferDestination::DEST_ETHNFT) ||
                 auxDest.TypeNoFlags() != CTransferDestination::DEST_PK ||
                 auxDest.destination.size() != 33 ||
+                auxDest.destination[0] != 0x02 ||
                 auxDest.AuxDestCount() ||
-                auxDest.HasGatewayLeg())
+                auxDest.HasGatewayLeg() ||
+                (nativeType == CTransferDestination::DEST_ETHNFT &&
+                 !std::equal(auxDest.destination.begin() + 1, auxDest.destination.end(),
+                             newCurrency.nativeCurrencyID.destination.begin() + 20)))
             {
                 return state.Error("Native currency ID may carry only one public key auxiliary destination, for an ERC1155 mapping");
             }
@@ -12610,6 +12632,10 @@ GetPendingExports(const CCurrencyDefinition &sourceChain,
                 }
             }
             exports.push_back(oneExport);
+            if (exports.size() >= CCrossChainExport::MAX_PENDING_EXPORTS_PER_PASS)
+            {
+                break;
+            }
         }
     }
     return exports;

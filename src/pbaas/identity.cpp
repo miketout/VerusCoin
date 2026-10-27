@@ -1999,7 +1999,8 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
                         (((chainActive.ChainTimeAtOrBefore(height - 1) < PBAAS_PREMAINNET_ACTIVATION ||
                            burnSet.count(newIdentity.GetID())) &&
                           newIdentity.name == CleanName(newIdentity.name, dummyParent)) ||
-                         newIdentity.name == CleanName(newIdentity.name, dummyParent, true)) &&
+                         newIdentity.name == CleanName(newIdentity.name, dummyParent, true) &&
+                         HasOnlyUnicodeScalarValues(newIdentity.name)) &&
                         (advNewName.IsValid() ?
                            newIdentity.parent == advNewName.parent :
                            (newIdentity.parent == ASSETCHAINS_CHAINID ||
@@ -2177,6 +2178,10 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
         if (cleanName.empty())
         {
             return state.Error("Invalid name characters specified in identity registration");
+        }
+        if (!HasOnlyUnicodeScalarValues(cleanName))
+        {
+            return state.Error("Invalid, non-unicode scalar name characters specified in identity registration");
         }
         std::vector<unsigned char> base58Vec;
         if (DecodeBase58Check(cleanName, base58Vec) && base58Vec.size() > 20)

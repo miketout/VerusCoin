@@ -1025,13 +1025,10 @@ public:
     enum {
         MIN_BLOCKS = 10,
         MIN_INPUTS = 10,
-        MAX_FEE_INPUTS = 50                         // when we reach 50 or more inputs, we get maximum fees as an exporter
-    };
-
-    enum
-    {
-        MIN_FEES_BEFORE_FEEPOOL = 20000,            // MAX(MIN(this, max avail), RATIO_OF_EXPORT_FEE of export fees) is sent to exporter
+        MAX_FEE_INPUTS = 50,                    // when we reach 50 or more inputs, we get maximum fees as an exporter
+        MIN_FEES_BEFORE_FEEPOOL = 20000,        // MAX(MIN(this, max avail), RATIO_OF_EXPORT_FEE of export fees) is sent to exporter
         RATIO_OF_EXPORT_FEE = 10000000,
+        MAX_PENDING_EXPORTS_PER_PASS = 10
     };
 
     enum EVersions

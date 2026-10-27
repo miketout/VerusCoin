@@ -1655,7 +1655,7 @@ public:
     // For a plain login (username and password):
     // - An average length email is around 30 characters
     // - A 15 word password from the eff long wordlist is around 120 characters
-    // - The brackets, quotes and commas needed for the string are 7 characters. 
+    // - The brackets, quotes and commas needed for the string are 7 characters.
     // The total of 157 characters fits easily into 512 characters and has space
     // for larger fields that future credential types may have.
     static const size_t MAX_JSON_STRING_LENGTH = 512;
@@ -1744,6 +1744,7 @@ public:
 std::string TrimLeading(const std::string &Name, unsigned char ch);
 std::string TrimTrailing(const std::string &Name, unsigned char ch);
 std::string TrimSpaces(const std::string &Name, bool removeDuals=false, const std::string &invalidChars="\\/:*?\"<>|");
+bool HasOnlyUnicodeScalarValues(const std::string &name);
 
 // this deserializes a vector into either a VDXF data object or a VDXF structured
 // object, which may contain one or more VDXF data objects.
