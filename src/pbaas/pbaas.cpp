@@ -8699,9 +8699,18 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
             else if (useProofs)
             {
                 // make sure we have the latest, confirmed proof roots to prove this import
-                if (proofNotarization.proposer.AuxDestCount())
+                // auxdest 0 is the beneficiary of an accepted notarization, but on a contract upgrade
+                // earned notarization it is the DEST_ETH contract address, which is not a valid proposer
+                CTransferDestination proofAuxDest = proofNotarization.proposer.AuxDestCount() ?
+                                                        proofNotarization.proposer.GetAuxDest(0) :
+                                                        CTransferDestination();
+                
+                if (!proofNotarization.IsContractUpgrade() &&
+                    (proofAuxDest.TypeNoFlags() == CTransferDestination::DEST_PK ||
+                     proofAuxDest.TypeNoFlags() == CTransferDestination::DEST_PKH ||
+                     proofAuxDest.TypeNoFlags() == CTransferDestination::DEST_ID))
                 {
-                    lastNotarization.proposer = proofNotarization.proposer.GetAuxDest(0);
+                    lastNotarization.proposer = proofAuxDest;
                 }
                 else
                 {
