@@ -8059,6 +8059,7 @@ bool PrecheckFeePool(const CTransaction &tx, int32_t outNum, CValidationState &s
         p.evalCode == EVAL_FEE_POOL &&
         p.vData.size() &&
         (fp = CFeePool(p.vData[0])).IsValid() &&
+        !fp.reserveValues.HasNegative() &&
         p.IsEvalPKOut() &&
         ::AsVector(fp) == p.vData[0])
     {

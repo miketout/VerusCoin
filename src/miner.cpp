@@ -3695,6 +3695,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                 feePool.reserveValues.valueMap[VERUS_CHAINID] -= verusFees;
             }
 
+            feePool.reserveValues = feePool.reserveValues.CanonicalMap();
             cp = CCinit(&CC, EVAL_FEE_POOL);
             pkCC = CPubKey(ParseHex(CC.CChexstr));
             coinbaseTx.vout.push_back(CTxOut(0,MakeMofNCCScript(CConditionObj<CFeePool>(EVAL_FEE_POOL,{pkCC.GetID()},1,&feePool))));

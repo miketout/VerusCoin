@@ -12532,10 +12532,16 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                 }
 
                 // if we get here, store the verified proof root of this chain as notarized
-                LOCK(ConnectedChains.cs_mergemining);
-                ConnectedChains.notarySystems[notarization.currencyID].lastConfirmedNotarization = notarization;
-                // we should persist this notarization off-chain as a checkpoint
-                // NOTE: this should be the last check before a return true
+                if (ConnectedChains.pendingFinalityCandidates.find(notarization.currencyID) == ConnectedChains.pendingFinalityCandidates.end() ||
+                    !ConnectedChains.pendingFinalityCandidates[notarization.currencyID].proofRoots.count(ASSETCHAINS_CHAINID) ||
+                    (notarization.proofRoots.count(ASSETCHAINS_CHAINID) &&
+                     ConnectedChains.pendingFinalityCandidates[notarization.currencyID].proofRoots[ASSETCHAINS_CHAINID].rootHeight <
+                        notarization.proofRoots[ASSETCHAINS_CHAINID].rootHeight))
+                {
+                    ConnectedChains.pendingFinalityCandidates[notarization.currencyID] = notarization;
+                    // we should persist this notarization off-chain as a checkpoint if we are part of an accepted block
+                    // NOTE: this should be the last check before a return true
+                }
             }
             else
             {

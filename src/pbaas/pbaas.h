@@ -995,6 +995,7 @@ public:
 
     // make earned notarizations for one or more notary chains
     std::map<uint160, CNotarySystemInfo> notarySystems;
+    std::map<uint160, CPBaaSNotarization> pendingFinalityCandidates;
     std::set<uint160> idsToRevoke;
 
     CCurrencyDefinition thisChain;

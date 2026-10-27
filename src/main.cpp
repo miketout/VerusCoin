@@ -3830,6 +3830,8 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     //fprintf(stderr,"connectblock ht.%d\n",(int32_t)pindex->GetHeight());
     AssertLockHeld(cs_main);
 
+    ConnectedChains.pendingFinalityCandidates.clear();
+
     // either set at activate best chain or when we connect block 1
     if (nHeight == 1)
     {
@@ -5022,6 +5024,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                 intersectMap.valueMap[VERUS_CHAINID] = 1;
             }
             if (!(feePool = CFeePool(block.vtx[0])).IsValid() ||
+                feePool.reserveValues.HasNegative() ||
                 (feePoolVal = feePool.reserveValues.valueMap[ASSETCHAINS_CHAINID]) < (feePoolCheckVal - rewardFees) ||
                 feePoolVal > feePoolCheckVal ||
                 (!isVerusActive &&
@@ -5314,6 +5317,31 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             return AbortNode(state, "Failed to write blockhash index");
     }
     // END insightexplorer
+
+    if (!isVerusActive && ConnectedChains.pendingFinalityCandidates.size())
+    {
+        for (auto &candidate : ConnectedChains.pendingFinalityCandidates)
+        {
+            LOCK(ConnectedChains.cs_mergemining);
+            if (ConnectedChains.notarySystems.find(candidate.second.currencyID) != ConnectedChains.notarySystems.end())
+            {
+                CPBaaSNotarization &current = ConnectedChains.notarySystems[candidate.second.currencyID].lastConfirmedNotarization;
+                if (((!current.IsValid() ||
+                      !current.proofRoots.count(ASSETCHAINS_CHAINID)) &&
+                      candidate.second.proofRoots.count(ASSETCHAINS_CHAINID)) ||
+                    (current.IsValid() &&
+                     current.proofRoots.count(ASSETCHAINS_CHAINID) &&
+                     current.proofRoots[ASSETCHAINS_CHAINID].rootHeight < candidate.second.proofRoots[ASSETCHAINS_CHAINID].rootHeight &&
+                     (!current.proofRoots.count(candidate.second.currencyID) ||
+                      (candidate.second.proofRoots.count(candidate.second.currencyID) &&
+                       current.proofRoots[candidate.second.currencyID].rootHeight <= candidate.second.proofRoots[candidate.second.currencyID].rootHeight))))
+                {
+                    current = candidate.second;
+                }
+            }
+        }
+        ConnectedChains.pendingFinalityCandidates.clear();
+    }
 
     if (newThisChain.IsValid())
     {
