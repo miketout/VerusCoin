@@ -1678,6 +1678,15 @@ public:
         return uint256();
     }
 
+    uint256 GetChainPower() const
+    {
+        if (type == TYPE_PBAAS && IsChainProof())
+        {
+            return ((CMMRPowerNodeBranch *)(txProof.proofSequence[2]))->GetPrefixPower();
+        }
+        return uint256();
+    }
+
     uint256 GetRootPower() const
     {
         if (type == TYPE_PBAAS && IsChainProof())

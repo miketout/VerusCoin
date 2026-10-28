@@ -669,6 +669,16 @@ public:
         return uint256();
     }
 
+    uint256 GetChainPower() const
+    {
+        int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
+        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        {
+            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->GetPrefixPower();
+        }
+        return uint256();
+    }
+
     uint32_t GetBlockHeight() const
     {
         int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
@@ -800,6 +810,16 @@ public:
             {
                 return branch[0];
             }
+        }
+        return uint256();
+    }
+
+    uint256 GetChainPower() const
+    {
+        int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
+        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        {
+            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->GetPrefixPower();
         }
         return uint256();
     }

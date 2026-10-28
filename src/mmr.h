@@ -415,6 +415,34 @@ public:
         }
         return hash;
     }
+
+    // cumulative power of the chain through the proven leaf, from a power-node branch; null for other node types
+    uint256 GetPrefixPower() const
+    {
+        if (NODETYPE::GetExtraHashCount() != 1 || branch.size() < 1 || !(branch.size() & 1))
+        {
+            return uint256();
+        }
+        int64_t index = GetMMRProofIndex(nIndex, nSize, NODETYPE::GetExtraHashCount());
+        if (index == -1)
+        {
+            return uint256();
+        }
+        arith_uint256 prefix = UintToArith256(branch[0]);       // the leaf's own power
+        arith_uint256 childPower = prefix;
+        index >>= 1;                                            // bit for branch[0] is always 0
+        for (size_t i = 1; i + 1 < branch.size(); i += 2)
+        {
+            arith_uint256 parentPower = UintToArith256(branch[i + 1]);
+            if (index & 1)                                      // we are the right child, sibling is earlier
+            {
+                prefix += parentPower - childPower;
+            }
+            childPower = parentPower;
+            index >>= 2;                                        // sibling bit, then the parent power's zero bit
+        }
+        return ArithToUint256(prefix);
+    }
 };
 typedef CMMRBranch<CBLAKE2bWriter> CMMRNodeBranch;
 typedef CMMRBranch<CBLAKE2bWriter, CMMRPowerNode<CBLAKE2bWriter>> CMMRPowerNodeBranch;
