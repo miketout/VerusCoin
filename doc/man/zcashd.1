@@ -17,14 +17,10 @@ Start Zcash Daemon
 .IP
 This help message
 .HP
-\fB\-alerts\fR
-.IP
-Receive and display P2P network alerts (default: 1)
-.HP
 \fB\-alertnotify=\fR<cmd>
 .IP
-Execute command when a relevant alert is received or we see a really
-long fork (%s in cmd is replaced by message)
+Execute command on node end\-of\-service or when we see a really long fork
+(%s in cmd is replaced by message)
 .HP
 \fB\-blocknotify=\fR<cmd>
 .IP
@@ -331,7 +327,7 @@ Debugging/Testing options:
 .IP
 Output debugging information (default: 0, supplying <category> is
 optional). If <category> is not supplied or if <category> = 1, output
-all debugging information. <category> can be: addrman, alert, bench,
+all debugging information. <category> can be: addrman, bench,
 coindb, db, estimatefee, http, libevent, lock, mempool, net,
 partitioncheck, pow, proxy, prune, rand, reindex, rpc, selectcoins, tor,
 zmq, zrpc, zrpcunsafe (implies zrpc).
