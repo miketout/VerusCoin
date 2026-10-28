@@ -101,4 +101,52 @@ BOOST_AUTO_TEST_CASE(prefix_power_tamper)
     BOOST_CHECK(branch.SafeCheck(PreHash(9)) != root);
 }
 
+// GetProof must select the peak by height: a one-leaf peak equal in hash to the first peak still proves everywhere
+BOOST_AUTO_TEST_CASE(duplicate_peak_hash_proof)
+{
+    typedef CMerkleMountainRange<CDefaultMMRNode, CChunkedLayer<CDefaultMMRNode, 2>> HashMMR;
+    typedef CMerkleMountainView<CDefaultMMRNode, CChunkedLayer<CDefaultMMRNode, 2>> HashMMV;
+
+    // 4+2+1, 8+2+1, 8+4+1, 8+4+2+1 leaves: the final peak is one leaf, and there are three or four peaks
+    for (uint64_t n : {7, 11, 13, 15})
+    {
+        HashMMR mmr;
+        for (uint64_t i = 0; i + 1 < n; i++)
+        {
+            mmr.Add(CDefaultMMRNode(uint256S(std::to_string(i + 1))));
+        }
+
+        // the tallest peak has height floor(log2(n)); make the final one-leaf peak its exact hash
+        uint32_t topHeight = 0;
+        while ((n >> (topHeight + 1)) != 0)
+        {
+            topHeight++;
+        }
+        uint256 repeated = mmr.GetNode(topHeight, 0).hash;
+        mmr.Add(CDefaultMMRNode(repeated));
+
+        HashMMV view(mmr);
+        BOOST_REQUIRE_EQUAL(view.size(), n);
+        uint256 root = view.GetRoot();
+
+        for (uint64_t pos = 0; pos < n; pos++)
+        {
+            CMMRProof proof;
+            BOOST_REQUIRE(view.GetProof(proof, pos));
+            BOOST_REQUIRE_EQUAL(proof.proofSequence.size(), (size_t)1);
+            BOOST_REQUIRE(proof.proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_NODE);
+
+            uint256 leaf = (pos + 1 == n) ? repeated : uint256S(std::to_string(pos + 1));
+            BOOST_CHECK_MESSAGE(proof.CheckProof(leaf) == root, "n=" << n << " pos=" << pos);
+        }
+
+        // the duplicate leaf is its own peak: its branch holds one sibling per peak-merkle layer it is hashed in,
+        // nothing from inside the tall peak (one sibling with three peaks, two with four)
+        CMMRProof last;
+        BOOST_REQUIRE(view.GetProof(last, n - 1));
+        const CMMRNodeBranch &branch = *(CMMRNodeBranch *)last.proofSequence[0];
+        BOOST_CHECK_EQUAL(branch.branch.size(), view.GetPeaks().size() == 3 ? (size_t)1 : (size_t)2);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
