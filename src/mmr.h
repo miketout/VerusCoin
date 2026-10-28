@@ -104,7 +104,7 @@ public:
     CMMRPowerNode(uint256 Hash, uint256 Power) : hash(Hash), power(Power) {}
 
     template <typename SERIALIZABLE>
-    static const uint256 &HashObj(const SERIALIZABLE &obj)
+    static const uint256 HashObj(const SERIALIZABLE &obj)
     {
         HASHALGOWRITER hw(SER_GETHASH, 0);
         hw << obj;
