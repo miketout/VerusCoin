@@ -2058,7 +2058,10 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
         // Check for non-standard pay-to-script-hash in inputs
         if (Params().RequireStandard() && !AreInputsStandard(tx, view, consensusBranchId))
-            return error("AcceptToMemoryPool: reject nonstandard transaction input");
+        {
+            return state.DoS(0, error("AcceptToMemoryPool: reject nonstandard transaction input"),
+                             REJECT_NONSTANDARD, "bad-txns-nonstandard-inputs");
+        }
 
         // Check that the transaction doesn't have an excessive number of
         // sigops, making it impossible to mine. Since the coinbase transaction
@@ -4129,6 +4132,12 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                    nHeight < 1800000)))
             {
                 LogPrintf("%s: ERROR: %s\nBlock %s rejected\n", __func__, state.GetRejectReason().c_str(), block.GetHash().GetHex().c_str());
+
+                if (!state.IsInvalid() && !state.IsError() && state.GetRejectCode() != REJECT_TRANSIENT)
+                {
+                    state.DoS(0, false, REJECT_INVALID, "bad-txns-rejected-without-state");
+                }
+
                 if (state.IsInvalid())
                 {
                     InvalidBlockFound(pindex, state, Params());
@@ -5105,7 +5114,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             __func__,
             block.vtx[0].GetValueOut(),
             nativeBlockReward,
-            block.vtx[0].GetReserveValueOut().ToUniValue().write(1,2).c_str(),
+            reserveValueOut.ToUniValue().write(1,2).c_str(),
             validExtraCoinbaseOutputs.ToUniValue().write(1,2).c_str());
         if ( ASSETCHAINS_SYMBOL[0] != 0 || pindex->GetHeight() >= KOMODO_NOTARIES_HEIGHT1 || block.vtx[0].vout[0].nValue > nativeBlockReward )
         {

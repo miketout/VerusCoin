@@ -3576,7 +3576,7 @@ bool ValidateIdentityCommitment(struct CCcontract_info *cp, Eval* eval, const CT
     {
         printf("%s: error getting transaction %s to spend\n", __func__, spendingTx.vin[nIn].prevout.hash.GetHex().c_str());
         LogPrintf("%s: error getting transaction %s to spend\n", __func__, spendingTx.vin[nIn].prevout.hash.GetHex().c_str());
-        return false;
+        return eval->Invalid("cannot get transaction to spend for identity commitment");
     }
 
     return true;

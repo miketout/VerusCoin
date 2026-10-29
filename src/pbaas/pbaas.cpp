@@ -2389,7 +2389,7 @@ bool ValidateFinalizeExport(struct CCcontract_info *cp, Eval* eval, const CTrans
         TxToUniv(tx, uint256(), jsonTx);
         LogPrintf("%s: failed spending finalize export:\n%s\n with tx:\n%s\n\n", __func__, scriptUni.write(1,2).c_str(), jsonTx.write(1,2).c_str());
     }
-    return false;
+    return eval->Invalid("invalid finalize export spend");
 }
 
 bool IsFinalizeExportInput(const CScript &scriptSig)

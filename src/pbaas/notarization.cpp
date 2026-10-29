@@ -8507,16 +8507,44 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                     }
                 }
 
-                // carry the mined signatures as this finalization's evidence
-                rejectOf.evidenceOutputs.push_back(txBuilder.mtx.vout.size() + 1);
+                // carry the mined signatures as this finalization's evidence, split if too large
+                cp = CCinit(&CC, EVAL_NOTARY_EVIDENCE);
+                dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
+                std::vector<CTxOut> rejectEvidenceOutputs;
+                CScript sigScript = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &signatureEvidence));
+                if (sigScript.size() >= CScript::MAX_SCRIPT_ELEMENT_SIZE)
+                {
+                    CNotaryEvidence emptyEvidence;
+                    int baseOverhead = MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &emptyEvidence)).size() + 128;
+                    auto chunks = signatureEvidence.BreakApart(CScript::MAX_SCRIPT_ELEMENT_SIZE - baseOverhead);
+                    if (!chunks.size())
+                    {
+                        LogPrintf("%s: failed to package rejection evidence for notarization of system %s\n", __func__, EncodeDestination(CIdentityID(cnd.vtx[0].second.currencyID)).c_str());
+                        return state.Error(errorPrefix + "failed to package evidence for notarization");
+                    }
+                    for (auto &oneProof : chunks)
+                    {
+                        rejectEvidenceOutputs.push_back(CTxOut(CNotaryEvidence::DEFAULT_OUTPUT_VALUE, MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &oneProof))));
+                    }
+                }
+                else
+                {
+                    rejectEvidenceOutputs.push_back(CTxOut(CNotaryEvidence::DEFAULT_OUTPUT_VALUE, sigScript));
+                }
 
+                // record every evidence index before the finalization is serialized: finalization at N, evidence at N+1..N+k
+                rejectOf.evidenceOutputs.clear();
+                for (int k = 1; k <= rejectEvidenceOutputs.size(); k++)
+                {
+                    rejectOf.evidenceOutputs.push_back(txBuilder.mtx.vout.size() + k);
+                }
                 cp = CCinit(&CC, EVAL_FINALIZE_NOTARIZATION);
                 dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
                 txBuilder.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CObjectFinalization>(EVAL_FINALIZE_NOTARIZATION, dests, 1, &rejectOf)), 0);
-
-                cp = CCinit(&CC, EVAL_NOTARY_EVIDENCE);
-                dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
-                txBuilder.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CNotaryEvidence>(EVAL_NOTARY_EVIDENCE, dests, 1, &signatureEvidence)), CNotaryEvidence::DEFAULT_OUTPUT_VALUE);
+                for (auto &oneOut : rejectEvidenceOutputs)
+                {
+                    txBuilder.AddTransparentOutput(oneOut.scriptPubKey, oneOut.nValue);
+                }
                 continue;
             }
 
@@ -8703,12 +8731,22 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
         return state.Error("stale-block");
     }
 
+    if (txBuilder.mtx.vout.size())
+    {
+        txBuilders.push_back(txBuilder);
+        txBuilder = TransactionBuilder(Params().GetConsensus(), nHeight, pWallet);
+    }
+    auto failUnlessQueued = [&](const std::string &err)
+    {
+        return txBuilders.size() ? true : state.Error(err);
+    };
+
     // if the most recent valid earned notarization is prior to the eligible height,
     // we cannot finalize until a more recent one is mined
 
     if (!proofRootArr.isArray() || !proofRootArr.size())
     {
-        return state.Error("no-valid-unconfirmed");
+        return failUnlessQueued("no-valid-unconfirmed");
     }
 
     bool retVal = false;
@@ -8755,7 +8793,8 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
         oneFork.resize(validLen);
     }
 
-    if (verifiedSize < bestFork.size())
+    bool bestForkPruned = verifiedSize < bestFork.size();
+    if (bestForkPruned)
     {
         bestFork.resize(verifiedSize);
         prunedData.forks[prunedData.bestChain].resize(verifiedSize);
@@ -8777,15 +8816,9 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                                             confirmedNotarizationHeight,
                                             txes);
 
-    if (!pNotaryCurrency->IsPBaaSChain() || confirmIfSigned == -1)
+    if ((bestForkPruned && !pNotaryCurrency->IsPBaaSChain()) || confirmIfSigned == -1)
     {
-        if (txBuilder.mtx.vout.size())
-        {
-            // we have signed rejections to publish even though nothing can be confirmed
-            txBuilders.push_back(txBuilder);
-            return true;
-        }
-        return state.Error("insufficient validator confirmations after pruning disagreements");
+        return txBuilders.size() ? true : state.Error("insufficient validator confirmations after pruning disagreements");
     }
 
     // we can now confirm either confirmIfSigned or confirmIfAuto
@@ -8849,7 +8882,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                     checkOf.currencyID == SystemID &&
                     checkOf.IsConfirmed())
                 {
-                    return state.Error("notarization confirmed in mempool");
+                    return failUnlessQueued("notarization confirmed in mempool");
                 }
             }
         }
@@ -8857,7 +8890,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
         if (!cnd.CorrelatedFinalizationSpends(txes, spendsToClose, extraSpends, &evidenceVec) ||
             !cnd.CalculateConfirmation(idx, confirmedOutputNums, invalidatedOutputNums))
         {
-            return state.Error("invalid-correlated-spends");
+            return failUnlessQueued("invalid-correlated-spends");
         }
 
         if (LogAcceptCategory("notarization"))
@@ -8902,7 +8935,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
               p.IsValid() &&
               p.evalCode != EVAL_NONE))
         {
-            return state.Error(errorPrefix + "invalid output for notarization");
+            return failUnlessQueued(errorPrefix + "invalid output for notarization");
         }
 
         CNativeHashWriter hw(hashType);
@@ -9020,7 +9053,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                         }
                         else
                         {
-                            return state.Error(errorPrefix + "invalid identity signature");
+                            return failUnlessQueued(errorPrefix + "invalid identity signature");
                         }
                     }
                 }
@@ -9065,7 +9098,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                 if (!mergedVec.size())
                 {
                     LogPrintf("%s: failed to package evidence for notarization of system %s\n", __func__, EncodeDestination(CIdentityID(cnd.vtx[0].second.currencyID)).c_str());
-                    return state.Error(errorPrefix + "failed to package evidence for notarization");
+                    return failUnlessQueued(errorPrefix + "failed to package evidence for notarization");
                 }
                 for (auto &oneProof : mergedVec)
                 {
@@ -9100,7 +9133,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                         tPOF.output == of.output &&
                         tPOF.IsConfirmed())
                     {
-                        return state.Error(errorPrefix + "target notarization already confirmed");
+                        return failUnlessQueued(errorPrefix + "target notarization already confirmed");
                     }
                     if (inputSet.count(oneInput.txIn.prevout))
                     {
@@ -9321,7 +9354,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
         }
         break;
     }
-    return retVal;
+    return retVal || txBuilders.size();
 }
 
 bool CallNotary(const CRPCChainData &notarySystem, std::string command, const UniValue &params, UniValue &result, UniValue &error, int timeout=15);
@@ -12351,7 +12384,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
         {
             lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1);
         }
-        return TransientError(state, "unable to get last confirmed notarization");
+        return state.Error("unable to get last confirmed notarization");
     }
 
     if (currentFinalization.IsConfirmed() || currentFinalization.IsRejected())

@@ -1615,7 +1615,7 @@ public:
     bool IsChainProof() const
     {
         return IsValid() &&
-               ((type == TYPE_ETH) ||
+               ((type == TYPE_ETH && txProof.proofSequence.size() == 1 && txProof.proofSequence[0]->branchType == CMerkleBranchBase::BRANCH_ETH) ||
                 (TYPE_PBAAS == type &&
                  txProof.proofSequence.size() >= 3 &&
                  txProof.proofSequence[1]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_NODE &&

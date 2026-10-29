@@ -629,8 +629,10 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
                       rootIt->second.stateRoot ==
                         ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.CheckPartialTransaction(exportTx, &isPartial, optimizeETHProof) &&
                       ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.TransactionHash() == pBaseImport->exportTxId &&
-                      (((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.type == CPartialTransactionProof::TYPE_ETH ||
-                       ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.GetProofHeight() == rootIt->second.rootHeight) &&
+                      ((((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.type == CPartialTransactionProof::TYPE_ETH &&
+                        ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.IsChainProof()) ||
+                       (((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.type != CPartialTransactionProof::TYPE_ETH &&
+                         ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.GetProofHeight() == rootIt->second.rootHeight) &&
                       exportTx.vout.size() > pBaseImport->exportTxOutNum &&
                       exportTx.vout[pBaseImport->exportTxOutNum].scriptPubKey.IsPayToCryptoCondition(p) &&
                       p.IsValid() &&
@@ -8042,7 +8044,7 @@ int64_t CCostBasisTracker::GetConversionCostBasisNative(const CPBaaSNotarization
 bool ValidateFeePool(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled)
 {
     // fee pool output is unspendable
-    return false;
+    return eval->Invalid("fee pool outputs are unspendable");
 }
 
 bool IsFeePoolInput(const CScript &scriptSig)
