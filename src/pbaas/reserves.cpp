@@ -632,7 +632,7 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
                       ((((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.type == CPartialTransactionProof::TYPE_ETH &&
                         ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.IsChainProof()) ||
                        (((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.type != CPartialTransactionProof::TYPE_ETH &&
-                         ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.GetProofHeight() == rootIt->second.rootHeight) &&
+                         ((CChainObject<CPartialTransactionProof> *)transactionProof.evidence.chainObjects[0])->object.GetProofHeight() == rootIt->second.rootHeight)) &&
                       exportTx.vout.size() > pBaseImport->exportTxOutNum &&
                       exportTx.vout[pBaseImport->exportTxOutNum].scriptPubKey.IsPayToCryptoCondition(p) &&
                       p.IsValid() &&
