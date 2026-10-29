@@ -1167,7 +1167,12 @@ bool AsyncRPCOperation_sendmany::find_utxos(bool fAcceptProtectedCoinbase)
         bool canSign, canSpend;
         CTxDestination address;
         txnouttype txType;
-        if (!ExtractDestinations(out.tx->vout[out.i].scriptPubKey, txType, addresses, nRequired, pwalletMain, &canSign, &canSpend, nHeight - out.nDepth))
+
+        // identities are resolved as the spend will resolve them, at the next block. a pre-PBaaS output version is only
+        // valid when judged at its own height, so for those fall back to the output's block (plus one: the lookup is at h - 1)
+        uint32_t outputHeight = (nHeight - out.nDepth) + 1;
+        if (!ExtractDestinations(out.tx->vout[out.i].scriptPubKey, txType, addresses, nRequired, pwalletMain, &canSign, &canSpend, nHeight + 1) &&
+            !ExtractDestinations(out.tx->vout[out.i].scriptPubKey, txType, addresses, nRequired, pwalletMain, &canSign, &canSpend, outputHeight + 1))
         {
             continue;
         }

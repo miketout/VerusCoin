@@ -9259,6 +9259,8 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                                                 cnd.vtx[oneConfirmedIdx].first.n,
                                                 height);
 
+                        oneConfirmedFinalization.evidenceInputs = evidenceInputs;
+
                         cp = CCinit(&CC, EVAL_FINALIZE_NOTARIZATION);
                         dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
 
@@ -9276,6 +9278,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
 
                 auto newTxBuilder = TransactionBuilder(Params().GetConsensus(), nHeight, pWallet);
                 TransactionBuilder &oneInvalidatedBuilder = makeInputTx ? newTxBuilder : txBuilder;
+                std::vector<int32_t> invalidatedEvidenceInputs;
 
                 for (auto &oneInput : spendsToClose[oneInvalidatedIdx])
                 {
@@ -9288,6 +9291,7 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                             checkP.IsValid() &&
                             checkP.evalCode != EVAL_NOTARY_EVIDENCE)
                         {
+                            invalidatedEvidenceInputs.push_back(oneInvalidatedBuilder.mtx.vin.size());
                             oneInvalidatedBuilder.AddTransparentInput(oneInput.txIn.prevout, oneInput.scriptPubKey, oneInput.nValue);
                         }
                     }
@@ -9305,6 +9309,8 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                                                                                         cnd.vtx[oneInvalidatedIdx].first.hash,
                                                                                         cnd.vtx[oneInvalidatedIdx].first.n,
                                                                                         height);
+
+                    oneConfirmedFinalization.evidenceInputs = invalidatedEvidenceInputs;
 
                     cp = CCinit(&CC, EVAL_FINALIZE_NOTARIZATION);
                     dests = std::vector<CTxDestination>({CPubKey(ParseHex(CC.CChexstr))});
@@ -13142,6 +13148,15 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
         }
         else
         {
+            // an output that already has a confirmed or rejected finalization gets no new pending finalization
+            if (CObjectFinalization::GetFinalizations(currentFinalization.output,
+                                                      CObjectFinalization::ObjectFinalizationFinalizedKey(),
+                                                      pCurNotarizationBlkIndex->GetHeight(),
+                                                      height - 1).size())
+            {
+                return state.Error("notarization already finalized; no new pending finalization");
+            }
+
             std::tuple<uint32_t, CTransaction, CUTXORef, CPBaaSNotarization> priorNotarizationInfo =
                 GetPriorReferencedNotarization(finalizedTx, currentFinalization.output.n, notarization);
 
@@ -13208,43 +13223,45 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                 break;
             }
         }
-        if (evidenceVec.size() && !hasSignature)
+
+        if (!hasSignature)
         {
-            // if this notarization refers to a pending notarization that we spend on the input, which refers to this same
-            // notarization or a pending finalization of it as evidence, we can spend it
-            if (currentFinalization.evidenceInputs.size())
+            // declared evidence inputs must exist
+            for (auto oneInIdx : currentFinalization.evidenceInputs)
             {
-                for (auto oneInIdx : currentFinalization.evidenceInputs)
+                if (oneInIdx >= tx.vin.size())
                 {
-                    if (oneInIdx >= tx.vin.size())
-                    {
-                        return state.Error("invalid evidence inputs");
-                    }
-                    auto &oneIn = tx.vin[oneInIdx];
-                    CUTXORef inputRef(oneIn.prevout);
-                    if (inputRef == currentFinalization.output)
-                    {
-                        return true;
-                    }
-                    CTransaction outTx;
-                    uint256 blockHash;
-                    COptCCParams outP;
-                    CObjectFinalization outOF;
-                    if (inputRef.GetOutputTransaction(outTx, blockHash) &&
-                        outTx.vout.size() > inputRef.n &&
-                        outTx.vout[inputRef.n].scriptPubKey.IsPayToCryptoCondition(outP) &&
-                        outP.IsValid() &&
-                        outP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
-                        outP.vData.size() &&
-                        (outOF = CObjectFinalization(outP.vData[0])).IsValid() &&
-                        ((outOF.output.hash.IsNull() &&
-                        outTx.GetHash() == currentFinalization.output.hash &&
-                        outOF.output.n == currentFinalization.output.n) ||
-                        (outOF.output == currentFinalization.output)) &&
-                        outOF.IsPending())
-                    {
-                        return true;
-                    }
+                    return state.Error("invalid evidence inputs");
+                }
+            }
+            // without a verified notary signature, a pending finalization of an existing output must spend that output
+            // or a pending finalization of it. any input counts, declared as evidence or not: the confirm path's
+            // intermediate transactions spend them without declaring evidence inputs
+            for (auto &oneIn : tx.vin)
+            {
+                CUTXORef inputRef(oneIn.prevout);
+                if (inputRef == currentFinalization.output)
+                {
+                    return true;
+                }
+                CTransaction outTx;
+                uint256 blockHash;
+                COptCCParams outP;
+                CObjectFinalization outOF;
+                if (inputRef.GetOutputTransaction(outTx, blockHash) &&
+                    outTx.vout.size() > inputRef.n &&
+                    outTx.vout[inputRef.n].scriptPubKey.IsPayToCryptoCondition(outP) &&
+                    outP.IsValid() &&
+                    outP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
+                    outP.vData.size() &&
+                    (outOF = CObjectFinalization(outP.vData[0])).IsValid() &&
+                    ((outOF.output.hash.IsNull() &&
+                      outTx.GetHash() == currentFinalization.output.hash &&
+                      outOF.output.n == currentFinalization.output.n) ||
+                     (outOF.output == currentFinalization.output)) &&
+                    outOF.IsPending())
+                {
+                    return true;
                 }
             }
             if (LogAcceptCategory("notarization") && LogAcceptCategory("verbose"))

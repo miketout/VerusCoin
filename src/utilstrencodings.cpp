@@ -463,7 +463,7 @@ bool ParseFixedPoint(const std::string &val, int decimals, int64_t *amount_out)
             while (ptr < end && val[ptr] >= '0' && val[ptr] <= '9') {
                 if (exponent > ((MAX_MANTISSA - 9) / 10LL))
                     return false; /* overflow */
-                exponent = exponent * 10 + val[ptr] - '0';
+                exponent = exponent * 10 + (val[ptr] - '0');
                 ++ptr;
             }
         } else return false; /* missing expected digit */

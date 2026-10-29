@@ -5100,7 +5100,7 @@ bool CheckIdentitySpends(const CTransaction &tx, const uint160 idID, CValidation
     bool authorizedController = false;
 
     CIdentity signingID = CIdentity::LookupIdentity(idID, height);
-    if (!signingID.IsValid())
+    if (!signingID.IsValidUnrevoked())
     {
         return state.Error("Invalid identity or necessary identities not found for approval of ID operation");
     }

@@ -571,7 +571,7 @@ bool CVDXFEncryptor::GetDecryptionKey(const libzcash::SaplingIncomingViewingKey 
     }
     uint256 pk(keyData);
 
-    if (cipherData.size() <= CHACHA20POLY1305_CIPHEROVERHEAD ||
+    if (cipherData.size() < CHACHA20POLY1305_CIPHEROVERHEAD ||
         !librustzcash_sapling_ka_agree(pk.begin(), ivk.begin(), dhsecret.begin())) {
         return false;
     }
@@ -594,7 +594,7 @@ bool CVDXFEncryptor::Decrypt(const libzcash::SaplingIncomingViewingKey &ivk, std
     uint256 pk(keyData);
 
     if (encType != ENCRYPTION_CHACHA20POLY1305 ||
-        cipherData.size() <= CHACHA20POLY1305_CIPHEROVERHEAD ||
+        cipherData.size() < CHACHA20POLY1305_CIPHEROVERHEAD ||
         !librustzcash_sapling_ka_agree(pk.begin(), ivk.begin(), dhsecret.begin())) {
         return false;
     }
@@ -631,7 +631,7 @@ bool CVDXFEncryptor::Decrypt(const libzcash::SaplingIncomingViewingKey &ivk, std
 bool CVDXFEncryptor::Decrypt(const std::vector<unsigned char> &decryptionKey, std::vector<unsigned char> &plainText)
 {
     if (encType != ENCRYPTION_CHACHA20POLY1305 ||
-        cipherData.size() <= CHACHA20POLY1305_CIPHEROVERHEAD) {
+        cipherData.size() < CHACHA20POLY1305_CIPHEROVERHEAD) {
         return false;
     }
 

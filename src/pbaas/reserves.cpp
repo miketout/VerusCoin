@@ -3445,7 +3445,10 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                         flags |= IS_REJECT;
                         return;
                     }
-                    if (ConnectedChains.notarySystems.count(of.currencyID))
+                    if (ConnectedChains.notarySystems.count(of.currencyID) &&
+                        (of.output.hash.IsNull() ||
+                         of.IsConfirmed() || of.IsRejected() ||
+                         of.evidenceOutputs.size() || of.evidenceInputs.size()))
                     {
                         flags |= IS_CHAIN_NOTARIZATION;
                     }

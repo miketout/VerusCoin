@@ -1934,7 +1934,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
     std::list<CTransaction> conflicts;
     if (pool.checkNameConflicts(tx, conflicts, nextBlockHeight))
     {
-        return error("AcceptToMemoryPool: Invalid identity redefinition");
+        return state.DoS(0, error("AcceptToMemoryPool: Invalid identity redefinition"), REJECT_DUPLICATE, "bad-txns-identity-redefinition");
     }
 
     // DoS mitigation: reject transactions expiring soon

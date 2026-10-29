@@ -1101,7 +1101,7 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
         {
             CIdentity signingID = CIdentity::LookupIdentity(parentID, height);
 
-            if (!signingID.IsValid())
+            if (!signingID.IsValidUnrevoked())
             {
                 return state.Error("Invalid identity or identity not found for currency mint or burn with weight change");
             }
