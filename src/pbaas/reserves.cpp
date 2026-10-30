@@ -3872,7 +3872,10 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                 txImportFee = INT64_MAX;
             }
 
-            if ((nextSys.GetID() == ASSETCHAINS_CHAINID && nextLegTransfer.nFees < nextSys.GetTransactionTransferFee()) ||
+            bool nextLegDestUsable = IsCurrencyExport() || IsIdentityExport() ||
+                                        HasCompatibleDestination(nextLegTransfer.destination, (CCurrencyDefinition::EProofProtocol)nextSys.proofProtocol);
+            if (!nextLegDestUsable ||
+                (nextSys.GetID() == ASSETCHAINS_CHAINID && nextLegTransfer.nFees < nextSys.GetTransactionTransferFee()) ||
                 (nextSys.GetID() != ASSETCHAINS_CHAINID && nextLegTransfer.nFees < txImportFee))
             {
                 LogPrintf("%s: Insufficient fee currency for next leg of transfer %s\nFee Required: %s\ntxid: %s\n", __func__, nextLegTransfer.ToUniValue().write(1,2).c_str(),

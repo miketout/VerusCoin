@@ -2234,7 +2234,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                        !ccx.IsChainDefinition() &&
                        p.vData.size() &&
                        (cci = CCrossChainImport(p.vData[0])).IsValid() &&
-                       cci.importCurrencyID == ccx.destCurrencyID)
+                        !cci.IsDefinitionImport())
             {
                 return state.Error("Invalid export combined with import without currency definition");
             }
@@ -3618,6 +3618,7 @@ bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTrans
         {
             COptCCParams p;
             CReserveDeposit rd;
+            CCrossChainExport ccxExtra;
             if (tx.vout[i].scriptPubKey.IsPayToCryptoCondition(p) &&
                 p.IsValid() &&
                 p.evalCode == EVAL_RESERVE_DEPOSIT &&
@@ -3639,6 +3640,14 @@ bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTrans
                     crossChainAlternateValue += rd.reserveValues;
                 }
                 continue;
+            }
+            else if (p.IsValid() &&
+                     p.evalCode == EVAL_CROSSCHAIN_EXPORT &&
+                     p.vData.size() &&
+                     (!(ccxExtra = CCrossChainExport(p.vData[0])).IsValid() ||
+                      !(ccxExtra.IsSupplemental() || ccxExtra.IsChainDefinition())))
+            {
+                return eval->Error(std::string(__func__) + ": export combined with import transaction: " + EncodeDestination(CIdentityID(destCurDef.GetID())));
             }
             if (nHeight != 1 &&
                 (i < importOutNum || i >= endingOutput))
@@ -6034,6 +6043,17 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                     if (dest.which() != COptCCParams::ADDRTYPE_ID && dest.which() != COptCCParams::ADDRTYPE_PKH && dest.which() != COptCCParams::ADDRTYPE_SH)
                     {
                         return state.Error("Transfer destination requires fallback destination compatible with Verus or Ethereum address formats");
+                    }
+
+                    // a raw destination that continues to another system must also resolve there, so check that it will
+                    if (rt.HasNextLeg() && haveFullChain)
+                    {
+                        CCurrencyDefinition finalSys = ConnectedChains.GetCachedCurrency(rt.destination.gatewayID);
+                        if (!finalSys.IsValid() ||
+                            !HasCompatibleDestination(rt.destination, (CCurrencyDefinition::EProofProtocol)finalSys.proofProtocol))
+                        {
+                            return state.Error("Transfer destination requires fallback destination compatible with the final destination system");
+                        }
                     }
                 }
                 else if (GetDestinationID(dest).IsNull())

@@ -259,6 +259,27 @@ CTxDestination GetCompatibleAuxDestination(const CTransferDestination &transferD
     return CTxDestination();
 }
 
+bool HasCompatibleDestination(const CTransferDestination &transferDest, CCurrencyDefinition::EProofProtocol addressProtocol)
+{
+    for (int i = -1; i < transferDest.AuxDestCount(); i++)
+    {
+        switch (i == -1 ? transferDest.TypeNoFlags() : transferDest.GetAuxDest(i).TypeNoFlags())
+        {
+            case CTransferDestination::DEST_PKH:
+            case CTransferDestination::DEST_PK:
+            case CTransferDestination::DEST_SH:
+            case CTransferDestination::DEST_ID:
+            case CTransferDestination::DEST_FULLID:
+                if (addressProtocol != CCurrencyDefinition::PROOF_ETHNOTARIZATION) return true;
+                break;
+            case CTransferDestination::DEST_ETH:
+                if (addressProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION) return true;
+                break;
+        }
+    }
+    return false;
+}
+
 CTxDestination TransferDestinationToDestination(const CTransferDestination &transferDest, CCurrencyDefinition::EProofProtocol addressProtocol)
 {
     CTxDestination retDest;

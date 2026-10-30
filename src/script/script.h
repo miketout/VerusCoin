@@ -372,6 +372,7 @@ private:
 
 CTxDestination TransferDestinationToDestination(const CTransferDestination &transferDest, CCurrencyDefinition::EProofProtocol addressProtocol=CCurrencyDefinition::EProofProtocol::PROOF_INVALID);
 CTxDestination GetCompatibleAuxDestination(const CTransferDestination &transferDest, CCurrencyDefinition::EProofProtocol addressProtocol);
+bool HasCompatibleDestination(const CTransferDestination &transferDest, CCurrencyDefinition::EProofProtocol addressProtocol);
 CTransferDestination DestinationToTransferDestination(const CTxDestination &dest);
 CTransferDestination IdentityToTransferDestination(const CIdentity &identity);
 CIdentity TransferDestinationToIdentity(const CTransferDestination &dest);

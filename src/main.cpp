@@ -7061,17 +7061,15 @@ static bool AcceptBlock(int32_t *futureblockp, const CBlock& block, CValidationS
 
     // See method docstring for why this is always disabled
     auto verifier = libzcash::ProofVerifier::Disabled();
-    if ((!CheckBlock(futureblockp, pindex->GetHeight(), pindex, block, state, chainparams, verifier, 0)) || !ContextualCheckBlock(block, state, chainparams, pindex->pprev))
+    if (!CheckBlock(futureblockp, pindex->GetHeight(), pindex, block, state, chainparams, verifier, 0) ||
+        !ContextualCheckBlock(block, state, chainparams, pindex->pprev))
     {
-        if ( *futureblockp == 0 )
-        {
-            if (state.IsInvalid() && !state.CorruptionPossible()) {
-                pindex->nStatus |= BLOCK_FAILED_VALID;
-                setDirtyBlockIndex.insert(pindex);
-            }
-            LogPrintf("AcceptBlock CheckBlock or ContextualCheckBlock error in block: %s\n", pindex->GetBlockHash().GetHex().c_str());
-            return false;
+        if (state.IsInvalid() && !state.CorruptionPossible()) {
+            pindex->nStatus |= BLOCK_FAILED_VALID;
+            setDirtyBlockIndex.insert(pindex);
         }
+        LogPrintf("AcceptBlock CheckBlock or ContextualCheckBlock error in block: %s\n", pindex->GetBlockHash().GetHex().c_str());
+        return false;
     }
 
     int nHeight = pindex->GetHeight();
