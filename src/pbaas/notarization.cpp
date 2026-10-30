@@ -694,7 +694,14 @@ CNotaryEvidence::EStates CNotaryEvidence::CheckSignatureConfirmation(const uint2
                     continue;
                 }
 
-                CIdentity sigIdentity = CIdentity::LookupIdentity(oneIDSig.first, oneIDSig.second.blockHeight);
+                if (oneSigBlock.systemID == ASSETCHAINS_CHAINID &&
+                    (oneIDSig.second.blockHeight > checkHeight || oneIDSig.second.blockHeight < curMinSigHeight))
+                {
+                    continue;
+                }
+                CIdentity sigIdentity = CIdentity::LookupIdentity(oneIDSig.first,
+                                                                    oneSigBlock.systemID == ASSETCHAINS_CHAINID ? oneIDSig.second.blockHeight : checkHeight);
+
                 if (!sigIdentity.IsValid())
                 {
                     LogPrint("notarization", "%s: invalid notary identity for rejection: %s\n", __func__, EncodeDestination(oneIDSig.first).c_str());
@@ -12047,12 +12054,16 @@ bool PreCheckNotaryEvidence(const CTransaction &tx, int32_t outNum, CValidationS
     // or provide proof of a more powerful chain
     if (currentEvidence.type == currentEvidence.TYPE_NOTARY_EVIDENCE)
     {
-        auto signatures = currentEvidence.GetNotarySignatures();
-        for (auto &oneSig : signatures)
+        for (auto oneRef : currentEvidence.evidence.chainObjects)
         {
-            if (!oneSig.IsValid())
+            if (oneRef->objectType != CHAINOBJ_NOTARYSIGNATURE)
             {
-                return state.Error("Invalid present signature: " + oneSig.ToUniValue().write(1,2));
+                continue;
+            }
+            const CNotarySignature &rawSig = ((CChainObject<CNotarySignature> *)oneRef)->object;
+            if (!rawSig.IsValid() || rawSig.systemID != currentEvidence.systemID || rawSig.output != currentEvidence.output)
+            {
+                return state.Error("Mislabeled signature block: " + rawSig.ToUniValue().write(1,2));
             }
         }
 
