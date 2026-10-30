@@ -1902,8 +1902,10 @@ CStakeParams::CStakeParams(const std::vector<std::vector<unsigned char>> &vData)
     {
         ::FromVector(vData[1], *this);
     }
-    else if (vData[0].size() == 1 &&
-        vData[0][0] == OPRETTYPE_STAKEPARAMS && vData[1].size() <= 4 &&
+    else if (vData.size() >= 4 &&
+        vData[0].size() == 1 &&
+        vData[0][0] == OPRETTYPE_STAKEPARAMS &&
+        vData[1].size() <= 4 &&
         vData[2].size() <= 4 &&
         vData[3].size() == sizeof(prevHash) &&
         (vData.size() == STAKE_MINPARAMS || (vData.size() == STAKE_MAXPARAMS && vData[4].size() == 33)))
@@ -1911,11 +1913,11 @@ CStakeParams::CStakeParams(const std::vector<std::vector<unsigned char>> &vData)
         version = VERSION_ORIGINAL;
         for (int i = 0, size = vData[1].size(); i < size; i++)
         {
-            srcHeight = srcHeight | vData[1][i] << (8 * i);
+            srcHeight = srcHeight | (uint32_t)vData[1][i] << (8 * i);
         }
         for (int i = 0, size = vData[2].size(); i < size; i++)
         {
-            blkHeight = blkHeight | vData[2][i] << (8 * i);
+            blkHeight = blkHeight | (uint32_t)vData[2][i] << (8 * i);
         }
 
         prevHash = uint256(vData[3]);

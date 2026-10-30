@@ -4390,6 +4390,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     uint32_t chainTime = chainActive.ChainTimeAtOrBefore(height);
     bool isBridgeCleanupWindowOpen = IsBridgeCleanupWindowOpen(chainTime);
     bool isAfterBridgeCleanupWindowStarts = IsAfterBridgeCleanupWindowStarts(chainTime);
+    bool isAfterSecondBridgeCleanupWindowStarts = IsAfterSecondBridgeCleanupWindowStarts(chainTime);
 
     for (int i = 0; i <= exportObjects.size(); i++)
     {
@@ -4863,8 +4864,6 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     exporterDest.which() == COptCCParams::ADDRTYPE_PKH ||
                     exporterDest.which() == COptCCParams::ADDRTYPE_ID)
                 {
-                    bool afterFixBoundary = IsAfterSecondBridgeCleanupWindowStarts(chainTime);
-
                     if (exporterDest2.which() != COptCCParams::ADDRTYPE_INVALID &&
                         exporterReward > systemDest.GetTransactionTransferFee())
                     {
@@ -4876,7 +4875,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                         if (halfExportReserves > CCurrencyValueMap())
                         {
                             CTokenOutput ro = CTokenOutput(halfExportReserves);
-                            if (afterFixBoundary)
+                            if (isAfterSecondBridgeCleanupWindowStarts)
                             {
                                 outScript = MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, std::vector<CTxDestination>({exporterDest2}), 1, &ro));
                             }
@@ -4893,7 +4892,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     if (exporterReserves > CCurrencyValueMap())
                     {
                         CTokenOutput ro = CTokenOutput(exporterReserves);
-                        if (afterFixBoundary)
+                        if (isAfterSecondBridgeCleanupWindowStarts)
                         {
                             outScript = MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, std::vector<CTxDestination>({exporterDest}), 1, &ro));
                         }
@@ -5055,10 +5054,11 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     // if it's already in the correct currency, nothing to do, otherwise convert if we can
                     if (curTransfer.feeCurrencyID != nextDestSysID)
                     {
+                        auto nextDestIt = currencyIndexMap.find(nextDestSysID);
+                        auto feeCurIt = currencyIndexMap.find(curTransfer.feeCurrencyID);
                         if (!isFractional ||
-                            (!currencyIndexMap.count(nextDestSysID) &&
-                             !currencyIndexMap.count(curTransfer.feeCurrencyID) &&
-                             curTransfer.feeCurrencyID != importCurrencyID))
+                            nextDestIt == currencyIndexMap.end() ||
+                            (feeCurIt == currencyIndexMap.end() && curTransfer.feeCurrencyID != importCurrencyID))
                         {
                             printf("%s: next leg fee currency %s unavailable for conversion using %s\n", __func__, curNextDest.name.c_str(), importCurrencyDef.name.c_str());
                             LogPrintf("%s: next leg fee currency %s unavailable for conversion using %s\n", __func__, curNextDest.name.c_str(), importCurrencyDef.name.c_str());
@@ -5069,8 +5069,8 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                         // while we won't change the fee currency ID in the curTransfer, all pass through fees are assumed to be in
                         // the next leg's system currency by the time it is ready to produce an output
 
-                        int feeCurIdx = currencyIndexMap[curTransfer.feeCurrencyID];
-                        int nextDestIdx = currencyIndexMap[nextDestSysID];
+                        int feeCurIdx = (feeCurIt == currencyIndexMap.end()) ? -1 : feeCurIt->second;   // -1 only when the fee is the import currency, which never indexes it
+                        int nextDestIdx = nextDestIt->second;
 
                         // either fractional to reserve or reserve-to-reserve fee for the conversion
                         CAmount passThroughFee = CalculateConversionFeeNoMin(curTransfer.destination.fees);
@@ -5086,7 +5086,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                         if (curTransfer.feeCurrencyID == importCurrencyID)
                         {
                             finalReserveAmount =
-                                CCurrencyState::NativeToReserveRaw(curTransfer.destination.fees, importCurrencyState.conversionPrice[currencyIndexMap[nextDestSysID]]);
+                                CCurrencyState::NativeToReserveRaw(curTransfer.destination.fees, importCurrencyState.conversionPrice[nextDestIdx]);
                             if (finalReserveAmount == -1)
                             {
                                 printf("%s: Invalid total reserve and fees in amount for %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
@@ -5148,7 +5148,14 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     {
                         if (curTransfer.feeCurrencyID == systemDestID)
                         {
-                            nativeOut = curTransfer.destination.fees;
+                            if (isAfterSecondBridgeCleanupWindowStarts)
+                            {
+                                nativeOut += curTransfer.destination.fees;
+                            }
+                            else
+                            {
+                                nativeOut = curTransfer.destination.fees;
+                            }
                         }
                         else
                         {
@@ -5594,11 +5601,20 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
 
                 const CCurrencyDefinition &fractionalCurrency = toFractional ? currencyDest : sourceCurrency;
                 const CCurrencyDefinition &reserveCurrency = toFractional ? sourceCurrency : currencyDest;
-                int reserveIdx = currencyIndexMap[reserveCurrency.GetID()];
 
-                assert(fractionalCurrency.IsValid() &&
-                        reserveCurrency.IsValid() &&
-                        fractionalCurrency.currencies[reserveIdx] == reserveCurrency.GetID());
+                auto reserveIt = currencyIndexMap.find(reserveCurrency.GetID());
+
+                if (reserveIt == currencyIndexMap.end() ||
+                    !fractionalCurrency.IsValid() ||
+                    !reserveCurrency.IsValid() ||
+                    reserveIt->second >= fractionalCurrency.currencies.size() ||
+                    fractionalCurrency.currencies[reserveIt->second] != reserveCurrency.GetID())
+                {
+                    printf("%s: conversion currency %s is not a reserve of %s\n", __func__, reserveCurrency.name.c_str(), fractionalCurrency.name.c_str());
+                    LogPrintf("%s: conversion currency %s is not a reserve of %s\n", __func__, reserveCurrency.name.c_str(), fractionalCurrency.name.c_str());
+                    return false;
+                }
+                int reserveIdx = reserveIt->second;
 
                 // now, we know that we are converting from the source currency to the
                 // destination currency and also that one of them is a reserve of the other

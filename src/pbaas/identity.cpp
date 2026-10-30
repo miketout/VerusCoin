@@ -3339,6 +3339,12 @@ bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTran
             CIdentity recoveryIdentity = oldIdentity.recoveryAuthority == identityID ? oldIdentity : CIdentity::LookupIdentity(oldIdentity.recoveryAuthority, height);
             CIdentity revocationIdentity = oldIdentity.revocationAuthority == identityID ? oldIdentity : CIdentity::LookupIdentity(oldIdentity.revocationAuthority, height);
 
+            bool heightLocking = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height));
+            bool recoveryUsable = recoveryIdentity.IsValidUnrevoked() &&
+                                (oldIdentity.recoveryAuthority == identityID || !(heightLocking ? recoveryIdentity.IsLocked(height) : recoveryIdentity.IsLocked()));
+            bool revocationUsable = revocationIdentity.IsValidUnrevoked() &&
+                                    (oldIdentity.revocationAuthority == identityID || !(heightLocking ? revocationIdentity.IsLocked(height) : revocationIdentity.IsLocked()));
+
             std::set<CTxDestination> recoverySigDests = recoveryIdentity.IdentityPrimaryAddressKeySet();
             std::set<CTxDestination> revocationSigDests = revocationIdentity.IdentityPrimaryAddressKeySet();
             std::set<CTxDestination> primarySigDests = oldIdentity.IdentityPrimaryAddressKeySet();
@@ -3353,11 +3359,11 @@ bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTran
                 {
                     CPubKey thisKey;
                     thisKey.Set(keySig.second.pubKeyData.begin(), keySig.second.pubKeyData.end());
-                    if (recoveryIdentity.IsValid() && recoverySigDests.count(thisKey.GetID()))
+                    if (recoveryUsable && recoverySigDests.count(thisKey.GetID()))
                     {
                         recSigsValid++;
                     }
-                    if (revocationIdentity.IsValid() && revocationSigDests.count(thisKey.GetID()))
+                    if (revocationUsable && revocationSigDests.count(thisKey.GetID()))
                     {
                         revSigsValid++;
                     }
@@ -3366,12 +3372,12 @@ bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTran
                         priSigsValid++;
                     }
                 }
-                if (!recoveryIdentity.IsValid() || recSigsValid < recoveryIdentity.minSigs)
+                if (!recoveryUsable || recSigsValid < recoveryIdentity.minSigs)
                 {
                     fulfilled = false;
                 }
                 // one of the three authorities must be satisfied if no token fulfilled, or we should fail
-                if ((!revocationIdentity.IsValid() || revSigsValid < revocationIdentity.minSigs) && priSigsValid < oldIdentity.minSigs)
+                if ((!revocationUsable || revSigsValid < revocationIdentity.minSigs) && priSigsValid < oldIdentity.minSigs)
                 {
                     return eval->Error("Neither valid authority signature nor token authorization for ID update");
                 }

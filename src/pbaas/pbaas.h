@@ -393,7 +393,12 @@ public:
 
     CPBaaSNotarization(const std::vector<unsigned char> &asVector)
     {
-        ::FromVector(asVector, *this);
+        bool success = false;
+        ::FromVector(asVector, *this, &success);
+        if (!success)
+        {
+            nVersion = VERSION_INVALID;
+        }
     }
 
     CPBaaSNotarization(const CTransaction &tx, int32_t *pOutIdx=nullptr);
@@ -634,6 +639,20 @@ public:
         static uint160 nameSpace;
         static uint160 rangeSelectKey = CVDXF::GetDataKey(RangeSelectEntropyKeyName(), nameSpace);
         return rangeSelectKey;
+    }
+
+    CTransferDestination ImportProposerFromProof() const
+    {
+        if (proposer.AuxDestCount())
+        {
+            CTransferDestination aux = proposer.GetAuxDest(0);
+            int t = aux.TypeNoFlags();
+            if (t == CTransferDestination::DEST_PK || t == CTransferDestination::DEST_PKH || t == CTransferDestination::DEST_ID)
+            {
+                return aux;
+            }
+        }
+        return DestinationToTransferDestination(TransferDestinationToDestination(proposer));
     }
 
     // if false, *this is unmodifed, otherwise, it is set to the last valid notarization in the requested range
@@ -997,6 +1016,7 @@ public:
     std::map<uint160, CNotarySystemInfo> notarySystems;
     std::map<uint160, CPBaaSNotarization> pendingFinalityCandidates;
     std::set<uint160> idsToRevoke;
+    std::map<CIdentityID, std::set<CKeyID>> pendingKeyRotations;
 
     CCurrencyDefinition thisChain;
     bool readyToStart;
@@ -1055,6 +1075,11 @@ public:
     void QueueNewBlockHeader(CBlockHeader &bh);
     void SetRevokeID(const CIdentityID &idID);
     CIdentityID NextRevokeID();
+
+    void SetPendingKeyRotation(const CIdentityID &idID, const std::set<CKeyID> &keyIDs);
+    void ClearPendingKeyRotation(const CIdentityID &idID);
+    std::set<CKeyID> GetPendingKeyRotation(const CIdentityID &idID) const;
+
     void QueueEarnedNotarization(CBlock &blk, int32_t txIndex, int32_t height);
     void CheckImports();
     void SignAndCommitImportTransactions(const CTransaction &lastImportTx, const std::vector<CTransaction> &transactions);

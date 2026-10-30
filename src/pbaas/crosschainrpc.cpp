@@ -886,7 +886,18 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
 
             if (IsFractional())
             {
-                preLaunchDiscount = AmountFromValueNoErr(find_value(obj, "prelaunchdiscount"));
+                int64_t preLaunchDiscount64 = AmountFromValueNoErr(find_value(obj, "prelaunchdiscount"));
+                int64_t preLaunchCarveOut64 = AmountFromValueNoErr(find_value(obj, "prelaunchcarveout"));
+                if (preLaunchDiscount64 < 0 ||
+                    preLaunchDiscount64 >= SATOSHIDEN ||
+                    preLaunchCarveOut64 < 0 ||
+                    preLaunchCarveOut64 >= SATOSHIDEN)
+                {
+                    nVersion = PBAAS_VERSION_INVALID;
+                    return;
+                }
+                preLaunchDiscount = preLaunchDiscount64;
+                preLaunchCarveOut = preLaunchCarveOut64;
 
                 UniValue initSupplyUni = find_value(obj, "initialsupply");
                 if (!initSupplyUni.isNull())
@@ -909,8 +920,6 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
                     printf("%s: cannot specify zero initial supply for fractional currency\n", __func__);
                     nVersion = PBAAS_VERSION_INVALID;
                 }
-
-                preLaunchCarveOut = AmountFromValueNoErr(find_value(obj, "prelaunchcarveout"));
 
                 // if weights are defined, use them as relative ratios of each member currency
                 if (weightArr.isArray() && weightArr.size())

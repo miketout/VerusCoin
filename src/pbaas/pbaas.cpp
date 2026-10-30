@@ -722,7 +722,7 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                     !(notarization.notarizationHeight == 1 &&
                     height == 1))
                 {
-                    return state.Error("Notarization for import past height, likely due to reorg: " + notarization.ToUniValue().write(1,2));
+                    return state.Error("Notarization for import past height, likely due to reorg: " + strprintf("%s:%d", tx.GetHash().GetHex(), notarizationOut));
                 }
             }
             else if (notarization.proofRoots.count(ASSETCHAINS_CHAINID))
@@ -738,7 +738,7 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                         notarization.proofRoots[ASSETCHAINS_CHAINID].blockHash != chainActive[rootHeight]->GetBlockHash() ||
                         notarization.proofRoots[ASSETCHAINS_CHAINID].stateRoot != mmv.GetRoot())))
                 {
-                    return state.Error("Notarization for import past height or invalid: " + notarization.ToUniValue().write(1,2));
+                    return state.Error("Notarization for import past height or invalid: " + strprintf("%s:%d", tx.GetHash().GetHex(), notarizationOut));
                 }
             }
 
@@ -1546,7 +1546,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
     {
         auto isPayeeType = [&ccx, &destSystem](int t) {
             return t == CTransferDestination::DEST_PK || t == CTransferDestination::DEST_PKH ||
-                   t == CTransferDestination::DEST_ID || t == CTransferDestination::DEST_SH ||
+                   t == CTransferDestination::DEST_ID ||
                    (destSystem.proofProtocol == destSystem.PROOF_ETHNOTARIZATION && t == CTransferDestination::DEST_ETH);
         };
         int exporterType = ccx.exporter.TypeNoFlags();
@@ -3379,6 +3379,7 @@ bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTrans
         CCoinsViewMemPool viewMemPool(pcoinsTip, mempool);
         view.SetBackend(viewMemPool);
 
+        bool afterNotarization = false;
         CCurrencyValueMap totalDeposits;
 
         for (int i = 0; i < tx.vin.size(); i++)
@@ -3398,7 +3399,6 @@ bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTrans
             }
 
             CReserveDeposit oneBeingSpent;
-            bool afterNotarization = false;
 
             if (pCoins->vout[tx.vin[i].prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
                 p.IsValid() &&
@@ -4201,7 +4201,11 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
           currencyOptParams.evalCode == EVAL_CURRENCY_DEFINITION &&
           currencyOptParams.vData.size() > 1 &&
           (newCurrency = CCurrencyDefinition(currencyOptParams.vData[0])).IsValid() &&
-          ::AsVector(newCurrency) == currencyOptParams.vData[0]))
+          ::AsVector(newCurrency) == currencyOptParams.vData[0] &&
+          newCurrency.preLaunchDiscount >= 0 &&
+          newCurrency.preLaunchDiscount < SATOSHIDEN &&
+          newCurrency.preLaunchCarveOut >= 0 &&
+          newCurrency.preLaunchCarveOut < SATOSHIDEN))
     {
         return state.Error("Invalid currency definition in output");
     }
@@ -6420,6 +6424,36 @@ void CConnectedChains::SetRevokeID(const CIdentityID &idID)
     }
 }
 
+void CConnectedChains::SetPendingKeyRotation(const CIdentityID &idID, const std::set<CKeyID> &keyIDs)
+{
+    LogPrint("notarization", "%s: ID: %s\n", __func__, EncodeDestination(idID).c_str());
+    {
+        LOCK(cs_mergemining);
+
+        pendingKeyRotations[idID] = keyIDs;
+    }
+}
+
+void CConnectedChains::ClearPendingKeyRotation(const CIdentityID &idID)
+{
+    LogPrint("notarization", "%s: ID: %s\n", __func__, EncodeDestination(idID).c_str());
+    {
+        LOCK(cs_mergemining);
+        pendingKeyRotations.erase(idID);
+    }
+}
+
+std::set<CKeyID> CConnectedChains::GetPendingKeyRotation(const CIdentityID &idID) const
+{
+    {
+        LOCK(cs_mergemining);
+        auto keyIt = pendingKeyRotations.find(idID);
+        std::set<CKeyID> keyIDs = keyIt == pendingKeyRotations.end() ? std::set<CKeyID>() : keyIt->second;
+        LogPrint("notarization", "%s: ID: %s\n", __func__, EncodeDestination(idID).c_str());
+        return keyIDs;
+    }
+}
+
 CIdentityID CConnectedChains::NextRevokeID()
 {
     LOCK(cs_mergemining);
@@ -7493,7 +7527,7 @@ bool CConnectedChains::ConfigureEthBridge(bool callToCheck)
             notarySystems.insert(std::make_pair(gatewayID,
                                                 CNotarySystemInfo(cnd.IsConfirmed() ? cnd.vtx[cnd.lastConfirmed].second.notarizationHeight : 0,
                                                 vethNotaryChain,
-                                                cnd.vtx.size() ? cnd.vtx[cnd.forks[cnd.bestChain].back()].second : CPBaaSNotarization(),
+                                                cnd.vtx.size() ? (cnd.IsConfirmed() ? cnd.vtx[cnd.lastConfirmed].second : CPBaaSNotarization()) : CPBaaSNotarization(),
                                                 CNotarySystemInfo::TYPE_ETH,
                                                 CNotarySystemInfo::VERSION_CURRENT)));
         }
@@ -8698,15 +8732,7 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
             }
             else if (useProofs)
             {
-                // make sure we have the latest, confirmed proof roots to prove this import
-                if (proofNotarization.proposer.AuxDestCount())
-                {
-                    lastNotarization.proposer = proofNotarization.proposer.GetAuxDest(0);
-                }
-                else
-                {
-                    lastNotarization.proposer = DestinationToTransferDestination(TransferDestinationToDestination(proofNotarization.proposer));
-                }
+                lastNotarization.proposer = proofNotarization.ImportProposerFromProof();
 
                 lastNotarization.proofRoots[sourceSystemID] = proofNotarization.proofRoots[sourceSystemID];
                 if (lastNotarization.proofRoots.count(ASSETCHAINS_CHAINID))
@@ -10816,7 +10842,10 @@ bool CConnectedChains::CreateNextExport(const CCurrencyDefinition &_curDef,
                 // first non-default address is the fee recipient
                 for (auto &oneDest : addresses)
                 {
-                    if (oneDest == evalPKH || oneDest.which() == COptCCParams::ADDRTYPE_INVALID || oneDest.which() == COptCCParams::ADDRTYPE_INDEX)
+                    if (oneDest == evalPKH ||
+                        oneDest.which() == COptCCParams::ADDRTYPE_SH ||
+                        oneDest.which() == COptCCParams::ADDRTYPE_INVALID ||
+                        oneDest.which() == COptCCParams::ADDRTYPE_INDEX)
                     {
                         continue;
                     }
@@ -10824,7 +10853,7 @@ bool CConnectedChains::CreateNextExport(const CCurrencyDefinition &_curDef,
                     break;
                 }
             }
-            else
+            else if (addresses[0].which() != COptCCParams::ADDRTYPE_SH)
             {
                 feeRecipient.SetAuxDest(DestinationToTransferDestination(addresses[0]), 0);
             }
@@ -12750,16 +12779,21 @@ void CConnectedChains::SubmissionThread()
                     }
                     if (revokeIdentity.IsValidUnrevoked())
                     {
-                        // we don't want to update the ID too many times, so if it is in the mempool and
-                        // updated to a new key that is different from the last, skip the new update
-                        if (!heightOfID)
+                        auto rotatedKeys = ConnectedChains.GetPendingKeyRotation(oneRevokeID);
+                        bool inProcess = rotatedKeys.size();
+                        if (inProcess)
                         {
-                            auto oldAddresses = revokeIdentity.primaryAddresses;
-                            revokeIdentity = CIdentity::LookupIdentity(oneRevokeID);
-                            if (revokeIdentity.primaryAddresses != oldAddresses)
+                            for (auto &oneKeyID : revokeIdentity.primaryAddresses)
                             {
-                                continue;
+                                if (!rotatedKeys.count(GetDestinationID(oneKeyID)))
+                                {
+                                    inProcess = false;
+                                }
                             }
+                        }
+                        if (inProcess)
+                        {
+                            continue;
                         }
 
                         UniValue importprivkey(const UniValue& params, bool fHelp);
@@ -12794,6 +12828,7 @@ void CConnectedChains::SubmissionThread()
                         {
                             importprivkey(importPrivKeyParams, false);
                             updateidentity(params, false);
+                            ConnectedChains.SetPendingKeyRotation(oneRevokeID, std::set<CKeyID>({newKey.GetID()}));
                         }
                         catch(const std::exception& e)
                         {
@@ -12804,19 +12839,23 @@ void CConnectedChains::SubmissionThread()
                             LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, find_value(objError, "message").write().c_str(), EncodeDestination(oneRevokeID).c_str());
                         }
 
-                        try
+                        if (notaryChain.chainDefinition.proofProtocol != CCurrencyDefinition::PROOF_ETHNOTARIZATION)
                         {
-                            result = RPCCallRoot("importprivkey", importPrivKeyParams);
-                            result = RPCCallRoot("updateidentity", params);
+                            try
+                            {
+                                result = RPCCallRoot("importprivkey", importPrivKeyParams);
+                                result = RPCCallRoot("updateidentity", params);
+                            }
+                            catch(const std::exception& e)
+                            {
+                                LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, e.what(), EncodeDestination(oneRevokeID).c_str());
+                            }
+                            catch(const UniValue& objError)
+                            {
+                                LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, find_value(objError, "message").write().c_str(), EncodeDestination(oneRevokeID).c_str());
+                            }
                         }
-                        catch(const std::exception& e)
-                        {
-                            LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, e.what(), EncodeDestination(oneRevokeID).c_str());
-                        }
-                        catch(const UniValue& objError)
-                        {
-                            LogPrintf("%s: exception (%s) revoking ID %s\n", __func__, find_value(objError, "message").write().c_str(), EncodeDestination(oneRevokeID).c_str());
-                        }
+
                     }
                 }
                 if (height > ConnectedChains.ThisChain().GetMinBlocksToStartNotarization() &&

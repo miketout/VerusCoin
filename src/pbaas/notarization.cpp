@@ -2119,7 +2119,6 @@ CChainNotarizationData::CChainNotarizationData(UniValue &obj,
         }
     }
 
-    lastConfirmed = (uint32_t)uni_get_int(find_value(obj, "lastconfirmed"));
     UniValue forksUni = find_value(obj, "forks");
     if (forksUni.isArray())
     {
@@ -2137,7 +2136,15 @@ CChainNotarizationData::CChainNotarizationData(UniValue &obj,
         }
     }
 
-    bestChain = (uint32_t)uni_get_int(find_value(obj, "bestchain"));
+    UniValue lastConfirmedUni = find_value(obj, "lastconfirmed");
+    UniValue bestChainUni = find_value(obj, "bestchain");
+    if (!lastConfirmedUni.isNum() || !bestChainUni.isNum())
+    {
+        version = 0;
+        return;
+    }
+    lastConfirmed = uni_get_int(lastConfirmedUni, -1);
+    bestChain = uni_get_int(bestChainUni, -1);
 }
 
 UniValue CChainNotarizationData::ToUniValue(const std::vector<std::pair<CTransaction, uint256>> &transactionsAndBlockHash,
@@ -6953,6 +6960,7 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
     // if last confirmed is valid, we can't select a later height for our notaryIdx than that or last stable
     uint32_t earliestHeight = lastConfirmedProofRoot.IsValid() ? lastConfirmedProofRoot.rootHeight : lastStableProofRoot.rootHeight;
     if (lastConfirmedProofRoot.IsValid() &&
+        prunedCND.forks[prunedCND.bestChain].size() >= 2 &&
         prunedCND.vtx[notaryIdx].second.proofRoots[SystemID].rootHeight > earliestHeight)
     {
         // we need to go backwards in the best chain fork to a height as early or earlier
@@ -7772,7 +7780,11 @@ int CChainNotarizationData::BestConfirmedNotarization(const CCurrencyDefinition 
                                                       uint32_t lastConfirmedHeight,
                                                       const std::vector<std::pair<CTransaction, uint256>> &txAndBlockVec) const
 {
-    int maxDepth = ((lastConfirmedHeight / notarizingSystem.blockNotarizationModulo) + 1) * notarizingSystem.blockNotarizationModulo;
+    int adjustedModulo = CPBaaSNotarization::GetAdjustedNotarizationModulo(notarizingSystem.blockNotarizationModulo,
+                                                                            lastConfirmedHeight,
+                                                                            height,
+                                                                            forks[bestChain].size());
+    int maxDepth = ((lastConfirmedHeight / adjustedModulo) + 1) * adjustedModulo;
 
     BlockMap::iterator blockIt;
     if (!vtx.size() ||
@@ -9836,8 +9848,13 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                             autoProof.chainObjects[2]->objectType == CHAINOBJ_TRANSACTION_PROOF)
                         {
                             uint32_t futureHeight = ((CChainObject<CProofRoot> *)autoProof.chainObjects[1])->object.rootHeight;
-                            if (futureHeight > chainActive.Height() ||
-                                ((CChainObject<CProofRoot> *)autoProof.chainObjects[1])->object != CProofRoot::GetProofRoot(futureHeight))
+                            if (futureHeight > chainActive.Height())
+                            {
+                                isValid = false;
+                                isPotentialRevoke = false;
+                                continue;
+                            }
+                            else if (((CChainObject<CProofRoot> *)autoProof.chainObjects[1])->object != CProofRoot::GetProofRoot(futureHeight))
                             {
                                 // we don't agree with this one because of the proof root, so we will ignore its existence
                                 isValid = false;
@@ -10784,6 +10801,17 @@ bool VerifyAndCheckImportNotarization(const CTransaction &tx, int32_t outNum, co
                     currentNotarization.proofRoots.find(cciForNot.sourceSystemID)->second == confirmedNotarization.proofRoots.find(cciForNot.sourceSystemID)->second)
                 {
                     confirmed = true;
+                }
+            }
+
+            // the builder derives the import notarization's proposer from the confirmed notarization (pbaas.cpp:8702-8708);
+            // require the same derivation so the import builder cannot choose the notarization reward recipient
+            if (confirmed && IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+            {
+                CTransferDestination expectedProposer = confirmedNotarization.ImportProposerFromProof();
+                if (!(TransferDestinationToDestination(currentNotarization.proposer) == TransferDestinationToDestination(expectedProposer)))
+                {
+                    return state.Error("Import notarization proposer does not match confirmed notarization");
                 }
             }
 

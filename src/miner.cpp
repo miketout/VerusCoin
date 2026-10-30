@@ -2491,7 +2491,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             std::vector<CTransaction> notarizations;
             CTransaction notarizationTx;
             if (notaryChain.IsValid() &&
-                CPBaaSNotarization::ConfirmOrRejectNotarizations(pwalletMain, notaryChain, state, notarizationBuilders, Mining_height) &&
+                CPBaaSNotarization::ConfirmOrRejectNotarizations(pwalletMain, notaryChain, state, notarizationBuilders, nHeight) &&
                 notarizationBuilders.size())
             {
                 int txCount = 0;

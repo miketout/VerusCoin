@@ -533,8 +533,39 @@ public:
 
     bool IsValid() const
     {
-        return version >= VERSION_FIRST && version <= VERSION_LAST &&
+        bool retVal = version >= VERSION_FIRST && version <= VERSION_LAST &&
                ((!vtx.size() && !forks.size()) || (vtx.size() && forks.size()));
+
+        if (lastConfirmed < -1 || lastConfirmed >= (int32_t)vtx.size())
+        {
+            retVal = false;
+        }
+        if (bestChain < -1 || bestChain >= (int32_t)forks.size())
+        {
+            retVal = false;
+        }
+        for (auto &oneFork : forks)
+        {
+            if (!oneFork.size())
+            {
+                retVal = false;
+            }
+            else
+            {
+                if (IsConfirmed() && oneFork[0] != lastConfirmed)
+                {
+                    retVal = false;
+                }
+                for (auto idx : oneFork)
+                {
+                    if (idx < 0 || idx >= (int32_t)vtx.size())
+                    {
+                        retVal = false;
+                    }
+                }
+            }
+        }
+        return retVal;
     }
 
     bool IsConfirmed() const

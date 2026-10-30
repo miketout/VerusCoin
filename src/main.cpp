@@ -5583,7 +5583,7 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
         if ( block.GetHash() == notarizedhash )
         {
             fprintf(stderr,"DisconnectTip trying to disconnect notarized block at ht.%d\n",(int32_t)pindexDelete->GetHeight());
-            return(false);
+            return state.Error(strprintf("DisconnectTip: refusing to disconnect finalized block at height %d", pindexDelete->GetHeight()));
         }
     }
 
@@ -5595,7 +5595,7 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
         CCoinsViewCache view(pcoinsTip);
         // insightexplorer: update indices (true)
         if (DisconnectBlock(block, state, pindexDelete, view, chainparams, true) != DISCONNECT_OK)
-            return error("DisconnectTip(): DisconnectBlock %s failed", pindexDelete->GetBlockHash().ToString());
+            return state.Error(strprintf("DisconnectTip(): DisconnectBlock %s failed", pindexDelete->GetBlockHash().ToString()));
         assert(view.Flush());
     }
     pindexDelete->segid = -2;
@@ -6115,6 +6115,16 @@ bool ActivateBestChain(CValidationState& state, const CChainParams& chainparams,
 bool InvalidateBlock(CValidationState& state, const CChainParams& chainparams, CBlockIndex *pindex)
 {
     AssertLockHeld(cs_main);
+
+    CProofRoot finalizedRoot = ConnectedChains.FinalizedChainRoot();
+    if (finalizedRoot.IsValid() && chainActive.Contains(pindex))
+    {
+        auto finalizedIt = mapBlockIndex.find(finalizedRoot.blockHash);
+        if (finalizedIt != mapBlockIndex.end() && chainActive.Contains(finalizedIt->second) && finalizedIt->second->GetHeight() >= pindex->GetHeight())
+        {
+            return state.Error("Cannot invalidate a block at or below the finalized root");
+        }
+    }
 
     // Mark the block itself as invalid.
     pindex->nStatus |= BLOCK_FAILED_VALID;

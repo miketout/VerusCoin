@@ -1887,12 +1887,16 @@ UniValue invalidateblock(const UniValue& params, bool fHelp)
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
 
         CBlockIndex* pblockindex = mapBlockIndex[hash];
+        int32_t savedRewind = KOMODO_REWIND;
         if (chainActive.Height() > pblockindex->GetHeight() &&
             (chainActive.Height() - pblockindex->GetHeight()) > MAX_REORG_LENGTH)
         {
             KOMODO_REWIND = pblockindex->GetHeight() - 1;
         }
-        InvalidateBlock(state, Params(), pblockindex);
+        if (!InvalidateBlock(state, Params(), pblockindex))
+        {
+            KOMODO_REWIND = savedRewind;
+        }
     }
 
     if (state.IsValid()) {
