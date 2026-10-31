@@ -2766,6 +2766,7 @@ int IsNotInSync()
         //fprintf(stderr,"IsNotInSync: fImporting %d || %d fReindex\n",(int32_t)fImporting,(int32_t)fReindex);
         return true;
     }
+
     //if (fCheckpointsEnabled)
     //{
     //    if (fCheckpointsEnabled && chainActive.Height() < Checkpoints::GetTotalBlocksEstimate(chainParams.Checkpoints()))
@@ -2775,14 +2776,53 @@ int IsNotInSync()
     //    }
     //}
 
+    LOCK(cs_main);
+
     CBlockIndex *pbi = chainActive.LastTip();
-    if ( !pbi ||
-         (pindexBestHeader == 0) ||
-         ((pindexBestHeader->GetHeight() - 1) > pbi->GetHeight()))
+    if (!pbi || !pindexBestHeader)
     {
-        return (pbi && pindexBestHeader) ? pindexBestHeader->GetHeight() - pbi->GetHeight() : true;
+        return true;
     }
-    return false;
+
+    int heightDiff = pindexBestHeader->GetHeight() - pbi->GetHeight();
+    if (heightDiff <= 1)
+    {
+        return false;
+    }
+
+    // a PoS header is free to forge until its body connects: count the lead only through blocks we have,
+    // blocks that cost work, or blocks a peer is delivering
+    std::vector<CBlockIndex *> path(heightDiff, nullptr);
+    auto pathIt = path.rbegin();
+    for (CBlockIndex *p = pindexBestHeader; p && pathIt != path.rend(); p = p->pprev, pathIt++)
+    {
+        *pathIt = p;
+    }
+
+    // if the best header chain forks below the tip, every block from the fork to the tip's height must be trusted as well
+    for (CBlockIndex *p = path[0] ? path[0]->pprev : nullptr; p && !chainActive.Contains(p); p = p->pprev)
+    {
+        if ((p->nStatus & BLOCK_FAILED_MASK) ||
+            (!(p->nStatus & BLOCK_HAVE_DATA) && p->IsVerusPOSBlock() && !mapBlocksInFlight.count(p->GetBlockHash())))
+        {
+            return 0;
+        }
+    }
+
+    CBlockIndex *lastTrusted = nullptr;
+    for (auto it = path.begin(); it != path.end(); it++)
+    {
+        CBlockIndex *p = *it;
+        if (!p ||
+            (p->nStatus & BLOCK_FAILED_MASK) ||
+            (!(p->nStatus & BLOCK_HAVE_DATA) && p->IsVerusPOSBlock() && !mapBlocksInFlight.count(p->GetBlockHash())))
+        {
+            break;
+        }
+        lastTrusted = p;
+    }
+    int trustedLead = lastTrusted ? lastTrusted->GetHeight() - pbi->GetHeight() : 0;
+    return trustedLead > 1 ? trustedLead : 0;
 }
 
 static bool fLargeWorkForkFound = false;
@@ -3612,9 +3652,11 @@ static DisconnectResult DisconnectBlock(const CBlock& block, CValidationState& s
                                 }
 
                                 // restore unspent index
+                                const CCoins *pPrev = view.AccessCoins(input.prevout.hash);
+                                uint32_t restoreHeight = undo.nHeight ? undo.nHeight : (pPrev ? pPrev->nHeight : 0);
                                 addressUnspentIndex.push_back(make_pair(
                                     CAddressUnspentKey(AddressTypeFromDest(dest), destID, input.prevout.hash, input.prevout.n),
-                                    CAddressUnspentValue(prevout.nValue, prevout.scriptPubKey, undo.nHeight)));
+                                    CAddressUnspentValue(prevout.nValue, prevout.scriptPubKey, restoreHeight)));
 
                                 // Restore reserve currency balances (undo spending) for PBaaS
                                 if (fCurrencyIndex && isPBaaS)
@@ -3646,9 +3688,11 @@ static DisconnectResult DisconnectBlock(const CBlock& block, CValidationState& s
                                     prevout.nValue * -1));
 
                                 // restore unspent index
+                                const CCoins *pPrev = view.AccessCoins(input.prevout.hash);
+                                uint32_t restoreHeight = undo.nHeight ? undo.nHeight : (pPrev ? pPrev->nHeight : 0);
                                 addressUnspentIndex.push_back(make_pair(
                                     CAddressUnspentKey(scriptType, addrHash, input.prevout.hash, input.prevout.n),
-                                    CAddressUnspentValue(prevout.nValue, prevout.scriptPubKey, undo.nHeight)));
+                                    CAddressUnspentValue(prevout.nValue, prevout.scriptPubKey, restoreHeight)));
                             }
                         }
                     }
@@ -4138,7 +4182,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                     state.DoS(0, false, REJECT_INVALID, "bad-txns-rejected-without-state");
                 }
 
-                if (state.IsInvalid())
+                if (state.IsInvalid() && !fJustCheck)
                 {
                     InvalidBlockFound(pindex, state, Params());
                 }
@@ -6007,8 +6051,11 @@ static bool ActivateBestChainStep(CValidationState& state, const CChainParams& c
         }
         nHeight = nTargetHeight;
 
+        static std::map<uint256, int> blockTransientErrorMap;
+
         // Connect new blocks
         BOOST_REVERSE_FOREACH(CBlockIndex *pindexConnect, vpindexToConnect) {
+            uint256 curHash = pindexConnect->GetBlockHash();
             if (!ConnectTip(state, chainparams, pindexConnect, pindexConnect == pindexMostWork ? pblock : NULL)) {
                 if (state.IsInvalid()) {
                     // The block violates a consensus rule.
@@ -6019,10 +6066,18 @@ static bool ActivateBestChainStep(CValidationState& state, const CChainParams& c
                     fContinue = false;
                     break;
                 } else {
-                    // A system error occurred (disk space, database error, ...).
+                    // A system error occurred (disk space, database error, ...)
+                    if (++blockTransientErrorMap[curHash] >= 10 && (blockTransientErrorMap[curHash] % 10) == 0)
+                    {
+                        // we've failed to validate this block 10 times due to transient errors, start complaining loudly in the log
+                        // to make it diagnosible
+                        LogPrintf("%s: Rejecting block %s, %d times with error %s. Potential corruption or stall.\n",
+                                    __func__, curHash.GetHex().c_str(), blockTransientErrorMap[curHash], state.GetRejectReason().c_str());
+                    }
                     return false;
                 }
             } else {
+                blockTransientErrorMap.clear();
                 PruneBlockIndexCandidates();
                 if (!pindexOldTip || chainActive.Tip()->chainPower > pindexOldTip->chainPower) {
                     // We're in a better position than we were. Return temporarily to release the lock.
@@ -6782,7 +6837,7 @@ bool ContextualCheckBlock(
     const Consensus::Params& consensusParams = chainparams.GetConsensus();
     bool sapling = consensusParams.NetworkUpgradeActive(nHeight, Consensus::UPGRADE_SAPLING);
 
-    if (block.nVersion != CBlockHeader::GetVersionByHeight(nHeight))
+    if (block.GetHash() != chainparams.GetConsensus().hashGenesisBlock && block.nVersion != CBlockHeader::GetVersionByHeight(nHeight))
     {
         printf("ERROR: block rejected as wrong version, version should be %d for block height %d\n", CBlockHeader::GetVersionByHeight(nHeight), nHeight);
         return state.DoS(10, error("%s: block header has incorrect version", __func__), REJECT_INVALID, "incorrect-block-version");
@@ -8111,8 +8166,8 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
     int nLoaded = 0;
     try {
         // This takes over fileIn and calls fclose() on it in the CBufferedFile destructor
-        //CBufferedFile blkdat(fileIn, 2*MAX_BLOCK_SIZE, MAX_BLOCK_SIZE+8, SER_DISK, CLIENT_VERSION);
-        CBufferedFile blkdat(fileIn, 32*MAX_BLOCK_SIZE, MAX_BLOCK_SIZE+8, SER_DISK, CLIENT_VERSION);
+        CBufferedFile blkdat(fileIn, 2*MAX_BLOCK_SIZE, MAX_BLOCK_SIZE+8, SER_DISK, CLIENT_VERSION);
+
         uint64_t nRewind = blkdat.GetPos();
         while (!blkdat.eof()) {
             boost::this_thread::interruption_point();
@@ -8143,7 +8198,11 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                 if (dbp)
                     dbp->nPos = nBlockPos;
                 blkdat.SetLimit(nBlockPos + nSize);
-                blkdat.SetPos(nBlockPos);
+                if (!blkdat.SetPos(nBlockPos))
+                {
+                    break;
+                }
+
                 CBlock block;
                 blkdat >> block;
                 nRewind = blkdat.GetPos();

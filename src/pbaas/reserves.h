@@ -1496,9 +1496,8 @@ public:
     std::vector<CAmount> ConvertAmounts(const std::vector<CAmount> &inputReserve,       // reserves to convert to fractional
                                         const std::vector<CAmount> &inputFractional,    // fractional to convert to each reserve
                                         CCurrencyState &newState,
-                                        bool promoteExchangeRate,                       // true to compensate for library issue & false to remain compatible with on-chain data
                                         bool layerFixActive,                            // true to enable layer calc fix
-                                        bool enhancedUnderflowCheck,                    // true to enable layer calc fix
+                                        uint32_t height,
                                         CValidationState &validationState,
                                         const std::vector<std::vector<CAmount>> *pCrossConversions=nullptr,
                                         std::vector<CAmount> *pViaPrices=nullptr) const;

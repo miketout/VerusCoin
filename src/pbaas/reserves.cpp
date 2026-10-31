@@ -2050,14 +2050,17 @@ void DumpConvertData(const std::vector<CAmount> &_inputReserves,
 std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &_inputReserves,
                                                     const std::vector<CAmount> &_inputFractional,
                                                     CCurrencyState &_newState,
-                                                    bool promoteExchangeRate,
                                                     bool layerFixActive,
-                                                    bool enhancedUnderflowCheck,
+                                                    uint32_t height,
                                                     CValidationState &state,
                                                     std::vector<std::vector<CAmount>> const *pCrossConversions,
                                                     std::vector<CAmount> *pViaPrices) const
 {
     static arith_uint256 bigSatoshi(SATOSHIDEN);
+
+    bool promoteExchangeRate = ConnectedChains.IsPromoteExchangeRate(height);
+    bool enhancedUnderflowCheck = ConnectedChains.IsEnhancedUnderflowCheck(height);
+    bool layerReserveFixActive = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height));
 
     int32_t numCurrencies = currencies.size();
     std::vector<CAmount> inputReserves = _inputReserves;
@@ -2348,6 +2351,8 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
     // in each participating layer, in accordance with each currency's relative percentage
     CAmount addSupply = 0;
     CAmount addNormalizedReserves = 0;
+    std::map<uint160, CAmount> reserveInflow;                    // normalized inflow so far, per currency
+
     for (auto &layer : fractionalLayersOut)
     {
         // each layer has a fractional percentage/weight and a total amount, determined by the total of all weights for that layer
@@ -2356,7 +2361,18 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
         // calculate a fractional buy at the total layer ratio for the amount specified
         // and divide the value according to the relative weight of each currency, adding to each entry of fractionalOutMap
         arith_uint256 bigLayerWeight = arith_uint256(layer.first);
-        CAmount totalLayerReserves = ((bigSupply * bigLayerWeight) / bigSatoshi).GetLow64() + addNormalizedReserves;
+        CAmount priorLayerInflow = addNormalizedReserves;
+        if (layerReserveFixActive)
+        {
+            // only earlier flow that landed in currencies still in this layer
+            priorLayerInflow = 0;
+            for (auto &id : layer.second.second)
+            {
+                priorLayerInflow += reserveInflow[id];
+            }
+        }
+
+        CAmount totalLayerReserves = ((bigSupply * bigLayerWeight) / bigSatoshi).GetLow64() + priorLayerInflow;
         addNormalizedReserves += layer.second.first;
         CAmount newSupply = CalculateFractionalOut(layer.second.first, supply + addSupply, totalLayerReserves, layer.first);
         if (newSupply < 0)
@@ -2380,6 +2396,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             {
                 idIT->second.first += newSupplyForCurrency;
             }
+            reserveInflow[id] += ((arith_uint256(layer.second.first) * weights[reserveMap[id]]) / bigLayerWeight).GetLow64();
         }
     }
 
@@ -2404,16 +2421,27 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
     addSupply = 0;
     addNormalizedReserves = 0;
     CAmount addNormalizedReservesBB = 0, addNormalizedReservesAB = 0;
+    std::map<uint160, CAmount> reserveOutflowBB, reserveOutflowAB;
 
     // calculate sell both before and after buy through this loop
     for (auto &layer : fractionalLayersIn)
     {
         // first calculate sell before-buy, then after-buy
         arith_uint256 bigLayerWeight(layer.first);
+        CAmount priorOutflowBB = addNormalizedReservesBB, priorOutflowAB = addNormalizedReservesAB;   // negative running totals
+        if (layerReserveFixActive)
+        {
+            priorOutflowBB = priorOutflowAB = 0;
+            for (auto &id : layer.second.second)
+            {
+                priorOutflowBB -= reserveOutflowBB[id];
+                priorOutflowAB -= reserveOutflowAB[id];
+            }
+        }
 
         // before-buy starting point
-        CAmount totalLayerReservesBB = ((bigSupply * bigLayerWeight) / bigSatoshi).GetLow64() + addNormalizedReservesBB;
-        CAmount totalLayerReservesAB = ((arith_uint256(supplyAfterBuy) * bigLayerWeight) / bigSatoshi).GetLow64() + addNormalizedReservesAB;
+        CAmount totalLayerReservesBB = ((bigSupply * bigLayerWeight) / bigSatoshi).GetLow64() + priorOutflowBB;
+        CAmount totalLayerReservesAB = ((arith_uint256(supplyAfterBuy) * bigLayerWeight) / bigSatoshi).GetLow64() + priorOutflowAB;
 
         CAmount newNormalizedReserveBB = CalculateReserveOut(layer.second.first, supply + addSupply, layerFixActive ? totalLayerReservesBB : totalLayerReservesBB + addNormalizedReservesBB, layer.first, enhancedUnderflowCheck);
         CAmount newNormalizedReserveAB = CalculateReserveOut(layer.second.first, supplyAfterBuy + addSupply, layerFixActive ? totalLayerReservesAB : totalLayerReservesAB + addNormalizedReservesAB, layer.first, enhancedUnderflowCheck);
@@ -2455,6 +2483,9 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             {
                 newReservesForCurrencyAB = -newReservesForCurrencyAB;
             }
+
+            reserveOutflowBB[id] += newReservesForCurrencyBB;
+            reserveOutflowAB[id] += newReservesForCurrencyAB;
 
             // initialize or add to the new supply for this currency
             if (idIT == fractionalInMap.end())
@@ -2507,12 +2538,23 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
 
     addSupply = 0;
     addNormalizedReserves = 0;
+    reserveInflow.clear();
 
     // now calculate buy after sell
     for (auto &layer : fractionalLayersOut)
     {
         arith_uint256 bigLayerWeight = arith_uint256(layer.first);
-        CAmount totalLayerReserves = ((arith_uint256(supplyAfterSell) * bigLayerWeight) / bigSatoshi).GetLow64() + addNormalizedReserves;
+        CAmount priorLayerInflow = addNormalizedReserves;
+        if (layerReserveFixActive)
+        {
+            priorLayerInflow = 0;
+            for (auto &id : layer.second.second)
+            {
+                priorLayerInflow += reserveInflow[id];
+            }
+        }
+
+        CAmount totalLayerReserves = ((arith_uint256(supplyAfterSell) * bigLayerWeight) / bigSatoshi).GetLow64() + priorLayerInflow;
         addNormalizedReserves += layer.second.first;
         CAmount newSupply = CalculateFractionalOut(layer.second.first, supplyAfterSell + addSupply, totalLayerReserves, layer.first);
         arith_uint256 bigNewSupply(newSupply);
@@ -2530,6 +2572,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             }
 
             idIT->second.second += ((bigNewSupply * weights[reserveMap[id]]) / bigLayerWeight).GetLow64();
+            reserveInflow[id] += ((arith_uint256(layer.second.first) * weights[reserveMap[id]]) / bigLayerWeight).GetLow64();
         }
     }
 
@@ -2677,7 +2720,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             std::vector<CAmount> _viaPrices;
             std::vector<CAmount> &viaPrices(pViaPrices ? *pViaPrices : _viaPrices);
             CCurrencyState intermediateState = newState;
-            viaPrices = intermediateState.ConvertAmounts(scratchValues, fractionsToConvert, newState, promoteExchangeRate, layerFixActive, enhancedUnderflowCheck, state);
+            viaPrices = intermediateState.ConvertAmounts(scratchValues, fractionsToConvert, newState, layerFixActive, height, state);
         }
     }
 
@@ -6075,9 +6118,8 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 scratchCurrencyState.ConvertAmounts(adjustedReserveConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     fractionalConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     dummyCurState,
-                                                    ConnectedChains.IsPromoteExchangeRate(height),
                                                     ConnectedChains.IsPBaaSRefundFixActive(height) || (IsVerusActive() && importCurrencyState.GetID() == ConnectedChains.KaijuCurrencyID() && height >= 3448609),
-                                                    ConnectedChains.IsEnhancedUnderflowCheck(height),
+                                                    height,
                                                     state,
                                                     &crossConversions,
                                                     &newCurrencyState.viaConversionPrice);
