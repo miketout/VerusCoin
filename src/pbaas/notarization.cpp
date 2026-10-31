@@ -11624,7 +11624,13 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
 
                         vector<CAddressIndexDbEntry> addresses;
                         std::vector<CProofRoot> challengingRoots;
-                        if ((std::get<0>(priorNotarizationInfo) + 1) <= (height - 1) &&
+
+                        bool scanForChallengers = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) ?
+                                                      ((std::get<0>(priorNotarizationInfo) + 1) <= (height - 1)) :
+                                                      ((std::get<0>(priorNotarizationInfo) + 1) >= (height - 1));
+
+                        if (scanForChallengers &&
+                            (std::get<0>(priorNotarizationInfo) + 1) <= (height - 1) &&
                             GetAddressIndex(
                                 CCrossChainRPCData::GetConditionID(normalizedNotarization.currencyID, CPBaaSNotarization::NotaryNotarizationKey()),
                                 CScript::P2IDX,
