@@ -104,7 +104,6 @@ uint64_t KOMODO_WALLETBALANCE;
 uint64_t ASSETCHAINS_COMMISSION, ASSETCHAINS_STAKED;
 int64_t ASSETCHAINS_ISSUANCE, ASSETCHAINS_SUPPLY = 10;
 
-uint32_t KOMODO_INITDONE;
 char KMDUSERPASS[8192],BTCUSERPASS[8192]; uint16_t KMD_PORT = 7771,BITCOIND_RPCPORT = 7771;
 uint64_t PENDING_KOMODO_TX;
 extern int32_t KOMODO_LOADINGBLOCKS;
@@ -113,24 +112,6 @@ unsigned int MAX_BLOCK_SIGOPS = 20000;
 struct komodo_kv *KOMODO_KV;
 pthread_mutex_t KOMODO_KV_mutex;
 CCriticalSection smartTransactionCS;
-
-#define MAX_CURRENCIES 32
-char CURRENCIES[][8] = { "USD", "EUR", "JPY", "GBP", "AUD", "CAD", "CHF", "NZD", // major currencies
-    "CNY", "RUB", "MXN", "BRL", "INR", "HKD", "TRY", "ZAR", "PLN", "NOK", "SEK", "DKK", "CZK", "HUF", "ILS", "KRW", "MYR", "PHP", "RON", "SGD", "THB", "BGN", "IDR", "HRK",
-    "KMD" };
-
-int32_t komodo_baseid(char *origbase)
-{
-    int32_t i; char base[64];
-    for (i=0; origbase[i]!=0&&i<sizeof(base); i++)
-        base[i] = toupper((int32_t)(origbase[i] & 0xff));
-    base[i] = 0;
-    for (i=0; i<=MAX_CURRENCIES; i++)
-        if ( strcmp(CURRENCIES[i],base) == 0 )
-            return(i);
-    //printf("illegal base.(%s) %s\n",origbase,base);
-    return(-1);
-}
 
 #ifndef SATOSHIDEN
 #define SATOSHIDEN ((uint64_t)100000000L)

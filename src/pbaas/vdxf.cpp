@@ -1093,7 +1093,17 @@ UniValue CDataDescriptor::ToUniValue() const
         }
     }
 
-    UniValue processedObject = CIdentity::VDXFDataToUniValue(objectData);
+    static thread_local int dataDescriptorDepth = 0;
+    struct CDepthGuard { int &d; CDepthGuard(int &depth) : d(depth) { ++d; } ~CDepthGuard() { --d; } } depthGuard(dataDescriptorDepth);
+    UniValue processedObject(UniValue::VARR);
+    if (dataDescriptorDepth > MAX_DATA_DESCRIPTOR_DEPTH)
+    {
+        processedObject.push_back(HexBytes(objectData.data(), objectData.size()));
+    }
+    else
+    {
+        processedObject = CIdentity::VDXFDataToUniValue(objectData);
+    }
 
     if (isText &&
         find_value(processedObject, EncodeDestination(CIdentityID(CVDXF_Data::CrossChainDataRefKey()))).isNull())

@@ -541,10 +541,10 @@ CAmount CCurrencyState::ReserveToNativeRaw(CAmount reserveAmount, CAmount exchan
         bigRetVal = (exchangeRate != bigZero ? (bigAmount * bigSatoshi) / exchangeRate : bigZero);
     }
 
-    int64_t retVal = bigRetVal.GetLow64();
-    if ((bigRetVal - retVal) == 0)
+    static const arith_uint256 bigInt64Max((uint64_t)INT64_MAX);
+    if (bigRetVal <= bigInt64Max)
     {
-        return retVal;
+        return (int64_t)bigRetVal.GetLow64();
     }
     else
     {
@@ -633,10 +633,10 @@ CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, CAmount exchang
         bigReserves = (bigAmount * exchangeRate) / bigSatoshi;
     }
 
-    int64_t retVal = bigReserves.GetLow64();
-    if ((bigReserves - retVal) == 0)
+    static const arith_uint256 bigInt64Max((uint64_t)INT64_MAX);
+    if (bigReserves <= bigInt64Max)
     {
-        return retVal;
+        return (int64_t)bigReserves.GetLow64();
     }
     else
     {
@@ -667,10 +667,10 @@ CAmount CCurrencyState::NativeGasToReserveRaw(CAmount nativeAmount, CAmount exch
         bigReserves = (bigAmount * exchangeRate) / bigSatoshiX1000;
     }
 
-    int64_t retVal = bigReserves.GetLow64();
-    if ((bigReserves - retVal) == 0)
+    static const arith_uint256 bigInt64Max((uint64_t)INT64_MAX);
+    if (bigReserves <= bigInt64Max)
     {
-        return retVal;
+        return (int64_t)bigReserves.GetLow64();
     }
     else
     {

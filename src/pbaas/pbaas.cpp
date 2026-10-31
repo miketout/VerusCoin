@@ -2075,6 +2075,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                     nRequired == 1)
                 {
                     CTxDestination feeRecipient = GetCompatibleAuxDestination(ccx.exporter, CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR);
+                    bool skipSHPayee = IsAfterSecondBridgeCleanupWindowStarts(exportChainTime);
                     if (block.vtx[0].vout[0].scriptPubKey.IsPayToCryptoCondition(frP) && frP.evalCode != EVAL_NONE)
                     {
                         CCcontract_info CC;
@@ -2086,7 +2087,10 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                         // first non-default address is the fee recipient
                         for (auto &oneDest : addresses)
                         {
-                            if (oneDest == evalPKH || oneDest.which() == COptCCParams::ADDRTYPE_INVALID || oneDest.which() == COptCCParams::ADDRTYPE_INDEX)
+                            if (oneDest == evalPKH ||
+                                (skipSHPayee && oneDest.which() == COptCCParams::ADDRTYPE_SH) ||
+                                oneDest.which() == COptCCParams::ADDRTYPE_INVALID ||
+                                oneDest.which() == COptCCParams::ADDRTYPE_INDEX)
                             {
                                 continue;
                             }
@@ -2094,7 +2098,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                             break;
                         }
                     }
-                    else
+                    else if (!skipSHPayee || addresses[0].which() != COptCCParams::ADDRTYPE_SH)
                     {
                         feeRecipient = addresses[0];
                     }
@@ -2242,7 +2246,8 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
         // if cross system, we may remove some due to burning
         if (isCrossSystem)
         {
-            if (!ConnectedChains.CurrencyExportStatus(ccx.totalAmounts, ASSETCHAINS_CHAINID, ccx.destSystemID, expectedReserveDeposits, expectedBurn) ||
+            if (!ConnectedChains.CurrencyExportStatus(ccx.totalAmounts, ASSETCHAINS_CHAINID, ccx.destSystemID, expectedReserveDeposits, expectedBurn,
+                                                        !IsAfterSecondBridgeCleanupWindowStarts(exportChainTime)) ||
                 expectedBurn.CanonicalMap() != ccx.totalBurned.CanonicalMap())
             {
                 return state.Error("Cross system currency export error");
@@ -4303,6 +4308,12 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
     {
         return state.Error("Currency definition must include launch system native currency in currencies");
     }
+    if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) &&
+        (newCurrency.preconverted.size() != newCurrency.currencies.size() ||
+         newCurrency.contributions.size() != newCurrency.currencies.size()))
+    {
+        return state.Error("Currency definition vectors must match the number of currencies");
+    }
 
     if (!isBlockOneDefinition)
     {
@@ -4798,6 +4809,9 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
                            newCurrency.maxPreconvert[0] == 0 &&
                            newCurrency.GetTotalPreallocation() == 0) &&
                          !(newCurrency.systemID == ASSETCHAINS_CHAINID &&
+                           newCurrency.conversions.size() == 1 &&
+                           (newCurrency.conversions[0] == 0 ||
+                            newCurrency.conversions[0] == SATOSHIDEN) &&
                            ((newCurrency.GetTotalPreallocation() == 0 &&
                              newCurrency.maxPreconvert.size() == 1 &&
                              newCurrency.maxPreconvert[0] == 1) ||
@@ -5120,7 +5134,9 @@ bool CheckIdentitySpends(const CTransaction &tx, const uint160 idID, CValidation
 
     CIdentity revokeID = (!allAuthorities || signingID.revocationAuthority == idID) ? signingID : CIdentity::LookupIdentity(signingID.revocationAuthority, height);
     CIdentity recoveryID = (!allAuthorities || signingID.recoveryAuthority == idID) ? signingID : CIdentity::LookupIdentity(signingID.recoveryAuthority, height);
-     if (!revokeID.IsValid() || !recoveryID.IsValid())
+    if (!revokeID.IsValidUnrevoked() || !recoveryID.IsValidUnrevoked() ||
+        (signingID.revocationAuthority != idID && revokeID.IsLocked(height)) ||
+        (signingID.recoveryAuthority != idID && recoveryID.IsLocked(height)))
     {
         return state.Error("Invalid revoke or recovery identity or necessary identities not found for approval of ID operation");
     }
@@ -5301,6 +5317,14 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
         }
 
         uint32_t chainTime = chainActive.ChainTimeAtOrBefore(height - 1);
+        if (IsAfterSecondBridgeCleanupWindowStarts(chainTime))
+        {
+            CCurrencyDefinition nftCheckDef = ConnectedChains.GetCachedCurrency(rt.FirstCurrency());
+            if (nftCheckDef.IsValid() && nftCheckDef.IsNFTToken() && rt.FirstValue() != 1)
+            {
+                return state.Error("NFT or tokenized control currency transfers must carry exactly one satoshi " + rt.ToUniValue().write(1,2));
+            }
+        }
 
         // ensure that prohibited disgorgement happens within the allowed window and is properly signed by the adjusting ID
         bool isBridgeCleanupOpen = IsBridgeCleanupWindowOpen(chainTime);
@@ -7830,6 +7854,14 @@ CCoinbaseCurrencyState CConnectedChains::GetCurrencyState(CCurrencyDefinition &c
                 {
                     currencyState.priorWeights.resize(curDef.currencies.size());
                 }
+                if (curDef.preconverted.size() != curDef.currencies.size())
+                {
+                    curDef.preconverted.resize(curDef.currencies.size());
+                }
+                if (currencyState.reserves.size() != curDef.currencies.size())
+                {
+                    currencyState.reserves.resize(curDef.currencies.size());
+                }
                 // get chain transfers that should apply before the start block
                 // until there is a post-start block notarization, we always consider the
                 // currency state to be up to just before the start block
@@ -9316,7 +9348,8 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
                                                       cci.sourceSystemID,
                                                       destCur.systemID,
                                                       checkImportedCurrency,
-                                                      checkRequiredDeposits))
+                                                      checkRequiredDeposits,
+                                                      !IsAfterSecondBridgeCleanupWindowStarts(chainActive.LastTip()->nTime)))
             {
                 failedCurrencyDest = ccx.destCurrencyID;
                 continue;
@@ -10262,7 +10295,8 @@ bool CConnectedChains::CurrencyExportStatus(const CCurrencyValueMap &totalExport
                                             const uint160 &sourceSystemID,
                                             const uint160 &destSystemID,
                                             CCurrencyValueMap &newReserveDeposits,
-                                            CCurrencyValueMap &exportBurn)
+                                            CCurrencyValueMap &exportBurn,
+                                            bool enforceNFTBatchCap)
 {
     /* printf("%s: num transfers %ld, totalExports: %s\nnewNotarization: %s\n",
         __func__,
@@ -10299,7 +10333,7 @@ bool CConnectedChains::CurrencyExportStatus(const CCurrencyValueMap &totalExport
                 return false;
             }
 
-            if (oneCurDef.IsNFTToken() && oneCur.second > 1)
+            if (enforceNFTBatchCap && oneCurDef.IsNFTToken() && oneCur.second > 1)
             {
                 printf("%s: No more than 1 satoshi may be transfered cross-chain to represent an NFT or tokenized ID control currency\n", __func__);
                 LogPrintf("%s: No more than 1 satoshi may be transfered cross-chain to represent an NFT or tokenized ID control currency\n", __func__);
@@ -10391,9 +10425,10 @@ bool CConnectedChains::CurrencyImportStatus(const CCurrencyValueMap &totalImport
                                             const uint160 &sourceSystemID,
                                             const uint160 &destSystemID,
                                             CCurrencyValueMap &mintNew,
-                                            CCurrencyValueMap &reserveDepositsRequired)
+                                            CCurrencyValueMap &reserveDepositsRequired,
+                                            bool enforceNFTBatchCap)
 {
-    return CurrencyExportStatus(totalImports, sourceSystemID, destSystemID, mintNew, reserveDepositsRequired);
+    return CurrencyExportStatus(totalImports, sourceSystemID, destSystemID, mintNew, reserveDepositsRequired, enforceNFTBatchCap);
 }
 
 uint256 EntropyHashFromHeight(const uint160 &conditionID, uint32_t nHeight, const uint160 &extraEntropy)
@@ -10851,6 +10886,7 @@ bool CConnectedChains::CreateNextExport(const CCurrencyDefinition &_curDef,
             addresses.size() &&
             nRequired == 1)
         {
+            bool skipSHAddresses = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(curHeight - 1));
             if (block.vtx[0].vout[0].scriptPubKey.IsPayToCryptoCondition(frP) && frP.evalCode != EVAL_NONE)
             {
                 CCcontract_info CC;
@@ -10863,7 +10899,7 @@ bool CConnectedChains::CreateNextExport(const CCurrencyDefinition &_curDef,
                 for (auto &oneDest : addresses)
                 {
                     if (oneDest == evalPKH ||
-                        oneDest.which() == COptCCParams::ADDRTYPE_SH ||
+                        (skipSHAddresses && oneDest.which() == COptCCParams::ADDRTYPE_SH) ||
                         oneDest.which() == COptCCParams::ADDRTYPE_INVALID ||
                         oneDest.which() == COptCCParams::ADDRTYPE_INDEX)
                     {
@@ -10873,7 +10909,7 @@ bool CConnectedChains::CreateNextExport(const CCurrencyDefinition &_curDef,
                     break;
                 }
             }
-            else if (addresses[0].which() != COptCCParams::ADDRTYPE_SH)
+            else if (!skipSHAddresses || addresses[0].which() != COptCCParams::ADDRTYPE_SH)
             {
                 feeRecipient.SetAuxDest(DestinationToTransferDestination(addresses[0]), 0);
             }
@@ -11004,7 +11040,8 @@ bool CConnectedChains::CreateNextExport(const CCurrencyDefinition &_curDef,
     // or unregistered currencies to export. if same to same chain, all exports are ok.
     if (destSystemID != ASSETCHAINS_CHAINID)
     {
-        if (!ConnectedChains.CurrencyExportStatus(totalExports, ASSETCHAINS_CHAINID, destSystemID, newReserveDeposits, exportBurn))
+        if (!ConnectedChains.CurrencyExportStatus(totalExports, ASSETCHAINS_CHAINID, destSystemID, newReserveDeposits, exportBurn,
+                                                    !IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(curHeight - 1))))
         {
             return false;
         }

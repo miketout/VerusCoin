@@ -785,7 +785,7 @@ void InitializePremineSupply()
     }
 }
 
-bool IsStandardTx(const CTransaction& tx, string& reason, bool fLimitDust, const CChainParams& chainparams, const int nHeight)
+bool IsStandardTx(const CTransaction& tx, string& reason, bool fLimitDust, const CChainParams& chainparams, const int nHeight, bool fMempoolPolicy)
 {
     bool overwinterActive = chainparams.GetConsensus().NetworkUpgradeActive(nHeight,  Consensus::UPGRADE_OVERWINTER);
     bool saplingActive = chainparams.GetConsensus().NetworkUpgradeActive(nHeight, Consensus::UPGRADE_SAPLING);
@@ -874,10 +874,11 @@ bool IsStandardTx(const CTransaction& tx, string& reason, bool fLimitDust, const
             nDataOut++;
             //fprintf(stderr,"is OP_RETURN\n");
         }
-        else if ((whichType == TX_MULTISIG) && (!fIsBareMultisigStd)) {
+        else if ((whichType == TX_MULTISIG) && fMempoolPolicy && (!fIsBareMultisigStd)) {
             reason = "bare-multisig";
             return false;
-        } else if (fLimitDust && !txout.scriptPubKey.IsPayToCryptoCondition() && !tx.vout.back().scriptPubKey.IsOpReturn() && !isCoinbase && txout.IsDust(::minRelayTxFee)) {
+        } else if (fLimitDust && !txout.scriptPubKey.IsPayToCryptoCondition() && !tx.vout.back().scriptPubKey.IsOpReturn() && !isCoinbase &&
+                    txout.IsDust(fMempoolPolicy ? ::minRelayTxFee : CFeeRate(DEFAULT_MIN_RELAY_TX_FEE))) {
             reason = "dust";
             return false;
         }
@@ -1946,7 +1947,7 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
     // Rather not work on nonstandard transactions (unless -testnet/-regtest)
     string reason;
-    if (Params().RequireStandard() && !IsStandardTx(tx, reason, fLimitDust, chainParams, nextBlockHeight))
+    if (Params().RequireStandard() && !IsStandardTx(tx, reason, fLimitDust, chainParams, nextBlockHeight, fLimitFree))
     {
         //
         //fprintf(stderr,"AcceptToMemoryPool reject nonstandard transaction: %s\nscriptPubKey: %s\n",reason.c_str(),tx.vout[0].scriptPubKey.ToString().c_str());

@@ -877,7 +877,7 @@ CIdentitySignature::ESignatureVerification CheckBasicIDSignature(uint256 msgHash
         signature = CIdentitySignature();
     }
 
-    if (signature.signatures.size())
+    if (signature.IsValid() && signature.signatures.size())
     {
         if (msgHash.IsNull())
         {

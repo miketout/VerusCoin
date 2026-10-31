@@ -88,7 +88,6 @@ void WaitForShutdown(boost::thread_group* threadGroup)
 //
 extern int32_t IS_KOMODO_NOTARY,USE_EXTERNAL_PUBKEY,ASSETCHAIN_INIT;
 extern std::string NOTARY_PUBKEY;
-int32_t komodo_is_issuer();
 
 bool AppInit(int argc, char* argv[])
 {
@@ -133,7 +132,6 @@ bool AppInit(int argc, char* argv[])
         fprintf(stderr,"(%s) NOTARY_PUBKEY.(%s)\n",argv[0],NOTARY_PUBKEY.c_str());
         while ( ASSETCHAIN_INIT == 0 )
         {
-            //if ( komodo_is_issuer() != 0 )
             #ifdef _WIN32
             boost::this_thread::sleep_for(boost::chrono::seconds(1));
             #else

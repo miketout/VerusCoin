@@ -1288,6 +1288,8 @@ bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceS
 
     bool clearConvert = ConnectedChains.CheckClearConvert(notaHeight);
 
+    bool preconvertFeeFloorActive = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(notaHeight));
+
     CCoinbaseCurrencyState::ReversionUpdate reversionUpdate = !improvedMinCheck ?
                                                                 CCoinbaseCurrencyState::PBAAS_1_0_0 :
                                                                 !clearConvert ?
@@ -1389,6 +1391,7 @@ bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceS
                 }
 
                 if (conversionFee < 0 ||
+                    (preconvertFeeFloorActive && reserveTransfer.FirstValue() <= conversionFee) ||
                     (destCurrency.maxPreconvert.size() &&
                      ((!improvedMinCheck && LegacyLT(maxPreconvertMap, newTotalReserves)) ||
                       (improvedMinCheck && (maxPreconvertMap - newTotalReserves).HasNegative()))))
@@ -6010,91 +6013,6 @@ bool ProvePosBlock(uint32_t lastProofRootHeight, const CBlockIndex *pindex, CNot
     return true;
 }
 
-
-bool CPBaaSNotarization::CheckCrossNotarizationProgression(const CCurrencyDefinition &curDef, CPBaaSNotarization &priorNotarization, uint32_t newHeight, CValidationState &state) const
-{
-    // ensure that this notarization does not skip any valid notarization behind us
-    // whether or not this block alternates PoS and PoW is not checked here
-    CTransaction priorNotTx;
-    uint256 hashBlock;
-    COptCCParams priorP;
-
-    // if there is a proof root in this accepted notarization, it must be as part of an import
-    // and the proof root should match the evidence notarization reference used to prove the
-    // import.
-    if (prevNotarization.IsNull() ||
-        !myGetTransaction(prevNotarization.hash, priorNotTx, hashBlock) ||
-        hashBlock.IsNull() ||
-        !mapBlockIndex.count(hashBlock) ||
-        priorNotTx.vout.size() <= prevNotarization.n ||
-        !priorNotTx.vout[prevNotarization.n].scriptPubKey.IsPayToCryptoCondition(priorP) ||
-        !priorP.IsValid() ||
-        (priorP.evalCode != EVAL_ACCEPTEDNOTARIZATION && priorP.evalCode != EVAL_EARNEDNOTARIZATION) ||
-        priorP.vData.size() < 1 ||
-        !(priorNotarization = CPBaaSNotarization(priorP.vData[0])).IsValid() ||
-        (priorP.evalCode == EVAL_ACCEPTEDNOTARIZATION &&
-            !priorNotarization.IsBlockOneNotarization() &&
-            !priorNotarization.IsDefinitionNotarization()) ||
-        (hashPrevCrossNotarization.IsNull() && !curDef.IsGateway()))
-    {
-        return state.Error("Invalid prior for earned notarization");
-    }
-
-    std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastConfirmedNotarization = GetLastConfirmedNotarization(currencyID, newHeight - 1);
-
-    if (!std::get<0>(lastConfirmedNotarization))
-    {
-        return state.Error("Cannot get last confirmed notarization");
-    }
-
-    CObjectFinalization confirmedOf(CObjectFinalization::VERSION_INVALID);
-    CAddressIndexDbEntry localConfirmedIndex;
-
-    uint160 notarizationIdxKey = CCrossChainRPCData::GetConditionID(currencyID,
-                                                                    CPBaaSNotarization::EarnedNotarizationKey(),
-                                                                    hashPrevCrossNotarization);
-
-    CObjectFinalization lastConfirmedF;
-    CAddressIndexDbEntry lastConfirmedAddressIndexKey;
-
-    // if we can't find the prev cross on this chain, it means that when this was made, we were
-    // not notarized on the notary chain yet. That means our latest known last confirmed as of this
-    // notarization was the block 1 notarization
-    bool foundLocalCrossConfirmed =
-        CPBaaSNotarization::FindFinalizedIndexByVDXFKey(notarizationIdxKey, lastConfirmedF, lastConfirmedAddressIndexKey);
-
-    // confirm that we're never backsliding, and once one is found, they must move forward
-    notarizationIdxKey = CCrossChainRPCData::GetConditionID(priorNotarization.currencyID,
-                                                            CPBaaSNotarization::EarnedNotarizationKey(),
-                                                            priorNotarization.hashPrevCrossNotarization);
-
-    CObjectFinalization priorLastConfirmedF;
-    CAddressIndexDbEntry priorLastConfirmedAddressIndexKey;
-
-    bool foundPriorLocalCrossConfirmed =
-        CPBaaSNotarization::FindFinalizedIndexByVDXFKey(notarizationIdxKey, priorLastConfirmedF, priorLastConfirmedAddressIndexKey);
-
-    // ensure that we can always find one after the first and that we have not moved backwards in the one we find
-    // any cross confirmed notarization also must have first been confirmed on this chain, so verify that as well
-    if (foundPriorLocalCrossConfirmed &&
-        (!foundLocalCrossConfirmed ||
-            lastConfirmedAddressIndexKey.first.blockHeight < priorLastConfirmedAddressIndexKey.first.blockHeight))
-    {
-        if (LogAcceptCategory("notarization"))
-        {
-            // the last confirmed notarization on this chain, which must be either the same or more recent on this
-            // chain than any notarization we agree with on the alternate chain, refers to an older prior finalization
-            // output than the one we are about to confirm on our notary chain
-            LogPrintf("%s: Last confirmed notarization points to an older finalization\nlastconfirmedcrossfinalization: %s\nnewconfirmedcrossfinalization: %s\n\n",
-                        __func__,
-                        CUTXORef(priorLastConfirmedAddressIndexKey.first.txhash, priorLastConfirmedAddressIndexKey.first.index).ToString().c_str(),
-                        CUTXORef(lastConfirmedAddressIndexKey.first.txhash, lastConfirmedAddressIndexKey.first.index).ToString().c_str());
-        }
-        return state.Error("Invalid progression of prior cross-notarization hash");
-    }
-    return true;
-}
-
 // create a notarization that is validated as part of the block, statistically benefiting the miner or staker if the
 // cross notarization is valid
 bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalSystem,
@@ -6330,13 +6248,36 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                     }
                 }
             }
-            if (isValid)
+            if (isValid && i)
             {
-                CPBaaSNotarization localPriorNotarization;
-                if (i &&
-                    !crosschainCND.vtx[i].second.CheckCrossNotarizationProgression(systemDef, localPriorNotarization, height + 1, state))
+                if (!IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height)))
                 {
+                    // before the window, keep referencing the root's last confirmed entry
                     isValid = false;
+                }
+                else
+                {
+                    // mirror the precheck: the entry we reference must exist here as an earned notarization and must not be
+                    // older on this chain than the entry referenced by our last confirmed notarization
+                    CPBaaSNotarization candidate = crosschainCND.vtx[i].second;
+                    CObjectFinalization candidateOf, floorOf;
+                    CAddressIndexDbEntry candidateIdx, floorIdx;
+                    CNativeHashWriter hw;
+                    bool candidateFound = candidate.SetMirror(false) &&
+                                          (hw << candidate, true) &&
+                                          CPBaaSNotarization::FindFinalizedIndexByVDXFKey(
+                                              CCrossChainRPCData::GetConditionID(SystemID, CPBaaSNotarization::EarnedNotarizationKey(), hw.GetHash()),
+                                              candidateOf, candidateIdx);
+                    std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastConfirmed = GetLastConfirmedNotarization(SystemID, height);
+                    bool floorFound = std::get<0>(lastConfirmed) &&
+                                      CPBaaSNotarization::FindFinalizedIndexByVDXFKey(
+                                          CCrossChainRPCData::GetConditionID(SystemID, CPBaaSNotarization::EarnedNotarizationKey(),
+                                                                             std::get<2>(lastConfirmed).hashPrevCrossNotarization),
+                                          floorOf, floorIdx);
+                    if (floorFound && (!candidateFound || candidateIdx.first.blockHeight < floorIdx.first.blockHeight))
+                    {
+                        isValid = false;
+                    }
                 }
             }
             if (!isValid)
@@ -11206,9 +11147,13 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                             CPBaaSNotarization::FindFinalizedIndexByVDXFKey(notarizationIdxKey, lastConfirmedF, lastConfirmedAddressIndexKey);
 
                         // confirm that we're never backsliding, and once one is found, they must move forward
-                        notarizationIdxKey = CCrossChainRPCData::GetConditionID(priorNotarization.currencyID,
+                        const CPBaaSNotarization &backslideFloor =
+                            IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) ?
+                                std::get<2>(lastConfirmedNotarization) :
+                                priorNotarization;
+                        notarizationIdxKey = CCrossChainRPCData::GetConditionID(backslideFloor.currencyID,
                                                                                 CPBaaSNotarization::EarnedNotarizationKey(),
-                                                                                priorNotarization.hashPrevCrossNotarization);
+                                                                                backslideFloor.hashPrevCrossNotarization);
 
                         CObjectFinalization priorLastConfirmedF;
                         CAddressIndexDbEntry priorLastConfirmedAddressIndexKey;
@@ -11389,14 +11334,20 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                                 {
                                     return state.Error("Currency state changed without proofroot change");
                                 }
-                                // verify that currency states have also not changed
+                                // verify that co-notarized currency states have also not changed
+                                bool checkCoStates = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1));
                                 for (auto &oneState : priorNotarization.currencyStates)
                                 {
-                                    CCurrencyDefinition checkStateDef = ConnectedChains.GetCachedCurrency(oneState.second.GetID());
-                                    if (checkStateDef.systemID == currentNotarization.currencyID &&
-                                        ::AsVector(priorNotarization.currencyState) != ::AsVector(currentNotarization.currencyState))
+                                    CCurrencyDefinition checkStateDef = ConnectedChains.GetCachedCurrency(oneState.first);
+                                    if (checkStateDef.systemID == currentNotarization.currencyID)
                                     {
-                                        return state.Error("Currency state changed without proofroot change 1");
+                                        auto curIt = currentNotarization.currencyStates.find(oneState.first);
+                                        if (checkCoStates ?
+                                                (curIt == currentNotarization.currencyStates.end() || ::AsVector(oneState.second) != ::AsVector(curIt->second)) :
+                                                (::AsVector(priorNotarization.currencyState) != ::AsVector(currentNotarization.currencyState)))
+                                        {
+                                            return state.Error("Co-notarized currency state changed without proofroot change");
+                                        }
                                     }
                                 }
                             }
@@ -12495,6 +12446,34 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
         if (currentFinalization.IsConfirmed())
         {
             LOCK(mempool.cs);
+
+            if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+            {
+                // a new confirmed finalization spends every confirmed finalization of its currency that is unspent as of the prior
+                // block, so confirmed finalizations always form one chain; the DB index alone is used so that live and syncing nodes
+                // see the same set
+                std::vector<CAddressUnspentDbEntry> unspentConfirmed;
+                uint160 confirmedKey = CCrossChainRPCData::GetConditionID(
+                    CCrossChainRPCData::GetConditionID(currentFinalization.currencyID, CObjectFinalization::ObjectFinalizationNotarizationKey()),
+                    CObjectFinalization::ObjectFinalizationConfirmedKey());
+                if (!GetAddressUnspent(confirmedKey, CScript::P2IDX, unspentConfirmed))
+                {
+                    return TransientError(state, "Cannot read confirmed finalization index");
+                }
+                std::set<CUTXORef> spent;
+                for (auto &oneIn : tx.vin)
+                {
+                    spent.insert(CUTXORef(oneIn.prevout));
+                }
+                for (auto &oneUnspent : unspentConfirmed)
+                {
+                    if (!spent.count(CUTXORef(oneUnspent.first.txhash, oneUnspent.first.index)))
+                    {
+                        return state.Error("Confirmed finalization must spend all unspent prior confirmed finalizations");
+                    }
+                }
+            }
+
             std::tuple<uint32_t, CTransaction, CUTXORef, CPBaaSNotarization> priorNotarizationInfo =
                 GetPriorReferencedNotarization(finalizedTx, currentFinalization.output.n, normalizedNotarization);
 

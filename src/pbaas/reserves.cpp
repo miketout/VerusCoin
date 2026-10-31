@@ -4437,6 +4437,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     bool isBridgeCleanupWindowOpen = IsBridgeCleanupWindowOpen(chainTime);
     bool isAfterBridgeCleanupWindowStarts = IsAfterBridgeCleanupWindowStarts(chainTime);
     bool isAfterSecondBridgeCleanupWindowStarts = IsAfterSecondBridgeCleanupWindowStarts(chainTime);
+    std::set<uint160> nftTransferredThisImport;
 
     for (int i = 0; i <= exportObjects.size(); i++)
     {
@@ -4633,7 +4634,9 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 newCurrencyState.conversionFees = conversionFees.AsCurrencyVector(newCurrencyState.currencies);
                 newCurrencyState.primaryCurrencyFees = transferFees.valueMap.count(importCurrencyID) ? transferFees.valueMap[importCurrencyID] : 0;
                 newCurrencyState.primaryCurrencyConversionFees =
-                    conversionFees.valueMap.count(importCurrencyID) ? transferFees.valueMap[importCurrencyID] : 0;
+                    conversionFees.valueMap.count(importCurrencyID) ?
+                        (isAfterSecondBridgeCleanupWindowStarts ? conversionFees.valueMap[importCurrencyID] : transferFees.valueMap[importCurrencyID]) :
+                        0;
 
                 CCurrencyValueMap exporterReserveFees;
 
@@ -5001,6 +5004,11 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                             LogPrint("reservetransfers", "%s: invalid currency for preconversion to %s\n", __func__, importCurrencyDef.name.c_str());
                             return false;
                         }
+                        curTransfer = curTransfer.GetRefundTransfer(clearCrossSystem);
+                    }
+                    else if (isAfterSecondBridgeCleanupWindowStarts && newReserveIn <= 0)
+                    {
+                        LogPrint("defi", "%s: refunding pre-conversion that cannot cover its conversion fee: %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
                         curTransfer = curTransfer.GetRefundTransfer(clearCrossSystem);
                     }
                     else if (maxPreconvert.valueMap.size())
@@ -5905,6 +5913,16 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     else
                     {
                         destCurID = curTransfer.FirstCurrency();
+                        if (isAfterSecondBridgeCleanupWindowStarts)
+                        {
+                            CCurrencyDefinition nftCheckDef = ConnectedChains.GetCachedCurrency(destCurID);
+                            if (nftCheckDef.IsValid() && nftCheckDef.IsNFTToken() &&
+                                (curTransfer.FirstValue() != 1 || !nftTransferredThisImport.insert(destCurID).second))
+                            {
+                                LogPrint("defi", "%s: absorbing excess NFT transfer %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
+                                continue;
+                            }
+                        }
                     }
                     AddReserveOutput(destCurID, curTransfer.FirstValue());
                     curTransfer.GetTxOut(systemSource,

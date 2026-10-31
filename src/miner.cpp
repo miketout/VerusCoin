@@ -121,7 +121,7 @@ void UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParams, 
 #include "komodo_defs.h"
 
 extern CCriticalSection cs_metrics;
-extern int32_t KOMODO_MININGTHREADS,KOMODO_LONGESTCHAIN,IS_KOMODO_NOTARY,USE_EXTERNAL_PUBKEY,KOMODO_CHOSEN_ONE,ASSETCHAIN_INIT,KOMODO_INITDONE,KOMODO_INITDONE,KOMODO_PASSPORT_INITDONE;
+extern int32_t KOMODO_MININGTHREADS,KOMODO_LONGESTCHAIN,IS_KOMODO_NOTARY,USE_EXTERNAL_PUBKEY,KOMODO_CHOSEN_ONE,ASSETCHAIN_INIT,KOMODO_PASSPORT_INITDONE;
 extern uint64_t ASSETCHAINS_COMMISSION, ASSETCHAINS_STAKED;
 extern bool VERUS_MINTBLOCKS;
 extern uint64_t ASSETCHAINS_REWARD[ASSETCHAINS_MAX_ERAS], ASSETCHAINS_TIMELOCKGTE, ASSETCHAINS_NONCEMASK[];
@@ -144,7 +144,6 @@ uint32_t Mining_start, Mining_height;
 int32_t My_notaryid = -1;
 
 void vcalc_sha256(char deprecated[(256 >> 3) * 2 + 1],uint8_t hash[256 >> 3],uint8_t *src,int32_t len);
-int32_t komodo_baseid(char *origbase);
 int32_t komodo_validate_interest(const CTransaction &tx,int32_t txheight,uint32_t nTime,int32_t dispflag);
 uint64_t komodo_commission(const CBlock *block);
 int32_t verus_staked(CBlock *pBlock, CMutableTransaction &txNew, uint32_t &nBits, arith_uint256 &hashResult, std::vector<unsigned char> &utxosig, CTxDestination &rewardDest);
@@ -4010,7 +4009,6 @@ static bool ProcessBlockFound(CBlock* pblock)
     return true;
 }
 
-int32_t komodo_baseid(char *origbase);
 arith_uint256 komodo_PoWtarget(int32_t *percPoSp,arith_uint256 target,int32_t height,int32_t goalperc);
 int32_t FOUND_BLOCK,KOMODO_MAYBEMINED;
 extern int32_t KOMODO_LASTMINED,KOMODO_INSYNC;
@@ -4113,13 +4111,6 @@ void static VerusStaker(CWallet *pwallet)
     unsigned int nExtraNonce = 0;
 
     uint8_t *script; uint64_t total,checktoshis; int32_t i,j;
-
-    while ( (ASSETCHAIN_INIT == 0 || KOMODO_INITDONE == 0) ) //chainActive.Tip()->GetHeight() != 235300 &&
-    {
-        sleep(1);
-        if ( komodo_baseid(ASSETCHAINS_SYMBOL) < 0 )
-            break;
-    }
 
     // try a nice clean peer connection to start
     CBlockIndex *pindexPrev, *pindexCur;
@@ -4315,13 +4306,6 @@ void static BitcoinMiner_noeq()
     unsigned int nExtraNonce = 0;
 
     uint8_t *script; uint64_t total,checktoshis; int32_t i,j;
-
-    while ( (ASSETCHAIN_INIT == 0 || KOMODO_INITDONE == 0) ) //chainActive.Tip()->GetHeight() != 235300 &&
-    {
-        sleep(1);
-        if ( komodo_baseid(ASSETCHAINS_SYMBOL) < 0 )
-            break;
-    }
 
     SetThreadPriority(THREAD_PRIORITY_LOWEST);
 
@@ -4611,6 +4595,12 @@ void static BitcoinMiner_noeq()
                                 fprintf(stderr,"no nodes, attempting reconnect\n");
                                 break;
                             }
+                        }
+
+                        // the shared block time moved (root tip advanced or its clock rule fired); our committed MMR root is stale
+                        if (ConnectedChains.GetNextBlockTime(pindexPrev) != pblock->nTime)
+                        {
+                            break;
                         }
 
                         // update every few minutes, regardless

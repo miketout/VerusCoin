@@ -406,7 +406,7 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
 /** Check for standard transaction types
  * @return True if all outputs (scriptPubKeys) use only standard transaction forms
  */
-bool IsStandardTx(const CTransaction& tx, std::string& reason, bool fLimitDust, const CChainParams& chainparams, int nHeight = 0);
+bool IsStandardTx(const CTransaction& tx, std::string& reason, bool fLimitDust, const CChainParams& chainparams, int nHeight = 0, bool fMempoolPolicy = true);
 
 namespace Consensus {
 

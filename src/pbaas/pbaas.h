@@ -652,7 +652,8 @@ public:
                 return aux;
             }
         }
-        return DestinationToTransferDestination(TransferDestinationToDestination(proposer));
+        CTxDestination fallback = TransferDestinationToDestination(proposer);
+        return fallback.which() == COptCCParams::ADDRTYPE_INVALID ? CTransferDestination() : DestinationToTransferDestination(fallback);
     }
 
     // if false, *this is unmodifed, otherwise, it is set to the last valid notarization in the requested range
@@ -702,11 +703,6 @@ public:
     static bool FindFinalizedIndexesByVDXFKey(const uint160 &notarizationIdxKey,
                                               std::vector<CObjectFinalization> &confirmedFinalizations,
                                               std::vector<CAddressIndexDbEntry> &earnedNotarizationIndex);
-
-    bool CheckCrossNotarizationProgression(const CCurrencyDefinition &curDef,
-                                           CPBaaSNotarization &priorNotarization,
-                                           uint32_t newHeight,
-                                           CValidationState &state) const;
 
     // accepts enough information to build a local accepted notarization transaction
     // miner fees are deferred until an import that uses this notarization, in which case
@@ -1171,13 +1167,15 @@ public:
                                      const uint160 &sourceSystemID,
                                      const uint160 &destSystemID,
                                      CCurrencyValueMap &newReserveDeposits,
-                                     CCurrencyValueMap &exportBurn);
+                                     CCurrencyValueMap &exportBurn,
+                                     bool enforceNFTBatchCap = true);
 
     static bool CurrencyImportStatus(const CCurrencyValueMap &totalExports,
                                      const uint160 &sourceSystemID,
                                      const uint160 &destSystemID,
                                      CCurrencyValueMap &newReserveDeposits,
-                                     CCurrencyValueMap &exportBurn);
+                                     CCurrencyValueMap &exportBurn,
+                                     bool enforceNFTBatchCap = true);
 
     static std::vector<ChainTransferData> CalcTxInputs(const CCurrencyDefinition &_curDef,
                                                         bool &isClearLaunchExport,
