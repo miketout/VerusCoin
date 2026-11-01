@@ -9776,7 +9776,7 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
         const CAmount& amount = coins->vout[txin.prevout.n].nValue;
 
         SignatureData sigdata;
-        ProduceSignature(MutableTransactionSignatureCreator(pwalletMain, &mtx, i, amount, prevPubKey), prevPubKey, sigdata, consensusBranchId);
+        ProduceSignature(MutableTransactionSignatureCreator(pwalletMain, &mtx, i, amount, prevPubKey, height + 1), prevPubKey, sigdata, consensusBranchId);
 
         TransactionSignatureChecker checker(&txConst, i, amount);
         sigdata = CombineSignatures(prevPubKey, checker, sigdata, DataFromTransaction(txConst, i), consensusBranchId);
@@ -9883,42 +9883,52 @@ UniValue getoffers(const UniValue& params, bool fHelp)
     CIdentity identity;
     std::string currencyOrIDStr(uni_get_str(params[0]));
 
-    LOCK(cs_main);
-
-    if (isCurrency)
-    {
-        lookupID = ValidateCurrencyName(currencyOrIDStr, true, &currencyDef);
-        if (lookupID.IsNull())
-        {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Currency specified as source is not valid");
-        }
-        lookupForID = COnChainOffer::OnChainOfferForCurrencyKey(lookupID);
-        lookupID = COnChainOffer::OnChainCurrencyOfferKey(lookupID);
-        currencyOrIdID = currencyDef.GetID();
-    }
-    else
-    {
-        CTxDestination idDest = DecodeDestination(currencyOrIDStr);
-        if (idDest.which() != COptCCParams::ADDRTYPE_ID)
-        {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity specified as source is not valid");
-        }
-        lookupID = GetDestinationID(idDest);
-        if (!(identity = CIdentity::LookupIdentity(lookupID)).IsValid())
-        {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Source identity not found");
-        }
-        lookupForID = COnChainOffer::OnChainOfferForIdentityKey(lookupID);
-        lookupID = COnChainOffer::OnChainIdentityOfferKey(lookupID);
-        currencyOrIdID = identity.GetID();
-    }
-
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> unspentOutputOffers;
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> unspentOutputs;
+    uint32_t height;
 
-    uint32_t height = chainActive.Height();
+    {
+        LOCK(cs_main);
 
-    // bool is "iscurrency" for the offer in a buy and for the request for payment in a sell
+        height = chainActive.Height();
+
+        if (isCurrency)
+        {
+            lookupID = ValidateCurrencyName(currencyOrIDStr, true, &currencyDef);
+            if (lookupID.IsNull())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Currency specified as source is not valid");
+            }
+            lookupForID = COnChainOffer::OnChainOfferForCurrencyKey(lookupID);
+            lookupID = COnChainOffer::OnChainCurrencyOfferKey(lookupID);
+            currencyOrIdID = currencyDef.GetID();
+        }
+        else
+        {
+            CTxDestination idDest = DecodeDestination(currencyOrIDStr);
+            if (idDest.which() != COptCCParams::ADDRTYPE_ID)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity specified as source is not valid");
+            }
+            lookupID = GetDestinationID(idDest);
+            if (!(identity = CIdentity::LookupIdentity(lookupID)).IsValid())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Source identity not found");
+            }
+            lookupForID = COnChainOffer::OnChainOfferForIdentityKey(lookupID);
+            lookupID = COnChainOffer::OnChainIdentityOfferKey(lookupID);
+            currencyOrIdID = identity.GetID();
+        }
+
+        // bool is "iscurrency" for the offer in a buy and for the request for payment in a sell
+
+        //printf("%s: looking up keys: %s, %s\n", __func__, EncodeDestination(CKeyID(lookupID)).c_str(), EncodeDestination(CKeyID(lookupForID)).c_str());
+
+        if (!GetAddressUnspent(lookupID, CScript::P2PKH, unspentOutputOffers) || !GetAddressUnspent(lookupForID, CScript::P2PKH, unspentOutputs))
+        {
+            return false;
+        }
+    }
 
     // offers to buy with IDs
     std::multimap<std::pair<uint160, CAmount>, UniValue> uniBuyWithIDs;
@@ -9927,19 +9937,15 @@ UniValue getoffers(const UniValue& params, bool fHelp)
     std::multimap<std::pair<uint160, CAmount>, UniValue> uniBuyWithCurrency;
     std::multimap<std::pair<uint160, CAmount>, UniValue> uniSellToCurrency;
 
-    //printf("%s: looking up keys: %s, %s\n", __func__, EncodeDestination(CKeyID(lookupID)).c_str(), EncodeDestination(CKeyID(lookupForID)).c_str());
-
-    if (!GetAddressUnspent(lookupID, CScript::P2PKH, unspentOutputOffers) || !GetAddressUnspent(lookupForID, CScript::P2PKH, unspentOutputs))
-    {
-        return false;
-    }
-    else
     {
         UniValue retVal(UniValue::VOBJ);
         unspentOutputs.insert(unspentOutputs.end(), unspentOutputOffers.begin(), unspentOutputOffers.end());
 
         for (auto &oneOffer : unspentOutputs)
         {
+            // one offer processed per lock, so blocks can interleave
+            LOCK(cs_main);
+
             CTransaction postedTx, offerTx, inputToOfferTx;
             uint256 blockHash;
             CPartialTransactionProof offerTxProof;

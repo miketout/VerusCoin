@@ -59,6 +59,11 @@ uint160 CIdentity::IdentityPrimaryAddressKey(const CTxDestination &dest)
     return uint160();
 }
 
+bool CIdentity::IsLocked(uint32_t height) const
+{
+    return nVersion >= VERSION_VAULT && (IsLocked() || unlockAfter >= height) && !IsRevoked();
+}
+
 static bool fCreateBlank;
 static std::map<std::string,UniValue> registers;
 static const int CONTINUE_EXECUTION=-1;

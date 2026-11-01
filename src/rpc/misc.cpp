@@ -961,8 +961,11 @@ UniValue verifyhash(const UniValue& params, bool fHelp)
             "1. \"t-addr or identity\" (string, required) The transparent address or identity that signed the data.\n"
             "2. \"signature\"       (string, required) The signature provided by the signer in base 64 encoding (see signmessage/signfile).\n"
             "3. \"hexhash\"         (string, required) Hash of the message or file that was signed.\n"
-            "3. \"checklatest\"     (bool, optional)   If true, checks signature validity based on latest identity. defaults to false,\n"
-            "                                          which determines validity of signing height stored in signature.\n"
+            "4. \"checklatest\"     (bool, optional)   Default false: verifies against the identity's primary addresses as they were at the\n"
+            "                                          block height recorded inside the signature, so the result proves that the keys which\n"
+            "                                          controlled the identity at that height produced it; a signature made with former keys,\n"
+            "                                          or before a revocation, still verifies. True: verifies against the identity's current\n"
+            "                                          primary addresses and fails if it can no longer be verified with the active addresses.\n"
             "\nResult:\n"
             "true|false   (boolean) If the signature is verified or not.\n"
             "\nExamples:\n"
@@ -1049,8 +1052,11 @@ UniValue verifymessage(const UniValue& params, bool fHelp)
             "1. \"t-addr or identity\" (string, required) The transparent address or identity that signed the message.\n"
             "2. \"signature\"       (string, required) The signature provided by the signer in base 64 encoding (see signmessage).\n"
             "3. \"message\"         (string, required) The message that was signed.\n"
-            "3. \"checklatest\"     (bool, optional)   If true, checks signature validity based on latest identity. defaults to false,\n"
-            "                                          which determines validity of signing height stored in signature.\n"
+            "4. \"checklatest\"     (bool, optional)   Default false: verifies against the identity's primary addresses as they were at the\n"
+            "                                          block height recorded inside the signature, so the result proves that the keys which\n"
+            "                                          controlled the identity at that height produced it; a signature made with former keys,\n"
+            "                                          or before a revocation, still verifies. True: verifies against the identity's current\n"
+            "                                          primary addresses and fails if it can no longer be verified with the active addresses.\n"
             "\nResult:\n"
             "true|false   (boolean) If the signature is verified or not.\n"
             "\nExamples:\n"
@@ -1131,8 +1137,11 @@ UniValue verifyfile(const UniValue& params, bool fHelp)
             "1. \"t-addr or identity\" (string, required) The transparent address or identity that signed the file.\n"
             "2. \"signature\"       (string, required) The signature provided by the signer in base 64 encoding (see signfile).\n"
             "3. \"filename\"        (string, required) The file, which must be available locally to the daemon and that was signed.\n"
-            "3. \"checklatest\"     (bool, optional)   If true, checks signature validity based on latest identity. defaults to false,\n"
-            "                                          which determines validity of signing height stored in signature.\n"
+            "4. \"checklatest\"     (bool, optional)   Default false: verifies against the identity's primary addresses as they were at the\n"
+            "                                          block height recorded inside the signature, so the result proves that the keys which\n"
+            "                                          controlled the identity at that height produced it; a signature made with former keys,\n"
+            "                                          or before a revocation, still verifies. True: verifies against the identity's current\n"
+            "                                          primary addresses and fails if it can no longer be verified with the active addresses.\n"
             "\nResult:\n"
             "true|false   (boolean) If the signature is verified or not.\n"
             "\nExamples:\n"
@@ -1236,8 +1245,11 @@ UniValue verifysignature(const UniValue& params, bool fHelp)
             "  \"boundhashes\":[\"hexhash\", ...],                              (array, optional)  Array of bound hash values\n"
             "  \"hashtype\"                                                     (string, optional) one of: \"sha256\", \"sha256D\", \"blake2b\", \"keccak256\", defaults to sha256\n"
             "  \"signature\"                                                    (string, optional) The current signature of the message encoded in base 64\n"
-            "  \"checklatest\"                                                  (bool, optional)   If true, checks signature validity based on latest identity. defaults to false,\n"
-            "                                                                                      which determines validity of signing height stored in signature.\n"
+            "  \"checklatest\"     (bool, optional)    Default false: verifies against the identity's primary addresses as they were at the\n"
+            "                                          block height recorded inside the signature, so the result proves that the keys which\n"
+            "                                          controlled the identity at that height produced it; a signature made with former keys,\n"
+            "                                          or before a revocation, still verifies. True: verifies against the identity's current\n"
+            "                                          primary addresses and fails if it can no longer be verified with the active addresses.\n"
             "}\n"
 
             "\nResult:\n"
@@ -1444,6 +1456,17 @@ UniValue verifysignature(const UniValue& params, bool fHelp)
             else
             {
                 throw JSONRPCError(RPC_INVALID_PARAMS, "Missing or invalid \"signature\"");
+            }
+
+            // default verifies against the identity as it was at the height recorded in the signature,
+            // as verifyhash, verifymessage and verifyfile do; checklatest uses the current identity
+            if (!checkLatest)
+            {
+                identity = CIdentity::LookupIdentity(GetDestinationID(dest), identitySig.blockHeight);
+                if (!identity.IsValidUnrevoked())
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMS, "Identity was not valid at the signature's block height");
+                }
             }
 
             // go through VDXF keys, VDXF key names, and bound hashes

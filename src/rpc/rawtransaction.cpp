@@ -1220,7 +1220,7 @@ UniValue signrawtransaction(const UniValue& params, bool fHelp)
         SignatureData sigdata;
         // Only sign SIGHASH_SINGLE if there's a corresponding output:
         if (!fHashSingle || (i < mergedTx.vout.size()))
-            ProduceSignature(MutableTransactionSignatureCreator(&keystore, &mergedTx, i, amount, prevPubKey, INT32_MAX, nHashType), prevPubKey, sigdata, consensusBranchId);
+            ProduceSignature(MutableTransactionSignatureCreator(&keystore, &mergedTx, i, amount, prevPubKey, chainHeight, nHashType), prevPubKey, sigdata, consensusBranchId);
 
         TransactionSignatureChecker checker(&txConst, i, amount);
 

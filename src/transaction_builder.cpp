@@ -619,7 +619,7 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
         auto tIn = tIns[nIn];
         SignatureData sigdata;
         bool signSuccess = ProduceSignature(
-            TransactionSignatureCreator(keystore, &txNewConst, nIn, tIn.value, tIn.scriptPubKey), tIn.scriptPubKey, sigdata, consensusBranchId);
+            TransactionSignatureCreator(keystore, &txNewConst, nIn, tIn.value, tIn.scriptPubKey, nHeight), tIn.scriptPubKey, sigdata, consensusBranchId);
 
         if (!signSuccess) {
             UniValue jsonTx(UniValue::VOBJ);

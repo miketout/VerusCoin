@@ -1349,7 +1349,8 @@ uint256 SignatureHash(
     return ss.GetHash();
 }
 
-TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> *pIdMap) : txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(NULL)
+TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> *pIdMap) :
+    txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(NULL), nSpendHeight(INT32_MAX)
 {
     if (pIdMap)
     {
@@ -1362,7 +1363,8 @@ TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txT
     }
 }
 
-TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const PrecomputedTransactionData& txdataIn, const std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> *pIdMap) : txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(&txdataIn)
+TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const PrecomputedTransactionData& txdataIn, const std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> *pIdMap) :
+    txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(&txdataIn), nSpendHeight(INT32_MAX)
 {
     if (pIdMap)
     {
@@ -1434,7 +1436,8 @@ std::map<uint160, pair<int, std::vector<std::vector<unsigned char>>>> BaseSignat
     return idAddresses;
 }
 
-TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const CScript *pScriptPubKeyIn, const CKeyStore *pKeyStore, uint32_t spendHeight) : txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(NULL), idMapSet(false)
+TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const CScript *pScriptPubKeyIn, const CKeyStore *pKeyStore, uint32_t spendHeight) :
+    txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(NULL), idMapSet(false), nSpendHeight(spendHeight)
 {
     if (pScriptPubKeyIn && pKeyStore)
     {
@@ -1442,7 +1445,8 @@ TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txT
     }
 }
 
-TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const PrecomputedTransactionData& txdataIn, const CScript *pScriptPubKeyIn, const CKeyStore *pKeyStore, uint32_t spendHeight) : txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(&txdataIn), idMapSet(false)
+TransactionSignatureChecker::TransactionSignatureChecker(const CTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, const PrecomputedTransactionData& txdataIn, const CScript *pScriptPubKeyIn, const CKeyStore *pKeyStore, uint32_t spendHeight) :
+    txTo(txToIn), nIn(nInIn), amount(amountIn), txdata(&txdataIn), idMapSet(false), nSpendHeight(spendHeight)
 {
     if (pScriptPubKeyIn && pKeyStore)
     {

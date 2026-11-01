@@ -61,6 +61,11 @@ uint160 CIdentity::IdentityPrimaryAddressKey(const CTxDestination &dest)
     return uint160();
 }
 
+bool CIdentity::IsLocked(uint32_t height) const
+{
+    return nVersion >= VERSION_VAULT && (IsLocked() || unlockAfter >= height) && !IsRevoked();
+}
+
 void show_help()
 {
     std::cout <<

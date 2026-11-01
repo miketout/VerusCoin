@@ -398,9 +398,15 @@ static bool SignStepCC(const BaseSignatureCreator& creator, const CScript& scrip
                                 id = identity;
                             }
 
-                            if ((!id.IsValid() && !(id = LookupIdentity(creator, CIdentityID(destId))).IsValid()) ||
+                            uint32_t signHeight = creator.Checker().SpendHeight();
+                            if (!id.IsValid())
+                            {
+                                id = LookupIdentity(creator, CIdentityID(destId));
+                            }
+
+                            if (!id.IsValid() ||
                                 id.IsRevoked() ||
-                                (!idID.IsNull() && destId != idID && id.IsLocked()))
+                                (!idID.IsNull() && destId != idID && id.IsLocked(signHeight - 1)))
                             {
                                 destMap[destId] = dest;
                                 vCC.push_back(MakeCCcondOneSig(CKeyID(GetDestinationID(dest))));

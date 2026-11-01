@@ -154,6 +154,7 @@ public:
     }
     virtual bool IsIDMapSet() const { return false; }
     virtual bool CanValidateIDs() const { return false; }
+    virtual uint32_t SpendHeight() const { return INT32_MAX; }
 
     virtual ~BaseSignatureChecker() {}
 };
@@ -167,6 +168,7 @@ protected:
     const PrecomputedTransactionData* txdata;
     std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> idMap;
     bool idMapSet;
+    uint32_t nSpendHeight;
 
     virtual bool VerifySignature(const std::vector<unsigned char>& vchSig, const CPubKey& vchPubKey, const uint256& sighash) const;
 
@@ -187,6 +189,7 @@ public:
         return idMap;
     }
     bool IsIDMapSet() const { return idMapSet; }
+    uint32_t SpendHeight() const override { return nSpendHeight; }
     int CheckCryptoCondition(
         const std::vector<unsigned char>& condBin,
         const std::vector<unsigned char>& ffillBin,

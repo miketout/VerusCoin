@@ -202,6 +202,8 @@ private:
     uint64_t nRecentlyAddedSequence = 0;
     uint64_t nNotifiedSequence = 0;
 
+    std::list<CTransaction> recentlyRemovedTx;
+
     std::map<uint256, const CTransaction*> mapSproutNullifiers;
     std::map<uint256, const CTransaction*> mapSaplingNullifiers;
 
@@ -276,7 +278,8 @@ public:
     void removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMemPoolHeight, int flags);
     bool checkNameConflicts(const CTransaction &tx, std::list<CTransaction> &conflicting, uint32_t height=0);
     void removeConflicts(const CTransaction &tx, std::list<CTransaction>& removed);
-    void removeExpired(unsigned int nBlockHeight);
+    void removeExpired(unsigned int nBlockHeight, std::list<CTransaction> &removed);
+
     void removeForBlock(const std::vector<CTransaction>& vtx, unsigned int nBlockHeight,
                         std::list<CTransaction>& conflicts, bool fCurrentEstimate = true);
     void removeWithoutBranchId(uint32_t nMemPoolBranchId);
@@ -298,6 +301,7 @@ public:
     // (with their in-mempool descendants) until memory usage is within limitBytes.
     // Protocol transactions are skipped by both passes. Removed transactions are appended to `removed`.
     void LimitSize(size_t limitBytes, int64_t maxAgeSeconds, std::list<CTransaction> &removed);
+    void NotifyRemoved(const std::list<CTransaction> &removed);
 
     /** Affect CreateNewBlock prioritisation of transactions */
     void PrioritiseTransaction(const uint256 &hash, const std::string strHash, double dPriorityDelta, const CAmount& nFeeDelta);

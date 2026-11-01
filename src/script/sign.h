@@ -29,11 +29,11 @@ public:
     virtual const BaseSignatureChecker& Checker() const =0;
 
     /** Create a singular (non-script) signature. */
-    virtual bool CreateSig(std::vector<unsigned char>& vchSig, 
-                           const CKeyID& keyid, 
-                           const CScript& scriptCode, 
-                           uint32_t consensusBranchId, 
-                           CKey *key = NULL, 
+    virtual bool CreateSig(std::vector<unsigned char>& vchSig,
+                           const CKeyID& keyid,
+                           const CScript& scriptCode,
+                           uint32_t consensusBranchId,
+                           CKey *key = NULL,
                            void *extraData = NULL) const = 0;
 };
 
@@ -56,7 +56,7 @@ class MutableTransactionSignatureCreator : public TransactionSignatureCreator {
     CTransaction tx;
 
 public:
-    MutableTransactionSignatureCreator(const CKeyStore* keystoreIn, const CMutableTransaction* txToIn, unsigned int nInIn, const CAmount& amount, const CScript &scriptPubKey, uint32_t spendHeight=INT32_MAX, int nHashTypeIn=SIGHASH_ALL) 
+    MutableTransactionSignatureCreator(const CKeyStore* keystoreIn, const CMutableTransaction* txToIn, unsigned int nInIn, const CAmount& amount, const CScript &scriptPubKey, uint32_t spendHeight=INT32_MAX, int nHashTypeIn=SIGHASH_ALL)
         : TransactionSignatureCreator(keystoreIn, &tx, nInIn, amount, scriptPubKey, spendHeight, nHashTypeIn), tx(*txToIn) {}
 };
 

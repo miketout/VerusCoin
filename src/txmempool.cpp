@@ -834,7 +834,7 @@ void CTxMemPool::removeConflicts(const CTransaction &tx, std::list<CTransaction>
 int32_t komodo_validate_interest(const CTransaction &tx,int32_t txheight,uint32_t nTime,int32_t dispflag);
 extern char ASSETCHAINS_SYMBOL[];
 
-void CTxMemPool::removeExpired(unsigned int nBlockHeight)
+void CTxMemPool::removeExpired(unsigned int nBlockHeight, std::list<CTransaction> &removed)
 {
     CBlockIndex *tipindex;
     // Remove expired txs and leftover coinbases from the mempool
@@ -850,7 +850,6 @@ void CTxMemPool::removeExpired(unsigned int nBlockHeight)
         }
     }
     for (const CTransaction& tx : transactionsToRemove) {
-        list<CTransaction> removed;
         remove(tx, removed, true);
         LogPrint("mempool", "Removing expired txid: %s\n", tx.GetHash().ToString());
     }
@@ -913,6 +912,7 @@ void CTxMemPool::clear()
     mapReserveTransactions.clear();
     mapDeltas.clear();
     mapRecentlyAddedTx.clear();
+    recentlyRemovedTx.clear();
     mapAddress.clear();
     mapAddressInserted.clear();
     mapSpent.clear();
@@ -1287,6 +1287,13 @@ void CTxMemPool::LimitSize(size_t limitBytes, int64_t maxAgeSeconds, std::list<C
     }
 }
 
+void CTxMemPool::NotifyRemoved(const std::list<CTransaction> &removed)
+{
+    LOCK(cs);
+    recentlyRemovedTx.insert(recentlyRemovedTx.end(), removed.begin(), removed.end());
+}
+
+
 bool CTxMemPool::nullifierExists(const uint256& nullifier, ShieldedType type) const
 {
     switch (type) {
@@ -1303,6 +1310,7 @@ void CTxMemPool::NotifyRecentlyAdded()
 {
     uint64_t recentlyAddedSequence;
     std::vector<CTransaction> txs;
+    std::list<CTransaction> removedTxes;
     {
         LOCK(cs);
         recentlyAddedSequence = nRecentlyAddedSequence;
@@ -1310,13 +1318,35 @@ void CTxMemPool::NotifyRecentlyAdded()
             txs.push_back(*(kv.second));
         }
         mapRecentlyAddedTx.clear();
+        removedTxes.swap(recentlyRemovedTx);
     }
 
-    // A race condition can occur here between these SyncWithWallets calls, and
-    // the ones triggered by block logic (in ConnectTip and DisconnectTip). It
-    // is harmless because calling SyncWithWallets(_, NULL) does not alter the
-    // wallet transaction's block information.
     for (auto tx : txs) {
+        try {
+            // Hold cs_main across the membership test and the sync so the block path cannot
+            // remove and report this transaction between the two. A transaction no longer in
+            // the pool has already been reported by ConnectTip or DisconnectTip.
+            LOCK(cs_main);
+            {
+                LOCK(cs);
+                if (!exists(tx.GetHash()))
+                {
+                    continue;
+                }
+            }
+            SyncWithWallets(tx, NULL);
+        } catch (const boost::thread_interrupted&) {
+            throw;
+        } catch (const std::exception& e) {
+            PrintExceptionContinue(&e, "CTxMemPool::NotifyRecentlyAdded()");
+        } catch (...) {
+            PrintExceptionContinue(NULL, "CTxMemPool::NotifyRecentlyAdded()");
+        }
+    }
+
+    // Transactions evicted at admission have left the pool, so no membership test. The wallet
+    // sees them as conflicted and refreshes what their inputs and outputs contribute.
+    for (auto &tx : removedTxes) {
         try {
             SyncWithWallets(tx, NULL);
         } catch (const boost::thread_interrupted&) {

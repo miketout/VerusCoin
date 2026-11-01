@@ -2406,7 +2406,22 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
             pool.addSpentIndex(entry, view);
         }
     }
-
+    // hold the cap at admission, not only at the next block: trim from the lowest effective
+    // fee rate (protocol transactions exempt) and refuse this transaction if it did not survive
+    if (fEnforceMempoolLimit)
+    {
+        size_t maxMempoolSize = GetArg("-maxmempool", (mempool.DEFAULT_MAX_MEMPOOL_SIZE)) * (1024 * 1024);
+        if (maxMempoolSize != 0)
+        {
+            std::list<CTransaction> evicted;
+            pool.LimitSize(maxMempoolSize, 0, evicted);
+            if (!pool.exists(hash))
+            {
+                return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "mempool full");
+            }
+            pool.NotifyRemoved(evicted);
+        }
+    }
     return true;
 }
 
@@ -5806,7 +5821,7 @@ bool static ConnectTip(CValidationState& state, const CChainParams& chainparams,
         // Remove conflicting transactions from the mempool.
         mempool.removeForBlock(pblock->vtx, pindexNew->GetHeight(), txConflicted, !IsInitialBlockDownload(chainparams));
         // Remove transactions that expire at new block height from mempool
-        mempool.removeExpired(pindexNew->GetHeight());
+        mempool.removeExpired(pindexNew->GetHeight(), txEvicted);
         // Enforce memory and age limits now that the block's own transactions are out of the pool
         mempool.LimitSize((size_t)GetArg("-maxmempool", CTxMemPool::DEFAULT_MAX_MEMPOOL_SIZE) * (1024 * 1024),
                         GetArg("-mempoolexpiry", CTxMemPool::DEFAULT_MEMPOOL_EXPIRY_HOURS) * 60 * 60,
@@ -5819,6 +5834,11 @@ bool static ConnectTip(CValidationState& state, const CChainParams& chainparams,
     // Tell wallet about transactions that went from mempool
     // to conflicted:
     BOOST_FOREACH(const CTransaction &tx, txConflicted) {
+        SyncWithWallets(tx, NULL);
+    }
+    // ... and about transactions the mempool dropped as expired or evicted, so the wallet
+    // recomputes what their inputs and outputs contribute:
+    BOOST_FOREACH(const CTransaction &tx, txEvicted) {
         SyncWithWallets(tx, NULL);
     }
     // ... and about transactions that got confirmed:
