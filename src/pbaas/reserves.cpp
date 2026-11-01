@@ -6162,7 +6162,10 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     }
                     if (notRefund)
                     {
-                        // reset vOutputs to what they were before processing and recurse once
+                        LogPrintf("%s: conversions for %s failed (%s), refunding all %lu transfers\n", __func__,
+                                importCurrencyDef.name.c_str(), state.GetRejectReason().c_str(), exportObjects.size());
+
+                              // reset vOutputs to what they were before processing and recurse once
                         vOutputs = vOldOutputs;
                         importedCurrency.valueMap.clear();
                         gatewayDepositsIn.valueMap.clear();
@@ -6680,6 +6683,9 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 recursiveCurrencyState.SetLaunchConfirmed(false);
             }
 
+            LogPrintf("%s: processing for %s prelaunch or launch import failed, refunding all %lu transfers\n", __func__,
+                    importCurrencyDef.name.c_str(), exportObjects.size());
+
             recursiveCurrencyState.SetRefunding(true);
 
             // reset vOutputs to what they were before processing and recurse once
@@ -6722,6 +6728,9 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
             }
             if (notRefund)
             {
+                LogPrintf("%s: processing for %s import failed, refunding all %lu transfers\n", __func__,
+                        importCurrencyDef.name.c_str(), exportObjects.size());
+
                 // reset vOutputs to what they were before processing and recurse once
                 vOutputs = vOldOutputs;
                 importedCurrency.valueMap.clear();

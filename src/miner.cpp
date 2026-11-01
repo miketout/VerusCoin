@@ -2852,6 +2852,12 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
         CCoinsViewCache view(pcoinsTip);
         SaplingMerkleTree sapling_tree;
 
+        // spend the stake input first so that any mempool transaction spending the same output, and its descendants, are left out
+        if (isStake)
+        {
+            UpdateCoins(txStaked, view, nHeight);
+        }
+
         if (!(view.GetSaplingAnchorAt(view.GetBestAnchor(SAPLING), sapling_tree)))
         {
             LogPrintf("%s: failed to get Sapling anchor\n", __func__);
@@ -3792,7 +3798,6 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
         // if there is a stake transaction, add it to the very end
         if (isStake)
         {
-            UpdateCoins(txStaked, view, nHeight);
             pblock->vtx.push_back(txStaked);
             pblocktemplate->vTxFees.push_back(0);
             int txSigOps = GetLegacySigOpCount(txStaked);

@@ -474,7 +474,12 @@ public:
     CIdentity(const CScript &scriptPubKey);
     CIdentity(const std::vector<unsigned char> &asVector)
     {
-        ::FromVector(asVector, *this);
+        bool success = false;
+        ::FromVector(asVector, *this, &success);
+        if (!success)
+        {
+            nVersion = VERSION_INVALID;
+        }
     }
 
     ADD_SERIALIZE_METHODS;

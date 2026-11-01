@@ -814,7 +814,12 @@ CPBaaSNotarization::CPBaaSNotarization(const CScript &scriptPubKey) :
         (p.evalCode == EVAL_ACCEPTEDNOTARIZATION || p.evalCode == EVAL_EARNEDNOTARIZATION) &&
         p.vData.size())
     {
-        ::FromVector(p.vData[0], *this);
+        bool success = false;
+        ::FromVector(p.vData[0], *this, &success);
+        if (!success)
+        {
+            nVersion = VERSION_INVALID;
+        }
     }
 }
 
@@ -854,7 +859,12 @@ CPBaaSNotarization::CPBaaSNotarization(const CTransaction &tx, int32_t *pOutIdx)
             {
                 found = true;
                 outIdx = i;
-                ::FromVector(p.vData[0], *this);
+                bool success = false;
+                ::FromVector(p.vData[0], *this, &success);
+                if (!success)
+                {
+                    nVersion = VERSION_INVALID;
+                }
             }
         }
     }
@@ -6455,7 +6465,8 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                                         cnd.vtx[unchallengedForks[forkToChallenge][k]].second.proofRoots[SystemID])
                                     {
                                         unchallengedForks[forkToChallenge].erase(unchallengedForks[forkToChallenge].begin() + challengeNum, unchallengedForks[forkToChallenge].end());
-                                        continue;
+                                        moveToNext = true;
+                                        break;
                                     }
                                     // TODO: POST HARDENING - right now, we actually don't break down ranges to a lower level of
                                     // granularity, based on checkpoints, so until we do, just consider this one covered and move
@@ -6548,7 +6559,8 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                                         cnd.vtx[unchallengedForks[forkToChallenge][k]].second.proofRoots[SystemID])
                                     {
                                         unchallengedForks[forkToChallenge].erase(unchallengedForks[forkToChallenge].begin() + challengeNum, unchallengedForks[forkToChallenge].end());
-                                        continue;
+                                        moveToNext = true;
+                                        break;
                                     }
                                     // TODO: POST HARDENING - right now, we actually don't break down ranges to a lower level of
                                     // granularity, based on checkpoints, so until we do, just consider this one covered and move
@@ -6668,7 +6680,8 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                                         crosschainCND.vtx[unchallengedForks[forkToChallenge][k]].second.proofRoots[SystemID])
                                     {
                                         unchallengedForks[forkToChallenge].erase(unchallengedForks[forkToChallenge].begin() + challengeNum, unchallengedForks[forkToChallenge].end());
-                                        continue;
+                                        moveToNext = true;
+                                        break;
                                     }
                                     // TODO: POST HARDENING - right now, we actually don't break down ranges to a lower level of
                                     // granularity, based on checkpoints, so until we do, just consider this one covered and move
@@ -6785,7 +6798,8 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                                         crosschainCND.vtx[unchallengedForks[forkToChallenge][k]].second.proofRoots[SystemID])
                                     {
                                         unchallengedForks[forkToChallenge].erase(unchallengedForks[forkToChallenge].begin() + challengeNum, unchallengedForks[forkToChallenge].end());
-                                        continue;
+                                        moveToNext = true;
+                                        break;
                                     }
                                     // TODO: POST HARDENING - right now, we actually don't break down ranges to a lower level of
                                     // granularity, based on checkpoints, so until we do, just consider this one covered and move
@@ -6867,6 +6881,11 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
                     UniValue challengeResult;
                     params = UniValue(UniValue::VARR);
                     params.push_back(submitParams);
+                    CTxDestination proposerDest = TransferDestinationToDestination(Proposer);
+                    if (proposerDest.which() != COptCCParams::ADDRTYPE_INVALID)
+                    {
+                        params.push_back(EncodeDestination(proposerDest));
+                    }
                     try
                     {
                         challengeResult = find_value(RPCCallRoot("submitchallenges", params, 60), "result");
@@ -7044,6 +7063,11 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
             LogPrint("notarization", "Submitting skip challenges to local chain %s\n", skipChallenges.write(1,2).c_str());
             params = UniValue(UniValue::VARR);
             params.push_back(skipChallenges);
+            CTxDestination proposerDest = TransferDestinationToDestination(Proposer);
+            if (proposerDest.which() != COptCCParams::ADDRTYPE_INVALID)
+            {
+                params.push_back(EncodeDestination(proposerDest));
+            }
             try
             {
                 UniValue submitchallenges(const UniValue& params, bool fHelp);

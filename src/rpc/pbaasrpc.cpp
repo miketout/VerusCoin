@@ -6046,9 +6046,106 @@ UniValue getnotarizationproofs(const UniValue& params, bool fHelp)
     return retValUni;
 }
 
+bool FundTransparentTransactionBuilder(CWallet *pwallet, TransactionBuilder &tb, const CTxDestination *pFromDest=nullptr)
+{
+    std::set<std::pair<const CWalletTx *, unsigned int>> setCoinsRet;
+    std::vector<COutput> vCoins;
+    CCurrencyValueMap totalReservesNeeded;
+    CAmount nativeNeeded = 0;
+
+    for (auto &oneOutput : tb.mtx.vout)
+    {
+        totalReservesNeeded += oneOutput.ReserveOutValue();
+        nativeNeeded += oneOutput.nValue;
+    }
+    nativeNeeded += tb.GetFee();
+    totalReservesNeeded += tb.GetReserveFee();
+
+    totalReservesNeeded.valueMap.erase(ASSETCHAINS_CHAINID);
+    CCurrencyValueMap totalCurrenciesNeeded = totalReservesNeeded;
+    totalCurrenciesNeeded.valueMap[ASSETCHAINS_CHAINID] = nativeNeeded;
+
+    pwallet->AvailableReserveCoins(vCoins,
+                                    false,
+                                    nullptr,
+                                    true,
+                                    true,
+                                    pFromDest,
+                                    &totalCurrenciesNeeded,
+                                    false);
+
+    for (COutput &out : vCoins)
+    {
+        std::vector<CTxDestination> addresses;
+        int nRequired;
+        bool canSign, canSpend;
+        CTxDestination address;
+        txnouttype txType;
+        if (!ExtractDestinations(out.tx->vout[out.i].scriptPubKey, txType, addresses, nRequired, pwallet, &canSign, &canSpend))
+        {
+            continue;
+        }
+
+        // if we have more address destinations than just this address and have specified from a single ID only,
+        // the condition must be such that the ID itself can spend, even if this wallet cannot due to a multisig
+        // ID. if the ID cannot spend, even given a valid multisig ID, then to select this as a source without
+        // an explicit, multisig match would cause potentially unwanted sourcing of funds. a spend just to this ID
+        // is fine.
+
+        COptCCParams p, m;
+        // if we can't spend and can only sign,
+        // ensure that this output is spendable by just this ID as a 1 of n and 1 of n at the master
+        // smart transaction level as well
+        if (!canSpend &&
+            (!canSign ||
+                !(out.tx->vout[out.i].scriptPubKey.IsPayToCryptoCondition(p) &&
+                p.IsValid() &&
+                (p.version < COptCCParams::VERSION_V3 ||
+                (p.vData.size() &&
+                    (m = COptCCParams(p.vData.back())).IsValid() &&
+                    (m.m == 1 || m.m == 0))) &&
+                p.m == 1)))
+        {
+            continue;
+        }
+        else
+        {
+            out.fSpendable = true;      // this may not really be spendable, but set it if its the correct ID source and can sign
+        }
+    }
+
+    CCurrencyValueMap reservesUsed;
+    CAmount nativeUsed;
+    if (!pwallet->SelectReserveCoinsMinConf(totalReservesNeeded,
+                                            nativeNeeded,
+                                            0,
+                                            1,
+                                            vCoins,
+                                            setCoinsRet,
+                                            reservesUsed,
+                                            nativeUsed))
+    {
+        CTxDestination _dest;
+        if (!pFromDest)
+        {
+            pFromDest = &_dest;
+        }
+        LogPrintf("%s: ERROR FUNDING TRANSACTION: Insufficient funds held by %s\n", __func__, EncodeDestination(*pFromDest).c_str());
+        return false;
+    }
+
+    for (auto &oneInput : setCoinsRet)
+    {
+        tb.AddTransparentInput(COutPoint(oneInput.first->GetHash(), oneInput.second),
+                                                oneInput.first->vout[oneInput.second].scriptPubKey,
+                                                oneInput.first->vout[oneInput.second].nValue);
+    }
+    return true;
+}
+
 UniValue submitchallenges(const UniValue& params, bool fHelp)
 {
-    if (fHelp || params.size() != 1)
+    if (fHelp || params.size() < 1 || params.size() > 2)
     {
         throw runtime_error(
             "submitchallenges '[{\"type\":\"vrsc::evidence.skipchallenge\" || \"iCwxpRL6h3YeCRtGjgQSsqoKdZCuM4Dxaf\" ||\n"
@@ -6057,7 +6154,7 @@ UniValue submitchallenges(const UniValue& params, bool fHelp)
             "                    \"forkroot\":{},\n"
             "                    \"challengeroot\":{},\n"
             "                    \"evidence\":{}},\n"
-            "                   {...}, ...]'\n"
+            "                   {...}, ...] (fundingaddress)'\n"
 
             "\nSubmits one or more cryptographic challenges to existing, unconfirmed notarizations, proving the existence\n"
             "of an alternate chain. Whether the alternate chain has more power than the chain with a pending notarization\n"
@@ -6080,6 +6177,12 @@ UniValue submitchallenges(const UniValue& params, bool fHelp)
     CheckPBaaSAPIsValid();
 
     std::vector<UniValue> retVal;
+
+    CTxDestination fundsSource;
+    if (params.size() > 1)
+    {
+        fundsSource = DecodeDestination(uni_get_str(params[1]));
+    }
 
     if (params[0].isArray() && params[0].size())
     {
@@ -6194,8 +6297,6 @@ UniValue submitchallenges(const UniValue& params, bool fHelp)
                         }
                     }
 
-
-
                     objRet.pushKV("error", "Duplicate");
                     retVal[std::get<0>(oneChallenge.second)] = objRet;
                     continue;
@@ -6218,30 +6319,38 @@ UniValue submitchallenges(const UniValue& params, bool fHelp)
                     (challengedNotarization = CPBaaSNotarization(outTx.vout[std::get<3>(oneChallenge.second).output.n].scriptPubKey)).IsValid() &&
                     challengedNotarization.proofRoots.count(std::get<2>(oneChallenge.second).systemID) &&
                     std::get<2>(oneChallenge.second).systemID != ASSETCHAINS_CHAINID &&
-                    (notarizingCurrency = ConnectedChains.GetCachedCurrency(std::get<2>(oneChallenge.second).systemID)).IsValid() &&
-                    notarizingCurrency.IsPBaaSChain())
+                    (notarizingCurrency = ConnectedChains.GetCachedCurrency(std::get<2>(oneChallenge.second).systemID)).IsValid())
                 {
-                    // determine if our challenge is more powerful and set the flag if so
-                    challengeRoot = IsValidChallengeEvidence(challengeDef,
-                                                             challengedNotarization.proofRoots[std::get<2>(oneChallenge.second).systemID],
-                                                             std::get<3>(oneChallenge.second),
-                                                             blockHash,
-                                                             invalidates,
-                                                             std::get<1>(oneChallenge.second),
-                                                             nHeight + 1);
-                    if (challengeRoot.IsValid())
+                    if (notarizingCurrency.IsPBaaSChain())
                     {
-                        of.SetChallenge();
-                        if (invalidates)
+                        // determine if our challenge is more powerful and set the flag if so
+                        challengeRoot = IsValidChallengeEvidence(challengeDef,
+                                                                challengedNotarization.proofRoots[std::get<2>(oneChallenge.second).systemID],
+                                                                std::get<3>(oneChallenge.second),
+                                                                blockHash,
+                                                                invalidates,
+                                                                std::get<1>(oneChallenge.second),
+                                                                nHeight + 1);
+                        if (challengeRoot.IsValid())
                         {
-                            of.SetInvalidates();
+                            of.SetChallenge();
+                            if (invalidates)
+                            {
+                                of.SetInvalidates();
+                            }
+                            if (challengeRoot != challengedNotarization.proofRoots[std::get<2>(oneChallenge.second).systemID] &&
+                                CChainPower::ExpandCompactPower(challengeRoot.compactPower) >
+                                    CChainPower::ExpandCompactPower(challengedNotarization.proofRoots[std::get<2>(oneChallenge.second).systemID].compactPower))
+                            {
+                                of.SetMorePowerful();
+                            }
                         }
-                        if (challengeRoot != challengedNotarization.proofRoots[std::get<2>(oneChallenge.second).systemID] &&
-                            CChainPower::ExpandCompactPower(challengeRoot.compactPower) >
-                                CChainPower::ExpandCompactPower(challengedNotarization.proofRoots[std::get<2>(oneChallenge.second).systemID].compactPower))
-                        {
-                            of.SetMorePowerful();
-                        }
+                    }
+                    else
+                    {
+                        objRet.pushKV("error", "submitchallenges builds proof-based challenge evidence for PBaaS chain notarizations only; to contest a gateway notarization, submit alternative notarization.");
+                        retVal[std::get<0>(oneChallenge.second)] = objRet;
+                        continue;
                     }
                 }
 
@@ -6336,6 +6445,18 @@ UniValue submitchallenges(const UniValue& params, bool fHelp)
                 tb.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CObjectFinalization>(EVAL_FINALIZE_NOTARIZATION, dests, 1, &of)), 0);
                 tb.SetFee(DEFAULT_TRANSACTION_FEE);
 
+                if (fundsSource.which() != COptCCParams::ADDRTYPE_INVALID)
+                {
+                    FundTransparentTransactionBuilder(pwalletMain, tb, &fundsSource);
+                    tb.SendChangeTo(fundsSource);
+                }
+                else if (!tb.mtx.vin.size())
+                {
+                    objRet.pushKV("error", "A fork-root challenge has no inputs of its own; pass a funding address");
+                    retVal[std::get<0>(oneChallenge.second)] = objRet;
+                    continue;
+                }
+
                 TransactionBuilderResult preResult = tb.Build();
                 CTransaction challengeTx = preResult.GetTxOrThrow();
 
@@ -6365,103 +6486,6 @@ UniValue submitchallenges(const UniValue& params, bool fHelp)
         retValUni.push_back(oneResult);
     }
     return retValUni;
-}
-
-bool FundTransparentTransactionBuilder(CWallet *pwallet, TransactionBuilder &tb, const CTxDestination *pFromDest=nullptr)
-{
-    std::set<std::pair<const CWalletTx *, unsigned int>> setCoinsRet;
-    std::vector<COutput> vCoins;
-    CCurrencyValueMap totalReservesNeeded;
-    CAmount nativeNeeded = 0;
-
-    for (auto &oneOutput : tb.mtx.vout)
-    {
-        totalReservesNeeded += oneOutput.ReserveOutValue();
-        nativeNeeded += oneOutput.nValue;
-    }
-    nativeNeeded += tb.GetFee();
-    totalReservesNeeded += tb.GetReserveFee();
-
-    totalReservesNeeded.valueMap.erase(ASSETCHAINS_CHAINID);
-    CCurrencyValueMap totalCurrenciesNeeded = totalReservesNeeded;
-    totalCurrenciesNeeded.valueMap[ASSETCHAINS_CHAINID] = nativeNeeded;
-
-    pwallet->AvailableReserveCoins(vCoins,
-                                    false,
-                                    nullptr,
-                                    true,
-                                    true,
-                                    pFromDest,
-                                    &totalCurrenciesNeeded,
-                                    false);
-
-    for (COutput &out : vCoins)
-    {
-        std::vector<CTxDestination> addresses;
-        int nRequired;
-        bool canSign, canSpend;
-        CTxDestination address;
-        txnouttype txType;
-        if (!ExtractDestinations(out.tx->vout[out.i].scriptPubKey, txType, addresses, nRequired, pwallet, &canSign, &canSpend))
-        {
-            continue;
-        }
-
-        // if we have more address destinations than just this address and have specified from a single ID only,
-        // the condition must be such that the ID itself can spend, even if this wallet cannot due to a multisig
-        // ID. if the ID cannot spend, even given a valid multisig ID, then to select this as a source without
-        // an explicit, multisig match would cause potentially unwanted sourcing of funds. a spend just to this ID
-        // is fine.
-
-        COptCCParams p, m;
-        // if we can't spend and can only sign,
-        // ensure that this output is spendable by just this ID as a 1 of n and 1 of n at the master
-        // smart transaction level as well
-        if (!canSpend &&
-            (!canSign ||
-                !(out.tx->vout[out.i].scriptPubKey.IsPayToCryptoCondition(p) &&
-                p.IsValid() &&
-                (p.version < COptCCParams::VERSION_V3 ||
-                (p.vData.size() &&
-                    (m = COptCCParams(p.vData.back())).IsValid() &&
-                    (m.m == 1 || m.m == 0))) &&
-                p.m == 1)))
-        {
-            continue;
-        }
-        else
-        {
-            out.fSpendable = true;      // this may not really be spendable, but set it if its the correct ID source and can sign
-        }
-    }
-
-    CCurrencyValueMap reservesUsed;
-    CAmount nativeUsed;
-    if (!pwallet->SelectReserveCoinsMinConf(totalReservesNeeded,
-                                            nativeNeeded,
-                                            0,
-                                            1,
-                                            vCoins,
-                                            setCoinsRet,
-                                            reservesUsed,
-                                            nativeUsed))
-    {
-        CTxDestination _dest;
-        if (!pFromDest)
-        {
-            pFromDest = &_dest;
-        }
-        LogPrintf("%s: ERROR FUNDING TRANSACTION: Insufficient funds held by %s\n", __func__, EncodeDestination(*pFromDest).c_str());
-        return false;
-    }
-
-    for (auto &oneInput : setCoinsRet)
-    {
-        tb.AddTransparentInput(COutPoint(oneInput.first->GetHash(), oneInput.second),
-                                                oneInput.first->vout[oneInput.second].scriptPubKey,
-                                                oneInput.first->vout[oneInput.second].nValue);
-    }
-    return true;
 }
 
 UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
