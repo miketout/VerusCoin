@@ -2158,7 +2158,7 @@ bool CWallet::VerusSelectStakeOutput(CBlock *pBlock, arith_uint256 &hashResult, 
                                         CIdentity destIdentity;
                                         uint32_t idHeight;
                                         if (!(destIdentity = CIdentity::LookupIdentity(GetDestinationID(oneDest), 0, &idHeight)).IsValid() ||
-                                            (nHeight - idHeight) < VERUS_MIN_STAKEAGE)
+                                            (nHeight - idHeight) <= VERUS_MIN_STAKEAGE)
                                         {
                                             if (LogAcceptCategory("staking"))
                                             {

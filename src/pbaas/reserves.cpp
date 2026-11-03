@@ -2611,7 +2611,17 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             }
 
             fractionalSizes[i] += fractionDelta;
-            rates[i] = ((arith_uint256(inputReserve) * bigSatoshi) / arith_uint256(fractionalSizes[i])).GetLow64();
+
+            // the pool sells fractional at this price, so once active it is rounded up, never down, and the
+            // integer price can no longer clear a net buy below the curve
+            arith_uint256 bigBuyNumerator = arith_uint256(inputReserve) * bigSatoshi;
+            arith_uint256 bigFractionalSize(fractionalSizes[i]);
+            arith_uint256 bigBuyRate = bigBuyNumerator / bigFractionalSize;
+            if (layerReserveFixActive && (bigBuyRate * bigFractionalSize) != bigBuyNumerator)
+            {
+                bigBuyRate += 1;
+            }
+            rates[i] = bigBuyRate.GetLow64();
 
             // add the new reserve and supply to the currency
             newState.supply = newState.AddToSupply(fractionDelta);

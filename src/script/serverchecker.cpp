@@ -28,7 +28,7 @@ static const uint32_t SC_PBAAS_NOTARIZATION_ORDER_HEIGHT = 3227685;
 static const uint32_t SC_PBAAS_NOTARIZATION_ORDER_VARRR_HEIGHT = 238210;
 static const uint32_t SC_PBAAS_NOTARIZATION_ORDER_VDEX_HEIGHT = 68730;
 
-static uint160 _vARRRChainID() 
+static uint160 _vARRRChainID()
 {
     static uint160 vARRRID = GetDestinationID(DecodeDestination("vARRR@"));
     return vARRRID;
@@ -119,6 +119,9 @@ std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> Serve
 
     uint32_t checkHeight = chainActive.Height() < spendHeight ? chainActive.Height() : spendHeight - 1;
     bool enforceIDStakeHeightLimit = isPBaaS;
+    // once active, the stake age applies to every ID, locked or not, matching the cross-chain
+    // header proof rule, which can only prove an ID at least VERUS_MIN_STAKEAGE blocks older than the stake
+    bool enforceIDStakeAgeAllIDs = isPBaaS && IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(spendHeight));
 
     if (scriptPubKeyIn.IsPayToCryptoCondition(p) && p.IsValid() && p.n >= 1 && p.vKeys.size() >= p.n && p.version >= p.VERSION_V3 && p.vData.size())
     {
@@ -168,7 +171,7 @@ std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> Serve
                         if (id.IsValidUnrevoked() &&
                             ((isStake && (!enforceIDStakeHeightLimit || (idHeight && (spendHeight - idHeight) >= VERUS_MIN_STAKEAGE))) ||
                              sourceIsSelf ||
-                             !id.IsLocked(spendHeight)))
+                             (!id.IsLocked(spendHeight) && !(isStake && enforceIDStakeAgeAllIDs))))
                         {
                             std::vector<std::vector<unsigned char>> idAddrBytes;
                             for (auto &oneAddr : id.primaryAddresses)

@@ -3952,7 +3952,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         if (nHeight > 1 &&
             IsAfterSecondBridgeCleanupWindowStarts(pindex->nTime))
         {
-            uint32_t mmrSize = block.IsVerusPOSBlock() ? pindex->pprev->GetHeight() + 1 : pindex->pprev->GetHeight();
+            uint32_t mmrSize = pindex->pprev->GetHeight() + 1;
             if (block.GetPrevMMRRoot() != ChainMerkleMountainView(chainActive.GetMMR(), mmrSize).GetRoot())
             {
                 return state.DoS(100, error("%s: header prevMMRRoot mismatch at height %u", __func__, nHeight), REJECT_INVALID, "bad-prevmmrroot");
