@@ -2174,6 +2174,11 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
 
     if (advancedIdentity)
     {
+        if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) &&
+            newIdentity.name.find('\0') != std::string::npos)
+        {
+            return state.Error("Invalid name characters specified in identity registration");
+        }
         cleanName = CleanName(newIdentity.name, parentID, isPBaaS, false);
         if (cleanName.empty())
         {

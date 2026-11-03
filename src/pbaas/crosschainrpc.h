@@ -736,7 +736,12 @@ public:
 
     CCurrencyDefinition(const std::vector<unsigned char> &asVector)
     {
-        ::FromVector(asVector, *this);
+        bool success = false;
+        ::FromVector(asVector, *this, &success);
+        if (!success)
+        {
+            nVersion = PBAAS_VERSION_INVALID;
+        }
     }
 
     CCurrencyDefinition(const CScript &scriptPubKey);

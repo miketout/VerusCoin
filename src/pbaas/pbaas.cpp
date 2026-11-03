@@ -2291,6 +2291,12 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
             return state.Error("Invalid export transaction");
         }
     }
+    else if (height != 1 &&
+             IsAfterSecondBridgeCleanupWindowStarts(exportChainTime) &&
+             ccx.totalBurned.CanonicalMap().valueMap.size())
+    {
+        return state.Error("Export with no transfers cannot burn");
+    }
 
     return true;
 }
@@ -4239,9 +4245,12 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
             default:
                 return state.Error("Invalid native currency ID type in currency definition");
         }
-        if (newCurrency.nativeCurrencyID.HasGatewayLeg())
+        if ((newCurrency.nativeCurrencyID.type & (CTransferDestination::FLAG_DEST_GATEWAY |
+                                                CTransferDestination::FLAG_RESERVED1 |
+                                                CTransferDestination::FLAG_RESERVED2)) ||
+            (nativeType != CTransferDestination::DEST_INVALID && !newCurrency.nativeCurrencyID.IsValid()))
         {
-            return state.Error("Native currency ID may not have gateway destinations");
+            return state.Error("Native currency ID may not have gateway destinations or reserved flags");
         }
         if (nativeType == CTransferDestination::DEST_ETHNFT)
         {
@@ -5605,6 +5614,14 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 else if (CheckImportPassThrough() == -1)
                 {
                     return state.Error("Cannot get info for import containing reserve transfer: " + rt.ToUniValue().write(1,2));
+                }
+
+                if (IsAfterSecondBridgeCleanupWindowStarts(chainTime) &&
+                    importCurrencyID != systemDestID &&
+                    !currenciesAndNotarizations.count(importCurrencyID) &&
+                    !std::get<0>(GetLastConfirmedNotarization(importCurrencyID, height - 1)))
+                {
+                    return state.Error("No confirmed notarization for destination currency of cross-system transfer: " + rt.ToUniValue().write(1,2));
                 }
 
                 if (systemDest.proofProtocol == systemDest.PROOF_ETHNOTARIZATION)

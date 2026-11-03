@@ -966,7 +966,7 @@ CRating::CRating(const UniValue uni) :
     }
 }
 
-CCredential::CCredential(const UniValue uni) : 
+CCredential::CCredential(const UniValue uni) :
     version(uni_get_int64(find_value(uni, "version"))),
     flags(uni_get_int64(find_value(uni, "flags"))),
     credentialKey(GetDestinationID(DecodeDestination(uni_get_str(find_value(uni, "credentialkey"))))),
@@ -1589,6 +1589,7 @@ CTransferDestination::CTransferDestination(const UniValue &obj) : fees(0)
     {
         gatewayID = GetDestinationID(DecodeDestination(uni_get_str(find_value(obj, "gateway"))));
         fees = AmountFromValueNoErr(find_value(obj, "fees"));
+        gatewayCode = GetDestinationID(DecodeDestination(uni_get_str(find_value(obj, "gatewaycode"))));
     }
 }
 

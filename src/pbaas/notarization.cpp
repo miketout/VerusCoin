@@ -10859,7 +10859,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
             case CTransferDestination::DEST_PK:
             case CTransferDestination::DEST_PKH:
             case CTransferDestination::DEST_ID:
-                proposerOk = true;
+                proposerOk = currentNotarization.proposer.IsValid();
                 break;
             case CTransferDestination::DEST_INVALID:
                 // definition, import and block-one notarizations carry no proposer
@@ -12242,7 +12242,8 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
           (currentFinalization = CObjectFinalization(p.vData[0])).IsValid() &&
           p.IsEvalPKOut() &&
           currentFinalization.FinalizationType() == CObjectFinalization::EFinalizationType::FINALIZE_NOTARIZATION &&
-          ::AsVector(currentFinalization) == p.vData[0]))
+          ::AsVector(currentFinalization) == p.vData[0] &&
+          !(currentFinalization.IsConfirmed() && currentFinalization.IsRejected())))
     {
         return state.Error("Invalid finalization for notarization output");
     }
@@ -13546,7 +13547,9 @@ bool ValidateFinalizeNotarization(struct CCcontract_info *cp, Eval* eval, const 
 
     // for now, auto notarization uses defined notaries. it can be updated later, while leaving those that
     // select notary confirm explicitly to remain on that protocol
-    if (curDef.notarizationProtocol == curDef.NOTARIZATION_NOTARY_CONFIRM || curDef.notarizationProtocol == curDef.NOTARIZATION_AUTO)
+    if (curDef.notarizationProtocol == curDef.NOTARIZATION_NOTARY_CONFIRM ||
+        curDef.notarizationProtocol == curDef.NOTARIZATION_NOTARY_CHAINID ||
+        curDef.notarizationProtocol == curDef.NOTARIZATION_AUTO)
     {
         // get the notarization this finalizes and its index output
         CTransaction notarizationTx;

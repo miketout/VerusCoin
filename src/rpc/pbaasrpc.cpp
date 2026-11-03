@@ -6447,7 +6447,12 @@ UniValue submitchallenges(const UniValue& params, bool fHelp)
 
                 if (fundsSource.which() != COptCCParams::ADDRTYPE_INVALID)
                 {
-                    FundTransparentTransactionBuilder(pwalletMain, tb, &fundsSource);
+                    if (!pwalletMain || !FundTransparentTransactionBuilder(pwalletMain, tb, &fundsSource))
+                    {
+                        objRet.pushKV("error", pwalletMain ? "Unable to fund challenge transaction" : "A wallet is required to fund challenges");
+                        retVal[std::get<0>(oneChallenge.second)] = objRet;
+                        continue;
+                    }
                     tb.SendChangeTo(fundsSource);
                 }
                 else if (!tb.mtx.vin.size())
@@ -6628,6 +6633,7 @@ UniValue submitacceptednotarization(const UniValue& params, bool fHelp)
             throw JSONRPCError(RPC_INVALID_PARAMETER, state.GetRejectReason());
         }
         if (fromDest.which() == COptCCParams::ADDRTYPE_INVALID ||
+            !pwalletMain ||
             !FundTransparentTransactionBuilder(pwalletMain, tb, &fromDest))
         {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Unable to fund notarization transaction");
@@ -14840,6 +14846,10 @@ UniValue registernamecommitment(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, ConnectedChains.GetFriendlyCurrencyName(issuingCurrency.GetID()) + " is unable to issue currencies");
     }
 
+    if (uni_get_str(params[0]).find('\0') != std::string::npos)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid name for commitment. Names must not contain NUL characters");
+    }
     std::string rawName = uni_get_str(params[0]);
     std::string name = CleanName(uni_get_str(params[0]), parentID, true, true);
     if (parentID != parentCurrency.GetID())

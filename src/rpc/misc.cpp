@@ -1333,10 +1333,9 @@ UniValue verifysignature(const UniValue& params, bool fHelp)
     if (dest.which() != COptCCParams::ADDRTYPE_ID &&
         ((vdxfKeys.isArray() && vdxfKeys.size()) ||
             (vdxfKeyNames.isArray() && vdxfKeyNames.size()) ||
-            (boundHashes.isArray() && vdxfKeyNames.size()) ||
-            strSignature.size()))
+            (boundHashes.isArray() && boundHashes.size())))
     {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "When signing with public key and not identity, cannot include vdxf keys, vdxf key names, bound hashes, or multisig");
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "When signing with public key and not identity, cannot include vdxf keys, vdxf key names, or bound hashes");
     }
 
     uint256 msgHash;
@@ -1594,11 +1593,6 @@ UniValue verifysignature(const UniValue& params, bool fHelp)
         const CKeyID *keyID = boost::get<CKeyID>(&dest);
         if (!keyID) {
             throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to key");
-        }
-
-        CKey key;
-        if (!pwalletMain->GetKey(*keyID, key)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Private key not available");
         }
 
         CHashWriterSHA256 ss(SER_GETHASH, PROTOCOL_VERSION);

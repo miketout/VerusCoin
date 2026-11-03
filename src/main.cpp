@@ -2103,8 +2103,49 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
         // if this is an identity, determine the identityFeeFactor
         CAmount identityFeeFactor = 0;
-        if (fLimitFree && txDesc.IsValid())
+
+        if (txDesc.IsValid() && fLimitFree)
         {
+            if (txDesc.IsReserveTransfer())
+            {
+                uint32_t tipTime = chainActive.LastTip() ? chainActive.LastTip()->nTime : 0;
+                std::map<uint160, std::pair<int32_t, int32_t>> perDestCount;
+                for (int j = 0; j < tx.vout.size(); j++)
+                {
+                    COptCCParams rtP;
+                    CReserveTransfer rt;
+                    if (tx.vout[j].scriptPubKey.IsPayToCryptoCondition(rtP) && rtP.IsValid() &&
+                        rtP.evalCode == EVAL_RESERVE_TRANSFER && rtP.vData.size() &&
+                        (rt = CReserveTransfer(rtP.vData[0])).IsValid())
+                    {
+                        CCurrencyDefinition destCur = ConnectedChains.GetCachedCurrency(rt.GetImportCurrency());
+                        CCurrencyDefinition destSys = destCur.IsValid() ? ConnectedChains.GetCachedCurrency(destCur.SystemOrGatewayID()) : CCurrencyDefinition();
+                        if (destSys.IsValid())
+                        {
+                            if (++perDestCount[destSys.GetID()].first > destSys.MaxTransferExportCount(tipTime) ||
+                                (perDestCount[destSys.GetID()].second += tx.vout[j].scriptPubKey.size()) > destSys.MaxTransferExportSize())
+                            {
+                                return state.DoS(0, false, REJECT_NONSTANDARD, "bad-txns-too-many-transfers");
+                            }
+                            if (rt.destination.HasGatewayLeg() && rt.destination.gatewayID != destSys.GetID())
+                            {
+                                CCurrencyDefinition secondLegSys = ConnectedChains.GetCachedCurrency(rt.destination.gatewayID);
+                                uint160 secondLegID = secondLegSys.SystemOrGatewayID();
+                                int32_t exportShiftCount = IsAfterBridgeCleanupWindowStarts(tipTime) ? 1 : 0;
+                                if (secondLegSys.IsValid() &&
+                                    secondLegID != ASSETCHAINS_CHAINID &&
+                                    secondLegID != destSys.GetID() &&
+                                    (++perDestCount[secondLegID].first > (secondLegSys.MaxTransferExportCount(tipTime) >> exportShiftCount) ||
+                                    (perDestCount[secondLegID].second += rt.NextLegSizeAttribution(tx.vout[j].scriptPubKey.size())) > (secondLegSys.MaxTransferExportSize() >> exportShiftCount)))
+                                {
+                                    return state.DoS(0, false, REJECT_NONSTANDARD, "bad-txns-too-many-transfers");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (txDesc.IsImport())
             {
                 // find the first import and check for adequate fees
@@ -2125,8 +2166,8 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
                         p.IsEvalPKOut() &&
                         (cci = CCrossChainImport(p.vData[0])).IsValid() &&
                         ((cci.IsDefinitionImport() || cci.IsInitialLaunchImport()) || cci.IsSourceSystemImport() ||
-                         ((importCurDef = ConnectedChains.GetCachedCurrency(cci.importCurrencyID)).IsValid() &&
-                          cci.GetImportInfo(tx,
+                        ((importCurDef = ConnectedChains.GetCachedCurrency(cci.importCurrencyID)).IsValid() &&
+                        cci.GetImportInfo(tx,
                                             nextBlockHeight,
                                             outNum,
                                             ccx,
@@ -2140,11 +2181,11 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
                                             state))))
                     {
                         if (!(cci.sourceSystemID == ASSETCHAINS_CHAINID ||
-                              cci.IsDefinitionImport() ||
-                              cci.IsInitialLaunchImport() ||
-                              cci.IsSourceSystemImport() ||
-                              (notarization.IsValid() && notarization.IsRefunding())) &&
-                              reserveTransfers.size())
+                            cci.IsDefinitionImport() ||
+                            cci.IsInitialLaunchImport() ||
+                            cci.IsSourceSystemImport() ||
+                            (notarization.IsValid() && notarization.IsRefunding())) &&
+                            reserveTransfers.size())
                         {
                             if (cci.sourceSystemID != ASSETCHAINS_CHAINID &&
                                 !ConnectedChains.NotarySystems().count(cci.sourceSystemID) &&

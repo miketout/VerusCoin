@@ -420,7 +420,7 @@ CCurrencyDefinition TransferDestinationToCurrency(const CTransferDestination &de
     {
         case CTransferDestination::DEST_REGISTERCURRENCY:
         {
-            ::FromVector(dest.destination, retCurrency);
+            retCurrency = CCurrencyDefinition(dest.destination);
             break;
         }
     }
