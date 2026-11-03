@@ -5351,7 +5351,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 std::set<CTxDestination> adjusterSigDests = adjusterIdentity.IdentityPrimaryAddressKeySet();
 
                 int sigsValid = 0;
-                if (adjusterIdentity.IsValid() && smartSigs.IsValid())
+                if (adjusterIdentity.IsValidUnrevoked() && smartSigs.IsValid())
                 {
                     for (auto &keySig : smartSigs.signatures)
                     {

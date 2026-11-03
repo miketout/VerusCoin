@@ -84,7 +84,7 @@ public:
     uint32_t upgradeBlockHeight;            // block height at which the upgrade should happen
     uint32_t upgradeTargetTime;             // target time for upgrade, depending on specific upgrade activation rules
 
-    CUpgradeDescriptor(uint32_t Version=VERSION_INVALID) : version(Version), upgradeBlockHeight(0) {}
+    CUpgradeDescriptor(uint32_t Version=VERSION_INVALID) : version(Version), minDaemonVersion(0), upgradeBlockHeight(0), upgradeTargetTime(0) {}
     CUpgradeDescriptor(const uint160 &UpgradeID, uint32_t MinDaemonVersion, uint32_t UpgradeHeight, uint32_t UpgradeTargetTime, uint32_t Version=VERSION_CURRENT) :
         version(Version), minDaemonVersion(MinDaemonVersion), upgradeID(UpgradeID), upgradeBlockHeight(UpgradeHeight), upgradeTargetTime(UpgradeTargetTime) {}
 
@@ -101,7 +101,12 @@ public:
 
     CUpgradeDescriptor(const std::vector<unsigned char> &asVector)
     {
-        FromVector(asVector, *this);
+        bool success = false;
+        FromVector(asVector, *this, &success);
+        if (!success)
+        {
+            version = VERSION_INVALID;
+        }
     }
 
     CUpgradeDescriptor(const UniValue &uni);
