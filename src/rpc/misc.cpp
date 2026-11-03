@@ -1416,58 +1416,61 @@ UniValue verifysignature(const UniValue& params, bool fHelp)
 
         uint32_t nHeight = chainActive.Height();
 
-        CIdentity identity;
-
-        identity = CIdentity::LookupIdentity(GetDestinationID(dest));
-        if (identity.IsValidUnrevoked())
+        CIdentitySignature identitySig = CIdentitySignature(nHeight, std::vector<unsigned char>(), hashType, CIdentitySignature::VERSION_ETHBRIDGE);
+        if (!strSignature.empty())
         {
-            UniValue ret(UniValue::VOBJ);
-
-            CIdentitySignature identitySig = CIdentitySignature(nHeight, std::vector<unsigned char>(), hashType, CIdentitySignature::VERSION_ETHBRIDGE);
-            if (!strSignature.empty())
+            std::vector<unsigned char> sigVec;
+            try
             {
-                std::vector<unsigned char> sigVec;
-                try
-                {
-                    bool fInvalid = false;
-                    sigVec = DecodeBase64(strSignature.c_str(), &fInvalid);
-                    if (fInvalid)
-                    {
-                        sigVec.clear();
-                    }
-                    if (sigVec.size())
-                    {
-                        identitySig = CIdentitySignature(sigVec);
-                        if (!identitySig.IsValid() || identitySig.blockHeight > (nHeight + 1))
-                        {
-                            sigVec.clear();
-                        }
-                    }
-                }
-                catch(const std::exception& e)
+                bool fInvalid = false;
+                sigVec = DecodeBase64(strSignature.c_str(), &fInvalid);
+                if (fInvalid)
                 {
                     sigVec.clear();
                 }
-                if (!sigVec.size())
+                if (sigVec.size())
                 {
-                    throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid pre-existing signature");
+                    identitySig = CIdentitySignature(sigVec);
+                    if (!identitySig.IsValid() || identitySig.blockHeight > (nHeight + 1))
+                    {
+                        sigVec.clear();
+                    }
                 }
             }
-            else
+            catch(const std::exception& e)
             {
-                throw JSONRPCError(RPC_INVALID_PARAMS, "Missing or invalid \"signature\"");
+                sigVec.clear();
             }
+            if (!sigVec.size())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid pre-existing signature");
+            }
+        }
+        else
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMS, "Missing or invalid \"signature\"");
+        }
 
-            // default verifies against the identity as it was at the height recorded in the signature,
-            // as verifyhash, verifymessage and verifyfile do; checklatest uses the current identity
-            if (!checkLatest)
+        CIdentity identity;
+
+        // default verifies against the identity as it was at the height recorded in the signature,
+        // as verifyhash, verifymessage and verifyfile do; checklatest uses the current identity
+        if (!checkLatest)
+        {
+            identity = CIdentity::LookupIdentity(GetDestinationID(dest), identitySig.blockHeight);
+            if (!identity.IsValidUnrevoked())
             {
-                identity = CIdentity::LookupIdentity(GetDestinationID(dest), identitySig.blockHeight);
-                if (!identity.IsValidUnrevoked())
-                {
-                    throw JSONRPCError(RPC_INVALID_PARAMS, "Identity was not valid at the signature's block height");
-                }
+                throw JSONRPCError(RPC_INVALID_PARAMS, "Identity was not valid at the signature's block height");
             }
+        }
+        else
+        {
+            identity = CIdentity::LookupIdentity(GetDestinationID(dest));
+        }
+
+        if (identity.IsValidUnrevoked())
+        {
+            UniValue ret(UniValue::VOBJ);
 
             // go through VDXF keys, VDXF key names, and bound hashes
             std::vector<uint160> vdxfCodes;
@@ -1583,7 +1586,7 @@ UniValue verifysignature(const UniValue& params, bool fHelp)
         }
         else
         {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Identity is revoked and cannot sign");
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Identity is revoked and signature cannot be validated");
         }
     }
     else

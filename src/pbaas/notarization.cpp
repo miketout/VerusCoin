@@ -12710,7 +12710,8 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                                 confirmCheckAddresses.clear();
 
                                 // we need to find the finalization block for this notarization at the same height it was confirmed
-                                if (GetAddressIndex(
+                                if (// if passes sync with this first condition commented, remove it !IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) ||
+                                    !GetAddressIndex(
                                         CCrossChainRPCData::GetConditionID(
                                             CCrossChainRPCData::GetConditionID(notarization.currencyID, CObjectFinalization::ObjectFinalizationNotarizationKey()),
                                             CObjectFinalization::ObjectFinalizationConfirmedKey()),

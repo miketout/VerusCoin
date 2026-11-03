@@ -29,6 +29,14 @@
 #include "pbaas/shuffle_compat.h"
 #endif
 
+#ifndef SATOSHIDEN
+#define SATOSHIDEN ((uint64_t)100000000L)
+#endif
+
+#ifndef KOMODO_ASSETCHAIN_MAXLEN
+#define KOMODO_ASSETCHAIN_MAXLEN 65
+#endif
+
 template<typename RAIterator, typename RNG>
 void pbaas_shuffle(RAIterator first, RAIterator last, RNG&& rng)
 {
@@ -592,6 +600,7 @@ public:
     enum EProofProtocol
     {
         PROOF_INVALID = 0,                  // proof protocol must have valid type
+        PROOF_FIRSTPROTOCOL = 1,
         PROOF_PBAASMMR = 1,                 // Verus MMR proof, no notaries required
         PROOF_CHAINID = 2,                  // if signed by the chain ID, that is considered proof
         PROOF_ETHNOTARIZATION = 3,          // proven by Ethereum notarization
@@ -1189,7 +1198,15 @@ public:
                 rewards.size() == rewardsDecay.size() &&
                 rewards.size() == halving.size() &&
                 rewards.size() == eraEnd.size() &&
-                std::max({rewards.size(), rewardsDecay.size(), halving.size(), eraEnd.size()}) <= ASSETCHAINS_MAX_ERAS;
+                std::max({rewards.size(), rewardsDecay.size(), halving.size(), eraEnd.size()}) <= ASSETCHAINS_MAX_ERAS &&
+                preLaunchDiscount >= 0 &&
+                preLaunchDiscount < SATOSHIDEN &&
+                preLaunchCarveOut >= 0 &&
+                preLaunchCarveOut < SATOSHIDEN &&
+                proofProtocol >= PROOF_PBAASMMR &&
+                proofProtocol <= PROOF_LASTPROTOCOL &&
+                notarizationProtocol >= NOTARIZATION_AUTO &&
+                notarizationProtocol <= NOTARIZATION_NOTARY_LAST;
     }
 
     uint32_t ChainOptions() const
@@ -1720,7 +1737,8 @@ public:
             }
             default:
             {
-                assert(false);
+                nativeHashType = CCurrencyDefinition::EHashTypes::HASH_INVALID;
+                state.hw_blake2b = nullptr;
             }
         }
     }

@@ -4215,11 +4215,7 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
           currencyOptParams.evalCode == EVAL_CURRENCY_DEFINITION &&
           currencyOptParams.vData.size() > 1 &&
           (newCurrency = CCurrencyDefinition(currencyOptParams.vData[0])).IsValid() &&
-          ::AsVector(newCurrency) == currencyOptParams.vData[0] &&
-          newCurrency.preLaunchDiscount >= 0 &&
-          newCurrency.preLaunchDiscount < SATOSHIDEN &&
-          newCurrency.preLaunchCarveOut >= 0 &&
-          newCurrency.preLaunchCarveOut < SATOSHIDEN))
+          ::AsVector(newCurrency) == currencyOptParams.vData[0]))
     {
         return state.Error("Invalid currency definition in output");
     }

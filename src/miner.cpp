@@ -4014,7 +4014,6 @@ static bool ProcessBlockFound(CBlock* pblock)
     return true;
 }
 
-arith_uint256 komodo_PoWtarget(int32_t *percPoSp,arith_uint256 target,int32_t height,int32_t goalperc);
 int32_t FOUND_BLOCK,KOMODO_MAYBEMINED;
 extern int32_t KOMODO_LASTMINED,KOMODO_INSYNC;
 int32_t roundrobin_delay;

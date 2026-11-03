@@ -3907,6 +3907,16 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     if (CConstVerusSolutionVector::GetVersionByHeight(nHeight) >= CActivationHeight::ACTIVATE_PBAAS)
     {
         ConnectedChains.ConfigureEthBridge();
+
+        if (nHeight > 1 &&
+            IsAfterSecondBridgeCleanupWindowStarts(pindex->nTime))
+        {
+            uint32_t mmrSize = block.IsVerusPOSBlock() ? pindex->pprev->GetHeight() + 1 : pindex->pprev->GetHeight();
+            if (block.GetPrevMMRRoot() != ChainMerkleMountainView(chainActive.GetMMR(), mmrSize).GetRoot())
+            {
+                return state.DoS(100, error("%s: header prevMMRRoot mismatch at height %u", __func__, nHeight), REJECT_INVALID, "bad-prevmmrroot");
+            }
+        }
     }
 
     bool fExpensiveChecks = true;
@@ -6808,16 +6818,24 @@ bool ContextualCheckBlockHeader(
     // matching what local generation and merged block submission already require.
     // deliberately does not require the exact reserved tail that IsDescriptorValid does,
     // as consensus permits serialized remainders of 1 - 16
-    if (solutionVer >= CActivationHeight::ACTIVATE_PBAAS &&
-        CConstVerusSolutionVector::IsAdvancedSolution(block.nSolution))
+    if (solutionVer >= CActivationHeight::ACTIVATE_PBAAS)
     {
-        CPBaaSSolutionDescriptor d = CConstVerusSolutionVector::GetDescriptor(block.nSolution);
-        uint32_t reservedTail = CConstVerusSolutionVector::ReservedTail(block.nSolution);
-        uint64_t headerBytes = (uint64_t)d.numPBaaSHeaders * sizeof(CPBaaSBlockHeader);
-        if ((uint64_t)CConstVerusSolutionVector::OVERHEAD_SIZE + headerBytes + reservedTail > block.nSolution.size() ||
-            d.extraDataSize > CConstVerusSolutionVector::ExtraDataLen(block.nSolution, true))
+        if (CConstVerusSolutionVector::IsAdvancedSolution(block.nSolution))
         {
-            return state.DoS(100, error("%s: invalid solution descriptor", __func__), REJECT_INVALID, "invalid-solution-descriptor");
+            CPBaaSSolutionDescriptor d = CConstVerusSolutionVector::GetDescriptor(block.nSolution);
+            uint32_t reservedTail = CConstVerusSolutionVector::ReservedTail(block.nSolution);
+            uint64_t headerBytes = (uint64_t)d.numPBaaSHeaders * sizeof(CPBaaSBlockHeader);
+            if ((uint64_t)CConstVerusSolutionVector::OVERHEAD_SIZE + headerBytes + reservedTail > block.nSolution.size() ||
+                d.extraDataSize > CConstVerusSolutionVector::ExtraDataLen(block.nSolution, true))
+            {
+                return state.DoS(100, error("%s: invalid solution descriptor", __func__), REJECT_INVALID, "invalid-solution-descriptor");
+            }
+        }
+        if (CConstVerusSolutionVector::HasPBaaSHeader(block.nSolution) &&
+            IsAfterSecondBridgeCleanupWindowStarts(block.nTime) &&
+            !block.CheckNonCanonicalData(ASSETCHAINS_CHAINID))
+        {
+            return state.DoS(100, error("%s: no PBaaS header entry for this chain", __func__), REJECT_INVALID, "missing-chain-pbaas-header");
         }
     }
 
@@ -9031,6 +9049,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         }
 
         pfrom->fSuccessfullyConnected = true;
+        if (!pfrom->fInbound)
+            ClearNonTLSOutbound(pfrom->addr);
 
         string remoteAddr;
         if (fLogIPs)

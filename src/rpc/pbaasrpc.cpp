@@ -66,8 +66,6 @@ extern uint32_t ASSETCHAINS_ALGO, ASSETCHAINS_VERUSHASH, ASSETCHAINS_LASTERA;
 extern std::string VERUS_CHAINNAME;
 
 
-arith_uint256 komodo_PoWtarget(int32_t *percPoSp,arith_uint256 target,int32_t height,int32_t goalperc);
-
 std::set<uint160> ClosedPBaaSChains({});
 
 UniValue getminingdistribution(const UniValue& params, bool fHelp);
@@ -4614,15 +4612,17 @@ void CChainNotarizationData::SetBestChain(const CCurrencyDefinition &fromChainDe
         {
             CChainPower curPower =
                 CChainPower::ExpandCompactPower(vtx[forks[i].back()].second.proofRoots[currencyID].compactPower);
-            if (fromChainDef.proofProtocol == fromChainDef.PROOF_PBAASMMR && curPower > best)
+            if (fromChainDef.proofProtocol == fromChainDef.PROOF_PBAASMMR &&
+                curPower > best &&
+                mapBlockIndex.count(txesAndBlocks[forks[i].back()].second))
             {
                 best = curPower;
                 bestHeight = mapBlockIndex[txesAndBlocks[forks[i].back()].second]->GetHeight();
                 bestChain = i;
             }
             else if ((curPower == best || fromChainDef.proofProtocol != fromChainDef.PROOF_PBAASMMR) &&
-                        mapBlockIndex.count(txesAndBlocks[forks[i].back()].second) &&
-                        mapBlockIndex[txesAndBlocks[forks[i].back()].second]->GetHeight() > bestHeight)
+                     mapBlockIndex.count(txesAndBlocks[forks[i].back()].second) &&
+                     mapBlockIndex[txesAndBlocks[forks[i].back()].second]->GetHeight() > bestHeight)
             {
                 best = curPower;
                 bestHeight = mapBlockIndex[txesAndBlocks[forks[i].back()].second]->GetHeight();

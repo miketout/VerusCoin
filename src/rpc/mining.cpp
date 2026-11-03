@@ -43,7 +43,6 @@ extern uint64_t ASSETCHAINS_STAKED;
 extern int32_t KOMODO_MININGTHREADS;
 extern bool VERUS_MINTBLOCKS;
 extern char ASSETCHAINS_SYMBOL[KOMODO_ASSETCHAIN_MAXLEN];
-arith_uint256 komodo_PoWtarget(int32_t *percPoSp,arith_uint256 target,int32_t height,int32_t goalperc);
 int32_t komodo_blockload(CBlock& block,CBlockIndex *pindex);
 
 /**
@@ -1049,15 +1048,7 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
         result.push_back(Pair("coinbasevalue", (int64_t)pblock->vtx[0].vout[0].nValue));
     }
     result.push_back(Pair("longpollid", chainActive.LastTip()->GetBlockHash().GetHex() + i64tostr(nTransactionsUpdatedLast)));
-    if ( ASSETCHAINS_STAKED != 0 )
-    {
-        arith_uint256 POWtarget; int32_t PoSperc;
-        POWtarget = komodo_PoWtarget(&PoSperc,hashTarget,(int32_t)(pindexPrev->GetHeight()+1),ASSETCHAINS_STAKED);
-        result.push_back(Pair("target", POWtarget.GetHex()));
-        result.push_back(Pair("PoSperc", (int64_t)PoSperc));
-        result.push_back(Pair("ac_staked", (int64_t)ASSETCHAINS_STAKED));
-        result.push_back(Pair("origtarget", hashTarget.GetHex()));
-    } else result.push_back(Pair("target", hashTarget.GetHex()));
+    result.push_back(Pair("target", hashTarget.GetHex()));
     result.push_back(Pair("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1));
     result.push_back(Pair("mutable", aMutable));
     result.push_back(Pair("noncerange", "00000000ffffffff"));

@@ -206,87 +206,87 @@ std::vector<unsigned char> RLP::encode(std::vector<std::vector<unsigned char>> i
 // RLP decode
 // ---------------------------------------------------------------------------
 
-RLP::rlpDecoded RLP::decode(std::vector<unsigned char> inputBytes, int depth)
+// Decode one RLP item that starts at p with `avail` bytes available to it.
+// Appends the item's string(s) to `out` (lists are flattened) and returns the
+// number of bytes the item occupied, so the caller advances instead of copying.
+// this was a rewrite by Claude Fable 5.1 of the original code, reviewed by
+// miketout.
+static size_t decodeItem(const unsigned char *p, size_t avail, int depth,
+                         std::vector<std::vector<unsigned char>> &out)
 {
-    if (depth > MAX_RLP_DECODE_DEPTH)
+    if (depth > RLP::MAX_RLP_DECODE_DEPTH)
         throw std::invalid_argument("RLP decode: maximum nesting depth exceeded");
 
-    if (inputBytes.empty())
+    if (avail == 0)
         throw std::invalid_argument("RLP decode: empty input");
 
-    const unsigned char* p = inputBytes.data();
-    const size_t total = inputBytes.size();
     const unsigned char first = p[0];
-
-    rlpDecoded output;
 
     if (first <= 0x7f) {
         // Single byte string: the byte is its own value.
-        output.data.push_back({first});
-        output.remainder.assign(p + 1, p + total);
+        out.push_back({first});
+        return 1;
+    }
 
-    } else if (first <= 0xb7) {
+    if (first <= 0xb7) {
         // Short string: 0 to 55 bytes, length = first - 0x80.
         size_t strLen = static_cast<size_t>(first - 0x80);
-        if (1 + strLen > total)
+        if (1 + strLen > avail)
             throw std::invalid_argument("RLP decode: short string overflows input");
         if (strLen == 1 && p[1] < 0x80)
             throw std::invalid_argument("RLP decode: single byte < 0x80 must be self-encoded");
-        output.data.push_back(std::vector<unsigned char>(p + 1, p + 1 + strLen));
-        output.remainder.assign(p + 1 + strLen, p + total);
+        out.push_back(std::vector<unsigned char>(p + 1, p + 1 + strLen));
+        return 1 + strLen;
+    }
 
-    } else if (first <= 0xbf) {
+    if (first <= 0xbf) {
         // Long string: number of length bytes = first - 0xb7.
         size_t lenBytes = static_cast<size_t>(first - 0xb7);
-        if (1 + lenBytes > total)
+        if (1 + lenBytes > avail)
             throw std::invalid_argument("RLP decode: long string length overflows input");
         size_t strLen = decodeBELength(p + 1, lenBytes);
         // Use subtraction to avoid wrapping if strLen is near SIZE_MAX.
-        if (strLen > total - 1 - lenBytes)
+        if (strLen > avail - 1 - lenBytes)
             throw std::invalid_argument("RLP decode: long string payload overflows input");
-        output.data.push_back(std::vector<unsigned char>(p + 1 + lenBytes,
-                                                          p + 1 + lenBytes + strLen));
-        output.remainder.assign(p + 1 + lenBytes + strLen, p + total);
+        out.push_back(std::vector<unsigned char>(p + 1 + lenBytes, p + 1 + lenBytes + strLen));
+        return 1 + lenBytes + strLen;
+    }
 
-    } else if (first <= 0xf7) {
+    size_t headerLen, listLen;
+    if (first <= 0xf7) {
         // Short list: payload length = first - 0xc0.
-        size_t listLen = static_cast<size_t>(first - 0xc0);
-        if (1 + listLen > total)
+        headerLen = 1;
+        listLen = static_cast<size_t>(first - 0xc0);
+        if (1 + listLen > avail)
             throw std::invalid_argument("RLP decode: short list payload overflows input");
-
-        // Recursively decode each item inside the list.
-        std::vector<unsigned char> inner(p + 1, p + 1 + listLen);
-        while (!inner.empty()) {
-            rlpDecoded sub = decode(inner, depth + 1);
-            for (auto& d : sub.data)
-                output.data.push_back(std::move(d));
-            inner = std::move(sub.remainder);
-        }
-        output.remainder.assign(p + 1 + listLen, p + total);
-
     } else {
         // Long list: number of length bytes = first - 0xf7.
         size_t lenBytes = static_cast<size_t>(first - 0xf7);
-        if (1 + lenBytes > total)
+        if (1 + lenBytes > avail)
             throw std::invalid_argument("RLP decode: long list length overflows input");
-        size_t listLen = decodeBELength(p + 1, lenBytes);
-        size_t headerLen = 1 + lenBytes;
+        listLen = decodeBELength(p + 1, lenBytes);
+        headerLen = 1 + lenBytes;
         // Use subtraction to avoid wrapping if listLen is near SIZE_MAX.
-        if (listLen > total - headerLen)
+        if (listLen > avail - headerLen)
             throw std::invalid_argument("RLP decode: long list payload overflows input");
         if (listLen == 0)
             throw std::invalid_argument("RLP decode: long list has zero-length payload");
-
-        std::vector<unsigned char> inner(p + headerLen, p + headerLen + listLen);
-        while (!inner.empty()) {
-            rlpDecoded sub = decode(inner, depth + 1);
-            for (auto& d : sub.data)
-                output.data.push_back(std::move(d));
-            inner = std::move(sub.remainder);
-        }
-        output.remainder.assign(p + headerLen + listLen, p + total);
     }
 
+    // Decode the list payload in place. Each item is bounded by the end of the
+    // payload, never by the end of the whole input, exactly as the old copy was.
+    const size_t end = headerLen + listLen;
+    size_t pos = headerLen;
+    while (pos < end)
+        pos += decodeItem(p + pos, end - pos, depth + 1, out);
+    return end;
+}
+
+RLP::rlpDecoded RLP::decode(std::vector<unsigned char> inputBytes, int depth)
+{
+    rlpDecoded output;
+    size_t consumed = decodeItem(inputBytes.data(), inputBytes.size(), depth, output.data);
+    output.remainder.assign(inputBytes.begin() + consumed, inputBytes.end());
     return output;
 }
 
@@ -317,7 +317,14 @@ std::vector<unsigned char> CETHPATRICIABranch::verifyProof(
         const std::vector<unsigned char>& nodeBytes = proof[i];
 
         if (nodeBytes.empty())
+        {
             throw std::invalid_argument("RLP: empty proof node at i=" + std::to_string(i));
+        }
+
+        if (nodeBytes.size() > RLP::MAX_RLP_NODE_SIZE)
+        {
+            throw std::invalid_argument("RLP: proof node too large at i=" + std::to_string(i));
+        }
 
         // Each node must hash (keccak256) to the expected value.
         CKeccack256Writer writer;

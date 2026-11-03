@@ -23,10 +23,6 @@
 #include "lrucache.h"
 #include "prevector.h"
 
-#ifndef SATOSHIDEN
-#define SATOSHIDEN ((uint64_t)100000000L)
-#endif
-
 using boost::multiprecision::cpp_dec_float_50;
 class CCoinsViewCache;
 class CInputDescriptor;

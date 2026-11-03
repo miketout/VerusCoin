@@ -1491,9 +1491,6 @@ UniValue gettxout(const UniValue& params, bool fHelp)
         ret.push_back(Pair("confirmations", 0));
     else ret.push_back(Pair("confirmations", pindex->GetHeight() - coins.nHeight + 1));
     ret.push_back(Pair("value", ValueFromAmount(coins.vout[n].nValue)));
-    uint64_t interest; int32_t txheight; uint32_t locktime;
-    if ( (interest= komodo_accrued_interest(&txheight,&locktime,hash,n,coins.nHeight,coins.vout[n].nValue,(int32_t)pindex->GetHeight())) != 0 )
-        ret.push_back(Pair("interest", ValueFromAmount(interest)));
     UniValue o(UniValue::VOBJ);
     ScriptPubKeyToJSON(coins.vout[n].scriptPubKey, o, true);
     ret.push_back(Pair("scriptPubKey", o));

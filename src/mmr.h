@@ -631,7 +631,8 @@ typedef CPATRICIABranch<> CETHPATRICIABranch;
 class RLP {
 public:
     enum {
-        MAX_RLP_DECODE_DEPTH = 32
+        MAX_RLP_DECODE_DEPTH = 32,
+        MAX_RLP_NODE_SIZE = 16384
     };
     struct rlpDecoded {
         std::vector<std::vector<unsigned char>> data;
