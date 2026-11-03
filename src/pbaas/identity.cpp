@@ -3346,9 +3346,9 @@ bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTran
 
             bool heightLocking = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height));
             bool recoveryUsable = recoveryIdentity.IsValidUnrevoked() &&
-                                (oldIdentity.recoveryAuthority == identityID || !(heightLocking ? recoveryIdentity.IsLocked(height) : recoveryIdentity.IsLocked()));
+                                (oldIdentity.recoveryAuthority == identityID || !(heightLocking ? recoveryIdentity.IsLocked(height - 1) : recoveryIdentity.IsLocked()));
             bool revocationUsable = revocationIdentity.IsValidUnrevoked() &&
-                                    (oldIdentity.revocationAuthority == identityID || !(heightLocking ? revocationIdentity.IsLocked(height) : revocationIdentity.IsLocked()));
+                                    (oldIdentity.revocationAuthority == identityID || !(heightLocking ? revocationIdentity.IsLocked(height - 1) : revocationIdentity.IsLocked()));
 
             std::set<CTxDestination> recoverySigDests = recoveryIdentity.IdentityPrimaryAddressKeySet();
             std::set<CTxDestination> revocationSigDests = revocationIdentity.IdentityPrimaryAddressKeySet();

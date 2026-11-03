@@ -11544,7 +11544,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                                              curDef.proofProtocol != curDef.PROOF_PBAASMMR;
 
                     hw << currentNotarization;
-                    if (evidence.CheckSignatureConfirmation(hw.GetHash(), hashType, curDef.GetNotarySet(), curDef.minNotariesConfirm, height - 1) !=
+                    if (evidence.CheckSignatureConfirmation(hw.GetHash(), hashType, curDef.GetNotarySet(), curDef.MinimumNotariesConfirm(), height - 1) !=
                             CNotaryEvidence::EStates::STATE_CONFIRMED &&
                         signatureRequired)
                     {
@@ -12838,7 +12838,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                             oneEvidence.second.CheckSignatureConfirmation(objHash,
                                                                           hw.GetHashType(),
                                                                           notarySet,
-                                                                          pNotaryCurrency->minNotariesConfirm,
+                                                                          pNotaryCurrency->MinimumNotariesConfirm(),
                                                                           height - 1);
                         if (signatureState == CNotaryEvidence::STATE_CONFIRMED || signatureState == CNotaryEvidence::STATE_REJECTED)
                         {
@@ -12941,7 +12941,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                                 oneEvidence.second.CheckSignatureConfirmation(objHash,
                                                                               hw.GetHashType(),
                                                                               notarySet,
-                                                                              pNotaryCurrency->minNotariesConfirm,
+                                                                              pNotaryCurrency->MinimumNotariesConfirm(),
                                                                               height - 1);
                             if (signatureState == CNotaryEvidence::STATE_CONFIRMED || signatureState == CNotaryEvidence::STATE_REJECTED)
                             {
@@ -13097,7 +13097,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                          evidenceMap[ASSETCHAINS_CHAINID][0].second.CheckSignatureConfirmation(objHash,
                                                                                                hw.GetHashType(),
                                                                                                notarySet,
-                                                                                               pNotaryCurrency->minNotariesConfirm,
+                                                                                               pNotaryCurrency->MinimumNotariesConfirm(),
                                                                                                height - 1) != CNotaryEvidence::STATE_REJECTED)
                     {
                         return state.Error("insufficient evidence to reject finalization");
@@ -13131,7 +13131,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                                 oneEvidence.second.CheckSignatureConfirmation(objHash,
                                                                               hw.GetHashType(),
                                                                               notarySet,
-                                                                              pNotaryCurrency->minNotariesConfirm,
+                                                                              pNotaryCurrency->MinimumNotariesConfirm(),
                                                                               height - 1);
                             if (signatureState == CNotaryEvidence::STATE_REJECTED)
                             {
@@ -13267,7 +13267,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
         for (auto &oneItem : evidenceVec)
         {
             if (oneItem.second.GetNotarySignatures().size() &&
-                oneItem.second.CheckSignatureConfirmation(objHash, hw.GetHashType(), notarySet, pNotaryCurrency->minNotariesConfirm, height - 1) != CNotaryEvidence::EStates::STATE_INVALID)
+                oneItem.second.CheckSignatureConfirmation(objHash, hw.GetHashType(), notarySet, pNotaryCurrency->MinimumNotariesConfirm(), height - 1) != CNotaryEvidence::EStates::STATE_INVALID)
             {
                 hasSignature = true;
                 break;
