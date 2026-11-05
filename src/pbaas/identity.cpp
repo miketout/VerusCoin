@@ -2456,189 +2456,28 @@ bool PrecheckCurrencyState(const CTransaction &tx, int32_t outNum, CValidationSt
     return true;
 }
 
-bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
+class CIDPrecheckData
 {
-    AssertLockHeld(cs_main);
+public:
+    enum {
+        FLAG_SPENDS_ID = 1,
+        FLAG_NEW_REGISTRATION = 2,
+        FLAG_IMPORTED = 4,
+        FLAGS_AUTHORIZED = (FLAG_SPENDS_ID + FLAG_NEW_REGISTRATION + FLAG_IMPORTED)
+    };
 
-    bool validReservation = false;
-    bool validIdentity = false;
-    bool validImport = false;
-    bool idMayBeImported = true;
-    bool validSourceSysImport = false;
-    bool validCrossChainImport = false;
+    std::map<uint160,std::tuple<int,uint32_t>> idOutputFlagsIdentity;
+    std::vector<uint160> idOutputNums;
+    int importOutputsStart;
+    int numImportOutputs;
+    CIDPrecheckData() : importOutputsStart(-1), numImportOutputs(-1) {}
+};
 
-    CNameReservation nameRes;
-    CAdvancedNameReservation advNameRes;
-    CIdentity identity;
-    CCrossChainImport cci;
+static LRUCache<std::tuple<uint256, uint32_t, uint256>, CIDPrecheckData> cachedIDPrecheckData(64);
 
-    COptCCParams p, identityP;
-
-    uint32_t networkVersion = CConstVerusSolutionVector::GetVersionByHeight(height);
-    bool isPBaaS = networkVersion >= CActivationHeight::ACTIVATE_PBAAS; // this is only PBaaS differences, not Verus Vault
-    bool advancedIdentity = networkVersion >= CActivationHeight::ACTIVATE_VERUSVAULT;
-    bool isCoinbase = tx.IsCoinBase();
-    bool isInSync = chainActive.Height() >= (height - 1);
-
-    for (int i = 0; i < tx.vout.size(); i++)
-    {
-        CIdentity checkIdentity;
-        auto &output = tx.vout[i];
-        bool isSmartOutput = output.scriptPubKey.IsPayToCryptoCondition(p);
-        if (isSmartOutput &&
-            (!advancedIdentity || p.AsVector().size() < CScript::MAX_SCRIPT_ELEMENT_SIZE) &&
-            p.IsValid(isPBaaS, height) &&
-            p.version >= COptCCParams::VERSION_V3 &&
-            p.vData.size() > 1)
-        {
-            switch (p.evalCode)
-            {
-                case EVAL_IDENTITY_RESERVATION:
-                {
-                    nameRes = CNameReservation(p.vData[0]);
-                    if (!nameRes.IsValid() || ::AsVector(nameRes) != p.vData[0])
-                    {
-                        return state.Error("Invalid identity reservation");
-                    }
-                    // twice through makes it invalid
-                    if (!(isPBaaS && isCoinbase && height == 1) && validReservation)
-                    {
-                        return state.Error("Invalid multiple identity reservations on one transaction");
-                    }
-                    validReservation = true;
-                }
-                break;
-
-                case EVAL_IDENTITY_ADVANCEDRESERVATION:
-                {
-                    advNameRes = CAdvancedNameReservation(p.vData[0]);
-                    if (!advNameRes.IsValid() || ::AsVector(advNameRes) != p.vData[0])
-                    {
-                        return state.Error("Invalid identity reservation");
-                    }
-                    // twice through makes it invalid
-                    if (!(isPBaaS && isCoinbase && height == 1) && validReservation)
-                    {
-                        return state.Error("Invalid multiple identity reservations on one transaction");
-                    }
-                    validReservation = true;
-                }
-                break;
-
-                case EVAL_IDENTITY_PRIMARY:
-                {
-                    checkIdentity = CIdentity(p.vData[0]);
-                    if (!(IsVerusActive() && PBAAS_TESTMODE && chainActive.ChainTimeAtOrBefore(height - 1) < PBAAS_TESTNET_IDENTITY_START_CHECKSER) &&
-                        (!checkIdentity.IsValid() ||
-                         ::AsVector(checkIdentity) != p.vData[0]))
-                    {
-                        return state.Error("Invalid identity on transaction output " + std::to_string(i));
-                    }
-
-                    if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) &&
-                        !checkIdentity.HasTokenizedControl() &&
-                        checkIdentity.IsRevoked() &&
-                        checkIdentity.recoveryAuthority == checkIdentity.GetID())
-                    {
-                        return state.Error("Irrecoverable identity on new transaction output " + std::to_string(i));
-                    }
-
-                    if (isPBaaS && isInSync)
-                    {
-                        std::set<uint160> primaryDests;
-                        for (auto &oneDest : checkIdentity.primaryAddresses)
-                        {
-                            if (oneDest.which() == COptCCParams::ADDRTYPE_PK ||
-                                oneDest.which() == COptCCParams::ADDRTYPE_PKH)
-                            {
-                                primaryDests.insert(GetDestinationID(oneDest));
-                            }
-                        }
-                        if (primaryDests.size() != checkIdentity.primaryAddresses.size())
-                        {
-                            if (!PBAAS_TESTMODE ||
-                                chainActive.ChainTimeAtOrBefore(height - 1) >= PBAAS_TESTFORK_TIME)
-                            {
-                                return state.Error("Duplicate or invalid primary address in identity " + ConnectedChains.GetFriendlyIdentityName(checkIdentity));
-                            }
-                        }
-                    }
-
-                    // twice through used to make it invalid
-                    if (!advancedIdentity && validIdentity)
-                    {
-                        return state.Error("Invalid multiple identity definitions on one transaction");
-                    }
-
-                    if (i == outNum)
-                    {
-                        identityP = p;
-                        identity = checkIdentity;
-                        CDataStream ss(SER_DISK, PROTOCOL_VERSION);
-                        if (GetSerializeSize(ss, CReserveTransfer(CReserveTransfer::IDENTITY_EXPORT + CReserveTransfer::VALID + CReserveTransfer::CROSS_SYSTEM,
-                                                 CCurrencyValueMap(std::vector<uint160>({ASSETCHAINS_CHAINID}), std::vector<int64_t>({1})),
-                                                 ASSETCHAINS_CHAINID,
-                                                 0,
-                                                 checkIdentity.GetID(),
-                                                 CTransferDestination(CTransferDestination::DEST_FULLID,
-                                                 ::AsVector(checkIdentity),
-                                                 checkIdentity.GetID()))) > (CScript::MAX_SCRIPT_ELEMENT_SIZE - 128))
-                        {
-                            return state.Error("Serialized identity is too large");
-                        }
-                    }
-                    validIdentity = true;
-                }
-                break;
-
-                case EVAL_CROSSCHAIN_IMPORT:
-                {
-                    cci = CCrossChainImport(p.vData[0]);
-                    if (!cci.IsValid())
-                    {
-                        return state.Error("Invalid import on transaction output " + std::to_string(i));
-                    }
-
-                    // if identity comes before an import and we're not on block 1, the import can't be source of validation
-                    if (height != 1 &&
-                        (identity.IsValid() ||
-                         cci.IsDefinitionImport()))
-                    {
-                        idMayBeImported = false;
-                    }
-
-                    // twice through makes it invalid
-                    if (!(isPBaaS && (height == 1 || cci.IsDefinitionImport())) && (validSourceSysImport || (validImport && !cci.IsSourceSystemImport())))
-                    {
-                        return state.Error("Invalid multiple cross-chain imports on one transaction");
-                    }
-                    else if (cci.IsSourceSystemImport())
-                    {
-                        validSourceSysImport = true;
-                    }
-                    else if (cci.sourceSystemID != ASSETCHAINS_CHAINID)
-                    {
-                        validCrossChainImport = true;
-                    }
-
-                    validImport = true;
-                }
-                break;
-            }
-        }
-        else if (advancedIdentity && isSmartOutput && !p.IsValid(isPBaaS, height))
-        {
-            return state.Error("Invalid smart transaction output");
-        }
-    }
-
-    if (!validIdentity && identity.IsValid())
-    {
-        return state.Error("Invalid identity definition");
-    }
-
+bool VerifyIdentityOutput(const CTransaction &tx, int32_t outNum, const CIdentity &identity, const COptCCParams &p, bool isPBaaS, bool advancedIdentity, CValidationState &state)
+{
     CIdentityID idID = identity.GetID();
-    p = identityP;
 
     if (advancedIdentity)
     {
@@ -2859,51 +2698,338 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
             }
         }
     }
+    return true;
+}
 
-    extern uint160 VERUS_CHAINID;
-    extern std::string VERUS_CHAINNAME;
+bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
+{
+    AssertLockHeld(cs_main);
 
-    // compare commitment without regard to case or other textual transformations that are irrelevant to matching
-    uint160 parentID = advNameRes.IsValid() ? advNameRes.parent : ConnectedChains.ThisChain().GetID();
-    if (isPBaaS && identity.GetID() == ASSETCHAINS_CHAINID && IsVerusActive())
+    bool validReservation = false;
+    bool validImport = false;
+    bool validSourceSysImport = false;
+    bool crossChainImport = false;
+
+    COptCCParams p;
+
+    uint32_t networkVersion = CConstVerusSolutionVector::GetVersionByHeight(height);
+    bool isPBaaS = networkVersion >= CActivationHeight::ACTIVATE_PBAAS; // this is only PBaaS differences, not Verus Vault
+    bool advancedIdentity = networkVersion >= CActivationHeight::ACTIVATE_VERUSVAULT;
+    bool isCoinbase = tx.IsCoinBase();
+    bool isInSync = chainActive.Height() >= (height - 1);
+
+    // non block 1 invariants -
+    // an ID output must be authorized by one of the following:
+    //  new registration - only one allowed per transaction and cannot be combined with import (except block 1)
+    //  import from other system - multiple IDs OK, 1 import per tx, must be in cross-system import's outputs, can't combine w/registration
+    //  spends the same ID on an input - multiple allowed, can't combine with registration or import
+
+    CIDPrecheckData precheckData;
+    CCrossChainImport cci;
+    CNameReservation nameRes;
+    CAdvancedNameReservation advNameRes;
+
+    CBlockIndex *pKeyIndex = chainActive.ChainIndexAtOrBefore(height - 1);
+    std::tuple<uint256, uint32_t, uint256> cacheKey(pKeyIndex ? pKeyIndex->GetBlockHash() : uint256(), height, tx.GetHash());
+    if (!cachedIDPrecheckData.Get(cacheKey, precheckData))
     {
-        parentID.SetNull();
+        uint160 lastIdentityID;
+        precheckData.idOutputNums.resize(tx.vout.size());
+        for (int i = 0; i < tx.vout.size(); i++)
+        {
+            CIdentity outputIdentity;
+            bool isSmartOutput = tx.vout[i].scriptPubKey.IsPayToCryptoCondition(p);
+            if (isSmartOutput &&
+                p.IsValid())
+            {
+                if ((!advancedIdentity || p.AsVector().size() < CScript::MAX_SCRIPT_ELEMENT_SIZE) &&
+                     p.IsValid(isPBaaS, height) &&
+                     p.version >= COptCCParams::VERSION_V3 &&
+                     p.vData.size() > 1)
+                {
+                    switch (p.evalCode)
+                    {
+                        case EVAL_IDENTITY_RESERVATION:
+                        {
+                            if (validImport)
+                            {
+                                return state.Error("Invalid identity reservation on import transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+
+                            // determine if this is for a specific ID and set its flag
+                            nameRes = CNameReservation(p.vData[0]);
+                            if (!nameRes.IsValid() || ::AsVector(nameRes) != p.vData[0])
+                            {
+                                return state.Error("Invalid identity reservation " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+                            // only one valid reservation per output allowed
+                            if (!(isPBaaS && isCoinbase && height == 1) && validReservation)
+                            {
+                                return state.Error("Invalid multiple identity reservations on one transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+
+                            uint160 parentID = ConnectedChains.ThisChain().GetID();
+                            if (isPBaaS && lastIdentityID == ASSETCHAINS_CHAINID && IsVerusActive())
+                            {
+                                parentID.SetNull();
+                            }
+                            if (!lastIdentityID.IsNull() &&
+                                (CIdentity::GetID(nameRes.name, parentID) == lastIdentityID))
+                            {
+                                std::get<1>(precheckData.idOutputFlagsIdentity[lastIdentityID]) |= CIDPrecheckData::FLAG_NEW_REGISTRATION;
+                                validReservation = true;
+                            }
+                            else
+                            {
+                                return state.Error("Invalid identity reservation on transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+                        }
+                        break;
+
+                        case EVAL_IDENTITY_ADVANCEDRESERVATION:
+                        {
+                            if (validImport)
+                            {
+                                return state.Error("Invalid identity reservation output on import transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+
+                            // determine if this is for a specific ID and set its flag
+                            advNameRes = CAdvancedNameReservation(p.vData[0]);
+                            if (!advNameRes.IsValid() || ::AsVector(advNameRes) != p.vData[0])
+                            {
+                                return state.Error("Invalid identity reservation");
+                            }
+                            // twice through makes it invalid
+                            if (!(isPBaaS && isCoinbase && height == 1) && validReservation)
+                            {
+                                return state.Error("Invalid multiple identity reservations on one transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+                            uint160 parentID = advNameRes.parent;
+                            if (isPBaaS && lastIdentityID == ASSETCHAINS_CHAINID && IsVerusActive())
+                            {
+                                parentID.SetNull();
+                            }
+                            if (!lastIdentityID.IsNull() &&
+                                (CIdentity::GetID(advNameRes.name, parentID) == lastIdentityID))
+                            {
+                                std::get<1>(precheckData.idOutputFlagsIdentity[lastIdentityID]) |= CIDPrecheckData::FLAG_NEW_REGISTRATION;
+                                validReservation = true;
+                            }
+                            else
+                            {
+                                return state.Error("Invalid identity reservation on transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+                        }
+                        break;
+
+                        case EVAL_IDENTITY_PRIMARY:
+                        {
+                            if (validImport && (i < precheckData.importOutputsStart || i >= (precheckData.importOutputsStart + precheckData.numImportOutputs)))
+                            {
+                                return state.Error("Invalid identity output on import transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+                            outputIdentity = CIdentity(p.vData[0]);
+                            if (!(IsVerusActive() && PBAAS_TESTMODE && chainActive.ChainTimeAtOrBefore(height - 1) < PBAAS_TESTNET_IDENTITY_START_CHECKSER) &&
+                                (!outputIdentity.IsValid() ||
+                                ::AsVector(outputIdentity) != p.vData[0]))
+                            {
+                                return state.Error("Invalid identity on transaction output " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+
+                            if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) &&
+                                !outputIdentity.HasTokenizedControl() &&
+                                outputIdentity.IsRevoked() &&
+                                outputIdentity.recoveryAuthority == outputIdentity.GetID())
+                            {
+                                return state.Error("Irrecoverable identity on new transaction output " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+
+                            if (isPBaaS && isInSync)
+                            {
+                                std::set<uint160> primaryDests;
+                                for (auto &oneDest : outputIdentity.primaryAddresses)
+                                {
+                                    if (oneDest.which() == COptCCParams::ADDRTYPE_PK ||
+                                        oneDest.which() == COptCCParams::ADDRTYPE_PKH)
+                                    {
+                                        primaryDests.insert(GetDestinationID(oneDest));
+                                    }
+                                }
+                                if (primaryDests.size() != outputIdentity.primaryAddresses.size())
+                                {
+                                    if (!PBAAS_TESTMODE ||
+                                        chainActive.ChainTimeAtOrBefore(height - 1) >= PBAAS_TESTFORK_TIME)
+                                    {
+                                        return state.Error("Duplicate or invalid primary address in identity " + ConnectedChains.GetFriendlyIdentityName(outputIdentity));
+                                    }
+                                }
+                            }
+
+                            // twice through used to make it invalid
+                            if (!advancedIdentity && !lastIdentityID.IsNull())
+                            {
+                                return state.Error("Invalid multiple identity definitions on one transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+
+                            CDataStream ss(SER_DISK, PROTOCOL_VERSION);
+                            if (GetSerializeSize(ss, CReserveTransfer(CReserveTransfer::IDENTITY_EXPORT + CReserveTransfer::VALID + CReserveTransfer::CROSS_SYSTEM,
+                                                    CCurrencyValueMap(std::vector<uint160>({ASSETCHAINS_CHAINID}), std::vector<int64_t>({1})),
+                                                    ASSETCHAINS_CHAINID,
+                                                    0,
+                                                    outputIdentity.GetID(),
+                                                    CTransferDestination(CTransferDestination::DEST_FULLID,
+                                                    ::AsVector(outputIdentity),
+                                                    outputIdentity.GetID()))) > (CScript::MAX_SCRIPT_ELEMENT_SIZE - 128))
+                            {
+                                return state.Error("Serialized identity is too large " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+
+                            if (precheckData.idOutputFlagsIdentity.count(outputIdentity.GetID()))
+                            {
+                                return state.Error("Duplicate identity output on transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+                            if (!VerifyIdentityOutput(tx, i, outputIdentity, p, isPBaaS, advancedIdentity, state))
+                            {
+                                return false;
+                            }
+                            lastIdentityID = outputIdentity.GetID();
+                            precheckData.idOutputFlagsIdentity.insert({outputIdentity.GetID(), {i, validImport ? CIDPrecheckData::FLAG_IMPORTED : 0}});
+                            precheckData.idOutputNums[i] = outputIdentity.GetID();
+                        }
+                        break;
+
+                        case EVAL_CROSSCHAIN_IMPORT:
+                        {
+                            // determine ranges of outputs wrt imports and other IDs set bits appropriately for imported IDs, set appropriate flag
+                            cci = CCrossChainImport(p.vData[0]);
+                            CCrossChainExport ccx;
+                            CCrossChainImport sysCCI;
+                            CPBaaSNotarization importNotarization;
+                            int32_t sysCCIOut = -1, notarizationOut = -1, eOutStart = -1, eOutEnd = -1;
+                            std::vector<CReserveTransfer> reserveTransfers;
+                            if (!cci.IsValid())
+                            {
+                                return state.Error("Invalid import on transaction output " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+
+                            // if identity comes before an import and we're not on block 1 or a currency definition, considered invalid
+                            if (height != 1 && (!lastIdentityID.IsNull() && !cci.IsDefinitionImport() && !cci.IsSourceSystemImport() && cci.sourceSystemID != ASSETCHAINS_CHAINID))
+                            {
+                                return state.Error("Invalid non-imported identity output and import on one transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+
+                            // two imports of IDs on one transaction are rejected
+                            if (!(isPBaaS && (height == 1 || cci.IsDefinitionImport())) && (validSourceSysImport || (crossChainImport && !cci.IsSourceSystemImport())))
+                            {
+                                return state.Error("Invalid multiple cross-chain imports on one transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                            }
+                            else if (!cci.IsDefinitionImport() && cci.IsSourceSystemImport())
+                            {
+                                validSourceSysImport = true;
+                                continue;
+                            }
+                            else if (cci.IsDefinitionImport())
+                            {
+                                crossChainImport = true;
+                                continue;
+                            }
+                            else if (cci.sourceSystemID != ASSETCHAINS_CHAINID)
+                            {
+                                crossChainImport = true;
+
+                                // we just need to make sure we are in the range of the import
+                                if (cci.GetImportInfo(tx, height, i, ccx, sysCCI, sysCCIOut, importNotarization, notarizationOut, eOutStart, eOutEnd, reserveTransfers, state))
+                                {
+                                    if (eOutEnd == -1 || ((precheckData.importOutputsStart = eOutEnd + 1) + (precheckData.numImportOutputs = cci.numOutputs)) > tx.vout.size())
+                                    {
+                                        return state.Error("Invalid import on identity output transaction " + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                                    }
+                                    validImport = true;
+                                }
+                                else
+                                {
+                                    return false;
+                                }
+                            }
+                            else
+                            {
+                                crossChainImport = true;
+                            }
+                        }
+                        break;
+                    }
+                }
+                if (advancedIdentity && isSmartOutput && !p.IsValid(isPBaaS, height))
+                {
+                    return state.Error("Invalid smart transaction output" + tx.GetHash().GetHex() + ":" + std::to_string(i));
+                }
+            }
+            else
+            {
+                p = COptCCParams();
+            }
+        }
+
+        // loop through all identities, and get a set that we must prove through spending the same
+        // then loop through inputs until that set is satisfied
+        std::set<uint160> unauthorizedIDs;
+        for (const auto &oneID : precheckData.idOutputFlagsIdentity)
+        {
+            if ((std::get<1>(oneID.second) & CIDPrecheckData::FLAGS_AUTHORIZED) == 0)
+            {
+                unauthorizedIDs.insert(oneID.first);
+            }
+        }
+        if (unauthorizedIDs.size())
+        {
+            // if we made it to here without an early, positive exit, we must determine that we are spending a matching identity, and if so, all is fine so far
+            CTransaction inTx;
+            uint256 blkHash;
+            LOCK(mempool.cs);
+            for (const auto &input : tx.vin)
+            {
+                // first time through may be null
+                if (!input.prevout.hash.IsNull() && (input.prevout.hash == inTx.GetHash() || myGetTransaction(input.prevout.hash, inTx, blkHash)))
+                {
+                    CIdentity tmpIdentity;
+                    if (input.prevout.n >= inTx.vout.size())
+                    {
+                        return state.Error("Invalid, malformed transaction");
+                    }
+                    uint160 idID;
+                    if (inTx.vout[input.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
+                        p.IsValid() &&
+                        p.evalCode == EVAL_IDENTITY_PRIMARY &&
+                        p.vData.size() > 1 &&
+                        (tmpIdentity = CIdentity(p.vData[0])).IsValid() &&
+                        unauthorizedIDs.count((idID = tmpIdentity.GetID())))
+                    {
+                        std::get<1>(precheckData.idOutputFlagsIdentity[idID]) |= CIDPrecheckData::FLAG_SPENDS_ID;
+                        unauthorizedIDs.erase(idID);
+                        if (!unauthorizedIDs.size())
+                        {
+                            break;
+                        }
+                    }
+                }
+                else if (!input.prevout.hash.IsNull())
+                {
+                    return state.Error("Failure to retrieve input transaction");
+                }
+            }
+        }
+
+        cachedIDPrecheckData.Put(cacheKey, precheckData);
     }
-    if (validReservation &&
-        ((advNameRes.IsValid() && identity.GetID(advNameRes.name, parentID) == identity.GetID()) ||
-         (identity.GetID(nameRes.name, parentID) == identity.GetID())))
+
+    if (precheckData.idOutputNums[outNum].IsNull() ||
+        !precheckData.idOutputFlagsIdentity.count(precheckData.idOutputNums[outNum]))
+    {
+        return state.Error("Invalid cached precheck data for identity output, transaction: " + tx.GetHash().GetHex());
+    }
+    else if (std::get<1>(precheckData.idOutputFlagsIdentity[precheckData.idOutputNums[outNum]]) & CIDPrecheckData::FLAGS_AUTHORIZED)
     {
         return true;
-    }
-
-    // if we made it to here without an early, positive exit, we must determine that we are spending a matching identity, and if so, all is fine so far
-    CTransaction inTx;
-    uint256 blkHash;
-    LOCK(mempool.cs);
-    for (auto &input : tx.vin)
-    {
-        // first time through may be null
-        if (!input.prevout.hash.IsNull() && (input.prevout.hash == inTx.GetHash() || myGetTransaction(input.prevout.hash, inTx, blkHash)))
-        {
-            CIdentity tmpIdentity;
-            if (input.prevout.n >= inTx.vout.size())
-            {
-                return state.Error("Invalid, malformed transaction");
-            }
-            if (inTx.vout[input.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
-                p.IsValid() &&
-                p.evalCode == EVAL_IDENTITY_PRIMARY &&
-                p.vData.size() > 1 &&
-                (tmpIdentity = CIdentity(p.vData[0])).IsValid() &&
-                idID == tmpIdentity.GetID())
-            {
-                return true;
-            }
-        }
-        else if (!input.prevout.hash.IsNull())
-        {
-            return state.Error("Failure to retrieve input transaction");
-        }
     }
 
     if (isPBaaS)
@@ -2959,12 +3085,6 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
             {
                 return state.Error("Invalid ID minting in block 1");
             }
-        }
-        else if (idMayBeImported && validCrossChainImport)
-        {
-            // AddReserveTransferImportOutputs ensures that we are importing IDs from a source system that can send us these IDs
-            // look for its action when checking a curTransfer with IsIdentityExport()
-            return true;
         }
     }
 

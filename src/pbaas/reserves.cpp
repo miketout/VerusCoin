@@ -2060,7 +2060,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
 
     bool promoteExchangeRate = ConnectedChains.IsPromoteExchangeRate(height);
     bool enhancedUnderflowCheck = ConnectedChains.IsEnhancedUnderflowCheck(height);
-    bool layerReserveFixActive = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height));
+    bool layerReserveFixActive = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(std::max((int)height - 1, 0)));
 
     int32_t numCurrencies = currencies.size();
     std::vector<CAmount> inputReserves = _inputReserves;
@@ -4443,7 +4443,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     bool isPreLaunch = newCurrencyState.IsPrelaunch();
     bool processingPreConverts = !isPreLaunch && !isLaunchComplete;
 
-    uint32_t chainTime = chainActive.ChainTimeAtOrBefore(height);
+    uint32_t chainTime = chainActive.ChainTimeAtOrBefore(std::max((int)height - 1, 0));
     bool isBridgeCleanupWindowOpen = IsBridgeCleanupWindowOpen(chainTime);
     bool isAfterBridgeCleanupWindowStarts = IsAfterBridgeCleanupWindowStarts(chainTime);
     bool isAfterSecondBridgeCleanupWindowStarts = IsAfterSecondBridgeCleanupWindowStarts(chainTime);
