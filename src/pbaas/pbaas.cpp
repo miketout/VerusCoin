@@ -5768,7 +5768,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
         }
         else if (rt.feeCurrencyID != systemDestID)
         {
-            if (systemDest.launchSystemID.IsNull() || systemDest.IsPBaaSChain() || rt.feeCurrencyID != systemDest.launchSystemID)
+            if (systemDest.launchSystemID.IsNull() || !systemDest.IsPBaaSChain() || rt.feeCurrencyID != systemDest.launchSystemID)
             {
                 return state.Error("Invalid fee currency in reserve transfer 3: " + rt.ToUniValue().write(1,2));
             }
