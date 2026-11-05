@@ -2982,7 +2982,7 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
         }
         if (unauthorizedIDs.size())
         {
-            // if we made it to here without an early, positive exit, we must determine that we are spending a matching identity, and if so, all is fine so far
+            // if we made it to here without an early, authorized flag, we must determine that we are spending a matching identity, and if so, all is fine so far
             CTransaction inTx;
             uint256 blkHash;
             LOCK(mempool.cs);

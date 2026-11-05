@@ -1085,8 +1085,9 @@ std::vector<CReserveTransfer> CCrossChainImport::GetArbitrageTransfers(const CTr
         CReserveTransfer rt;
         CCrossChainImport cci;
 
-        for (auto &oneIn : tx.vin)
+        for (int i = 0; i < tx.vin.size() && i < (CCurrencyState::MAX_IMPORT_INPUTS_BEFORE_ARBITRAGE + CCurrencyState::MAX_ARBITRAGE_INPUTS); i++)
         {
+            auto &oneIn = tx.vin[i];
             COptCCParams p;
             CTransaction arbTx;
             uint256 arbTxBlockHash;
@@ -4348,7 +4349,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
     bool isFractional = importCurrencyDef.IsFractional();
 
     int arbitrageCount = 0;
-    int maxArbitrage = importCurrencyState.IsFractional() && importCurrencyState.IsLaunchCompleteMarker() ? 10 : 0;
+    int maxArbitrage = importCurrencyState.MaxArbitrageInputs();
 
     // reserve currency amounts converted to fractional
     CCurrencyValueMap reserveConverted;

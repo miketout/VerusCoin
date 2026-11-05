@@ -9255,7 +9255,13 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
             // add it as an input
             if (arbitrageTransfersIn.size())
             {
-                tb.AddTransparentInput(std::get<0>(arbitrageTransfersIn[0]).txIn.prevout, std::get<0>(arbitrageTransfersIn[0]).scriptPubKey, std::get<0>(arbitrageTransfersIn[0]).nValue);
+                //
+                for (int i = 0; i < arbitrageTransfersIn.size() && i < CCurrencyState::MAX_ARBITRAGE_INPUTS; i++)
+                {
+                    tb.AddTransparentInput(std::get<0>(arbitrageTransfersIn[i]).txIn.prevout,
+                                           std::get<0>(arbitrageTransfersIn[i]).scriptPubKey,
+                                           std::get<0>(arbitrageTransfersIn[i]).nValue);
+                }
             }
 
             if (!lastNotarizationOut.txIn.prevout.hash.IsNull())

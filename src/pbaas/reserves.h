@@ -1372,6 +1372,8 @@ public:
         SHUTDOWN_RESERVE_RATIO = 500000,    // if we hit this reserve ratio in any currency, initiate chain shutdown
         CONVERSION_TX_SIZE_MIN = 1024,      // minimum size accounted for in a conversion transaction
         MAX_RESERVE_CURRENCIES = 10,        // maximum number of reserve currencies that can underly a fractional reserve
+        MAX_ARBITRAGE_INPUTS = 10,          // maximum arbitrage inputs for fractional currencies
+        MAX_IMPORT_INPUTS_BEFORE_ARBITRAGE = 2, // prior import + prior source system import, see CreateLatestImports
         MIN_CONVERTER_RESERVE_TO_INDEX = 1000, // must have at least this much in native reserves to be indexed as a converter
         MIN_CONVERTER_RATIO_TO_INDEX = 10000000 // must have at least 10% reserve ratio of native as well
     };
@@ -1534,6 +1536,11 @@ public:
     bool IsFractional() const
     {
         return flags & FLAG_FRACTIONAL;
+    }
+
+    int32_t MaxArbitrageInputs() const
+    {
+        return IsFractional() && IsLaunchCompleteMarker() ? MAX_ARBITRAGE_INPUTS : 0;
     }
 
     bool IsRefunding() const
