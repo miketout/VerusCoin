@@ -2619,7 +2619,12 @@ public:
 
     CPBaaSEvidenceRef(const std::vector<unsigned char> &asVector)
     {
-        ::FromVector(asVector, *this);
+        bool success = false;
+        ::FromVector(asVector, *this, &success);
+        if (!success)
+        {
+            version = CVDXF_Data::VERSION_INVALID;
+        }
     }
 
     ADD_SERIALIZE_METHODS;
