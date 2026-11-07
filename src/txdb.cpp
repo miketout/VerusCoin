@@ -788,7 +788,7 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
 
     CCurrencyValueMap totalReductionsThisChain;
 
-    if (!currencyAdjustments.valueMap.size())
+    if (!currencyAdjustments.valueMap.size() && !outputCurrencyStatesOnly)
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Valid set of adjustments required");
     }
@@ -864,6 +864,25 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                 allCurrencyStatesUni.push_back(oneCurrency.second.second.ToUniValue());
             }
         }
+
+        std::string chainTableEntryStr = "** ERROR getting chain table entry **";
+
+        if (chainActive.Height() > 0)
+        {
+            CBlockIndex *pIndex = chainActive[1];
+            CBlock block;
+
+            if (ReadBlockFromDisk(block, pIndex, Params().consensus) && block.vtx.size())
+            {
+                // get a chain table entry for this chain with {fullname, block1hash, block1time, block1coinbasehash, testnetbool}
+                chainTableEntryStr = "{\"" + std::string(ASSETCHAINS_SYMBOL) + (IsVerusActive() ? "\", " : "." + VERUS_CHAINNAME + "\", ") +
+                                        "uint256S(\"" + block.GetHash().GetHex() + "\"), " +
+                                        std::to_string(block.nTime) + ", " +
+                                        "uint256S(\"" + block.vtx[0].GetHash().GetHex() + "\"), " +
+                                        (PBAAS_TESTMODE ? "true" : "false") + "}";
+            }
+        }
+        result.pushKV("chaintableentry", chainTableEntryStr);
         result.pushKV("allcurrencies", allCurrenciesUni);
         result.pushKV("allcurrencyStates", allCurrencyStatesUni);
         return result;

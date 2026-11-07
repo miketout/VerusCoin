@@ -1258,7 +1258,8 @@ bool BlockOneCoinbaseOutputs(std::vector<CTxOut> &outputs,
                              CCurrencyValueMap &additionalFees,
                              const CRPCChainData &_launchChain,
                              CCurrencyDefinition &newChainCurrency,
-                             int32_t &minSolutionVersion)
+                             int32_t &minSolutionVersion,
+                             uint32_t block1Time)
 {
     CCoinbaseCurrencyState currencyState;
     std::map<uint160, std::vector<std::pair<std::pair<CInputDescriptor, CPartialTransactionProof>, std::vector<CReserveTransfer>>>> blockOneExportImports;
@@ -1284,7 +1285,7 @@ bool BlockOneCoinbaseOutputs(std::vector<CTxOut> &outputs,
         return false;
     }
 
-    if (launchExportProof.second.IsCapped())
+    if (block1Time >= PBAAS_VERSION8_SOLUTION_TIME_START)
     {
         minSolutionVersion = CActivationHeight::SOLUTION_VERUSV8;
     }
@@ -1506,11 +1507,14 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
                              const CRPCChainData &launchChain,
                              const CCurrencyDefinition &_newChainCurrency,
                              CValidationState &state,
-                             bool &knownCapped)
+                             bool &knownCapped,
+                             uint32_t block1Time)
 {
     uint160 launchChainID = launchChain.GetID();
     CCurrencyDefinition newChainCurrency = _newChainCurrency;
     uint160 newChainID = newChainCurrency.GetID();
+
+    CBlock1TimeScope block1Scope(block1Time);
 
     std::vector<CTxOut> __outputs;
 
@@ -1544,7 +1548,7 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
         (newChainCurrency.GetID() == ASSETCHAINS_CHAINID && (ConnectedChains.IsNotaryAvailable(false) || ConnectedChains.IsNotaryAvailable(true))))
     {
         int32_t minSolutionVersion = 0;
-        bool validOutputs = BlockOneCoinbaseOutputs(checkOutputs, launchNotarization, additionalFees, launchChain, newChainCurrency, minSolutionVersion);
+        bool validOutputs = BlockOneCoinbaseOutputs(checkOutputs, launchNotarization, additionalFees, launchChain, newChainCurrency, minSolutionVersion, block1Time);
         if (minSolutionVersion >= CActivationHeight::SOLUTION_VERUSV8)
         {
             knownCapped = true;
@@ -2008,14 +2012,16 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &_outputs,
 bool MakeBlockOneCoinbaseOutputs(std::vector<CTxOut> &outputs,
                                  CPBaaSNotarization &launchNotarization,
                                  CCurrencyValueMap &additionalFees,
-                                 int32_t &minSolutionVersion)
+                                 int32_t &minSolutionVersion,
+                                 uint32_t block1Time)
 {
     return BlockOneCoinbaseOutputs(outputs,
                                    launchNotarization,
                                    additionalFees,
                                    ConnectedChains.FirstNotaryChain(),
                                    ConnectedChains.ThisChain(),
-                                   minSolutionVersion);
+                                   minSolutionVersion,
+                                   block1Time);
 }
 
 uint256 RandomizedNonce()
@@ -2175,6 +2181,13 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
 
             currencyState = ConnectedChains.GetCurrencyState(nHeight, true);
         }
+
+        if (!isVerusActive && nHeight == 1)
+        {
+            // the time UpdateTime puts in the header; the coinbase gates must be evaluated at that same time
+            pblock->nTime = ConnectedChains.GetNextBlockTime(pindexPrev);
+        }
+        CBlock1TimeScope block1TimeScope(!isVerusActive && nHeight == 1 ? pblock->nTime : 0);
 
         bool isExplicitSol8Height = false;
         if (CConstVerusSolutionVector::Version(pblock->nSolution) == CActivationHeight::SOLUTION_VERUSV7 &&
@@ -2456,7 +2469,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             coinbaseTx.vout.insert(coinbaseTx.vout.end(), minerOutputs.begin(), minerOutputs.end());
 
             int32_t minSolutionVersion = 0;
-            if (!MakeBlockOneCoinbaseOutputs(coinbaseTx.vout, launchNotarization, additionalFees, minSolutionVersion))
+            if (!MakeBlockOneCoinbaseOutputs(coinbaseTx.vout, launchNotarization, additionalFees, minSolutionVersion, pblock->nTime))
             {
                 // can't mine block 1 if we are not connected to a notary
                 printf("%s: cannot create block one coinbase outputs\n", __func__);

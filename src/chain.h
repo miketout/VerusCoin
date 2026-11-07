@@ -731,6 +731,15 @@ class CChain;
 typedef CMerkleMountainRange<ChainMMRNode, CChunkedLayer<ChainMMRNode, 9>, COverlayNodeLayer<ChainMMRNode, CChain>> ChainMerkleMountainRange;
 typedef CMerkleMountainView<ChainMMRNode, CChunkedLayer<ChainMMRNode, 9>, COverlayNodeLayer<ChainMMRNode, CChain>> ChainMerkleMountainView;
 
+extern thread_local uint32_t PBAAS_BLOCK1_TIME_CANDIDATE; // nTime of the block 1 being built, validated or reconstructed on this thread, else 0
+
+struct CBlock1TimeScope
+{
+    uint32_t prev;
+    CBlock1TimeScope(uint32_t block1Time) : prev(PBAAS_BLOCK1_TIME_CANDIDATE) { if (block1Time) PBAAS_BLOCK1_TIME_CANDIDATE = block1Time; }
+    ~CBlock1TimeScope() { PBAAS_BLOCK1_TIME_CANDIDATE = prev; }
+};
+
 /** An in-memory indexed chain of blocks.
  * With Verus and PBaaS chains, this also provides a complete Merkle Mountain Range (MMR) for the chain at all times,
  * enabling proof of any transaction that can be exported and trusted on any chain that has a trusted oracle or other lite proof of this chain.
@@ -778,10 +787,14 @@ public:
         return (*this)[height > nTip ? nTip : height];
     }
 
-    // Returns nTime of that block, or 0 when the chain has no blocks.
     inline uint32_t ChainTimeAtOrBefore(uint32_t height) const
     {
         CBlockIndex *pIndex = ChainIndexAtOrBefore(height);
+        if (!pIndex || pIndex->GetHeight() < 1)
+        {
+            if (PBAAS_BLOCK1_TIME_CANDIDATE) return PBAAS_BLOCK1_TIME_CANDIDATE;
+            if (Height() >= 1) return (*this)[1]->nTime;
+        }
         return pIndex ? pIndex->nTime : 0;
     }
 

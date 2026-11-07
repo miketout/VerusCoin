@@ -3481,14 +3481,21 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                                                     lastNotarization = CPBaaSNotarization();
                                                 }
                                             }
-                                            else if (!IsValidBlockOneCoinbase(outTx.vout,
-                                                                              CRPCChainData(ConnectedChains.ThisChain(), "", ConnectedChains.GetThisChainPort(), ""),
-                                                                              externalSystem,
-                                                                              state,
-                                                                              knownCapped) ||
-                                                     (knownCapped && !((CChainObject<CPartialTransactionProof> *)proofComponent)->object.IsCapped()))
+                                            else
                                             {
-                                                lastNotarization = CPBaaSNotarization();
+                                                uint32_t block1Time = lastNotarization.proofRoots.count(ASSETCHAINS_CHAINID) &&
+                                                                    lastNotarization.proofRoots[ASSETCHAINS_CHAINID].rootHeight <= chainActive.Height() ?
+                                                                        chainActive[lastNotarization.proofRoots[ASSETCHAINS_CHAINID].rootHeight]->nTime : 0;
+                                                if (!IsValidBlockOneCoinbase(outTx.vout,
+                                                                                CRPCChainData(ConnectedChains.ThisChain(), "", ConnectedChains.GetThisChainPort(), ""),
+                                                                                externalSystem,
+                                                                                state,
+                                                                                knownCapped,
+                                                                                block1Time) ||
+                                                        (knownCapped && !((CChainObject<CPartialTransactionProof> *)proofComponent)->object.IsCapped()))
+                                                {
+                                                    lastNotarization = CPBaaSNotarization();
+                                                }
                                             }
                                         }
                                     }

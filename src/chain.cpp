@@ -7,6 +7,9 @@
 
 using namespace std;
 
+// as part of syncing to a new chain, block 1 as a new candidate is evaluated under the rules of its nTime
+thread_local uint32_t PBAAS_BLOCK1_TIME_CANDIDATE = 0;
+
 /**
  * CChain implementation
  */

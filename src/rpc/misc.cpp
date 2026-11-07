@@ -2688,7 +2688,7 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
         CTransaction tx;
         if (!DecodeHexTx(tx, uni_get_str(fundedTransactionsUni[i])))
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "If passing offchaintransactions, they must be in a json array of hex-string encoded transactions.");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "If passing transactions to sign, they must be in a json array of hex-string encoded transactions.");
         }
         fundedTransactionsToSign.push_back(tx);
     }
@@ -2729,7 +2729,7 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
         CCurrencyDefinition curDef = CCurrencyDefinition(oneObj);
         if (!curDef.IsValid())
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. currencies must specify and array of valid currency definitions from at least all other chains.");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. currencies must specify an array of valid currency definitions from at least all other chains.");
         }
         crossChainCurrencies[curDef.GetID()] = curDef;
     }

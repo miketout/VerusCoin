@@ -1718,6 +1718,7 @@ bool IsValidBlockOneCoinbase(const std::vector<CTxOut> &outputs,
                              const CRPCChainData &launchChain,
                              const CCurrencyDefinition &newChainCurrency,
                              CValidationState &state,
-                             bool &knownCapped);
+                             bool &knownCapped,
+                             uint32_t block1Time);
 
 #endif

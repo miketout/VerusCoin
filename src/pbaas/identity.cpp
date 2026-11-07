@@ -213,10 +213,8 @@ CIdentity CIdentity::LookupIdentity(const CIdentityID &nameID, uint32_t height, 
         }
     }
 
-    if (unspentOutputs.size() || GetAddressUnspent(keyID, CScript::P2IDX, unspentNewIDX) && GetAddressUnspent(keyID, CScript::P2PKH, unspentOutputs))
+    if (unspentOutputs.size() || GetAddressUnspent(keyID, CScript::P2IDX, unspentOutputs))
     {
-        // combine searches into 1 vector
-        unspentOutputs.insert(unspentOutputs.begin(), unspentNewIDX.begin(), unspentNewIDX.end());
         CCoinsViewCache view(pcoinsTip);
 
         for (auto it = unspentOutputs.begin(); !ret.IsValid() && it != unspentOutputs.end(); it++)
@@ -258,16 +256,10 @@ CIdentity CIdentity::LookupIdentity(const CIdentityID &nameID, uint32_t height, 
             ret = CIdentity();
 
             // if we must check up to a specific height that is less than the latest height, do so
-            std::vector<CAddressIndexDbEntry> addressIndex, addressIndex2;
+            std::vector<CAddressIndexDbEntry> addressIndex;
 
-            if (GetAddressIndex(keyID, CScript::P2PKH, addressIndex, 0, height) &&
-                GetAddressIndex(keyID, CScript::P2IDX, addressIndex2, 0, height) &&
-                (addressIndex.size() || addressIndex2.size()))
+            if (GetAddressIndex(keyID, CScript::P2IDX, addressIndex, 0, height) && addressIndex.size())
             {
-                if (addressIndex2.size())
-                {
-                    addressIndex.insert(addressIndex.begin(), addressIndex2.begin(), addressIndex2.end());
-                }
                 int txIndex = 0;
                 // look from last backward to find the first valid ID
                 for (int i = addressIndex.size() - 1; i >= 0; i--)
@@ -647,12 +639,10 @@ CIdentity CIdentity::LookupFirstIdentity(const CIdentityID &idID, uint32_t *pHei
 
     CKeyID keyID(CCrossChainRPCData::GetConditionID(idID, EVAL_IDENTITY_RESERVATION));
 
-    if ((GetAddressUnspent(keyID, CScript::P2IDX, unspentNewIDX) && unspentNewIDX.size()) ||
-        (GetAddressUnspent(CCrossChainRPCData::GetConditionID(idID, EVAL_IDENTITY_ADVANCEDRESERVATION),
-                           CScript::P2IDX, unspendAdvancedIDX) && unspendAdvancedIDX.size()) ||
-        GetAddressUnspent(keyID, CScript::P2PKH, unspentOutputs))
+    if (GetAddressUnspent(keyID, CScript::P2IDX, unspentNewIDX) &&
+        GetAddressUnspent(CCrossChainRPCData::GetConditionID(idID, EVAL_IDENTITY_ADVANCEDRESERVATION), CScript::P2IDX, unspendAdvancedIDX))
     {
-        if (!unspendAdvancedIDX.size() && !unspentNewIDX.size() && !unspentOutputs.size())
+        if (!unspendAdvancedIDX.size() && !unspentNewIDX.size())
         {
             LOCK(mempool.cs);
             // if we are a PBaaS chain and it is in block 1, get it from there
@@ -2731,7 +2721,7 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
 
     CBlockIndex *pKeyIndex = chainActive.ChainIndexAtOrBefore(height - 1);
     std::tuple<uint256, uint32_t, uint256> cacheKey(pKeyIndex ? pKeyIndex->GetBlockHash() : uint256(), height, tx.GetHash());
-    if (!cachedIDPrecheckData.Get(cacheKey, precheckData))
+    if (height <= 1 || !cachedIDPrecheckData.Get(cacheKey, precheckData))
     {
         uint160 lastIdentityID;
         precheckData.idOutputNums.resize(tx.vout.size());
@@ -3019,7 +3009,10 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
             }
         }
 
-        cachedIDPrecheckData.Put(cacheKey, precheckData);
+        if (height > 1)
+        {
+            cachedIDPrecheckData.Put(cacheKey, precheckData);
+        }
     }
 
     if (precheckData.idOutputNums[outNum].IsNull() ||
@@ -3066,7 +3059,7 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                         bool knownCapped = false;
                         const CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
                         if (notaryChain.IsValid() &&
-                            IsValidBlockOneCoinbase(tx.vout, notaryChain, ConnectedChains.ThisChain(), state, knownCapped))
+                            IsValidBlockOneCoinbase(tx.vout, notaryChain, ConnectedChains.ThisChain(), state, knownCapped, chainActive.ChainTimeAtOrBefore(height)))
                         {
                             return true;
                         }

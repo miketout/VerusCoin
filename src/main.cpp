@@ -1154,7 +1154,7 @@ bool ContextualCheckCoinbaseTransaction(const CTransaction &tx, uint32_t nHeight
         bool knownCapped = false;
         const CRPCChainData notaryChain = ConnectedChains.FirstNotaryChain();
         if (!notaryChain.IsValid() ||
-            !IsValidBlockOneCoinbase(tx.vout, notaryChain, ConnectedChains.ThisChain(), state, knownCapped))
+            !IsValidBlockOneCoinbase(tx.vout, notaryChain, ConnectedChains.ThisChain(), state, knownCapped, chainActive.ChainTimeAtOrBefore(nHeight)))
         {
             valid = false;
         }
@@ -3927,6 +3927,7 @@ static int64_t nTimeTotal = 0;
 bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pindex, CCoinsViewCache& view, const CChainParams& chainparams, bool fJustCheck, bool fCheckPOW, bool updateCumulativeIndex)
 {
     uint32_t nHeight = pindex->GetHeight();
+    CBlock1TimeScope block1TimeScope(nHeight == 1 ? block.nTime : 0);
     if (KOMODO_STOPAT != 0 && nHeight > KOMODO_STOPAT)
     {
         return false;
@@ -6914,6 +6915,8 @@ bool ContextualCheckBlock(
     const CChainParams& chainparams, CBlockIndex * const pindexPrev)
 {
     const int nHeight = pindexPrev == NULL ? 0 : pindexPrev->GetHeight() + 1;
+    CBlock1TimeScope block1TimeScope(nHeight == 1 ? block.nTime : 0);
+
     const Consensus::Params& consensusParams = chainparams.GetConsensus();
     bool sapling = consensusParams.NetworkUpgradeActive(nHeight, Consensus::UPGRADE_SAPLING);
 
