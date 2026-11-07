@@ -5439,7 +5439,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     }
     // END insightexplorer
 
-    if (!isVerusActive && ConnectedChains.pendingFinalityCandidates.size())
+    if (ConnectedChains.pendingFinalityCandidates.size())
     {
         for (auto &candidate : ConnectedChains.pendingFinalityCandidates)
         {

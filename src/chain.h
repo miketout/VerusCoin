@@ -731,13 +731,11 @@ class CChain;
 typedef CMerkleMountainRange<ChainMMRNode, CChunkedLayer<ChainMMRNode, 9>, COverlayNodeLayer<ChainMMRNode, CChain>> ChainMerkleMountainRange;
 typedef CMerkleMountainView<ChainMMRNode, CChunkedLayer<ChainMMRNode, 9>, COverlayNodeLayer<ChainMMRNode, CChain>> ChainMerkleMountainView;
 
-extern thread_local uint32_t PBAAS_BLOCK1_TIME_CANDIDATE; // nTime of the block 1 being built, validated or reconstructed on this thread, else 0
-
 struct CBlock1TimeScope
 {
     uint32_t prev;
-    CBlock1TimeScope(uint32_t block1Time) : prev(PBAAS_BLOCK1_TIME_CANDIDATE) { if (block1Time) PBAAS_BLOCK1_TIME_CANDIDATE = block1Time; }
-    ~CBlock1TimeScope() { PBAAS_BLOCK1_TIME_CANDIDATE = prev; }
+    CBlock1TimeScope(uint32_t block1Time);
+    ~CBlock1TimeScope();
 };
 
 /** An in-memory indexed chain of blocks.
@@ -787,16 +785,7 @@ public:
         return (*this)[height > nTip ? nTip : height];
     }
 
-    inline uint32_t ChainTimeAtOrBefore(uint32_t height) const
-    {
-        CBlockIndex *pIndex = ChainIndexAtOrBefore(height);
-        if (!pIndex || pIndex->GetHeight() < 1)
-        {
-            if (PBAAS_BLOCK1_TIME_CANDIDATE) return PBAAS_BLOCK1_TIME_CANDIDATE;
-            if (Height() >= 1) return (*this)[1]->nTime;
-        }
-        return pIndex ? pIndex->nTime : 0;
-    }
+    uint32_t ChainTimeAtOrBefore(uint32_t height) const;
 
     uint256 GetVerusEntropyHash(int forHeight, int *pPOSheight=nullptr, int *pPOWheight=nullptr, int *pALTheight=nullptr, int *pFirstBlockHeight=nullptr, int *pSecondBlockHeight=nullptr) const;
     static uint256 CombineForPastHash(const uint256 &firstComponent, const uint256 &secondComponent);

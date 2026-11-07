@@ -76,6 +76,9 @@ uint256 CBlockIndex::GetVerusEntropyHashComponent() const
     return GetBlockHash();
 }
 
+CBlock1TimeScope::CBlock1TimeScope(uint32_t block1Time) : prev(PBAAS_BLOCK1_TIME_CANDIDATE) { if (block1Time) PBAAS_BLOCK1_TIME_CANDIDATE = block1Time; }
+CBlock1TimeScope::~CBlock1TimeScope() { PBAAS_BLOCK1_TIME_CANDIDATE = prev; }
+
 uint256 CChain::CombineForPastHash(const uint256 &firstComponent, const uint256 &secondComponent)
 {
     CVerusHashV2Writer hashWriter = CVerusHashV2Writer(SER_GETHASH, 0);
@@ -187,6 +190,18 @@ uint256 CChain::GetVerusEntropyHash(int forHeight, int *pPOSheight, int *pPOWhei
 
     return hashWriter.GetHash();
 }
+
+uint32_t CChain::ChainTimeAtOrBefore(uint32_t height) const
+{
+    CBlockIndex *pIndex = ChainIndexAtOrBefore(height);
+    if (!pIndex || pIndex->GetHeight() < 1)
+    {
+        if (PBAAS_BLOCK1_TIME_CANDIDATE) return PBAAS_BLOCK1_TIME_CANDIDATE;
+        if (Height() >= 1) return (*this)[1]->nTime;
+    }
+    return pIndex ? pIndex->nTime : 0;
+}
+
 
 CBlockLocator CChain::GetLocator(const CBlockIndex *pindex) const {
     int nStep = 1;
