@@ -1311,7 +1311,8 @@ public:
                        CPBaaSNotarization &exportNotarization,
                        std::vector<CReserveTransfer> &reserveTransfers,
                        CValidationState &state,
-                       CCurrencyDefinition::EProofProtocol hashType=CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR) const;
+                       CCurrencyDefinition::EProofProtocol hashType=CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR,
+                       int maxParentLoads=0) const;
 
     bool GetExportInfo(const CTransaction &exportTx,
                        int numExportOut,

@@ -8,6 +8,8 @@
 #include "univalue.h"
 #include "univalue_utffilter.h"
 
+static const size_t MAX_JSON_DEPTH = 512;
+
 using namespace std;
 
 static bool json_isdigit(int ch)
@@ -310,6 +312,9 @@ bool UniValue::read(const char *raw, size_t size)
         case JTOK_OBJ_OPEN:
         case JTOK_ARR_OPEN: {
             VType utyp = (tok == JTOK_OBJ_OPEN ? VOBJ : VARR);
+            if (stack.size() >= MAX_JSON_DEPTH) {
+                return false;
+            }
             if (!stack.size()) {
                 if (utyp == VOBJ)
                     setObject();

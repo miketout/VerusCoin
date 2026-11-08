@@ -131,7 +131,8 @@ bool CCrossChainExport::GetExportInfo(const CTransaction &exportTx,
                                       CPBaaSNotarization &exportNotarization,
                                       std::vector<CReserveTransfer> &reserveTransfers,
                                       CValidationState &state,
-                                      CCurrencyDefinition::EProofProtocol hashType) const
+                                      CCurrencyDefinition::EProofProtocol hashType,
+                                      int maxParentLoads) const
 {
     // we can assume that to get here, we have decoded the first output, which is the export output
     // specified in numExportOut, our "this" pointer
@@ -207,22 +208,36 @@ bool CCrossChainExport::GetExportInfo(const CTransaction &exportTx,
                 }
                 else
                 {
-                    CTransaction rtTx;
+                    CTxOut rtOut;
                     COptCCParams rtP;
                     uint256 hashBlk;
-                    if (!(myGetTransaction(exportTx.vin[i].prevout.hash, rtTx, hashBlk) &&
-                            exportTx.vin[i].prevout.n < rtTx.vout.size() &&
-                            rtTx.vout[exportTx.vin[i].prevout.n].scriptPubKey.IsPayToCryptoCondition(rtP) &&
-                            rtP.IsValid() &&
-                            rtP.evalCode == EVAL_RESERVE_TRANSFER &&
-                            rtP.vData.size() &&
-                            (rt = CReserveTransfer(rtP.vData[0])).IsValid()))
+                    bool haveOut;
+                    if (maxParentLoads)
+                    {
+                        // precheck path, cs_main held: resolve without loading the parent, block-store loads budgeted per transaction
+                        haveOut = GetSpentOutput(exportTx.vin[i].prevout, rtOut, PrecheckTxContext().parentLoads, maxParentLoads);
+                    }
+                    else
+                    {
+                        CTransaction rtTx;
+                        haveOut = myGetTransaction(exportTx.vin[i].prevout.hash, rtTx, hashBlk) && exportTx.vin[i].prevout.n < rtTx.vout.size();
+                        if (haveOut)
+                        {
+                            rtOut = rtTx.vout[exportTx.vin[i].prevout.n];
+                        }
+                    }
+                    if (!(haveOut &&
+                          rtOut.scriptPubKey.IsPayToCryptoCondition(rtP) &&
+                          rtP.IsValid() &&
+                          rtP.evalCode == EVAL_RESERVE_TRANSFER &&
+                          rtP.vData.size() &&
+                          (rt = CReserveTransfer(rtP.vData[0])).IsValid()))
                     {
                         return state.Error(strprintf("%s: invalid reserve transfer for export",__func__));
                     }
 
                     reserveTransferCache.Put({exportTx.vin[i].prevout.hash, exportTx.vin[i].prevout.n},
-                                             {hashBlk, CInputDescriptor(rtTx.vout[exportTx.vin[i].prevout.n].scriptPubKey, rtTx.vout[exportTx.vin[i].prevout.n].nValue, CTxIn(exportTx.vin[i].prevout.hash, exportTx.vin[i].prevout.n)), rt});
+                                             {hashBlk, CInputDescriptor(rtOut.scriptPubKey, rtOut.nValue, CTxIn(exportTx.vin[i].prevout.hash, exportTx.vin[i].prevout.n)), rt});
                 }
 
                 if (rt.IsArbitrageOnly())
@@ -5317,7 +5332,8 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                                                               importCurrencyState.IsRefunding() ? importCurrencyDef.systemID : systemSourceID,
                                                               systemDestID,
                                                               newDepositCurrencies,
-                                                              newGatewayDeposits))
+                                                              newGatewayDeposits,
+                                                              !isAfterSecondBridgeCleanupWindowStarts))
                     {
                         printf("%s: invalid exports from system: %s\n", __func__, systemSource.name.c_str());
                         LogPrintf("%s: invalid exports from system: %s\n", __func__, systemSource.name.c_str());

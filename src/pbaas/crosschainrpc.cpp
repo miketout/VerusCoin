@@ -1585,6 +1585,14 @@ void DeleteOpRetObjects(std::vector<CBaseChainObject *> &ora)
 
 CCrossChainProof::CCrossChainProof(const UniValue &uniObj)
 {
+    static thread_local int crossChainProofJSONDepth = 0;
+    struct CDepthGuard { int &d; CDepthGuard(int &depth) : d(depth) { ++d; } ~CDepthGuard() { --d; } } depthGuard(crossChainProofJSONDepth);
+    if (crossChainProofJSONDepth > MAX_CROSSCHAINPROOF_DEPTH)
+    {
+        version = VERSION_INVALID;
+        return;
+    }
+
     version = uni_get_int(find_value(uniObj, "version"), VERSION_CURRENT);
     UniValue chainObjArr = find_value(uniObj, "chainobjects");
     if (chainObjArr.isArray())

@@ -289,6 +289,22 @@ std::string GetWarnings(const std::string& strFor);
 /** Retrieve a transaction (from memory pool, or from disk, if possible) */
 bool GetTransaction(const uint256 &hash, CTransaction &tx, const Consensus::Params& params, uint256 &hashBlock, bool fAllowSlow = false);
 bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock, bool fAllowSlow = false);
+// resolves the output an input spends from the mempool or the UTXO set, else from the block store,
+// counting every block-store attempt against parentLoads; requires cs_main
+bool GetSpentOutput(const COutPoint &prevout, CTxOut &txOut, int &parentLoads, int maxParentLoads);
+
+// per-transaction precheck state, reset by ContextualCheckTransaction before the output loop. One instance,
+// file-local in main.cpp, reached only through PrecheckTxContext(); every precheck pass runs under cs_main,
+// which serialises the passes, so it needs neither extern nor thread_local.
+struct CPrecheckTxContext
+{
+    int parentLoads = 0;                                                                 // block-store loads spent by this transaction's prechecks
+    std::map<std::tuple<uint256, uint160, uint32_t, bool>, bool> unresolvedIDSpends;     // CheckIdentitySpends results with an unresolved input, this pass only
+    void Reset() { parentLoads = 0; unresolvedIDSpends.clear(); }
+};
+CPrecheckTxContext &PrecheckTxContext();
+static const int MAX_PRECHECK_PARENT_LOADS = 16;
+
 /** Find the best known block, and make it the tip of the block chain */
 bool ActivateBestChain(CValidationState& state, const CChainParams& chainparams, const CBlock* pblock = NULL);
 CAmount GetBlockSubsidy(int nHeight, const Consensus::Params& consensusParams);

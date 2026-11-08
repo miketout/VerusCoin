@@ -9786,6 +9786,12 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                     proofIt->second != CProofRoot::GetProofRoot(proofIt->second.rootHeight))
                 {
                     isValid = false;
+                    if (i == 0)
+                    {
+                        // the other chain's confirmed notarization is not on this chain: a compromised notary set or contract,
+                        // or this node is on a branch the floor nodes refused
+                        LogPrintf("CROSS-CHAIN ERROR: Confirmed notarization on %s does not match this chain at height %u\n", EncodeDestination(CIdentityID(systemID)).c_str(), proofIt->second.rootHeight);
+                    }
                     if (pNotaryCurrency->proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION)
                     {
                         isPotentialRevoke = true;
@@ -11106,6 +11112,20 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                 if (ConnectedChains.activeUpgradesByKey.count(ConnectedChains.DisableEarnedNotarizationKey()))
                 {
                     return state.Error("Earned notarizations temporarily disabled by notification oracle " + PBAAS_DEFAULT_NOTIFICATION_ORACLE);
+                }
+
+                // earned notarizations exist only on a chain that launched and describe that chain or its notary system;
+                // neither can be refunding, so the flag is invalid here in either form
+                if (currentNotarization.IsRefunding() || currentNotarization.currencyState.IsRefunding())
+                {
+                    return state.Error("Refunding state is invalid in an earned notarization");
+                }
+
+                // block one and definition flags skip the descent and transition checks and are only valid in block 1
+                if (height > 1 &&
+                    (currentNotarization.IsBlockOneNotarization() || currentNotarization.IsDefinitionNotarization()))
+                {
+                    return state.Error("Block one or definition flags are invalid in an earned notarization after block 1");
                 }
 
                 if ((curDef.IsPBaaSChain() || curDef.IsGateway()) &&

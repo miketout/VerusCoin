@@ -1483,7 +1483,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
             ccx.firstInput < (int32_t)tx.vin.size() &&
             ((destSystem = ConnectedChains.GetCachedCurrency(ccx.destSystemID)).IsValid() || ccx.IsChainDefinition()) &&
             ccx.GetExportInfo(tx, outNum, primaryExportOut, nextOutput, notarization, reserveTransfers, state,
-                ccx.IsChainDefinition() ? CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR : (CCurrencyDefinition::EProofProtocol)destSystem.proofProtocol))) &&
+                ccx.IsChainDefinition() ? CCurrencyDefinition::EProofProtocol::PROOF_PBAASMMR : (CCurrencyDefinition::EProofProtocol)destSystem.proofProtocol, MAX_PRECHECK_PARENT_LOADS))) &&
           p.IsEvalPKOut() &&
           p.vKeys.size() == 1))
     {
@@ -5125,15 +5125,37 @@ bool IsValidExportCurrency(const CCurrencyDefinition &systemDest, const uint160 
     return false;
 }
 
+// CheckIdentitySpends results, <txid, idID, height, hash of the block at height, allAuthorities> -> authorized.
+// Keyed by the block hash like cachedIDPrecheckData: removeForReorg clears caches only after the new branch is connected.
+static LRUCache<std::tuple<uint256, uint160, uint32_t, uint256, bool>, bool> idSpendCheckCache(2000);
+
 bool CheckIdentitySpends(const CTransaction &tx, const uint160 idID, CValidationState &state, uint32_t height, bool allAuthorities=false);
 bool CheckIdentitySpends(const CTransaction &tx, const uint160 idID, CValidationState &state, uint32_t height, bool allAuthorities)
 {
     // spent by currency ID
     bool authorizedController = false;
 
+    CBlockIndex *pKeyIndex = chainActive.ChainIndexAtOrBefore(height);
+    std::tuple<uint256, uint160, uint32_t, uint256, bool> cacheKey(tx.GetHash(), idID, height, pKeyIndex ? pKeyIndex->GetBlockHash() : uint256(), allAuthorities);
+    if (pKeyIndex && idSpendCheckCache.Get(cacheKey, authorizedController))
+    {
+        return authorizedController;    // both callers set their own state on false
+    }
+    auto passKey = std::make_tuple(tx.GetHash(), idID, height, allAuthorities);
+    auto passIt = PrecheckTxContext().unresolvedIDSpends.find(passKey);
+    if (passIt != PrecheckTxContext().unresolvedIDSpends.end())
+    {
+        return passIt->second;
+    }
+    bool allInputsResolved = true;
+
     CIdentity signingID = CIdentity::LookupIdentity(idID, height);
     if (!signingID.IsValidUnrevoked())
     {
+        if (pKeyIndex)
+        {
+            idSpendCheckCache.Put(cacheKey, false);
+        }
         return state.Error("Invalid identity or necessary identities not found for approval of ID operation");
     }
 
@@ -5143,6 +5165,10 @@ bool CheckIdentitySpends(const CTransaction &tx, const uint160 idID, CValidation
         (signingID.revocationAuthority != idID && revokeID.IsLocked(height)) ||
         (signingID.recoveryAuthority != idID && recoveryID.IsLocked(height)))
     {
+        if (pKeyIndex)
+        {
+            idSpendCheckCache.Put(cacheKey, false);
+        }
         return state.Error("Invalid revoke or recovery identity or necessary identities not found for approval of ID operation");
     }
 
@@ -5166,29 +5192,21 @@ bool CheckIdentitySpends(const CTransaction &tx, const uint160 idID, CValidation
 
     for (auto &oneIn : tx.vin)
     {
-        CTransaction inputTx;
-        uint256 blockHash;
+        CTxOut inputOut;
 
-        // this is not an input check, but we will check if the input is available
-        // the precheck's can be called sometimes before their antecedents are available, but
-        // if they are available, which will be checked on the input check, they will also be
-        // available here at least once in the verification of the tx
-        if (myGetTransaction(oneIn.prevout.hash, inputTx, blockHash))
+        // not an input check: an input the mempool and UTXO set cannot resolve is skipped as a candidate here,
+        // and the inputs check refuses the transaction if it is really missing
+        if (GetSpentOutput(oneIn.prevout, inputOut, PrecheckTxContext().parentLoads, MAX_PRECHECK_PARENT_LOADS))
         {
-            if (oneIn.prevout.n >= inputTx.vout.size())
-            {
-                return state.Error("Invalid input number for source transaction");
-            }
-
             COptCCParams p;
 
             // make sure that no form of complex output could circumvent the test for controller
             // this should be encapsulated as a test that can handle complex cases, but until then
             // require them to be simple when validating
-            if (!(inputTx.vout[oneIn.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
+            if (!(inputOut.scriptPubKey.IsPayToCryptoCondition(p) &&
                     p.IsValid() &&
                     p.version >= p.VERSION_V3 &&
-                    inputTx.vout[oneIn.prevout.n].scriptPubKey.IsSpendableOutputType(p)))
+                    inputOut.scriptPubKey.IsSpendableOutputType(p)))
             {
                 continue;
             }
@@ -5234,6 +5252,18 @@ bool CheckIdentitySpends(const CTransaction &tx, const uint160 idID, CValidation
             authorizedController = true;
             break;
         }
+        else
+        {
+            allInputsResolved = false;
+        }
+    }
+    if (pKeyIndex && (authorizedController || allInputsResolved))
+    {
+        idSpendCheckCache.Put(cacheKey, authorizedController);
+    }
+    else
+    {
+        PrecheckTxContext().unresolvedIDSpends[passKey] = authorizedController;
     }
     return authorizedController;
 }
@@ -8475,12 +8505,13 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
     view.SetBackend(viewMemPool);
 
     uint32_t nHeight = chainActive.Height();
+    uint32_t chainTime = chainActive.ChainTimeAtOrBefore(nHeight);
     uint160 sourceSystemID = sourceSystemDef.GetID();
     bool useProofs = sourceSystemID != thisChain.GetID();
 
     if (sourceSystemDef.IsGateway() &&
         (ConnectedChains.activeUpgradesByKey.count(ConnectedChains.DisableGatewayCrossChainKey()) ||
-            IsBridgeCleanupWindowOpen(chainActive[nHeight]->nTime)))
+            IsBridgeCleanupWindowOpen(chainTime)))
     {
         if (LogAcceptCategory("crosschainimports"))
         {
@@ -9369,7 +9400,7 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
                                                       destCur.systemID,
                                                       checkImportedCurrency,
                                                       checkRequiredDeposits,
-                                                      !IsAfterSecondBridgeCleanupWindowStarts(chainActive.LastTip()->nTime)))
+                                                      !IsAfterSecondBridgeCleanupWindowStarts(chainTime)))
             {
                 failedCurrencyDest = ccx.destCurrencyID;
                 continue;

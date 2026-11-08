@@ -1412,6 +1412,8 @@ bool ContextualCheckTransaction(
     }
 
     // precheck all crypto conditions
+    PrecheckTxContext().Reset();    // one budget and one per-pass memo per transaction across all of its prechecks
+
     for (int i = 0; i < tx.vout.size(); i++)
     {
         COptCCParams p;
@@ -2583,6 +2585,48 @@ bool myGetTransaction(const uint256 &hash, CTransaction &txOut, uint256 &hashBlo
         }
     }
     //fprintf(stderr,"not found\n");
+    return false;
+}
+
+static CPrecheckTxContext precheckTxContext;
+CPrecheckTxContext &PrecheckTxContext()
+{
+    AssertLockHeld(cs_main);
+    return precheckTxContext;
+}
+
+// Resolves the output an input spends from the mempool or the UTXO set without loading the parent;
+// otherwise loads the parent from the block store, counting every attempt against the caller's budget.
+bool GetSpentOutput(const COutPoint &prevout, CTxOut &txOut, int &parentLoads, int maxParentLoads)
+{
+    AssertLockHeld(cs_main);
+    CTransaction memTx;
+    if (mempool.lookup(prevout.hash, memTx))
+    {
+        if (prevout.n >= memTx.vout.size())
+        {
+            return false;
+        }
+        txOut = memTx.vout[prevout.n];
+        return true;
+    }
+    const CCoins *coins = pcoinsTip->AccessCoins(prevout.hash);
+    if (coins && coins->IsAvailable(prevout.n))
+    {
+        txOut = coins->vout[prevout.n];
+        return true;
+    }
+    if (parentLoads++ >= maxParentLoads)
+    {
+        return false;
+    }
+    CTransaction parent;
+    uint256 blockHash;
+    if (myGetTransaction(prevout.hash, parent, blockHash, false) && prevout.n < parent.vout.size())
+    {
+        txOut = parent.vout[prevout.n];
+        return true;
+    }
     return false;
 }
 
