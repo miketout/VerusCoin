@@ -1211,6 +1211,70 @@ bool CPBaaSNotarization::GetLastUnspentNotarization(const uint160 &currencyID,
     return notarization.IsValid();
 }
 
+bool CPBaaSNotarization::GetLastImportNotarization(const uint160 &currencyID, int32_t endHeight, CTransaction *txOut)
+{
+    LOCK(cs_main);
+
+    // the import thread's confirmed unspent output, chain only; GetUnspentByIndex and GetLastImport subtract mempool
+    // spends and would let a mempool import change a validation result
+    std::vector<CAddressUnspentDbEntry> unspentImports;
+    if (!GetAddressUnspent(CCrossChainRPCData::GetConditionID(currencyID, CCrossChainImport::CurrencyImportKey()), CScript::P2IDX, unspentImports) ||
+        !unspentImports.size())
+    {
+        return false;
+    }
+
+    // one unspent import per thread; if an index skew leaves more, the newest at or below endHeight is the candidate
+    const CAddressUnspentDbEntry *pLastImport = nullptr;
+    for (auto &oneImport : unspentImports)
+    {
+        if (oneImport.second.blockHeight <= endHeight &&
+            (!pLastImport || oneImport.second.blockHeight > pLastImport->second.blockHeight))
+        {
+            pLastImport = &oneImport;
+        }
+    }
+    if (!pLastImport)
+    {
+        return false;
+    }
+
+    CTransaction importTx;
+    uint256 blkHash;
+    if (!myGetTransaction(pLastImport->first.txhash, importTx, blkHash) || blkHash.IsNull())
+    {
+        return false;
+    }
+    auto blkIt = mapBlockIndex.find(blkHash);
+    if (blkIt == mapBlockIndex.end() || !chainActive.Contains(blkIt->second) || blkIt->second->GetHeight() > endHeight)
+    {
+        return false;
+    }
+
+    // only a post-launch import is guaranteed to carry the newest notarization; pre-launch notarizations ride the
+    // exports and are finalized without a successor on the import thread
+    if (pLastImport->first.index >= importTx.vout.size() ||
+        !CCrossChainImport(importTx.vout[pLastImport->first.index].scriptPubKey).IsPostLaunch())
+    {
+        return false;
+    }
+
+    for (auto &oneOut : importTx.vout)
+    {
+        CPBaaSNotarization oneNotarization(oneOut.scriptPubKey);
+        if (oneNotarization.IsValid() && oneNotarization.currencyID == currencyID)
+        {
+            *this = oneNotarization;
+            if (txOut)
+            {
+                *txOut = importTx;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceSystem,
                                               const CCurrencyDefinition &destCurrency,
                                               uint32_t lastExportHeight,

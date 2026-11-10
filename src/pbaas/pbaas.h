@@ -674,6 +674,8 @@ public:
                                     int32_t &txOutNum,
                                     CTransaction *txOut=nullptr);
 
+    bool GetLastImportNotarization(const uint160 &currencyID, int32_t endHeight, CTransaction *txOut=nullptr);
+
     bool NextNotarizationInfo(const CCurrencyDefinition &sourceSystem,
                               const CCurrencyDefinition &destCurrency,
                               uint32_t lastExportHeight,
