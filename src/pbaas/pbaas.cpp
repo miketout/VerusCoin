@@ -2088,7 +2088,9 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
                         for (auto &oneDest : addresses)
                         {
                             if (oneDest == evalPKH ||
-                                (skipSHPayee && oneDest.which() == COptCCParams::ADDRTYPE_SH) ||
+                                (skipSHPayee &&
+                                 (oneDest.which() == COptCCParams::ADDRTYPE_SH ||
+                                  GetDestinationID(oneDest) == GetDestinationID(evalPKH))) ||
                                 oneDest.which() == COptCCParams::ADDRTYPE_INVALID ||
                                 oneDest.which() == COptCCParams::ADDRTYPE_INDEX)
                             {
@@ -4227,13 +4229,21 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
     }
 
     uint160 newCurParent = newCurrency.parent;
-    if (!HasOnlyUnicodeScalarValues(CleanName(newCurrency.name, newCurParent)))
+    std::string cleanName = CleanName(newCurrency.name, newCurParent);
+    if (!HasOnlyUnicodeScalarValues(cleanName))
     {
         return state.Error("Invalid, non-unicode scalar name characters specified in currency definition");
     }
 
     if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
     {
+        // the stored name must be the canonical form GetID() hashes, or the ID the notaries approve differs from the
+        // one the Ethereum contract derives from the raw name (trailing dots, @chain and .VRSC suffixes, embedded NUL)
+        if (cleanName != newCurrency.name || newCurParent != newCurrency.parent)
+        {
+            return state.Error("Currency name is not canonical: " + newCurrency.name);
+        }
+
         int nativeType = newCurrency.nativeCurrencyID.TypeNoFlags();
         switch (nativeType)
         {
@@ -5017,7 +5027,8 @@ bool IsValidExportCurrency(const CCurrencyDefinition &systemDest, const uint160 
         }
 
         if (BaseBridgeCurrencies(systemDest, height, false).count(exportCurrencyID) ||
-            ConnectedChains.IsValidCurrencyDefinitionImport(systemDest, ConnectedChains.ThisChain(), exportCurrency, height))
+            (!IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) &&
+             ConnectedChains.IsValidCurrencyDefinitionImport(systemDest, ConnectedChains.ThisChain(), exportCurrency, height)))
         {
             return true;
         }
@@ -8448,6 +8459,36 @@ bool CConnectedChains::GetUnspentByIndex(const uint160 &indexID, std::vector<std
         }
     }
 
+    // after an unclean shutdown the unspent index can run ahead of the chainstate: an output that a lost block spent
+    // is missing from it, and nothing above can filter it back. The address index still holds the creation entry and
+    // the chainstate is authoritative, so when nothing on-chain was found, rebuild the list from those two.
+    if (unspentOutputs.empty())
+    {
+        std::vector<CAddressIndexDbEntry> allEntries;
+        if (GetAddressIndex(indexID, CScript::P2IDX, allEntries, 0, chainActive.Height()))
+        {
+            for (auto &oneEntry : allEntries)
+            {
+                COutPoint outPoint(oneEntry.first.txhash, oneEntry.first.index);
+                const CCoins *coins;
+                COptCCParams p;
+                if (!oneEntry.first.spending &&
+                    !spentInMempool.count(outPoint) &&
+                    !mempool.mapNextTx.count(outPoint) &&
+                    (coins = pcoinsTip->AccessCoins(oneEntry.first.txhash)) &&
+                    coins->IsAvailable(oneEntry.first.index) &&
+                    coins->vout[oneEntry.first.index].scriptPubKey.IsPayToCryptoCondition(p) &&
+                    p.IsValid())
+                {
+                    unspentOutputs.push_back(std::make_pair(CInputDescriptor(coins->vout[oneEntry.first.index].scriptPubKey,
+                                                                             coins->vout[oneEntry.first.index].nValue,
+                                                                             CTxIn(outPoint)),
+                                                            (uint32_t)oneEntry.first.blockHeight));
+                }
+            }
+        }
+    }
+
     // we need to remove those that are spent
     for (auto &oneUnconfirmed : memPoolOuts)
     {
@@ -10950,7 +10991,9 @@ bool CConnectedChains::CreateNextExport(const CCurrencyDefinition &_curDef,
                 for (auto &oneDest : addresses)
                 {
                     if (oneDest == evalPKH ||
-                        (skipSHAddresses && oneDest.which() == COptCCParams::ADDRTYPE_SH) ||
+                        (skipSHAddresses &&
+                         (oneDest.which() == COptCCParams::ADDRTYPE_SH ||
+                          GetDestinationID(oneDest) == GetDestinationID(evalPKH))) ||
                         oneDest.which() == COptCCParams::ADDRTYPE_INVALID ||
                         oneDest.which() == COptCCParams::ADDRTYPE_INDEX)
                     {

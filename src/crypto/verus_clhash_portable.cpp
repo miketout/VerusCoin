@@ -368,6 +368,10 @@ static inline uint64_t precompReduction64_port( __m128i A) {
     return _mm_cvtsi128_si64_emu(tmp);
 }
 
+// the masks every shipped binary computes for (0x10000000 << rounds) as a 32-bit int sign-extended to 64 bits,
+// written out so a compiler change cannot alter v2.0 hashes; rounds is selector >> 61, 0-7
+static const uint64_t roundSelectorMasks[8] = {0x10000000ULL, 0x20000000ULL, 0x40000000ULL, 0xffffffff80000000ULL, 0, 0, 0, 0};
+
 // verus intermediate hash extra
 __m128i __verusclmulwithoutreduction64alignedrepeat_port(__m128i *randomsource, const __m128i buf[4], uint64_t keyMask, __m128i **pMoveScratch)
 {
@@ -577,7 +581,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_port(__m128i *randomsource, 
 
                     // note that due to compiler and CPUs, we expect this to do:
                     // if (selector & ((0x10000000 << rounds) & 0xffffffff) if rounds != 3 else selector & 0xffffffff80000000):
-                    if (selector & (0x10000000 << rounds))
+                    if (selector & roundSelectorMasks[rounds])
                     {
                         onekey = _mm_load_si128_emu(rc++);
                         const __m128i temp2 = _mm_load_si128_emu(rounds & 1 ? pbuf : buftmp);

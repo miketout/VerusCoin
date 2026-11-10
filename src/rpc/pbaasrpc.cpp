@@ -2567,31 +2567,20 @@ bool SelectArbitrageFromOffers(const std::vector<
     {
         LOCK(pwalletMain->cs_wallet);
 
-        static bool arbChecked = false;
-        static bool canArb = true;
-
-        if (!arbChecked)
+        bool canArb = true;
+        if (VERUS_DEFAULT_ARBADDRESS.which() == COptCCParams::ADDRTYPE_ID)
         {
-            arbChecked = true;
-            if (VERUS_DEFAULT_ARBADDRESS.which() == COptCCParams::ADDRTYPE_ID)
+            std::pair<CIdentityMapKey, CIdentityMapValue> checkArbIdentity;
+            if (!pwalletMain->GetIdentity(GetDestinationID(VERUS_DEFAULT_ARBADDRESS), checkArbIdentity) || !checkArbIdentity.first.CanSpend())
             {
-                std::pair<CIdentityMapKey, CIdentityMapValue> checkArbIdentity;
-                if (!pwalletMain->GetIdentity(GetDestinationID(VERUS_DEFAULT_ARBADDRESS), checkArbIdentity) || !checkArbIdentity.first.CanSpend())
-                {
-                    LogPrintf("Arbitrage identity %s is not under control of current wallet\n", EncodeDestination(VERUS_DEFAULT_ARBADDRESS).c_str());
-                    VERUS_DEFAULT_ARBADDRESS = CTxDestination();
-                    canArb = false;
-                }
+                LogPrint("arbitrage", "Arbitrage identity %s is not under control of current wallet\n", EncodeDestination(VERUS_DEFAULT_ARBADDRESS).c_str());
+                canArb = false;
             }
-            else
-            {
-                if (!pwalletMain->HaveKey(GetDestinationID(VERUS_DEFAULT_ARBADDRESS)))
-                {
-                    LogPrintf("Arbitrage identity %s is not under control of current wallet\n", EncodeDestination(VERUS_DEFAULT_ARBADDRESS).c_str());
-                    VERUS_DEFAULT_ARBADDRESS = CTxDestination();
-                    canArb = false;
-                }
-            }
+        }
+        else if (!pwalletMain->HaveKey(GetDestinationID(VERUS_DEFAULT_ARBADDRESS)))
+        {
+            LogPrint("arbitrage", "Arbitrage address %s is not under control of current wallet\n", EncodeDestination(VERUS_DEFAULT_ARBADDRESS).c_str());
+            canArb = false;
         }
 
         if (canArb)
@@ -2700,7 +2689,7 @@ bool SelectArbitrageFromOffers(const std::vector<
 
                                 // basic sanity check to see if profit is possible
                                 CCurrencyValueMap lastConversionPrices = newNotarization.currencyState.TargetLastConversionPrices(currencyOutID);
-                                CAmount noSlipConversion = newNotarization.currencyState.NativeToReserveRaw(thisSize, lastConversionPrices.valueMap[currencyInID]);
+                                CAmount noSlipConversion = newNotarization.currencyState.ReserveToNativeRaw(thisSize, lastConversionPrices.valueMap[currencyInID]);
                                 bool isOneStep = currencyInID == newNotarization.currencyID || currencyOutID == newNotarization.currencyID;
                                 int64_t discountFactor = (isOneStep ? (SATOSHIDEN - 25000) : (SATOSHIDEN - 50000));
                                 noSlipConversion = CCurrencyDefinition::CalculateRatioOfValue(noSlipConversion, isOneStep ? (SATOSHIDEN - 25000) : (SATOSHIDEN - 50000));
@@ -2798,9 +2787,15 @@ bool SelectArbitrageFromOffers(const std::vector<
                 }
 
                 UniValue result, error;
+                // the fee gate prices the profit (basket units) in the native currency through its reserve index; a basket
+                // without the native currency has no such price (operator[] would silently use index 0), so any positive profit qualifies
+                auto reserveMap = newNotarization.currencyState.GetReserveMap();
+                bool profitClearsFees = mostProfitablePairs.size() &&
+                                        (reserveMap.count(ASSETCHAINS_CHAINID) ?
+                                            newNotarization.currencyState.NativeToReserve(std::get<0>(mostProfitablePair), reserveMap[ASSETCHAINS_CHAINID]) > (ConnectedChains.ThisChain().GetTransactionImportFee() << 4) :
+                                            std::get<0>(mostProfitablePair) > 0);
                 // If we have a qualified arbitrage transaction, put it/them in the arbitrageInputs and add to export transfers
-                if (mostProfitablePairs.size() &&
-                    newNotarization.currencyState.NativeToReserve(std::get<0>(mostProfitablePair), newNotarization.currencyState.GetReserveMap()[ASSETCHAINS_CHAINID]) > (ConnectedChains.ThisChain().GetTransactionImportFee() << 4))
+                if (profitClearsFees)
                 {
                     // create a transaction for the most profitable arbitrage
                     UniValue takeOfferParams(UniValue::VARR);
@@ -2844,7 +2839,9 @@ bool SelectArbitrageFromOffers(const std::vector<
                     }
                     LogPrint("arbitrage", "%s: result from takeoffer:\n%s\n", __func__, error.isNull() ? result.write(1,2).c_str() : std::string("ERROR: ") + error.write().c_str());
 
-                    if (error.isNull())
+                    // takeoffer reports a failed script check in "errors" rather than throwing; an offer we cannot spend
+                    // would make the import unmineable, so only an error-free result becomes the arbitrage input
+                    if (error.isNull() && find_value(result, "errors").isNull())
                     {
                         // add transaction, input, and reserve transfer to arbitrageInputs and reserve transfer to exportTransfers
                         CTransaction offerTx;

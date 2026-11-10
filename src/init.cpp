@@ -2293,8 +2293,9 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             }
             else
             {
-                CKeyID keyID = boost::get<CKeyID>(addr);
-                minerAddressInLocalWallet = pwalletMain->HaveKey(keyID);
+                // only a key address can be in the local wallet; a script address falls through to the -minetolocalwallet check
+                minerAddressInLocalWallet = addr.which() == COptCCParams::ADDRTYPE_PKH &&
+                                            pwalletMain->HaveKey(boost::get<CKeyID>(addr));
             }
         }
         if (GetBoolArg("-minetolocalwallet", true) && !minerAddressInLocalWallet) {

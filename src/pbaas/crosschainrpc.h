@@ -1604,7 +1604,7 @@ public:
         UniValue sigs(UniValue::VARR);
         for (auto &oneSig : signatures)
         {
-            sigs.push_back(HexBytes(&(oneSig[0]), oneSig.size()));
+            sigs.push_back(HexBytes(oneSig.data(), oneSig.size()));
         }
         retObj.push_back(Pair("signatures", sigs));
         return retObj;

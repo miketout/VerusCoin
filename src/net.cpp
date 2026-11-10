@@ -948,7 +948,9 @@ void SocketSendData(CNode *pnode)
                     if (nRet != SSL_ERROR_WANT_READ && nRet != SSL_ERROR_WANT_WRITE)
                     {
                         LogPrintf("ERROR: SSL_write %s; closing connection\n", ERR_error_string(nRet, NULL));
-                        pnode->CloseSocketDisconnect();
+                        // flag only: CloseSocketDisconnect takes cs_inventory and this runs under cs_vSend (EndMessage);
+                        // ThreadSocketHandler closes flagged sockets on its next pass
+                        pnode->fDisconnect = true;
                     }
                     else
                     {
@@ -962,7 +964,8 @@ void SocketSendData(CNode *pnode)
                     if (nRet != WSAEWOULDBLOCK && nRet != WSAEMSGSIZE && nRet != WSAEINTR && nRet != WSAEINPROGRESS)
                     {
                         LogPrintf("ERROR: send %s; closing connection\n", NetworkErrorString(nRet));
-                        pnode->CloseSocketDisconnect();
+                        // see above comment
+                        pnode->fDisconnect = true;
                     }
                 }
             }

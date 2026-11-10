@@ -1402,6 +1402,7 @@ bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceS
 
                 if (conversionFee < 0 ||
                     (preconvertFeeFloorActive && reserveTransfer.FirstValue() <= conversionFee) ||
+                    (preconvertFeeFloorActive && reserveTransfer.IsRefund()) ||
                     (destCurrency.maxPreconvert.size() &&
                      ((!improvedMinCheck && LegacyLT(maxPreconvertMap, newTotalReserves)) ||
                       (improvedMinCheck && (maxPreconvertMap - newTotalReserves).HasNegative()))))
@@ -9036,7 +9037,10 @@ bool CPBaaSNotarization::ConfirmOrRejectNotarizations(CWallet *pWallet,
                                                                                                   &decisionHeight,
                                                                                                   &notarySetRejects,
                                                                                                   &notarySetConfirms);
-                                if (confirmationResult == CNotaryEvidence::EStates::STATE_CONFIRMED)
+                                // for an ETH-notarized system keep signing past quorum: the bridgekeeper drops witnesses the contract
+                                // has revoked and must still hold a quorum of the rest; verusd has no view of that revocation here
+                                if (confirmationResult == CNotaryEvidence::EStates::STATE_CONFIRMED &&
+                                    externalSystem.chainDefinition.proofProtocol != CCurrencyDefinition::PROOF_ETHNOTARIZATION)
                                 {
                                     break;
                                 }
@@ -10864,6 +10868,15 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
         return state.Error("Invalid notarization version " + std::to_string(CPBaaSNotarization::VERSION_PBAAS_MAINNET));
     }
 
+    // every co-notarized state the notarization carries is a currency state like the main one (reserves.h IsValid)
+    for (auto &oneState : currentNotarization.currencyStates)
+    {
+        if (!oneState.second.IsValid())
+        {
+            return state.Error("Invalid co-notarized currency state in notarization for " + EncodeDestination(CIdentityID(oneState.first)));
+        }
+    }
+
     if (IsAfterSecondBridgeCleanupWindowStarts(curChainTipTime))
     {
         bool proposerOk = false;
@@ -12519,6 +12532,11 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                 }
                 for (auto &oneUnspent : unspentConfirmed)
                 {
+                    // after an unclean shutdown the index can hold entries from blocks above this one; they are not prior
+                    if (oneUnspent.second.blockHeight >= height)
+                    {
+                        continue;
+                    }
                     if (!spent.count(CUTXORef(oneUnspent.first.txhash, oneUnspent.first.index)))
                     {
                         return state.Error("Confirmed finalization must spend all unspent prior confirmed finalizations");

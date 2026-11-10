@@ -216,6 +216,10 @@ bool mine_verus_v2(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &finalHas
 	return false;
 }
 
+// the masks every shipped binary computes for (0x10000000 << rounds) as a 32-bit int sign-extended to 64 bits,
+// written out so a compiler change cannot alter v2.0 hashes; rounds is selector >> 61, 0-7
+static const uint64_t roundSelectorMasks[8] = {0x10000000ULL, 0x20000000ULL, 0x40000000ULL, 0xffffffff80000000ULL, 0, 0, 0, 0};
+
 // verus intermediate hash extra
 __m128i __verusclmulwithoutreduction64alignedrepeat(__m128i *randomsource, const __m128i buf[4], uint64_t keyMask, __m128i **pMoveScratch)
 {
@@ -403,7 +407,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat(__m128i *randomsource, const
 
                 do
                 {
-                    if (selector & (0x10000000 << rounds))
+                    if (selector & roundSelectorMasks[rounds])
                     {
                         onekey = _mm_load_si128(rc++);
                         const __m128i temp2 = _mm_load_si128(rounds & 1 ? pbuf : buftmp);

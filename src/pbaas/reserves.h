@@ -1526,12 +1526,29 @@ public:
 
     bool IsValid() const
     {
-        return version >= VERSION_FIRST &&
-               version <= VERSION_LAST &&
-               (flags & FLAG_MASK) == flags &&
-               weights.size() == currencies.size() &&
-               reserves.size() == currencies.size() &&
-               !currencyID.IsNull();
+        if (!(version >= VERSION_FIRST &&
+              version <= VERSION_LAST &&
+              (flags & FLAG_MASK) == flags &&
+              weights.size() == currencies.size() &&
+              reserves.size() == currencies.size() &&
+              !currencyID.IsNull()))
+        {
+            return false;
+        }
+        // no amount the state machine produces is negative and every weight is a ratio; emitted is excluded,
+        // a burn-change-weight import records it negative (UpdateWithEmission(-burnedChangeWeight), reserves.cpp:6089)
+        if (supply < 0 || initialSupply < 0)
+        {
+            return false;
+        }
+        for (int i = 0; i < currencies.size(); i++)
+        {
+            if (reserves[i] < 0 || weights[i] < 0 || weights[i] > SATOSHIDEN)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     bool IsFractional() const
@@ -1739,18 +1756,36 @@ public:
 
     bool IsValid() const
     {
-        return CCurrencyState::IsValid() &&
-               reserveIn.size() == currencies.size() &&
-               primaryCurrencyIn.size() == currencies.size() &&
-               reserveOut.size() == currencies.size() &&
-               conversionPrice.size() == currencies.size() &&
-               viaConversionPrice.size() == currencies.size() &&
-               fees.size() == currencies.size() &&
-               conversionFees.size() == currencies.size() &&
-               priorWeights.size() == currencies.size();
+        if (!(CCurrencyState::IsValid() &&
+              reserveIn.size() == currencies.size() &&
+              primaryCurrencyIn.size() == currencies.size() &&
+              reserveOut.size() == currencies.size() &&
+              conversionPrice.size() == currencies.size() &&
+              viaConversionPrice.size() == currencies.size() &&
+              fees.size() == currencies.size() &&
+              conversionFees.size() == currencies.size() &&
+              priorWeights.size() == currencies.size()))
+        {
+            return false;
+        }
+        // primaryCurrencyOut is not checked: net burns take it below zero (reserves.cpp:6338, :6586)
+        if (preConvertedOut < 0 || primaryCurrencyFees < 0 || primaryCurrencyConversionFees < 0)
+        {
+            return false;
+        }
+        for (int i = 0; i < currencies.size(); i++)
+        {
+            if (reserveIn[i] < 0 || primaryCurrencyIn[i] < 0 || reserveOut[i] < 0 ||
+                conversionPrice[i] < 0 || viaConversionPrice[i] < 0 || fees[i] < 0 || conversionFees[i] < 0 ||
+                priorWeights[i] < 0 || priorWeights[i] > SATOSHIDEN)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
-    CCoinbaseCurrencyState &UpdateWithEmission(CAmount toEmit, int32_t excessRatio=0);
+    CCoinbaseCurrencyState &UpdateWithEmission(CAmount toEmit, int32_t excessRatio=0, bool signedWeightDelta=false);
     CCoinbaseCurrencyState &ApplyCarveouts(int32_t carveOut);
 
     void ClearForNextBlock()
@@ -2019,7 +2054,8 @@ public:
                                          const CTransferDestination &feeRecipient=CTransferDestination(),
                                          const CTransferDestination &blockNotarizer=CTransferDestination(),
                                          const uint256 &entropy=uint256(),
-                                         bool finalValidityCheck=false);
+                                         bool finalValidityCheck=false,
+                                         bool refundRetry=false);
 };
 
 // FIFO cost basis tracker, could be changed to have FIFO, LIFO, etc.

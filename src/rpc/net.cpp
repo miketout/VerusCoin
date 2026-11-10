@@ -275,11 +275,20 @@ UniValue disconnectnode(const UniValue& params, bool fHelp)
             + HelpExampleRpc("disconnectnode", "\"192.168.0.6:8233\"")
         );
 
-    CNode* pNode = FindNode(params[0].get_str());
-    if (pNode == NULL)
+    bool found = false;
+    {
+        LOCK(cs_vNodes);
+        for (CNode *pnode : vNodes)
+        {
+            if (pnode->GetAddrName() == params[0].get_str())
+            {
+                pnode->fDisconnect = true;
+                found = true;
+            }
+        }
+    }
+    if (!found)
         throw JSONRPCError(RPC_CLIENT_NODE_NOT_CONNECTED, "Node not found in connected nodes");
-
-    pNode->fDisconnect = true;
 
     return NullUniValue;
 }
@@ -592,8 +601,16 @@ UniValue setban(const UniValue& params, bool fHelp)
         isSubnet ? CNode::Ban(subNet, banTime, absolute) : CNode::Ban(netAddr, banTime, absolute);
 
         //disconnect possible nodes
-        while(CNode *bannedNode = (isSubnet ? FindNode(subNet) : FindNode(netAddr)))
-            bannedNode->fDisconnect = true;
+        {
+            LOCK(cs_vNodes);
+            for (CNode *pnode : vNodes)
+            {
+                if (isSubnet ? subNet.Match((CNetAddr)pnode->addr) : (CNetAddr)pnode->addr == netAddr)
+                {
+                    pnode->fDisconnect = true;
+                }
+            }
+        }
     }
     else if(strCommand == "remove")
     {

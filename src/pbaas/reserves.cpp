@@ -4343,7 +4343,8 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                                                                     const CTransferDestination &feeRecipient,
                                                                     const CTransferDestination &blockNotarizer,
                                                                     const uint256 &entropy,
-                                                                    bool finalValidation)
+                                                                    bool finalValidation,
+                                                                    bool refundRetry)
 {
     std::vector<CTxOut> vOldOutputs = vOutputs;
 
@@ -4669,7 +4670,8 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 if (importCurrencyState.IsLaunchConfirmed() &&
                     isFractional &&
                     !(preLaunchPostFees && isPreLaunch) &&
-                    importCurrencyState.reserves[systemDestIdx])
+                    importCurrencyState.reserves[systemDestIdx] &&
+                    !(refundRetry && isAfterSecondBridgeCleanupWindowStarts))
                 {
                     // 1/2 of all conversion fees go directly into the fractional currency itself
                     liquidityFees = conversionFees / 2;
@@ -6084,7 +6086,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
         // if we burn to change the weight, update weights
         if (burnedChangeWeight > 0)
         {
-            newCurrencyState.UpdateWithEmission(-burnedChangeWeight);
+            newCurrencyState.UpdateWithEmission(-burnedChangeWeight, 0, isAfterSecondBridgeCleanupWindowStarts);
         }
     }
 
@@ -6111,7 +6113,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
         // if we burned to change the weight, update weights
         if (burnedChangeWeight > 0)
         {
-            scratchCurrencyState.UpdateWithEmission(-burnedChangeWeight);
+            scratchCurrencyState.UpdateWithEmission(-burnedChangeWeight, 0, isAfterSecondBridgeCleanupWindowStarts);
         }
 
         if (isPreLaunch && preConvertedReserves > CCurrencyValueMap())
@@ -6332,7 +6334,19 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 newCurrencyState.reserveIn[i] += cIT->second;
             }
         }
+
         newCurrencyState.supply = newCurrencyState.AddToSupply(netPrimaryOut - netPrimaryIn);
+
+        // on the clear-launch import of a fractional currency the preconverted units were issued out of the initial
+        // supply (skipPreSupplyAdd) and must not be added again here
+        if (isAfterSecondBridgeCleanupWindowStarts &&
+            isFractional &&
+            newCurrencyState.IsLaunchClear() &&
+            newCurrencyState.preConvertedOut)
+        {
+            newCurrencyState.supply = newCurrencyState.AddToSupply(-newCurrencyState.preConvertedOut);
+        }
+
         if (ConnectedChains.CheckClearConvert(height))
         {
             newCurrencyState.primaryCurrencyOut -= netPrimaryIn;
@@ -6781,7 +6795,9 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                                                        pNewCurrencyState,
                                                        feeRecipient,
                                                        blockNotarizer,
-                                                       entropy);
+                                                       entropy,
+                                                       false,
+                                                       true);
             }
         }
     }
@@ -7101,7 +7117,7 @@ CAmount CReserveTransactionDescriptor::CalculateDelayedFees(CAmount &nTotalIn, C
 
 // this should be done no more than once to prepare a currency state to be updated to the next state
 // emission occurs for a block before any conversion or exchange and that impact on the currency state is calculated
-CCoinbaseCurrencyState &CCoinbaseCurrencyState::UpdateWithEmission(CAmount toEmit, int32_t excessRatio)
+CCoinbaseCurrencyState &CCoinbaseCurrencyState::UpdateWithEmission(CAmount toEmit, int32_t excessRatio, bool signedWeightDelta)
 {
     emitted = 0;
 
@@ -7160,7 +7176,12 @@ CCoinbaseCurrencyState &CCoinbaseCurrencyState::UpdateWithEmission(CAmount toEmi
         // weights, according to their current relative weight. because this also can be a source of rounding error, we will
         // distribute any modulus excess deterministically pseudorandomly among the currencies
         std::vector<CAmount> extraWeight(currencies.size());
-        arith_uint256 bigRatioDelta(InitialRatio - newRatio);
+        // the delta is signed: an emission lowers the ratio (positive), a burn raises it (negative). The unsigned form
+        // wrapped every weight on a burn; the signed form is used only when the caller enables it, which the
+        // burn-change-weight import does after the second window. ApplyCarveouts keeps the unsigned form: its delta is positive.
+        int64_t ratioDelta = InitialRatio - newRatio;
+        bool negativeDelta = signedWeightDelta && ratioDelta < 0;
+        arith_uint256 bigRatioDelta(negativeDelta ? -ratioDelta : ratioDelta);
 
         // adjust the ratio adjustment if we have a non-zero excessRatio
         if (excessRatio > 0)
@@ -7183,8 +7204,8 @@ CCoinbaseCurrencyState &CCoinbaseCurrencyState::UpdateWithEmission(CAmount toEmi
         for (auto &weight : weights)
         {
             CAmount weightDelta = (bigRatioDelta * arith_uint256(weight) / bigSatoshi).GetLow64();
-            weight -= weightDelta;
-            totalUpdates += weightDelta;
+            weight += negativeDelta ? weightDelta : -weightDelta;
+            totalUpdates += negativeDelta ? -weightDelta : weightDelta;
         }
 
         CAmount updateExtra = (InitialRatio - newRatio) - totalUpdates;
@@ -7192,8 +7213,10 @@ CCoinbaseCurrencyState &CCoinbaseCurrencyState::UpdateWithEmission(CAmount toEmi
         // if we have any extra, distribute it evenly and any mod, both deterministically and pseudorandomly
         if (updateExtra)
         {
-            CAmount forAll = updateExtra / currencies.size();
-            CAmount forSome = updateExtra % currencies.size();
+            bool negativeExtra = signedWeightDelta && updateExtra < 0;
+            CAmount extraMagnitude = negativeExtra ? -updateExtra : updateExtra;
+            CAmount forAll = extraMagnitude / currencies.size();
+            CAmount forSome = extraMagnitude % currencies.size();
 
             // get deterministic seed for linear congruential pseudorandom number for shuffle
             uint32_t seed = (uint32_t)((uint64_t)(supply + forAll + forSome)) & 0xffffffff;
@@ -7213,7 +7236,7 @@ CCoinbaseCurrencyState &CCoinbaseCurrencyState::UpdateWithEmission(CAmount toEmi
             pbaas_shuffle(extraWeight.begin(), extraWeight.end(), prandom);
             for (int i = 0; i < weights.size(); i++)
             {
-                weights[i] -= extraWeight[i];
+                weights[i] -= negativeExtra ? -extraWeight[i] : extraWeight[i];
             }
         }
 
