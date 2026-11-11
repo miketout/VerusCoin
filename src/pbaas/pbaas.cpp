@@ -4237,6 +4237,10 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
 
     if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
     {
+        if (newCurrency.name.find('\0') != std::string::npos)
+        {
+            return state.Error("Invalid name characters specified in currency definition");
+        }
         // the stored name must be the canonical form GetID() hashes, or the ID the notaries approve differs from the
         // one the Ethereum contract derives from the raw name (trailing dots, @chain and .VRSC suffixes, embedded NUL)
         if (cleanName != newCurrency.name || newCurParent != newCurrency.parent)

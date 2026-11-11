@@ -6337,14 +6337,17 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
 
         newCurrencyState.supply = newCurrencyState.AddToSupply(netPrimaryOut - netPrimaryIn);
 
-        // on the clear-launch import of a fractional currency the preconverted units were issued out of the initial
-        // supply (skipPreSupplyAdd) and must not be added again here
+        // on the launch-clear import of a fractional currency the preconverted units were issued out of the initial
+        // supply by the launch-clear notarization (its preConvertedOut, under skipPreSupplyAdd); whatever this import
+        // converts again at the launch price instead of recording as its own preconversion is counted twice, so take
+        // the difference back out and supply equals the units held
         if (isAfterSecondBridgeCleanupWindowStarts &&
             isFractional &&
             newCurrencyState.IsLaunchClear() &&
-            newCurrencyState.preConvertedOut)
+            !newCurrencyState.IsPrelaunch() &&
+            importCurrencyState.preConvertedOut > newCurrencyState.preConvertedOut)
         {
-            newCurrencyState.supply = newCurrencyState.AddToSupply(-newCurrencyState.preConvertedOut);
+            newCurrencyState.supply = newCurrencyState.AddToSupply(-(importCurrencyState.preConvertedOut - newCurrencyState.preConvertedOut));
         }
 
         if (ConnectedChains.CheckClearConvert(height))

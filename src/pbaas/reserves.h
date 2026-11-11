@@ -1775,7 +1775,7 @@ public:
         }
         for (int i = 0; i < currencies.size(); i++)
         {
-            if (reserveIn[i] < 0 || primaryCurrencyIn[i] < 0 || reserveOut[i] < 0 ||
+            if (reserveIn[i] < 0 ||
                 conversionPrice[i] < 0 || viaConversionPrice[i] < 0 || fees[i] < 0 || conversionFees[i] < 0 ||
                 priorWeights[i] < 0 || priorWeights[i] > SATOSHIDEN)
             {

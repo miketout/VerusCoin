@@ -2823,7 +2823,7 @@ bool SelectArbitrageFromOffers(const std::vector<
 
                     UniValue deliverParam(UniValue::VOBJ);
                     deliverParam.pushKV("currency", EncodeDestination(CIdentityID(std::get<3>(mostProfitablePair).second.IsReserveToReserve() ? std::get<3>(mostProfitablePair).second.secondReserveID : std::get<3>(mostProfitablePair).second.destCurrencyID)));
-                    deliverParam.pushKV("amount", ValueFromAmount(std::get<1>(mostProfitablePair)));
+                    deliverParam.pushKV("amount", ValueFromAmount(std::get<2>(mostProfitablePair)));
                     objParam.pushKV("deliver", deliverParam);
                     takeOfferParams.push_back(objParam);
                     takeOfferParams.push_back(true);
@@ -9765,6 +9765,26 @@ UniValue takeoffer(const UniValue& params, bool fHelp)
             mtx.bindingSig.data());
 
         librustzcash_sapling_proving_ctx_free(saplingSpendCtx);
+    }
+
+    // the maker's inputs below firstFundingInput are pre-signed; verify them as well, so a corrupted maker signature
+    // is reported in "errors" instead of surfacing later as a mempool rejection of the taker's transaction
+    for (int i = 0; i < firstFundingInput && i < mtx.vin.size(); i++)
+    {
+        const CTxIn &txin = mtx.vin[i];
+        const CCoins *coins = view.AccessCoins(txin.prevout.hash);
+        if (coins == NULL || !coins->IsAvailable(txin.prevout.n))
+        {
+            SigningErrorToJSON(txin, vErrors, "Offer input not found or already spent");
+            continue;
+        }
+        const CScript &prevPubKey = CCoinsViewCache::GetSpendFor(coins, txin, chainActive.LastTip()->nTime);
+        TransactionSignatureChecker checker(&txConst, i, coins->vout[txin.prevout.n].nValue);
+        ScriptError serror = SCRIPT_ERR_OK;
+        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, checker, consensusBranchId, &serror))
+        {
+            SigningErrorToJSON(txin, vErrors, ScriptErrorString(serror));
+        }
     }
 
     for (int i = firstFundingInput; i < mtx.vin.size(); i++)
