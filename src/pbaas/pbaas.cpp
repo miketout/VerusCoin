@@ -8429,7 +8429,7 @@ bool CConnectedChains::GetReserveDeposits(const uint160 &currencyID, const CCoin
     return true;
 }
 
-bool CConnectedChains::GetUnspentByIndex(const uint160 &indexID, std::vector<std::pair<CInputDescriptor, uint32_t>> &unspentOutputs)
+bool CConnectedChains::GetUnspentByIndex(const uint160 &indexID, std::vector<std::pair<CInputDescriptor, uint32_t>> &unspentOutputs, bool rebuildIfEmpty)
 {
     std::vector<CAddressUnspentDbEntry> confirmedUTXOs;
     std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> unconfirmedUTXOs;
@@ -8446,16 +8446,16 @@ bool CConnectedChains::GetUnspentByIndex(const uint160 &indexID, std::vector<std
 
     for (auto &oneConfirmed : confirmedUTXOs)
     {
-        BlockMap::iterator blockIt;
-        std::pair<CTransaction, uint256> txAndBlkHash;
+        // the chainstate is authoritative: an index entry whose output is not unspent at the tip is stale,
+        // whether its block was lost in an unclean shutdown or displaced by a reorg
+        const CCoins *coins = pcoinsTip->AccessCoins(oneConfirmed.first.txhash);
         if (spentInMempool.count(COutPoint(oneConfirmed.first.txhash, oneConfirmed.first.index)) ||
-            !myGetTransaction(oneConfirmed.first.txhash, txAndBlkHash.first, txAndBlkHash.second) ||
-            (blockIt = mapBlockIndex.find(txAndBlkHash.second)) == mapBlockIndex.end() ||
-            !chainActive.Contains(blockIt->second))
+            !coins ||
+            !coins->IsAvailable(oneConfirmed.first.index))
         {
             continue;
         }
-        oneConfirmed.second.blockHeight = blockIt->second->GetHeight();
+        oneConfirmed.second.blockHeight = coins->nHeight;
 
         COptCCParams p;
         if (!mempool.mapNextTx.count(COutPoint(oneConfirmed.first.txhash, oneConfirmed.first.index)) &&
@@ -8470,7 +8470,7 @@ bool CConnectedChains::GetUnspentByIndex(const uint160 &indexID, std::vector<std
     // after an unclean shutdown the unspent index can run ahead of the chainstate: an output that a lost block spent
     // is missing from it, and nothing above can filter it back. The address index still holds the creation entry and
     // the chainstate is authoritative, so when nothing on-chain was found, rebuild the list from those two.
-    if (unspentOutputs.empty())
+    if (rebuildIfEmpty && unspentOutputs.empty())
     {
         std::vector<CAddressIndexDbEntry> allEntries;
         if (GetAddressIndex(indexID, CScript::P2IDX, allEntries, 0, chainActive.Height()))
@@ -12094,7 +12094,7 @@ void CConnectedChains::ProcessLocalImports()
     {
         LOCK2(smartTransactionCS, mempool.cs);
 
-        if (!ConnectedChains.GetUnspentByIndex(finalizeExportKey, inputDescriptors) || !inputDescriptors.size())
+        if (!ConnectedChains.GetUnspentByIndex(finalizeExportKey, inputDescriptors, false) || !inputDescriptors.size())
         {
             return;
         }

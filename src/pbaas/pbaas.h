@@ -1158,7 +1158,7 @@ public:
                          std::vector<std::pair<std::pair<CInputDescriptor,CPartialTransactionProof>,std::vector<CReserveTransfer>>> &exports);
 
     static bool GetReserveDeposits(const uint160 &currencyID, const CCoinsViewCache &view, std::vector<CInputDescriptor> &reserveDeposits);
-    static bool GetUnspentByIndex(const uint160 &indexID, std::vector<std::pair<CInputDescriptor, uint32_t>> &unspentOutptus);
+    static bool GetUnspentByIndex(const uint160 &indexID, std::vector<std::pair<CInputDescriptor, uint32_t>> &unspentOutputs, bool rebuildIfEmpty=true);
 
     static bool IsValidCurrencyDefinitionImport(const CCurrencyDefinition &sourceSystemDef,
                                                 const CCurrencyDefinition &destSystemDef,

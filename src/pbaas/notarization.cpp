@@ -7526,7 +7526,7 @@ std::vector<std::pair<uint32_t, CInputDescriptor>> CObjectFinalization::GetUnspe
         ObjectFinalizationPendingKey());
 
     std::vector<std::pair<CInputDescriptor, uint32_t>> outputs;
-    if (ConnectedChains.GetUnspentByIndex(indexKey, outputs))
+    if (ConnectedChains.GetUnspentByIndex(indexKey, outputs, false))
     {
         for (auto &oneOutput : outputs)
         {

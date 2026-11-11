@@ -4538,7 +4538,7 @@ bool GetUnspentChainTransfers(std::vector<ChainTransferData> &inputDescriptors, 
     LOCK(cs_main);
     LOCK2(smartTransactionCS, mempool.cs);
 
-    if (!ConnectedChains.GetUnspentByIndex(CReserveTransfer::ReserveTransferKey(), unspentOutputs))
+    if (!ConnectedChains.GetUnspentByIndex(CReserveTransfer::ReserveTransferKey(), unspentOutputs, false))
     {
         return false;
     }
