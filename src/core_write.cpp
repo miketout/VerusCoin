@@ -522,7 +522,7 @@ CAmount CCurrencyState::ReserveToNativeRaw(CAmount reserveAmount, const cpp_dec_
     return -1;
 }
 
-CAmount CCurrencyState::ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate, bool promoteExchangeRate)
+CAmount CCurrencyState::ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate, bool promoteExchangeRate, bool legacyOverflowWrap)
 {
     //return ReserveToNativeRaw(reserveAmount, cpp_dec_float_50(std::to_string(exchangeRate)));
 
@@ -545,6 +545,12 @@ CAmount CCurrencyState::ReserveToNativeRaw(CAmount reserveAmount, CAmount exchan
     if (bigRetVal <= bigInt64Max)
     {
         return (int64_t)bigRetVal.GetLow64();
+    }
+    else if (legacyOverflowWrap)
+    {
+        // pre-window history: a result below 2^64 came back through GetLow64() and wrapped negative
+        int64_t retVal = bigRetVal.GetLow64();
+        return (bigRetVal - retVal) == 0 ? retVal : -1;
     }
     else
     {
@@ -599,9 +605,9 @@ CAmount CCurrencyState::ReserveToNativeRaw(const CCurrencyValueMap &reserveAmoun
     return nativeOut;
 }
 
-CAmount CCurrencyState::ReserveToNative(CAmount reserveAmount, int32_t reserveIndex, bool promoteExchangeRate) const
+CAmount CCurrencyState::ReserveToNative(CAmount reserveAmount, int32_t reserveIndex, bool promoteExchangeRate, bool legacyOverflowWrap) const
 {
-    return ReserveToNativeRaw(reserveAmount, PriceInReserve(reserveIndex), promoteExchangeRate);
+    return ReserveToNativeRaw(reserveAmount, PriceInReserve(reserveIndex), promoteExchangeRate, legacyOverflowWrap);
 }
 
 CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, const cpp_dec_float_50 &price)
@@ -617,7 +623,7 @@ CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, const cpp_dec_f
     return -1;
 }
 
-CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate)
+CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate, bool legacyOverflowWrap)
 {
     static arith_uint256 bigSatoshi(SATOSHIDEN);
     arith_uint256 bigAmount(nativeAmount);
@@ -637,6 +643,12 @@ CAmount CCurrencyState::NativeToReserveRaw(CAmount nativeAmount, CAmount exchang
     if (bigReserves <= bigInt64Max)
     {
         return (int64_t)bigReserves.GetLow64();
+    }
+    else if (legacyOverflowWrap)
+    {
+        // pre-window history: a result below 2^64 came back through GetLow64() and wrapped negative
+        int64_t retVal = bigReserves.GetLow64();
+        return (bigReserves - retVal) == 0 ? retVal : -1;
     }
     else
     {
@@ -679,9 +691,9 @@ CAmount CCurrencyState::NativeGasToReserveRaw(CAmount nativeAmount, CAmount exch
     }
 }
 
-CAmount CCurrencyState::NativeToReserve(CAmount nativeAmount, int32_t reserveIndex, bool promoteExchangeRate) const
+CAmount CCurrencyState::NativeToReserve(CAmount nativeAmount, int32_t reserveIndex, bool promoteExchangeRate, bool legacyOverflowWrap) const
 {
-    return NativeToReserveRaw(nativeAmount, PriceInReserve(reserveIndex), promoteExchangeRate);
+    return NativeToReserveRaw(nativeAmount, PriceInReserve(reserveIndex), promoteExchangeRate, legacyOverflowWrap);
 }
 
 CCurrencyValueMap CCurrencyState::NativeToReserveRaw(const std::vector<CAmount> &nativeAmount, const std::vector<CAmount> &exchangeRates) const

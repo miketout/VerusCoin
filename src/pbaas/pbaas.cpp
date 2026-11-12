@@ -546,6 +546,24 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
             {
                 return state.Error("Invalid base import from system import: " + sysCCI.ToUniValue().write(1,2));
             }
+            if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+            {
+                // the system record is the base record re-addressed to the source system (the builder at
+                // CreateLatestImports); the import readers key the next export off it, so it must be bound to
+                // the proven export exactly as the base record is
+                CCurrencyDefinition sourceSystemDef = ConnectedChains.GetCachedCurrency(cci.sourceSystemID);
+                CCrossChainImport expectedSysCCI = cci;
+                expectedSysCCI.importCurrencyID = cci.sourceSystemID;
+                expectedSysCCI.flags |= CCrossChainImport::FLAG_SOURCESYSTEM;
+                if (cci.importCurrencyID != ASSETCHAINS_CHAINID && sourceSystemDef.IsValid() && sourceSystemDef.IsPBaaSChain())
+                {
+                    expectedSysCCI.exportTxOutNum++;
+                }
+                if (!sourceSystemDef.IsValid() || ::AsVector(expectedSysCCI) != ::AsVector(sysCCI))
+                {
+                    return state.Error("System import record does not match its base import: " + sysCCI.ToUniValue().write(1,2));
+                }
+            }
             return true;
         }
 

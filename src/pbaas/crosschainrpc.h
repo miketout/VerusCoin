@@ -1204,6 +1204,7 @@ public:
                 rewards.size() == halving.size() &&
                 rewards.size() == eraEnd.size() &&
                 std::max({rewards.size(), rewardsDecay.size(), halving.size(), eraEnd.size()}) <= ASSETCHAINS_MAX_ERAS &&
+                GetCurrenciesMap().size() == currencies.size() &&
                 preLaunchDiscount >= 0 &&
                 preLaunchDiscount < SATOSHIDEN &&
                 preLaunchCarveOut >= 0 &&

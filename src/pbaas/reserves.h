@@ -1501,19 +1501,19 @@ public:
                                         const std::vector<std::vector<CAmount>> *pCrossConversions=nullptr,
                                         std::vector<CAmount> *pViaPrices=nullptr) const;
 
-    CAmount ReserveToNative(CAmount reserveAmount, int32_t reserveIndex, bool promoteExchangeRate=true) const;
+    CAmount ReserveToNative(CAmount reserveAmount, int32_t reserveIndex, bool promoteExchangeRate=true, bool legacyOverflowWrap=false) const;
     CAmount ReserveToNative(const CCurrencyValueMap &reserveAmounts) const;
 
     static CAmount ReserveToNativeRaw(CAmount reserveAmount, const cpp_dec_float_50 &exchangeRate);
-    static CAmount ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate, bool promoteExchangeRate=true);
+    static CAmount ReserveToNativeRaw(CAmount reserveAmount, CAmount exchangeRate, bool promoteExchangeRate=true, bool legacyOverflowWrap=false);
     static CAmount ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, const std::vector<uint160> &currencies, const std::vector<CAmount> &exchangeRates);
     static CAmount ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, const std::vector<uint160> &currencies, const std::vector<cpp_dec_float_50> &exchangeRates);
     CAmount ReserveToNativeRaw(const CCurrencyValueMap &reserveAmounts, const std::vector<CAmount> &exchangeRates) const;
 
     const CCurrencyValueMap &NativeToReserve(std::vector<CAmount> nativeAmount, int32_t reserveIndex=0) const;
-    CAmount NativeToReserve(CAmount nativeAmount, int32_t reserveIndex=0, bool promoteExchangeRate=true) const;
+    CAmount NativeToReserve(CAmount nativeAmount, int32_t reserveIndex=0, bool promoteExchangeRate=true, bool legacyOverflowWrap=false) const;
     static CAmount NativeToReserveRaw(CAmount nativeAmount, const cpp_dec_float_50 &exchangeRate);
-    static CAmount NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate=true);
+    static CAmount NativeToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate=true, bool legacyOverflowWrap=false);
     static CAmount NativeGasToReserveRaw(CAmount nativeAmount, CAmount exchangeRate, bool promoteExchangeRate=true);
     CCurrencyValueMap NativeToReserveRaw(const std::vector<CAmount> &, const std::vector<CAmount> &exchangeRates) const;
     CCurrencyValueMap NativeToReserveRaw(const std::vector<CAmount> &, const std::vector<cpp_dec_float_50> &exchangeRates) const;
@@ -1531,6 +1531,7 @@ public:
               (flags & FLAG_MASK) == flags &&
               weights.size() == currencies.size() &&
               reserves.size() == currencies.size() &&
+              GetReserveMap().size() == currencies.size() &&
               !currencyID.IsNull()))
         {
             return false;

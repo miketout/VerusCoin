@@ -2247,7 +2247,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
     {
         arith_uint256 weight(weights[i]);
         //printf("%s: %ld\n", __func__, ReserveToNative(inputReserves[i], i));
-        CAmount asNative = ReserveToNative(inputReserves[i], i, promoteExchangeRate);
+        CAmount asNative = ReserveToNative(inputReserves[i], i, promoteExchangeRate, !layerReserveFixActive);
         // if overflow
         if (asNative < 0)
         {
@@ -2645,7 +2645,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             // all reserves have been calculated using a substituted value, which was 1:1 for native initially
             if (inputFractional[i])
             {
-                CAmount intermed = NativeToReserveRaw(fractionDelta, rates[i], promoteExchangeRate);
+                CAmount intermed = NativeToReserveRaw(fractionDelta, rates[i], promoteExchangeRate, !layerReserveFixActive);
                 if (intermed == -1)
                 {
                     printf("%s: fractional conversion overflow\n", __func__);
@@ -2663,7 +2663,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
         else if (fractionalInIT != fractionalInMap.end())
         {
             arith_uint256 bigReserveDelta(fractionalInIT->second.first);
-            CAmount adjustedReserveDelta = NativeToReserve(((bigReserveDelta + arith_uint256(fractionalInIT->second.second)) >> 1).GetLow64(), i, promoteExchangeRate);
+            CAmount adjustedReserveDelta = NativeToReserve(((bigReserveDelta + arith_uint256(fractionalInIT->second.second)) >> 1).GetLow64(), i, promoteExchangeRate, !layerReserveFixActive);
             if (adjustedReserveDelta == -1)
             {
                 printf("%s: fractional conversion overflow\n", __func__);

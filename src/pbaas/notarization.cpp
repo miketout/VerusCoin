@@ -7411,10 +7411,10 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
         if (!gatewayConverterID.IsNull())
         {
             // get the gateway converter currency from the gateway definition
-            CChainNotarizationData gatewayCND;
-            if (GetNotarizationData(gatewayConverterID, gatewayCND) && gatewayCND.vtx.size())
+            CCoinbaseCurrencyState gatewayCurState;
+            if ((gatewayCurState = ConnectedChains.GetCurrencyState(gatewayConverterID, height, false)).IsValid())
             {
-                notarization.currencyStates[gatewayConverterID] = gatewayCND.vtx[gatewayCND.lastConfirmed].second.currencyState;
+                notarization.currencyStates[gatewayConverterID] = gatewayCurState;
             }
         }
 
@@ -11050,6 +11050,27 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
         if (correctRoot != notarizationRoot)
         {
             return state.Error("Incorrect proof root in notarization transaction");
+        }
+
+        // an earned notarization's states for currencies of this chain are this chain's own state as of its proof root
+        // height, which is where the builder takes them from (CreateEarnedNotarization), so consensus holds it to that
+        if (p.evalCode == EVAL_EARNEDNOTARIZATION &&
+            IsAfterSecondBridgeCleanupWindowStarts(curChainTipTime))
+        {
+            for (auto &oneState : currentNotarization.currencyStates)
+            {
+                CCurrencyDefinition stateDef = ConnectedChains.GetCachedCurrency(oneState.first);
+                if (!stateDef.IsValid() || stateDef.systemID != ASSETCHAINS_CHAINID)
+                {
+                    continue;
+                }
+                CCoinbaseCurrencyState expectedState = ConnectedChains.GetCurrencyState(oneState.first, notarizationRoot.rootHeight, false);
+                if (!expectedState.IsValid() || ::GetHash(expectedState) != ::GetHash(oneState.second))
+                {
+                    return state.Error("Earned notarization currency state for " + EncodeDestination(CIdentityID(oneState.first)) +
+                                       " does not match this chain at its proof root height");
+                }
+            }
         }
 
         // earned notarizations are only supported for
