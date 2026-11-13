@@ -13405,7 +13405,8 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
             }
         }
 
-        if (!hasSignature)
+        if (!hasSignature &&
+            (evidenceVec.size() || IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1))))
         {
             // declared evidence inputs must exist
             for (auto oneInIdx : currentFinalization.evidenceInputs)

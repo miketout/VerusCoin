@@ -5766,7 +5766,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                             // it is not involved in, it is tracked separately and applied after the first conversion
                             outputCurrencyID = curTransfer.secondReserveID;
                             int32_t outputCurrencyIdx = currencyIndexMap[outputCurrencyID];
-                            newCurrencyConverted = CCurrencyState::NativeToReserveRaw(newCurrencyConverted, importCurrencyState.viaConversionPrice[outputCurrencyIdx]);
+                            newCurrencyConverted = CCurrencyState::NativeToReserveRaw(newCurrencyConverted, importCurrencyState.viaConversionPrice[outputCurrencyIdx], true, !isAfterSecondBridgeCleanupWindowStarts);
                             if (newCurrencyConverted == -1)
                             {
                                 printf("%s: Overflow in converted amount for %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
@@ -6171,7 +6171,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                                                     state,
                                                     &crossConversions,
                                                     &newCurrencyState.viaConversionPrice);
-            if (state.IsError() || !dummyCurState.IsValid())
+            if (state.IsError() || !dummyCurState.IsValid(isAfterSecondBridgeCleanupWindowStarts))
             {
                 if (isLaunchComplete)
                 {

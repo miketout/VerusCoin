@@ -934,7 +934,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         {
             uint160 currencyID;
             CRating trust;
-            ssValue >> currencyID;
+            ssKey >> currencyID;
             ssValue >> trust;
             if (currencyID.IsNull() || !trust.IsValid())
             {
@@ -947,7 +947,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         {
             uint160 idID;
             CRating trust;
-            ssValue >> idID;
+            ssKey >> idID;
             ssValue >> trust;
             if (idID.IsNull() || !trust.IsValid())
             {

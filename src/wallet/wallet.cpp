@@ -2026,11 +2026,11 @@ CAmount CWallet::EligibleStakeOutputs(std::vector<COutput> &vecOutputs, std::vec
         }
     }
 
+    vecOutputs.resize(newSize);
+    vwtx.resize(newSize);
     if (newSize)
     {
         // no reallocations to move objects. do all at once, so we can release the wallet lock
-        vecOutputs.resize(newSize);
-        vwtx.resize(newSize);
         for (int i = 0; i < vecOutputs.size(); i++)
         {
             vwtx[i] = *vecOutputs[i].tx;

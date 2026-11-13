@@ -18284,8 +18284,8 @@ UniValue getidentitytrust(const UniValue& params, bool fHelp)
         );
     }
 
-    UniValue retVal;
-    UniValue setRatings;
+    UniValue retVal(UniValue::VOBJ);
+    UniValue setRatings(UniValue::VOBJ);
 
     LOCK(pwalletMain->cs_wallet);
     auto identityTrustMap = pwalletMain->GetIdentityTrustMap();
@@ -18429,8 +18429,8 @@ UniValue getcurrencytrust(const UniValue& params, bool fHelp)
     }
     CheckPBaaSAPIsValid();
 
-    UniValue retVal;
-    UniValue setRatings;
+    UniValue retVal(UniValue::VOBJ);
+    UniValue setRatings(UniValue::VOBJ);
 
     LOCK(pwalletMain->cs_wallet);
     auto currencyTrustMap = pwalletMain->GetCurrencyTrustMap();

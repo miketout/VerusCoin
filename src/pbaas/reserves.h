@@ -1529,7 +1529,7 @@ public:
 
     uint160 GetID() const { return currencyID; }
 
-    bool IsValid() const
+    bool IsValid(bool checkRanges=true) const
     {
         if (!(version >= VERSION_FIRST &&
               version <= VERSION_LAST &&
@@ -1542,16 +1542,19 @@ public:
             return false;
         }
         // no amount the state machine produces is negative and every weight is a ratio; emitted is excluded,
-        // a burn-change-weight import records it negative (UpdateWithEmission(-burnedChangeWeight), reserves.cpp:6089)
-        if (supply < 0 || initialSupply < 0)
+        // a burn-change-weight import records it negative (UpdateWithEmission(-burnedChangeWeight))
+        if (checkRanges)
         {
-            return false;
-        }
-        for (int i = 0; i < currencies.size(); i++)
-        {
-            if (reserves[i] < 0 || weights[i] < 0 || weights[i] > SATOSHIDEN)
+            if (supply < 0 || initialSupply < 0)
             {
                 return false;
+            }
+            for (int i = 0; i < currencies.size(); i++)
+            {
+                if (reserves[i] < 0 || weights[i] < 0 || weights[i] > SATOSHIDEN)
+                {
+                    return false;
+                }
             }
         }
         return true;
