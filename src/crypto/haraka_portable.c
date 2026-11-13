@@ -129,6 +129,21 @@ static const unsigned char sbox[256] =
 
 #define XT(x) (((x) << 1) ^ ((((x) >> 7) & 1) * 0x1b))
 
+#if defined(__GNUC__)
+typedef uint32_t __attribute__((__may_alias__, __aligned__(1))) uint32_alias_t;
+#define LOAD32(p) (*(const uint32_alias_t *)(p))
+#define STORE32(p, v) (*(uint32_alias_t *)(p) = (v))
+#else
+static inline uint32_t load32_portable(const unsigned char *p)
+{
+    uint32_t v;
+    memcpy(&v, p, 4);
+    return v;
+}
+#define LOAD32(p) load32_portable(p)
+#define STORE32(p, v) do { uint32_t store32_tmp = (v); memcpy((p), &store32_tmp, 4); } while (0)
+#endif
+
 // Simulate _mm_aesenc_si128 instructions from AESNI
 
 void aesenc(unsigned char *s, const unsigned char *rk) 
@@ -136,10 +151,10 @@ void aesenc(unsigned char *s, const unsigned char *rk)
 //#define XT(x) (((x) << 1) ^ (((x) >> 7) ? 0x1b : 0))
     const uint32_t *t = saes_table[0];
 //#define XT4(x) ((((x) << 1) & 0xfefefefe) ^ ((((x) >> 31) & 1) ? 0x1b000000 : 0)^ ((((x) >> 23)&1) ? 0x001b0000 : 0)^ ((((x) >> 15)&1) ? 0x00001b00 : 0)^ ((((x) >> 7)&1) ? 0x0000001b : 0))
-	uint32_t x0 = ((uint32_t*)s)[0];
-	uint32_t x1 = ((uint32_t*)s)[1];
-	uint32_t x2 = ((uint32_t*)s)[2];
-	uint32_t x3 = ((uint32_t*)s)[3];
+	uint32_t x0 = LOAD32(s);
+	uint32_t x1 = LOAD32(s + 4);
+	uint32_t x2 = LOAD32(s + 8);
+	uint32_t x3 = LOAD32(s + 12);
 
 	uint32_t y0 = t[x0 & 0xff]; x0 >>= 8;
 	uint32_t y1 = t[x1 & 0xff]; x1 >>= 8;
@@ -164,10 +179,10 @@ void aesenc(unsigned char *s, const unsigned char *rk)
 	y2 ^= t[x1];
 	y3 ^= t[x2];
 
-	((uint32_t*)s)[0] = y0 ^ ((uint32_t*)rk)[0];
-	((uint32_t*)s)[1] = y1 ^ ((uint32_t*)rk)[1];
-	((uint32_t*)s)[2] = y2 ^ ((uint32_t*)rk)[2];
-	((uint32_t*)s)[3] = y3 ^ ((uint32_t*)rk)[3];
+	STORE32(s, y0 ^ LOAD32(rk));
+	STORE32(s + 4, y1 ^ LOAD32(rk + 4));
+	STORE32(s + 8, y2 ^ LOAD32(rk + 8));
+	STORE32(s + 12, y3 ^ LOAD32(rk + 12));
 
 }
 
