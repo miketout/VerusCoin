@@ -1423,7 +1423,12 @@ public:
 
     CCurrencyState(const std::vector<unsigned char> &asVector)
     {
-        FromVector(asVector, *this);
+        bool success = false;
+        ::FromVector(asVector, *this, &success);
+        if (!success)
+        {
+            version = VERSION_INVALID;
+        }
     }
 
     CCurrencyState(const UniValue &uni);
@@ -1722,7 +1727,12 @@ public:
 
     CCoinbaseCurrencyState(const std::vector<unsigned char> asVector)
     {
-        ::FromVector(asVector, *this);
+        bool success = false;
+        ::FromVector(asVector, *this, &success);
+        if (!success)
+        {
+            version = VERSION_INVALID;
+        }
     }
 
     CCoinbaseCurrencyState(const CTransaction &tx, int *pOutIdx=NULL);

@@ -610,6 +610,11 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                 return state.Error("Definition import without accompanying notarization: " + cci.ToUniValue().write(1,2));
             }
 
+            if (!notarization.currencyState.IsValid())
+            {
+                return state.Error("Invalid currency state in notarization: " + cci.ToUniValue().write(1,2));
+            }
+
             if (notarization.currencyState.currencies.size() != importCurrency.currencies.size())
             {
                 return state.Error("Mismatched currency definition and notarization currencies: " + cci.ToUniValue().write(1,2));
@@ -5301,38 +5306,63 @@ bool CheckIdentitySpends(const CTransaction &tx, const uint160 idID, CValidation
     return authorizedController;
 }
 
+static LRUCache<uint256, std::pair<bool, std::map<uint160, std::pair<CCurrencyDefinition, CPBaaSNotarization>>>> CurrenciesAndNotarizationCache(100);
+
 bool CurrenciesAndNotarizations(const CTransaction &tx, std::map<uint160, std::pair<CCurrencyDefinition, CPBaaSNotarization>> &currenciesAndNotarizations)
 {
-    CPBaaSNotarization oneNotarization;
-    CCurrencyDefinition oneCur;
-
-    // we need to get the first notarization and possibly systemDest currency here as well
-    for (auto &oneOut : tx.vout)
+    std::pair<bool, std::map<uint160, std::pair<CCurrencyDefinition, CPBaaSNotarization>>> cacheEntry;
+    if (CurrenciesAndNotarizationCache.Get(tx.GetHash(), cacheEntry))
     {
-        COptCCParams p;
-        if (oneOut.scriptPubKey.IsPayToCryptoCondition(p) &&
-            p.IsValid() &&
-            p.vData.size())
+        currenciesAndNotarizations = cacheEntry.second;
+        return cacheEntry.first;
+    }
+    else
+    {
+        CPBaaSNotarization oneNotarization;
+        CCurrencyDefinition oneCur;
+
+        // we need to get the first notarization and possibly systemDest currency here as well
+        for (auto &oneOut : tx.vout)
         {
-            if (p.evalCode == EVAL_CURRENCY_DEFINITION)
+            COptCCParams p;
+            if (oneOut.scriptPubKey.IsPayToCryptoCondition(p) &&
+                p.IsValid() &&
+                p.vData.size())
             {
-                if (!(oneCur = CCurrencyDefinition(p.vData[0])).IsValid())
+                if (p.evalCode == EVAL_CURRENCY_DEFINITION)
                 {
-                    return false;
+                    oneCur = CCurrencyDefinition(p.vData[0]);
+                    currenciesAndNotarizations[oneCur.GetID()].first = oneCur;
+                    if (!oneCur.IsValid())
+                    {
+                        CurrenciesAndNotarizationCache.Put(tx.GetHash(), {false, currenciesAndNotarizations});
+                        return false;
+                    }
                 }
-                currenciesAndNotarizations[oneCur.GetID()].first = oneCur;
-            }
-            else if (p.evalCode == EVAL_ACCEPTEDNOTARIZATION || p.evalCode == EVAL_EARNEDNOTARIZATION)
-            {
-                if (!(oneNotarization = CPBaaSNotarization(p.vData[0])).IsValid())
+                else if (p.evalCode == EVAL_ACCEPTEDNOTARIZATION || p.evalCode == EVAL_EARNEDNOTARIZATION)
                 {
-                    return false;
+                    oneNotarization = CPBaaSNotarization(p.vData[0]);
+                    currenciesAndNotarizations[oneNotarization.currencyID].second = oneNotarization;
+                    bool isValid = oneNotarization.IsValid();
+                    for (auto &oneState : oneNotarization.currencyStates)
+                    {
+                        if (!oneState.second.IsValid())
+                        {
+                            isValid = false;
+                            break;
+                        }
+                    }
+                    if (!(isValid && oneNotarization.currencyState.IsValid()))
+                    {
+                        CurrenciesAndNotarizationCache.Put(tx.GetHash(), {false, currenciesAndNotarizations});
+                        return false;
+                    }
                 }
-                currenciesAndNotarizations[oneNotarization.currencyID].second = oneNotarization;
             }
         }
+        CurrenciesAndNotarizationCache.Put(tx.GetHash(), {true, currenciesAndNotarizations});
+        return true;
     }
-    return true;
 }
 
 bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidationState &state, uint32_t height)
@@ -5477,11 +5507,12 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
 
             // if pre-conversion, we may find definitions on the transaction
             // false is error, empty is not false
+            bool currenciesAndNotarizationsOK = true;
             if (!std::get<0>(lastConfirmedForImport) &&
-                (!CurrenciesAndNotarizations(tx, currenciesAndNotarizations) ||
-                !currenciesAndNotarizations.size()))
+                (!(currenciesAndNotarizationsOK = CurrenciesAndNotarizations(tx, currenciesAndNotarizations)) ||
+                 !currenciesAndNotarizations.size()))
             {
-                if (!importCurrencyDef.IsValid())
+                if (!importCurrencyDef.IsValid() || !currenciesAndNotarizationsOK)
                 {
                     // a preconversion to a currency defined neither on chain nor on this transaction is invalid content
                     return state.Error("Invalid preconversion to undefined currency in reserve transfer " + rt.ToUniValue().write(1,2));

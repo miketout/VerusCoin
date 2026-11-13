@@ -511,6 +511,7 @@ public:
 
     bool IsValid() const
     {
+        // TODO: we should consider currency state checks here too
         return nVersion >= VERSION_FIRST && nVersion <= VERSION_LAST && !currencyID.IsNull();
     }
 

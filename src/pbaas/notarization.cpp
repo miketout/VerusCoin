@@ -11055,6 +11055,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
         // an earned notarization's states for currencies of this chain are this chain's own state as of its proof root
         // height, which is where the builder takes them from (CreateEarnedNotarization), so consensus holds it to that
         if (p.evalCode == EVAL_EARNEDNOTARIZATION &&
+            !currentNotarization.IsBlockOneNotarization() &&
             IsAfterSecondBridgeCleanupWindowStarts(curChainTipTime))
         {
             for (auto &oneState : currentNotarization.currencyStates)

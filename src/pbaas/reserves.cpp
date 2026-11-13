@@ -371,7 +371,8 @@ bool GetNotarizationFromOutput(const CTransaction tx, int32_t outNum, CValidatio
           p.IsValid() &&
           (p.evalCode == EVAL_ACCEPTEDNOTARIZATION || p.evalCode == EVAL_EARNEDNOTARIZATION) &&
           p.vData.size() &&
-          (outNotarization = CPBaaSNotarization(p.vData[0])).IsValid()))
+          (outNotarization = CPBaaSNotarization(p.vData[0])).IsValid() &&
+          outNotarization.currencyState.IsValid()))
     {
         return state.Error(strprintf("%s: invalid import notarization for import",__func__));
     }
