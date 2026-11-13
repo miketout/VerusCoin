@@ -196,7 +196,7 @@ else
   AX_CHECK_COMPILE_FLAG([-g],[[DEBUG_CXXFLAGS="$DEBUG_CXXFLAGS -g"]],,[[$CXXFLAG_WERROR]])
 
   # -ftrapv and -fwrapv conflict, so we only set this if enable_debug=no
-  AX_CHECK_COMPILE_FLAG([-fwrapv],[CXXFLAGS="$CXXFLAGS -fwrapv"],,[[$CXXFLAG_WERROR]])
+  AX_CHECK_COMPILE_FLAG([-fwrapv],[CXXFLAGS="$CXXFLAGS -fwrapv"; CFLAGS="$CFLAGS -fwrapv"],,[[$CXXFLAG_WERROR]])
 fi
 
 if test x$use_sanitizers != x; then
@@ -891,8 +891,8 @@ case $host in
 esac
 
 # Additional Zcash flags
-AX_CHECK_COMPILE_FLAG([-fno-strict-aliasing],[CXXFLAGS="$CXXFLAGS -fno-strict-aliasing"])
-AX_CHECK_COMPILE_FLAG([-ffp-contract=off],[CXXFLAGS="$CXXFLAGS -ffp-contract=off"])
+AX_CHECK_COMPILE_FLAG([-fno-strict-aliasing],[CXXFLAGS="$CXXFLAGS -fno-strict-aliasing"; CFLAGS="$CFLAGS -fno-strict-aliasing"])
+AX_CHECK_COMPILE_FLAG([-ffp-contract=off],[CXXFLAGS="$CXXFLAGS -ffp-contract=off"; CFLAGS="$CFLAGS -ffp-contract=off"])
 AX_CHECK_COMPILE_FLAG([-Wno-builtin-declaration-mismatch],[CXXFLAGS="$CXXFLAGS -Wno-builtin-declaration-mismatch"],,[[$CXXFLAG_WERROR]])
 
 LIBZCASH_LIBS="$BOOST_SYSTEM_LIB -lcrypto -lsodium $RUST_LIBS"
