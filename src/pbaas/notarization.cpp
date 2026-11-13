@@ -12540,6 +12540,8 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
         return state.Error("unable to get last confirmed notarization");
     }
 
+    bool isAfterSecondCleanupStarts = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1));
+
     if (currentFinalization.IsConfirmed() || currentFinalization.IsRejected())
     {
         CUTXORef finalizationOutput = currentFinalization.output;
@@ -12598,7 +12600,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
         {
             LOCK(mempool.cs);
 
-            if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+            if (isAfterSecondCleanupStarts)
             {
                 // a new confirmed finalization spends every confirmed finalization of its currency that is unspent as of the prior
                 // block, so confirmed finalizations always form one chain; the DB index alone is used so that live and syncing nodes
@@ -13282,7 +13284,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
             }
         }
     }
-    else if (notarization.currencyID != ASSETCHAINS_CHAINID)
+    else if (normalizedNotarization.currencyID != ASSETCHAINS_CHAINID)
     {
         // no pending notarization may be made for a notarization that is not still a descendent of the last
         // confirmed notarization. if the hash is null, it references the same transaction, and if there is a
@@ -13339,7 +13341,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
             }
 
             std::tuple<uint32_t, CTransaction, CUTXORef, CPBaaSNotarization> priorNotarizationInfo =
-                GetPriorReferencedNotarization(finalizedTx, currentFinalization.output.n, notarization);
+                GetPriorReferencedNotarization(finalizedTx, currentFinalization.output.n, normalizedNotarization);
 
             if (!std::get<0>(priorNotarizationInfo))
             {
@@ -13397,8 +13399,11 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
 
         for (auto &oneItem : evidenceVec)
         {
+            std::map<CIdentityID, CIdentitySignature> notarySetRejects, notarySetConfirms;
             if (oneItem.second.GetNotarySignatures().size() &&
-                oneItem.second.CheckSignatureConfirmation(objHash, hw.GetHashType(), notarySet, pNotaryCurrency->MinimumNotariesConfirm(), height - 1) != CNotaryEvidence::EStates::STATE_INVALID)
+                oneItem.second.CheckSignatureConfirmation(objHash, hw.GetHashType(), notarySet, pNotaryCurrency->MinimumNotariesConfirm(), height - 1,
+                                                        nullptr, &notarySetRejects, &notarySetConfirms) != CNotaryEvidence::EStates::STATE_INVALID &&
+                (!isAfterSecondCleanupStarts || notarySetRejects.size() || notarySetConfirms.size()))
             {
                 hasSignature = true;
                 break;
@@ -13406,7 +13411,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
         }
 
         if (!hasSignature &&
-            (evidenceVec.size() || IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1))))
+            (evidenceVec.size() || isAfterSecondCleanupStarts))
         {
             // declared evidence inputs must exist
             for (auto oneInIdx : currentFinalization.evidenceInputs)

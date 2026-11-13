@@ -6245,7 +6245,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     newCurrencyState.viaConversionPrice[viaIdx] = newPrices[viaIdx];
                 }
             }
-            if (!dummyCurState.IsValid())
+            if (!dummyCurState.IsValid(isAfterSecondBridgeCleanupWindowStarts))
             {
                 printf("%s: Invalid currency conversions for import to %s : %s\n", __func__, importCurrencyDef.name.c_str(), EncodeDestination(CIdentityID(importCurrencyDef.GetID())).c_str());
                 LogPrintf("%s: Invalid currency conversions for import to %s : %s\n", __func__, importCurrencyDef.name.c_str(), EncodeDestination(CIdentityID(importCurrencyDef.GetID())).c_str());
