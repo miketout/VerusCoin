@@ -149,7 +149,7 @@ class CVerusHashV2
             int size = pdesc->keySizeInBytes;
             int refreshsize = verusclhasher::keymask(size) + 1;
             // skip keygen if it is the current key
-            if (pdesc->seed != *((uint256 *)seedBytes32))
+            if (!pdesc->seedValid || pdesc->seed != *((uint256 *)seedBytes32))
             {
                 // generate a new key by chain hashing with Haraka256 from the last curbuf
                 int n256blks = size >> 5;
@@ -169,6 +169,7 @@ class CVerusHashV2
                     memcpy(pkey, buf, nbytesExtra);
                 }
                 pdesc->seed = *((uint256 *)seedBytes32);
+                pdesc->seedValid = true;
                 memcpy(key + size, key, refreshsize);
             }
             else

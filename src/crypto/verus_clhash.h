@@ -79,6 +79,7 @@ struct verusclhash_descr
 {
     uint256 seed;
     uint32_t keySizeInBytes;
+    bool seedValid;
 };
 
 struct thread_specific_ptr {
@@ -277,6 +278,7 @@ struct verusclhasher {
             if (verusclhasher_descr.reset((unsigned char *)alloc_aligned_buffer(sizeof(verusclhash_descr))), pdesc = (verusclhash_descr *)verusclhasher_descr.get())
             {
                 pdesc->keySizeInBytes = keySizeInBytes;
+                pdesc->seedValid = false;
             }
             else
             {

@@ -1313,7 +1313,7 @@ bool mine_verus_v2_port(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &fin
 	unsigned char *curBuf = vh.CurBuffer();
 
     // skip keygen if it is the current key
-    if (pdesc->seed != *((uint256 *)curBuf))
+    if (!pdesc->seedValid || pdesc->seed != *((uint256 *)curBuf))
     {
         // generate a new key by chain hashing with Haraka256 from the last curbuf
         // assume 256 bit boundary
@@ -1327,6 +1327,7 @@ bool mine_verus_v2_port(CBlockHeader &bh, CVerusHashV2bWriter &vhw, uint256 &fin
             pkey += 32;
         }
         pdesc->seed = *((uint256 *)curBuf);
+        pdesc->seedValid = true;
         memcpy(hasherrefresh, hashKey, keyrefreshsize);
         memset(((unsigned char *)hasherrefresh) + keyrefreshsize, 0, keysize - keyrefreshsize);
     }
