@@ -1518,7 +1518,9 @@ uint64_t ReadCompactSizeNoThrow(const unsigned char *pData, uint32_t &offset)
     }
     else if (chSize == 253)
     {
-        nSizeRet = *(uint16_t *)pData;
+        uint16_t le16;
+        memcpy(&le16, pData + offset, sizeof(le16));
+        nSizeRet = le16;
         offset += 2;
     }
     if (nSizeRet > (uint64_t)MAX_SIZE)
@@ -4292,11 +4294,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                 if (!state.IsInvalid() && !state.IsError() && state.GetRejectCode() != REJECT_TRANSIENT)
                 {
                     state.DoS(0, false, REJECT_INVALID, "bad-txns-rejected-without-state");
-                }
-
-                if (state.IsInvalid() && !fJustCheck)
-                {
-                    InvalidBlockFound(pindex, state, Params());
                 }
                 return false; // Failure reason has been set in validation state object
             }

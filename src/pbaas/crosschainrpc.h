@@ -1193,26 +1193,38 @@ public:
 
     bool IsValid() const
     {
-        return (nVersion != PBAAS_VERSION_INVALID) &&
-                (!notaries.size() || minNotariesConfirm > (notaries.size() >> 1)) &&
-                !(options & ~OPTIONS_FLAG_MASK) &&
-                !(IsPBaaSChain() && (NoIDs() || IsToken() || IsFractional())) &&
-                idReferralLevels <= MAX_ID_REFERRAL_LEVELS &&
-                name.size() > 0 &&
-                name.size() <= (KOMODO_ASSETCHAIN_MAXLEN - 1) &&
-                rewards.size() == rewardsDecay.size() &&
-                rewards.size() == halving.size() &&
-                rewards.size() == eraEnd.size() &&
-                std::max({rewards.size(), rewardsDecay.size(), halving.size(), eraEnd.size()}) <= ASSETCHAINS_MAX_ERAS &&
-                GetCurrenciesMap().size() == currencies.size() &&
-                preLaunchDiscount >= 0 &&
-                preLaunchDiscount < SATOSHIDEN &&
-                preLaunchCarveOut >= 0 &&
-                preLaunchCarveOut < SATOSHIDEN &&
-                proofProtocol >= PROOF_PBAASMMR &&
-                proofProtocol <= PROOF_LASTPROTOCOL &&
-                notarizationProtocol >= NOTARIZATION_AUTO &&
-                notarizationProtocol <= NOTARIZATION_NOTARY_LAST;
+        bool isValid = (nVersion != PBAAS_VERSION_INVALID) &&
+                        (!notaries.size() || minNotariesConfirm > (notaries.size() >> 1)) &&
+                        !(options & ~OPTIONS_FLAG_MASK) &&
+                        !(IsPBaaSChain() && (NoIDs() || IsToken() || IsFractional())) &&
+                        idReferralLevels <= MAX_ID_REFERRAL_LEVELS &&
+                        name.size() > 0 &&
+                        name.size() <= (KOMODO_ASSETCHAIN_MAXLEN - 1) &&
+                        rewards.size() == rewardsDecay.size() &&
+                        rewards.size() == halving.size() &&
+                        rewards.size() == eraEnd.size() &&
+                        std::max({rewards.size(), rewardsDecay.size(), halving.size(), eraEnd.size()}) <= ASSETCHAINS_MAX_ERAS &&
+                        GetCurrenciesMap().size() == currencies.size() &&
+                        preLaunchDiscount >= 0 &&
+                        preLaunchDiscount < SATOSHIDEN &&
+                        preLaunchCarveOut >= 0 &&
+                        preLaunchCarveOut < SATOSHIDEN &&
+                        proofProtocol >= PROOF_PBAASMMR &&
+                        proofProtocol <= PROOF_LASTPROTOCOL &&
+                        notarizationProtocol >= NOTARIZATION_AUTO &&
+                        notarizationProtocol <= NOTARIZATION_NOTARY_LAST;
+        if (isValid && notaries.size())
+        {
+            std::set<uint160> notarySet(notaries.begin(), notaries.end());
+            if (notarySet.size() != notaries.size() ||
+                minNotariesConfirm > (int32_t)notaries.size() ||
+                (notarizationProtocol == NOTARIZATION_NOTARY_CHAINID &&
+                 (notaries.size() != 1 || notaries[0] != GetID())))
+            {
+                isValid = false;
+            }
+        }
+        return isValid;
     }
 
     uint32_t ChainOptions() const
@@ -1905,8 +1917,8 @@ static const uint32_t PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_START = 1783443600; // ""
 static const uint32_t PBAAS_BRIDGEEXPLOIT_CLEANUP_TIME_END = 1783620000; // Thursday, July 9, 2026 at 6:00:00 PM UTC
 static const uint32_t PBAAS_TESTNET_IDENTITY_START_CHECKSER = 1786147200; // Saturday, August 8, 2026 at 12:00:00 AM UTC
 
-static const uint32_t PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START = 1794686400; // Saturday, November 14, 2026 at 12:00:00 PM UTC
-static const uint32_t PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_END = PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START; // Sunday, November 1, 2026 at 12:00:00 AM UTC
+static const uint32_t PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START = 1795478400; // Saturday, November 24, 2026 at 12:00:00 AM UTC
+static const uint32_t PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_END = 1795564800; // Sunday, November 1, 2026 at 12:00:00 AM UTC
 
 static const uint32_t PBAAS_TESTING_DOUBLE_CAP_TIME_START = PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START; // Saturday, November 14, 2026 at 12:00:00 PM UTC
 

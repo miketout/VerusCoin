@@ -5024,6 +5024,12 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                 {
                     CAmount newReserveIn = curTransfer.FirstValue() - CReserveTransactionDescriptor::CalculateConversionFee(curTransfer.FirstValue());
 
+                    // the floor-inclusive fee decides whether the transfer can pay at all (below); after the window the cap and the
+                    // launch minimum see the fee that execution subtracts (CalculateConversionFeeNoMin at the conversion further down)
+                    CAmount executedReserveIn = isAfterSecondBridgeCleanupWindowStarts ?
+                                                    curTransfer.FirstValue() - CReserveTransactionDescriptor::CalculateConversionFeeNoMin(curTransfer.FirstValue()) :
+                                                    newReserveIn;
+
                     auto reserveIdx = currencyIndexMap.find(curTransfer.FirstCurrency());
                     if (reserveIdx == currencyIndexMap.end())
                     {
@@ -5086,7 +5092,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                             if (!curTransfer.IsRefund())
                             {
                                 // check if it exceeds pre-conversion maximums, and refund if so
-                                CAmount newTotalReserves = cumulativeReserveIn + newReserveIn +
+                                CAmount newTotalReserves = cumulativeReserveIn + executedReserveIn +
                                                                 (preConvertedReserves.valueMap.count(reserveIdx->first) ?
                                                                     preConvertedReserves.valueMap[reserveIdx->first] :
                                                                     0);
@@ -5103,7 +5109,7 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                         {
                             CCurrencyValueMap cumulativeReservesIn = CCurrencyValueMap(importCurrencyState.currencies, importCurrencyState.primaryCurrencyIn);
 
-                            CCurrencyValueMap newTotalReserves = cumulativeReservesIn + newReserveIn + preConvertedReserves;
+                            CCurrencyValueMap newTotalReserves = cumulativeReservesIn + executedReserveIn + preConvertedReserves;
 
                             if (newTotalReserves > CCurrencyValueMap(importCurrencyDef.currencies, importCurrencyDef.maxPreconvert))
                             {

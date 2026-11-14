@@ -2662,8 +2662,8 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
 
     if (!currencyAdjustmentsUni.isObject() ||
         !restitutionConversionsUni.isObject() ||
-        !(currenciesUni.isArray() && currenciesUni.size() != 0 && currenciesUni[0].isObject()) ||
-        !(currencyStatesUni.isArray() && currencyStatesUni.size() != 0 && currencyStatesUni[0].isObject()) ||
+        !(currenciesUni.isArray() && (currenciesUni.size() == 0 || currenciesUni[0].isObject())) ||
+        !(currencyStatesUni.isArray() && (currencyStatesUni.size() == 0 || currencyStatesUni[0].isObject())) ||
         !adjustingDestinationsUni.isObject() ||
         !chainExpiriesUni.isObject() ||
         (!offChainTransactionsUni.isNull() && !offChainTransactionsUni.isArray()))

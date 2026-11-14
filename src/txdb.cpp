@@ -763,7 +763,7 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
     // all transactions made for all chains, including the fees in native currency needed
     std::multimap<uint160,std::pair<CMutableTransaction,CCurrencyValueMap>> transactionsAndFeesNeeded;
 
-    if (!expiryForAllChains.count(ASSETCHAINS_CHAINID) || expiryForAllChains.size() < 4)
+    if (!outputCurrencyStatesOnly && (!expiryForAllChains.count(ASSETCHAINS_CHAINID) || expiryForAllChains.size() < 4))
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Transaction expiration height for all chains must be represented in an adjustment operation");
     }

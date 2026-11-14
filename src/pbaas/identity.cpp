@@ -1524,6 +1524,13 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
         return state.Error("Invalid identity parent of new identity registration");
     }
 
+    // the only registration builder sets the registering chain (rpc/pbaasrpc.cpp:15293); IsInvalidMutation pins any other
+    // value for the life of the identity, so refusing it cannot break a working client
+    if (newIdentity.systemID != ASSETCHAINS_CHAINID)
+    {
+        return state.Error("Invalid system ID in new identity registration");
+    }
+
     // CHECK #3 - if dupID is valid, we need to be spending it to recover. redefinition is invalid
     CTxIn idTxIn;
     uint32_t priorHeightOut;

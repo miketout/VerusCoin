@@ -1444,9 +1444,13 @@ bool CPBaaSNotarization::NextNotarizationInfo(const CCurrencyDefinition &sourceS
             else
             {
                 CAmount conversionFee = CReserveTransactionDescriptor::CalculateConversionFee(reserveTransfer.FirstValue());
+                CAmount executedFee = preconvertFeeFloorActive ?
+                                        CReserveTransactionDescriptor::CalculateConversionFeeNoMin(reserveTransfer.FirstValue()) :
+                                        conversionFee;
                 // check if it exceeds pre-conversion maximums, and refund if so
                 CCurrencyValueMap newReserveIn = CCurrencyValueMap(std::vector<uint160>({reserveTransfer.FirstCurrency()}),
-                                                                   std::vector<int64_t>({reserveTransfer.FirstValue() - conversionFee}));
+                                                                   std::vector<int64_t>({reserveTransfer.FirstValue() - executedFee}));
+
                 CCurrencyValueMap newTotalReserves;
                 if (improvedMinCheck)
                 {

@@ -705,6 +705,21 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                     return state.Error("Invalid expected supply for currency definition in tx 2: " + tx.GetHash().GetHex());
                 }
             }
+            else if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+            {
+                // no reserve currencies: the supply cap still binds preallocations and converter issuance
+                CCurrencyState supplyTracker;
+                supplyTracker.supply = 0;
+                supplyTracker.supply = supplyTracker.AddToSupply(importCurrency.GetTotalPreallocation());
+                if (importCurrency.IsPBaaSChain())
+                {
+                    supplyTracker.supply = supplyTracker.AddToSupply(importCurrency.gatewayConverterIssuance);
+                }
+                if (supplyTracker.supply > MAX_SUPPLY)
+                {
+                    return state.Error("Invalid expected supply for currency definition in tx 2: " + tx.GetHash().GetHex());
+                }
+            }
 
             // if launch is complete, it should be one of:
             // 1) a block 1 notarization
@@ -4301,6 +4316,12 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
                 return state.Error("Invalid ETH NFT address in native currency ID");
             }
         }
+        else if (nativeType == CTransferDestination::DEST_ETH &&
+                 (newCurrency.nativeCurrencyID.destination.size() != 20 ||
+                  uint160(newCurrency.nativeCurrencyID.destination).IsNull()))
+        {
+            return state.Error("Invalid ETH contract address in native currency ID");
+        }
         int auxCount = newCurrency.nativeCurrencyID.AuxDestCount();
         if (auxCount)
         {
@@ -4350,11 +4371,23 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
     {
         return state.Error("Currency definition must include launch system native currency in currencies");
     }
-    if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) &&
-        (newCurrency.preconverted.size() != newCurrency.currencies.size() ||
-         newCurrency.contributions.size() != newCurrency.currencies.size()))
+    if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
     {
-        return state.Error("Currency definition vectors must match the number of currencies");
+        if (newCurrency.preconverted.size() != newCurrency.currencies.size() ||
+            newCurrency.contributions.size() != newCurrency.currencies.size())
+        {
+            return state.Error("Currency definition vectors must match the number of currencies");
+        }
+        for (const std::vector<int64_t> &oneVec : {newCurrency.minPreconvert, newCurrency.maxPreconvert, newCurrency.contributions, newCurrency.preconverted, newCurrency.conversions})
+        {
+            for (auto oneVal : oneVec)
+            {
+                if (oneVal < 0)
+                {
+                    return state.Error("Negative amount in currency definition vectors");
+                }
+            }
+        }
     }
 
     if (!isBlockOneDefinition)
@@ -5415,7 +5448,8 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
         }
 
         uint32_t chainTime = chainActive.ChainTimeAtOrBefore(height - 1);
-        if (IsAfterSecondBridgeCleanupWindowStarts(chainTime))
+        bool isAfterSecondCleanupWindowStart = IsAfterSecondBridgeCleanupWindowStarts(chainTime);
+        if (isAfterSecondCleanupWindowStart)
         {
             CCurrencyDefinition nftCheckDef = ConnectedChains.GetCachedCurrency(rt.FirstCurrency());
             if (nftCheckDef.IsValid() && nftCheckDef.IsNFTToken() && rt.FirstValue() != 1)
@@ -5710,7 +5744,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                     return state.Error("Cannot get info for import containing reserve transfer: " + rt.ToUniValue().write(1,2));
                 }
 
-                if (IsAfterSecondBridgeCleanupWindowStarts(chainTime) &&
+                if (isAfterSecondCleanupWindowStart &&
                     importCurrencyID != systemDestID &&
                     !currenciesAndNotarizations.count(importCurrencyID) &&
                     !std::get<0>(GetLastConfirmedNotarization(importCurrencyID, height - 1)))
@@ -6043,7 +6077,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
 
                 if (CheckImportPassThrough() == 0 && idToExport.IsValid())
                 {
-                    if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+                    if (isAfterSecondCleanupWindowStart)
                     {
                         CIdentity checkIdentity(registeredIdentity);
                         checkIdentity.contentMap.clear();
@@ -6249,6 +6283,13 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 {
                     return state.Error("Cannot get system for next leg of transfer: " + rt.ToUniValue().write(1,2));
                 }
+
+                if (isAfterSecondCleanupWindowStart &&
+                    nextLegDest.SystemOrGatewayID() != nlDestID)
+                {
+                    return state.Error("Next leg of transfer must target a system: " + rt.ToUniValue().write(1,2));
+                }
+
                 if (importCurrencyDef.SystemOrGatewayID() == ASSETCHAINS_CHAINID &&
                     nextLegDest.SystemOrGatewayID() != ASSETCHAINS_CHAINID)
                 {
