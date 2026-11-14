@@ -18289,8 +18289,26 @@ UniValue getidentitytrust(const UniValue& params, bool fHelp)
 
     LOCK(pwalletMain->cs_wallet);
     auto identityTrustMap = pwalletMain->GetIdentityTrustMap();
+
+    std::set<uint160> filter;
+    if (params[0].isArray())
+    {
+        for (int i = 0; i < params[0].size(); i++)
+        {
+            CTxDestination dest = DecodeDestination(uni_get_str(params[0][i]));
+            if (dest.which() != COptCCParams::ADDRTYPE_ID)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid ID in filter: " + uni_get_str(params[0][i]));
+            }
+            filter.insert(GetDestinationID(dest));
+        }
+    }
     for (auto &oneEntry : identityTrustMap)
     {
+        if (filter.size() && !filter.count(oneEntry.first))
+        {
+            continue;
+        }
         setRatings.pushKV(EncodeDestination(CIdentityID(oneEntry.first)), oneEntry.second.ToUniValue());
     }
     retVal.pushKV("setratings", setRatings);
@@ -18434,8 +18452,26 @@ UniValue getcurrencytrust(const UniValue& params, bool fHelp)
 
     LOCK(pwalletMain->cs_wallet);
     auto currencyTrustMap = pwalletMain->GetCurrencyTrustMap();
+
+    std::set<uint160> filter;
+    if (params[0].isArray())
+    {
+        for (int i = 0; i < params[0].size(); i++)
+        {
+            CTxDestination dest = DecodeDestination(uni_get_str(params[0][i]));
+            if (dest.which() != COptCCParams::ADDRTYPE_ID)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid ID in filter: " + uni_get_str(params[0][i]));
+            }
+            filter.insert(GetDestinationID(dest));
+        }
+    }
     for (auto &oneEntry : currencyTrustMap)
     {
+        if (filter.size() && !filter.count(oneEntry.first))
+        {
+            continue;
+        }
         setRatings.pushKV(EncodeDestination(CIdentityID(oneEntry.first)), oneEntry.second.ToUniValue());
     }
     retVal.pushKV("setratings", setRatings);
