@@ -18322,13 +18322,13 @@ UniValue setcurrencytrust(const UniValue& params, bool fHelp)
     if (fHelp || params.size() != 1)
     {
         throw runtime_error(
-            "setcurrencytrust '{\"clearall\": bool, \"setratings\":[{\"currencyid\":JSONRatingObject},...], \"removeratings\":[\"currencyid\",...], \"currencytrustmode\":<n>}'\n"
+            "setcurrencytrust '{\"clearall\": bool, \"setratings\":{\"currencyid\":JSONRatingObject,...}, \"removeratings\":[\"currencyid\",...], \"currencytrustmode\":<n>}'\n"
             "\n\n"
 
             "\nArguments\n"
             "{\n"
             "    \"clearall\": bool                             (bool, optional) clears all wallet currency trust lists before adding, removing, or trust mode operations\n"
-            "    \"setratings\":[{\"currencyid\":JSONRatingObject},...] (objarray, optional) replaces ratings for specified currencies with those given\n"
+            "    \"setratings\":{\"currencyid\":JSONRatingObject,...} (object, optional) replaces ratings for specified currencies with those given\n"
             "    \"removeratings\":[\"currencyid\",...]                 (strarray, optional) erases ratings for currencies specified\n"
             "    \"currencytrustmode\": <n>                     (number, optional) 0 = spend/list all currencies, 1 = only spend/list those rated approved, 2 = spend/list all but those on block list\n"
             "}\n"
@@ -18337,8 +18337,8 @@ UniValue setcurrencytrust(const UniValue& params, bool fHelp)
             "no return on success, else error\n"
 
             "\nExamples:\n"
-            + HelpExampleCli("setcurrencytrust", "\'{\"clearall\": bool, \"setratings\":[{\"currencyid\":JSONRatingObject},...], \"removeratings\":[\"currencyid\",...], \"currencytrustmode\":<n>}\'")
-            + HelpExampleRpc("setcurrencytrust", "\'{\"clearall\": bool, \"setratings\":[{\"currencyid\":JSONRatingObject},...], \"removeratings\":[\"currencyid\",...], \"currencytrustmode\":<n>}\'")
+            + HelpExampleCli("setcurrencytrust", "\'{\"clearall\": bool, \"setratings\":{\"currencyid\":JSONRatingObject,...}, \"removeratings\":[\"currencyid\",...], \"currencytrustmode\":<n>}\'")
+            + HelpExampleRpc("setcurrencytrust", "\'{\"clearall\": bool, \"setratings\":{\"currencyid\":JSONRatingObject,...}, \"removeratings\":[\"currencyid\",...], \"currencytrustmode\":<n>}\'")
         );
     }
     CheckPBaaSAPIsValid();
