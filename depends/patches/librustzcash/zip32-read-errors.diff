@@ -1,0 +1,21 @@
+diff --git a/librustzcash/src/rustzcash.rs b/librustzcash/src/rustzcash.rs
+--- a/librustzcash/src/rustzcash.rs
++++ b/librustzcash/src/rustzcash.rs
+@@ -1665,4 +1665,6 @@
+ ) -> bool {
+-    let xfvk_parent = zip32::ExtendedFullViewingKey::read(&unsafe { *xfvk_parent }[..])
+-        .expect("valid ExtendedFullViewingKey");
++    let xfvk_parent = match zip32::ExtendedFullViewingKey::read(&unsafe { *xfvk_parent }[..]) {
++        Ok(xfvk_parent) => xfvk_parent,
++        Err(_) => return false,
++    };
+     let i = zip32::ChildIndex::from_index(i);
+@@ -1687,4 +1689,6 @@
+ ) -> bool {
+-    let xfvk = zip32::ExtendedFullViewingKey::read(&unsafe { *xfvk }[..])
+-        .expect("valid ExtendedFullViewingKey");
++    let xfvk = match zip32::ExtendedFullViewingKey::read(&unsafe { *xfvk }[..]) {
++        Ok(xfvk) => xfvk,
++        Err(_) => return false,
++    };
+     let j = zip32::DiversifierIndex(unsafe { *j });
