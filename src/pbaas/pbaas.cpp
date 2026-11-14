@@ -7026,7 +7026,7 @@ bool CConnectedChains::CheckVerusPBaaSAvailable()
                     {
                         bool success = false;
                         params = UniValue(UniValue::VARR);
-                        params.push_back(EncodeDestination(CIdentityID(thisChain.GetID())));
+                        params.push_back(EncodeDestination(CIdentityID(ASSETCHAINS_CHAINID)));
                         chainDef = find_value(RPCCallRoot("getcurrency", params), "result");
                         if (!chainDef.isNull())
                         {
@@ -7034,10 +7034,12 @@ bool CConnectedChains::CheckVerusPBaaSAvailable()
                             CCurrencyDefinition currencyDef(chainDef);
                             if (currencyDef.IsValid() && checkState.IsValid() && (checkState.IsLaunchConfirmed()))
                             {
+                                uint32_t notaryHeight = NotaryChainHeight();
+                                LOCK(cs_main);
                                 thisChain = currencyDef;
-                                if (NotaryChainHeight() >= thisChain.startBlock)
+                                if (notaryHeight >= thisChain.startBlock)
                                 {
-                                    readyToStart = true;    // this only gates mining of block one, to be sure we have the latest definition
+                                    readyToStart = true;
                                 }
                                 success = true;
                             }
@@ -13107,7 +13109,12 @@ void CConnectedChains::SubmissionThread()
 
                     }
                 }
-                if (height > ConnectedChains.ThisChain().GetMinBlocksToStartNotarization() &&
+                CCurrencyDefinition thisChainDef;
+                {
+                    LOCK(cs_main);
+                    thisChainDef = ConnectedChains.ThisChain();
+                }
+                if (height > thisChainDef.GetMinBlocksToStartNotarization() &&
                     lastImportTime < (GetAdjustedTime() - 30))
                 {
                     // check for exports on this chain that we should send to the notary and do so
@@ -13118,7 +13125,7 @@ void CConnectedChains::SubmissionThread()
                     std::vector<std::pair<std::pair<CInputDescriptor, CPartialTransactionProof>, std::vector<CReserveTransfer>>> exports;
                     CPBaaSNotarization lastConfirmed;
                     CUTXORef lastConfirmedUTXO;
-                    exports = GetPendingExports(ConnectedChains.ThisChain(),
+                    exports = GetPendingExports(thisChainDef,
                                                 notaryChain.chainDefinition,
                                                 lastConfirmed,
                                                 lastConfirmedUTXO);

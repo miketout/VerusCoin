@@ -2459,6 +2459,9 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
         bool isPBaaSBlock1 = !isVerusActive && nHeight == 1;
         if (isPBaaSBlock1)
         {
+            // block one construction rewrites ConnectedChains.ThisChain() (CheckVerusPBaaSAvailable, GetBlockOneLaunchNotarization,
+            // UpdateCachedCurrency); thisChain is guarded by cs_main, which the RPC caller holds and the internal miner thread does not
+            LOCK(cs_main);
             CPBaaSNotarization launchNotarization;
 
             if (!ConnectedChains.readyToStart &&
@@ -4406,11 +4409,17 @@ void static BitcoinMiner_noeq()
                     static uint32_t counter;
                     if ( counter++ % 40 == 0 )
                     {
-                        if (!IsVerusActive() &&
-                            ConnectedChains.IsNotaryAvailable() &&
-                            !ConnectedChains.readyToStart)
+                        bool waitingForLaunch = false;
+                        uint32_t startBlock = 0;
+                        if (!IsVerusActive() && ConnectedChains.IsNotaryAvailable())
                         {
-                            fprintf(stderr,"waiting for confirmation of launch at or after block %u on %s chain to start\n", (uint32_t)ConnectedChains.ThisChain().startBlock,
+                            LOCK(cs_main);
+                            waitingForLaunch = !ConnectedChains.readyToStart;
+                            startBlock = ConnectedChains.ThisChain().startBlock;
+                        }
+                        if (waitingForLaunch)
+                        {
+                            fprintf(stderr,"waiting for confirmation of launch at or after block %u on %s chain to start\n", startBlock,
                                                                                             ConnectedChains.FirstNotaryChain().chainDefinition.name.c_str());
                         }
                         else
