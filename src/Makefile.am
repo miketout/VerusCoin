@@ -415,7 +415,7 @@ endif
 # Verus hash specific library - optimized
 crypto_libverus_crypto_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 crypto_libverus_crypto_a_CFLAGS = -funroll-loops -fomit-frame-pointer -fno-strict-aliasing $(PIC_FLAGS) $(SSE2NEON_CFLAGS) $(VERUS_ISA_CFLAGS)
-crypto_libverus_crypto_a_CXXFLAGS = -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS) $(SSE2NEON_CXXFLAGS) $(VERUS_ISA_CXXFLAGS)
+crypto_libverus_crypto_a_CXXFLAGS = -funroll-loops -fomit-frame-pointer -fno-strict-aliasing $(PIC_FLAGS) $(AM_CXXFLAGS) $(SSE2NEON_CXXFLAGS) $(VERUS_ISA_CXXFLAGS)
 
 crypto_libverus_crypto_a_SOURCES = \
   crypto/haraka.h \
@@ -426,7 +426,7 @@ crypto_libverus_crypto_a_SOURCES = \
 # Verus hash specific library - portable
 crypto_libverus_portable_crypto_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 crypto_libverus_portable_crypto_a_CFLAGS = -funroll-loops -fomit-frame-pointer -fno-strict-aliasing $(PIC_FLAGS) $(SSE2NEON_CFLAGS)
-crypto_libverus_portable_crypto_a_CXXFLAGS = -funroll-loops -fomit-frame-pointer $(PIC_FLAGS) $(AM_CXXFLAGS) $(SSE2NEON_CXXFLAGS)
+crypto_libverus_portable_crypto_a_CXXFLAGS = -funroll-loops -fomit-frame-pointer -fno-strict-aliasing $(PIC_FLAGS) $(AM_CXXFLAGS) $(SSE2NEON_CXXFLAGS)
 
 crypto_libverus_portable_crypto_a_SOURCES = \
   crypto/haraka_portable.h \
