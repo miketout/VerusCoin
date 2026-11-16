@@ -2214,6 +2214,14 @@ bool CWallet::VerusSelectStakeOutput(CBlock *pBlock, arith_uint256 &hashResult, 
             if (solutionVersion >= CActivationHeight::ACTIVATE_STAKEHEADER)
             {
                 LOCK(cs_main);
+
+                CBlockIndex *pSrcIndex = chainActive.Height() >= srcIndex ? chainActive[srcIndex] : nullptr;
+                if (!pSrcIndex || pSrcIndex->GetBlockHash() != pwinner->tx->hashBlock)
+                {
+                    LogPrint("staking", "%s: stake source block changed or left the active chain, abandoning this attempt\n", __func__);
+                    return false;
+                }
+
                 CDataStream headerStream = CDataStream(SER_NETWORK, PROTOCOL_VERSION);
 
                 pBlock->nTime = std::max(chainActive.LastTip()->GetMedianTimePast()+1, GetAdjustedTime());

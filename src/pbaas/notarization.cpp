@@ -7963,7 +7963,7 @@ int CChainNotarizationData::BestConfirmedNotarization(const CCurrencyDefinition 
         // TODO AUTONOTARIZATION: reenable full autonotarization after review and confirmation of security without witnesses
         else if (forks.size() &&
                  (forks[0].size() >= std::max(minNotaryConfirms, 1) ||
-                  IsAfterBridgeCleanupWindowStarts(chainActive.LastTip()->nTime) ||
+                  IsAfterBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height)) ||
                   ConnectedChains.ThisChain().notarizationProtocol != CCurrencyDefinition::NOTARIZATION_AUTO))
         {
             bestFork = forks[0];
@@ -11668,7 +11668,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                     }
 
                     // TODO AUTONOTARIZATION: undo the time-based disablement after review and confirmation of return to autonotarization
-                    bool signatureRequired = IsAfterBridgeCleanupWindowStarts(chainActive.LastTip()->nTime) ||
+                    bool signatureRequired = IsAfterBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) ||
                                              !curDef.IsPBaaSChain() ||
                                              curDef.notarizationProtocol != curDef.NOTARIZATION_AUTO ||
                                              curDef.proofProtocol != curDef.PROOF_PBAASMMR;

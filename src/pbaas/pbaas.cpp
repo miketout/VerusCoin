@@ -5475,6 +5475,50 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                                                 CIdentity::LookupIdentity(GetDestinationID(TransferDestinationToDestination(bridgeAdjustingAddresses[ASSETCHAINS_CHAINID])), height) :
                                                 CIdentity();
 
+                // the interpreter verifies the listed signatures only when vin[0] spends a crypto-condition whose condition
+                // includes the adjuster. resolve the spent output from the chainstate, then the tx index (never the mempool, so
+                // every node reaches the same verdict for a block), and judge the consensus spend script, which substitutes
+                // the adjuster for affected outputs during the window
+                bool boundToAdjuster = false;
+                if (tx.vin.size() && adjusterIdentity.IsValidUnrevoked() && smartSigs.IsValid() && smartSigs.sigHashType == SIGHASH_ALL)
+                {
+                    const CCoins *pSpentCoins = pcoinsTip->AccessCoins(tx.vin[0].prevout.hash);
+                    CCoins parentCoins;
+                    if (!(pSpentCoins && pSpentCoins->IsAvailable(tx.vin[0].prevout.n)))
+                    {
+                        pSpentCoins = nullptr;
+                        CTransaction parentTx;
+                        uint256 parentBlockHash;
+                        if (myGetTransaction(tx.vin[0].prevout.hash, parentTx, parentBlockHash, false) &&
+                            tx.vin[0].prevout.n < parentTx.vout.size())
+                        {
+                            auto blockIt = mapBlockIndex.find(parentBlockHash);
+                            parentCoins = CCoins(parentTx, blockIt != mapBlockIndex.end() ? blockIt->second->GetHeight() : (int)height);
+                            pSpentCoins = &parentCoins;
+                        }
+                    }
+                    if (pSpentCoins)
+                    {
+                        COptCCParams spendP;
+                        const CScript &spendScript = CCoinsViewCache::GetSpendFor(pSpentCoins, tx.vin[0], chainTime);
+                        if (spendScript.IsPayToCryptoCondition(spendP) && spendP.IsValid() && spendP.version >= spendP.VERSION_V3)
+                        {
+                            for (auto &oneKey : spendP.vKeys)
+                            {
+                                if (oneKey.which() == COptCCParams::ADDRTYPE_ID && GetDestinationID(oneKey) == adjusterIdentity.GetID())
+                                {
+                                    boundToAdjuster = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!boundToAdjuster)
+                {
+                    return state.Error("Reserve adjustment transfer must be signed by the adjusting ID on a confirmed smart transaction input");
+                }
+
                 std::set<CTxDestination> adjusterSigDests = adjusterIdentity.IdentityPrimaryAddressKeySet();
 
                 int sigsValid = 0;
@@ -5834,7 +5878,15 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
             if (rt.IsPreConversion() || !feeConversionPrices.valueMap.count(systemDestID) || !feeConversionPrices.valueMap.count(rt.feeCurrencyID))
             {
                 // preconversion must have standard fees included
-                if (rt.feeCurrencyID == systemDestID || rt.feeCurrencyID == systemDest.launchSystemID)
+                if (rt.feeCurrencyID == systemDestID)
+                {
+                    // already counted when feeEquivalentInNative was initialized; before the window the legacy double count stands
+                    if (!isAfterSecondCleanupWindowStart)
+                    {
+                        feeEquivalentInNative += rt.nFees;
+                    }
+                }
+                else if (rt.feeCurrencyID == systemDest.launchSystemID)
                 {
                     feeEquivalentInNative += rt.nFees;
                 }

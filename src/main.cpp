@@ -7886,6 +7886,18 @@ CVerifyDB::~CVerifyDB()
 
 bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview, int nCheckLevel, int nCheckDepth)
 {
+    struct ChainStateScopeGuard {
+        int checkLevel;
+        ChainStateScopeGuard(int CheckLevel) : checkLevel(CheckLevel) {}
+        ~ChainStateScopeGuard()
+        {
+            if (checkLevel >= 3)
+            {
+                ConnectedChains.CheckOracleUpgrades();
+            }
+        }
+    };
+
     LOCK(cs_main);
     if (chainActive.Tip() == NULL || chainActive.Tip()->pprev == NULL)
         return true;
@@ -7904,6 +7916,9 @@ bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview,
     CValidationState state;
     // No need to verify JoinSplits twice
     auto verifier = libzcash::ProofVerifier::Disabled();
+
+    ChainStateScopeGuard scopeGuard(nCheckLevel);
+
     //fprintf(stderr,"start VerifyDB %u\n",(uint32_t)time(NULL));
     for (CBlockIndex* pindex = chainActive.Tip(); pindex && pindex->pprev; pindex = pindex->pprev)
     {
@@ -7965,12 +7980,6 @@ bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview,
                 return error("VerifyDB(): *** Error (%s) found unconnectable block at %d, hash=%s", state.GetRejectReason().c_str(), pindex->GetHeight(), pindex->GetBlockHash().ToString());
             }
         }
-    }
-
-    if (nCheckLevel >= 3)
-    {
-        // reset oracle notifications to the tip, if changed
-        ConnectedChains.CheckOracleUpgrades();
     }
 
     LogPrintf("No coin database inconsistencies in last %i blocks (%i transactions)\n", chainActive.Height() - pindexState->GetHeight(), nGoodTransactions);
