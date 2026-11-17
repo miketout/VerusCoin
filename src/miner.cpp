@@ -2622,6 +2622,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                         else
                         {
                             notarizationBuilder.SetFee(0);
+                            notarizationBuilder.SendChangeTo(CTxDestination(VERUS_NOTARYID));
                         }
 
                         std::vector<TransactionBuilderResult> buildResultVec;

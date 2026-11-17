@@ -798,7 +798,7 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
     std::set<uint160> converters;
     GetCurrencyDefinitions(ASSETCHAINS_CHAINID,
                            chains,
-                           CCurrencyDefinition::EQueryOptions::QUERY_LAUNCHSTATE_CONFIRM,
+                           CCurrencyDefinition::EQueryOptions::QUERY_NULL,
                            CCurrencyDefinition::EQueryOptions::QUERY_SYSTEMTYPE_LOCAL,
                            converters);
 
@@ -816,22 +816,37 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
     }
     // add all currencies we retrieved as well
 
+    std::map<uint160, CCurrencyDefinition> knownDefinitions;
+
     // find all currencies with either the original currencies or derivatives
     for (auto &oneCurrency : chains)
     {
+        knownDefinitions[oneCurrency.second.GetID()] = oneCurrency.second;
+
         CCoinbaseCurrencyState currencyState;
         CCurrencyValueMap adjustments;
+        uint160 curID = oneCurrency.second.GetID();
 
         if (!oneCurrency.second.IsFractional())
         {
-            adjustments.valueMap[oneCurrency.second.GetID()] = currencyAdjustments.valueMap.find(oneCurrency.second.GetID())->second;
+            auto f = currencyAdjustments.valueMap.find(curID);
+            if (f != currencyAdjustments.valueMap.end())
+            {
+                adjustments.valueMap[curID] = f->second;
+            }
         }
         else if (oneCurrency.second.systemID == ASSETCHAINS_CHAINID &&
                  (!crossChainCurrencies.count(oneCurrency.second.GetID()) || !crossChainCurrencyStates.count(oneCurrency.second.GetID())))
         {
             UniValue params(UniValue::VARR);
             params.push_back(EncodeDestination(CIdentityID(oneCurrency.second.GetID())));
-            currencyState = CCoinbaseCurrencyState(find_value(getcurrencystate(params, false), "currencystate"));
+
+            UniValue stateResult = getcurrencystate(params, false);
+            if (!(stateResult.isArray() && stateResult.size()))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid currency state for currency");
+            }
+            currencyState = CCoinbaseCurrencyState(find_value(stateResult[0], "currencystate"));
 
             if (!currencyState.IsValid())
             {
@@ -845,7 +860,8 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
 
         // we add all fractionals with more than one currency and matching non-fractionals in the adjustment set
         // unless already present
-        if (!(allCurrencies.count(oneCurrency.second.GetID()) || (!allCurrencies[oneCurrency.second.GetID()].second.IsValid()) && currencyState.IsValid()) &&
+        auto it = allCurrencies.find(curID);
+        if ((it == allCurrencies.end() || (!it->second.second.IsValid() && currencyState.IsValid())) &&
             ((oneCurrency.second.IsFractional() && oneCurrency.second.currencies.size() > 1) || adjustments.valueMap.size()))
         {
             allCurrencies[oneCurrency.second.GetID()] = {oneCurrency.second, currencyState};
@@ -987,23 +1003,31 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                 }
                 else
                 {
-                    // fractional
-                    auto curIt = allCurrencies.find(currencyStack.back().second.first.currencies[countStack.back()]);
+                    // fractional: an unadjusted reserve is not in allCurrencies, and the recursion needs only its definition
+                    uint160 reserveID = currencyStack.back().second.first.currencies[countStack.back()];
+                    std::pair<uint160, std::pair<CCurrencyDefinition, CCoinbaseCurrencyState>> reserveEntry;
+                    auto curIt = allCurrencies.find(reserveID);
+                    auto defIt = knownDefinitions.find(reserveID);
                     if (curIt != allCurrencies.end())
                     {
-                        auto adjCurIt = currenciesByAdjustment.find(curIt->first);
+                        reserveEntry = *curIt;
+                    }
+                    else if (defIt != knownDefinitions.end())
+                    {
+                        reserveEntry = {reserveID, {defIt->second, CCoinbaseCurrencyState()}};
+                    }
+                    if (reserveEntry.second.first.IsValid())
+                    {
+                        auto adjCurIt = currenciesByAdjustment.find(reserveID);
                         if (adjCurIt != currenciesByAdjustment.end())
                         {
-                            // we already have the answer. just clean up recursion
-                            currencyStack.push_back(*curIt);
-                            countStack.push_back((currencyStack.back().second.first.IsFractional() ? currencyStack.back().second.first.currencies.size() - 1 : 0));
+                            currencyStack.push_back(reserveEntry);
+                            countStack.push_back((reserveEntry.second.first.IsFractional() ? reserveEntry.second.first.currencies.size() - 1 : 0));
                             adjustmentStack.push_back(adjCurIt->second);
                         }
                         else
                         {
-                            // recurse, get results, and move to the next in this currency
-                            // results of each currency are stored before loop exit
-                            currencyStack.push_back(*curIt);
+                            currencyStack.push_back(reserveEntry);
                             countStack.push_back(-1);
                             adjustmentStack.push_back(CCurrencyValueMap());
                         }
@@ -1011,7 +1035,7 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                     }
                     else
                     {
-                        errors.push_back(std::string("Missing currency definition: ") + EncodeDestination(CIdentityID(currencyStack.back().second.first.currencies[countStack.back()])));
+                        errors.push_back(std::string("Missing currency definition: ") + EncodeDestination(CIdentityID(reserveID)));
                     }
                 }
             }

@@ -63,6 +63,7 @@ CIdentity::CIdentity(const CTransaction &tx, int *voutNum, const uint160 &onlyTh
 
 bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height, uint32_t expiryHeight) const
 {
+    bool heightLocking = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1));
     auto nSolVersion = CConstVerusSolutionVector::GetVersionByHeight(height);
     if (parent != newIdentity.parent ||
         (nSolVersion < CActivationHeight::ACTIVATE_IDCONSENSUS2 && name != newIdentity.name) ||
@@ -101,8 +102,10 @@ bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height,
                         return true;
                     }
                     else if (!newIdentity.IsLocked() &&
-                                (newIdentity.unlockAfter < (unlockAfter + expiryHeight)) &&
-                                !(unlockAfter > MAX_UNLOCK_DELAY && newIdentity.unlockAfter == (MAX_UNLOCK_DELAY + expiryHeight)))
+                             (heightLocking ?
+                                ((uint64_t)newIdentity.unlockAfter < std::min<uint64_t>(unlockAfter, MAX_UNLOCK_DELAY) + (uint64_t)height) :
+                                ((newIdentity.unlockAfter < (unlockAfter + expiryHeight)) &&
+                                 !(unlockAfter > MAX_UNLOCK_DELAY && newIdentity.unlockAfter == (MAX_UNLOCK_DELAY + expiryHeight)))))
                     {
                         return true;
                     }
@@ -113,7 +116,7 @@ bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height,
                     // which can change the new unlock time
                     if (newIdentity.IsLocked())
                     {
-                        if ((expiryHeight + newIdentity.unlockAfter < unlockAfter))
+                        if (heightLocking ? ((uint64_t)height + newIdentity.unlockAfter < unlockAfter) : (expiryHeight + newIdentity.unlockAfter < unlockAfter))
                         {
                             return true;
                         }
@@ -132,7 +135,7 @@ bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height,
             {
                 return true;
             }
-            else if (!newIdentity.IsLocked() && newIdentity.unlockAfter <= expiryHeight)
+            else if (!newIdentity.IsLocked() && newIdentity.unlockAfter <= (heightLocking ? height : expiryHeight))
             {
                 // we never set the locked bit, but we are counting down to the block set to unlock
                 // cannot lock with unlock before the expiry height

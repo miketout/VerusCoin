@@ -3314,7 +3314,7 @@ bool ContextualCheckInputs(const CTransaction& tx,
             return false;
         }
 
-        uint32_t spendTime = (chainActive.Height() < spendHeight) ? chainActive.LastTip()->nTime : chainActive[spendHeight]->nTime;
+        uint32_t spendTime = (chainActive.Height() < spendHeight) ? chainActive.LastTip()->nTime : chainActive.ChainTimeAtOrBefore(spendHeight - 1);
 
         if (pvChecks)
             pvChecks->reserve(tx.vin.size());

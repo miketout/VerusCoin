@@ -6133,6 +6133,11 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
             return state.Error(errorPrefix + "cross-chain functions temporarily disabled for security alert by notification oracle " + PBAAS_DEFAULT_NOTIFICATION_ORACLE);
         }
 
+        if (ConnectedChains.activeUpgradesByKey.count(ConnectedChains.DisableEarnedNotarizationKey()))
+        {
+            return state.Error("Earned notarizations temporarily disabled");
+        }
+
         // we can only create an earned notarization for a notary chain, so there must be a notary chain and a network connection to it
         // we also need to ensure that our notarization would be the first notarization in this notary block period  with which we agree.
         if (!externalSystem.IsValid() || externalSystem.rpcHost.empty())
@@ -13290,6 +13295,11 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
     }
     else if (normalizedNotarization.currencyID != ASSETCHAINS_CHAINID)
     {
+        if (isAfterSecondCleanupStarts && tx.vout[outNum].nValue != 0)
+        {
+            return state.Error("invalid finalization output");
+        }
+
         // no pending notarization may be made for a notarization that is not still a descendent of the last
         // confirmed notarization. if the hash is null, it references the same transaction, and if there is a
         // notarization on that transaction, it is also checked, so we are fine to skip
@@ -13425,6 +13435,7 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                     return state.Error("invalid evidence inputs");
                 }
             }
+
             // without a verified notary signature, a pending finalization of an existing output must spend that output
             // or a pending finalization of it. any input counts, declared as evidence or not: the confirm path's
             // intermediate transactions spend them without declaring evidence inputs

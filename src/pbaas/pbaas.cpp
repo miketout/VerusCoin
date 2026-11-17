@@ -3526,9 +3526,11 @@ bool ValidateReserveDeposit(struct CCcontract_info *cp, Eval* eval, const CTrans
                                       !ConnectedChains.CheckClearConvert(std::max(((int32_t)nHeight) - transitionBlocks, 1)) &&
                                       ConnectedChains.CheckClearConvert(nHeight);
 
-        if (isUpdatedConversion &&
-            isClearLaunch &&
-            reserveTransfers.size())
+        if ((IsBridgeCleanupWindowOpen(chainActive.ChainTimeAtOrBefore(nHeight - 1)) &&
+             checkState.IsLaunchConfirmed()) ||
+            (isUpdatedConversion &&
+             isClearLaunch &&
+             reserveTransfers.size()))
         {
             // we need the prior import's notarization as a starting point
             CValidationState state;
@@ -9144,7 +9146,8 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
         uint32_t nextHeight = useProofs && (destCur.SystemOrGatewayID() == ASSETCHAINS_CHAINID || destCurID == ASSETCHAINS_CHAINID) ?
             nHeight : std::min(nHeight, std::max(ccx.sourceHeightEnd, lastNotarization.notarizationHeight));
 
-        if (IsBridgeCleanupWindowOpen(chainActive.LastTip()->nTime))
+        if (IsBridgeCleanupWindowOpen(chainActive.LastTip()->nTime) ||
+            IsBridgeCleanupWindowOpen(chainActive.ChainTimeAtOrBefore(nextHeight - 1)))
         {
             nextHeight = nHeight;
         }
