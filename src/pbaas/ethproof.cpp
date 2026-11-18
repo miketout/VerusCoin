@@ -103,12 +103,12 @@ TrieNode::nodeType TrieNode::setType()
 {
     if (raw.size() == 17) return BRANCH;
     if (raw.size() == 2 && !raw[0].empty()) {
-        // HP encoding: high nibble of first byte is the prefix.
-        // 0,1 → extension; 2,3 → leaf.
         unsigned char prefix = raw[0][0] >> 4;
+        if (prefix > 3)
+            throw std::invalid_argument("Invalid trie node path prefix");
         return (prefix >= 2) ? LEAF : EXTENSION;
     }
-    return BRANCH;
+    throw std::invalid_argument("Invalid trie node item count");
 }
 
 void TrieNode::setKey()
@@ -207,11 +207,11 @@ std::vector<unsigned char> RLP::encode(std::vector<std::vector<unsigned char>> i
 // ---------------------------------------------------------------------------
 
 // Decode one RLP item that starts at p with `avail` bytes available to it.
-// Appends the item's string(s) to `out` (lists are flattened) and returns the
+// Appends the item's string(s) to `out` and returns the
 // number of bytes the item occupied, so the caller advances instead of copying.
 // this was a rewrite by Claude Fable 5.1 of the original code, reviewed by
 // miketout.
-static size_t decodeItem(const unsigned char *p, size_t avail, int depth,
+static size_t decodeItem(const unsigned char *p, size_t avail, int depth, bool topLevel,
                          std::vector<std::vector<unsigned char>> &out)
 {
     if (depth > RLP::MAX_RLP_DECODE_DEPTH)
@@ -273,19 +273,24 @@ static size_t decodeItem(const unsigned char *p, size_t avail, int depth,
             throw std::invalid_argument("RLP decode: long list has zero-length payload");
     }
 
-    // Decode the list payload in place. Each item is bounded by the end of the
-    // payload, never by the end of the whole input, exactly as the old copy was.
     const size_t end = headerLen + listLen;
+    if (!topLevel) {
+        // A list inside a list is one item holding its full encoding: a trie branch
+        // carries a child shorter than 32 bytes inline as a nested list, and the walk
+        // decodes that item on its own when it follows it.
+        out.push_back(std::vector<unsigned char>(p, p + end));
+        return end;
+    }
     size_t pos = headerLen;
     while (pos < end)
-        pos += decodeItem(p + pos, end - pos, depth + 1, out);
+        pos += decodeItem(p + pos, end - pos, depth + 1, false, out);
     return end;
 }
 
 RLP::rlpDecoded RLP::decode(std::vector<unsigned char> inputBytes, int depth)
 {
     rlpDecoded output;
-    size_t consumed = decodeItem(inputBytes.data(), inputBytes.size(), depth, output.data);
+    size_t consumed = decodeItem(inputBytes.data(), inputBytes.size(), depth, true, output.data);
     output.remainder.assign(inputBytes.begin() + consumed, inputBytes.end());
     return output;
 }
@@ -356,6 +361,8 @@ std::vector<unsigned char> CETHPATRICIABranch::verifyProof(
             } else if (!child.empty()) {
                 // Inline (short) embedded node — decode it directly.
                 TrieNode embeddedNode(rlp.decode(child).data);
+                if (embeddedNode.type != TrieNode::LEAF)
+                    throw std::invalid_argument("Embedded node is not a leaf");
                 if (i != proof.size() - 1)
                     throw std::invalid_argument("Additional nodes after embedded branch terminal");
                 if (matchingNibbleLength(embeddedNode.key, key) != embeddedNode.key.size())
@@ -375,14 +382,18 @@ std::vector<unsigned char> CETHPATRICIABranch::verifyProof(
             key.erase(key.begin(), key.begin() + node.key.size());
             const std::vector<unsigned char>& child = node.value;
 
-            if (key.empty()) {
-                // Reached the target node.
+            if (node.type == TrieNode::LEAF) {
+                // Only a leaf ends the path, and it must consume the whole key.
+                if (!key.empty())
+                    throw std::invalid_argument("Key not fully consumed at leaf");
                 if (i != proof.size() - 1)
-                    throw std::invalid_argument("Additional nodes after leaf/extension terminal");
+                    throw std::invalid_argument("Additional nodes after leaf terminal");
                 return child;
             }
 
-            // Extension: child must be a 32-byte hash pointing to the next node.
+            // Extension: the key continues, and the child must be a 32-byte hash pointing to the next node.
+            if (key.empty())
+                throw std::invalid_argument("Key consumed at extension node");
             if (child.size() != wantedHash.size())
                 throw std::invalid_argument("Extension value is not a 32-byte hash");
             memcpy(wantedHash.begin(), child.data(), child.size());
