@@ -16433,6 +16433,12 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         }
     }
 
+    // refuse now what the identity validator would refuse at the next block
+    if (oldID.IsInvalidMutation(newID, nHeight + 1, txNew.nExpiryHeight))
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity update would be refused by consensus: check the lock state and unlock height (an unlock height must be above the transaction's expiry height of " + std::to_string(txNew.nExpiryHeight) + " and no earlier than the current lock allows), the revocation state, and the version");
+    }
+
     // use the transaction builder to properly make change of native and reserves
     TransactionBuilder tb(Params().consensus, nHeight + 1, pwalletMain);
 

@@ -103,7 +103,8 @@ bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height,
                     }
                     else if (!newIdentity.IsLocked() &&
                              (heightLocking ?
-                                ((uint64_t)newIdentity.unlockAfter < std::min<uint64_t>(unlockAfter, MAX_UNLOCK_DELAY) + (uint64_t)height) :
+                                (expiryHeight == 0 ||
+                                 (uint64_t)newIdentity.unlockAfter < std::min<uint64_t>(unlockAfter, MAX_UNLOCK_DELAY) + (uint64_t)expiryHeight) :
                                 ((newIdentity.unlockAfter < (unlockAfter + expiryHeight)) &&
                                  !(unlockAfter > MAX_UNLOCK_DELAY && newIdentity.unlockAfter == (MAX_UNLOCK_DELAY + expiryHeight)))))
                     {
@@ -116,7 +117,9 @@ bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height,
                     // which can change the new unlock time
                     if (newIdentity.IsLocked())
                     {
-                        if (heightLocking ? ((uint64_t)height + newIdentity.unlockAfter < unlockAfter) : (expiryHeight + newIdentity.unlockAfter < unlockAfter))
+                        if (heightLocking ?
+                              (std::min<uint64_t>(expiryHeight ? expiryHeight : UINT32_MAX, (uint64_t)height + DEFAULT_PRE_BLOSSOM_TX_EXPIRY_DELTA) + newIdentity.unlockAfter < unlockAfter) :
+                              (expiryHeight + newIdentity.unlockAfter < unlockAfter))
                         {
                             return true;
                         }
@@ -135,7 +138,7 @@ bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height,
             {
                 return true;
             }
-            else if (!newIdentity.IsLocked() && newIdentity.unlockAfter <= (heightLocking ? height : expiryHeight))
+            else if (!newIdentity.IsLocked() && newIdentity.unlockAfter <= expiryHeight)
             {
                 // we never set the locked bit, but we are counting down to the block set to unlock
                 // cannot lock with unlock before the expiry height

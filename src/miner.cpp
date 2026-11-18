@@ -3259,9 +3259,23 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             // create only contains transactions that are valid in new blocks.
             CValidationState state;
             PrecomputedTransactionData txdata(tx);
-            if (!ContextualCheckInputs(tx, state, view, nHeight, true, MANDATORY_SCRIPT_VERIFY_FLAGS, true, txdata, Params().GetConsensus(), consensusBranchId))
+
+            // re-run the crypto-condition evals, as AcceptToMemoryPool did when the transaction entered the pool, for
+            // entries accepted at an earlier height, so a transaction whose eval verdict has changed since never enters
+            // the template; entries accepted at this height were checked against this tip already
+            auto poolIt = mempool.mapTx.find(hash);
+            bool reRunEvals = poolIt != mempool.mapTx.end() && poolIt->GetHeight() != nHeight && KOMODO_CONNECTING <= 0;
+            if (reRunEvals)
             {
-                //fprintf(stderr,"context failure\n");
+                KOMODO_CONNECTING = (1<<30) + (int32_t)nHeight;
+            }
+            bool inputsValid = ContextualCheckInputs(tx, state, view, nHeight, true, MANDATORY_SCRIPT_VERIFY_FLAGS, true, txdata, Params().GetConsensus(), consensusBranchId);
+            if (reRunEvals)
+            {
+                KOMODO_CONNECTING = -1;
+            }
+            if (!inputsValid)
+            {
                 continue;
             }
 
