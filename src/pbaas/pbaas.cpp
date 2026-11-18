@@ -5454,7 +5454,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
         if (isAfterSecondCleanupWindowStart)
         {
             CCurrencyDefinition nftCheckDef = ConnectedChains.GetCachedCurrency(rt.FirstCurrency());
-            if (nftCheckDef.IsValid() && nftCheckDef.IsNFTToken() && rt.FirstValue() != 1)
+            if (!rt.IsCurrencyExport() && nftCheckDef.IsValid() && nftCheckDef.IsNFTToken() && rt.FirstValue() != 1)
             {
                 return state.Error("NFT or tokenized control currency transfers must carry exactly one satoshi " + rt.ToUniValue().write(1,2));
             }
