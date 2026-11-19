@@ -12,6 +12,7 @@
 #include "nonce.h"
 #include "streams.h"
 #include <univalue.h>
+#include <map>
 
 class CPBaaSBlockHeader;
 
@@ -21,7 +22,7 @@ class CActivationHeight
         enum {
             MAX_HEIGHT = INT_MAX,
             DEFAULT_UPGRADE_HEIGHT = MAX_HEIGHT,
-            NUM_VERSIONS = 9,   // NEVER ADD A NEW VERSION WITHOUT UPDATING THE ARRAY BELOW WITH ALL ENTRIES PRESENT
+            NUM_VERSIONS = 10,   // NEVER ADD A NEW VERSION WITHOUT UPDATING THE ARRAY BELOW WITH ALL ENTRIES PRESENT
             SOLUTION_VERUSV1 = 0,
             SOLUTION_VERUSV2 = 1,
             SOLUTION_VERUSV3 = 2,
@@ -31,6 +32,7 @@ class CActivationHeight
             SOLUTION_VERUSV6 = 6,
             SOLUTION_VERUSV7 = 7,
             SOLUTION_VERUSV8 = 8,
+            SOLUTION_VERUSV9 = 9,
             ACTIVATE_VERUSHASH2 = SOLUTION_VERUSV2,
             ACTIVATE_EXTENDEDSOLUTION = SOLUTION_VERUSV3,
             ACTIVATE_IDENTITY = SOLUTION_VERUSV4,
@@ -42,15 +44,28 @@ class CActivationHeight
             ACTIVATE_STAKEHEADER = SOLUTION_VERUSV6,
             ACTIVATE_VERUSVAULT = SOLUTION_VERUSV6,
             ACTIVATE_PBAAS = SOLUTION_VERUSV7,
-            ACTIVATE_PBAAS_HARDEN1 = SOLUTION_VERUSV8
+            ACTIVATE_PBAAS_HARDEN1 = SOLUTION_VERUSV8,
+            ACTIVATE_PBAAS_HARDEN2 = SOLUTION_VERUSV9
         };
         bool active;
         int32_t heights[NUM_VERSIONS];
         std::vector<bool> isHeightExplicit;
+        std::map<int32_t, uint32_t> timeStarts;    // version -> block time at which it switches on where this chain gives it
+                                                   // no explicit height; only versions that activate by time have an entry
+
         CActivationHeight() :
-            heights{0, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT, DEFAULT_UPGRADE_HEIGHT},
+            heights{0,
+                    DEFAULT_UPGRADE_HEIGHT,
+                    DEFAULT_UPGRADE_HEIGHT,
+                    DEFAULT_UPGRADE_HEIGHT,
+                    DEFAULT_UPGRADE_HEIGHT,
+                    DEFAULT_UPGRADE_HEIGHT,
+                    DEFAULT_UPGRADE_HEIGHT,
+                    DEFAULT_UPGRADE_HEIGHT,
+                    DEFAULT_UPGRADE_HEIGHT,
+                    DEFAULT_UPGRADE_HEIGHT},
             active(true),
-            isHeightExplicit({true,true,true,true,true,true,true,true,false}) {}
+            isHeightExplicit({true,true,true,true,true,true,true,true,false,false}) {}
 
         void SetActivationHeight(int32_t version, int32_t height, bool isExplicit)
         {
@@ -67,6 +82,65 @@ class CActivationHeight
         {
             assert(version < NUM_VERSIONS && version > 0);
             return active && heights[version] == height;
+        }
+
+        void SetActivationTime(int32_t version, uint32_t timeStart)
+        {
+            assert(version < NUM_VERSIONS && version > SOLUTION_VERUSV7);
+            timeStarts[version] = timeStart;
+        }
+
+        // a version switches on by block time when it has a start time and this chain gives it no explicit height
+        bool IsTimeActivated(int32_t version) const
+        {
+            return timeStarts.count(version) && !isHeightExplicit[version];
+        }
+
+        // the highest version with a start time at or before nTime, 0 if none; by default only versions this chain
+        // activates by time (no explicit height), or every version with a start time when ignoreExplicit is set
+        int32_t TimeActivatedVersion(uint32_t nTime, bool ignoreExplicit=false) const
+        {
+            int32_t ver = 0;
+            for (auto &oneStart : timeStarts)
+            {
+                if ((ignoreExplicit || !isHeightExplicit[oneStart.first]) && nTime >= oneStart.second)
+                {
+                    ver = oneStart.first;
+                }
+            }
+            return ver;
+        }
+
+        // the version the rules require of a block, from its own header and its parent's alone, so every node reaches the
+        // same verdict whatever its own chain has taught the table: the explicit heights; then, from version 7 on, each
+        // time-activated version once the block's time reaches its start when the parent is before that start (or below
+        // version 7), and otherwise once the parent carries it (a block may legitimately be timed before its parent).
+        // ActiveVersion is what the chain has learned and is what every other reader wants
+        int32_t RuleVersion(int32_t height, uint32_t nTime, uint32_t prevTime, int32_t prevVersion) const
+        {
+            int32_t ver = 0;
+            for (int32_t i = 0; i < NUM_VERSIONS && isHeightExplicit[i] && heights[i] <= height; i++)
+            {
+                ver = i;
+            }
+            if (ver < SOLUTION_VERUSV7)
+            {
+                return ver;
+            }
+            for (auto &oneStart : timeStarts)
+            {
+                if (isHeightExplicit[oneStart.first])
+                {
+                    continue;
+                }
+                bool parentBefore = prevTime < oneStart.second || prevVersion < SOLUTION_VERUSV7;
+                if (((parentBefore && nTime >= oneStart.second) || (!parentBefore && prevVersion >= oneStart.first)) &&
+                    oneStart.first > ver)
+                {
+                    ver = oneStart.first;
+                }
+            }
+            return ver;
         }
 
         int32_t ActiveVersion(int32_t height)

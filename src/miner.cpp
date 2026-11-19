@@ -1285,14 +1285,8 @@ bool BlockOneCoinbaseOutputs(std::vector<CTxOut> &outputs,
         return false;
     }
 
-    if (block1Time >= PBAAS_VERSION8_SOLUTION_TIME_START)
-    {
-        minSolutionVersion = CActivationHeight::SOLUTION_VERUSV8;
-    }
-    else
-    {
-        minSolutionVersion = CActivationHeight::SOLUTION_VERUSV7;
-    }
+    minSolutionVersion = std::max<int32_t>(CActivationHeight::SOLUTION_VERUSV7,
+                                                CConstVerusSolutionVector::activationHeight.TimeActivatedVersion(block1Time, true));
 
     // we need to have a launch decision to be able to mine any blocks, prior to launch being clear,
     // it is not an error. we are just not ready.
@@ -2189,17 +2183,30 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
         }
         CBlock1TimeScope block1TimeScope(!isVerusActive && nHeight == 1 ? pblock->nTime : 0);
 
-        bool isExplicitSol8Height = false;
-        if (CConstVerusSolutionVector::Version(pblock->nSolution) == CActivationHeight::SOLUTION_VERUSV7 &&
-            (CConstVerusSolutionVector::activationHeight.GetVersionActivationHeight(CActivationHeight::SOLUTION_VERUSV8, &isExplicitSol8Height) ==
-                    CActivationHeight::DEFAULT_UPGRADE_HEIGHT ||
-             !isExplicitSol8Height) &&
-            pblock->nTime >= PBAAS_VERSION8_SOLUTION_TIME_START &&
-            (chainActive.LastTip()->nTime < PBAAS_VERSION8_SOLUTION_TIME_START ||
-             CConstVerusSolutionVector::Version(chainActive.LastTip()->nSolution.nSolution()) < CActivationHeight::SOLUTION_VERUSV7))
+        // the template carries the version the rule requires of a block on this tip at this time, computed exactly as the
+        // validator will compute it; a version the table has not yet learned is taught here, as ConnectBlock will teach it
         {
-            CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV8, nHeight, false);
-            pblock->SetVersionByHeight(nHeight);
+            CBlockIndex *pTip = chainActive.LastTip();
+            int32_t templateVersion = CConstVerusSolutionVector::Version(pblock->nSolution);
+            int32_t ruleVersion = CConstVerusSolutionVector::activationHeight.RuleVersion(nHeight,
+                                                                                         pblock->nTime,
+                                                                                         pTip->nTime,
+                                                                                         CConstVerusSolutionVector::Version(pTip->nSolution.nSolution()));
+            bool versionRaised = false;
+            for (auto &oneStart : CConstVerusSolutionVector::activationHeight.timeStarts)
+            {
+                if (oneStart.first > templateVersion &&
+                    oneStart.first <= ruleVersion &&
+                    CConstVerusSolutionVector::activationHeight.IsTimeActivated(oneStart.first))
+                {
+                    CConstVerusSolutionVector::activationHeight.SetActivationHeight(oneStart.first, nHeight, false);
+                    versionRaised = true;
+                }
+            }
+            if (versionRaised)
+            {
+                pblock->SetVersionByHeight(nHeight);
+            }
         }
 
         // Priority order to process transactions
@@ -2480,21 +2487,6 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                 return NULL;
             }
 
-            bool isExplicitHeight = false;
-            if (minSolutionVersion == CActivationHeight::SOLUTION_VERUSV7 &&
-                (CConstVerusSolutionVector::activationHeight.GetVersionActivationHeight(CActivationHeight::SOLUTION_VERUSV8, &isExplicitHeight) ==
-                        CActivationHeight::DEFAULT_UPGRADE_HEIGHT ||
-                 !isExplicitHeight) &&
-                pblock->nTime >= PBAAS_VERSION8_SOLUTION_TIME_START)
-            {
-                minSolutionVersion = CActivationHeight::SOLUTION_VERUSV8;
-            }
-
-            if (minSolutionVersion > CConstVerusSolutionVector::Version(pblock->nSolution))
-            {
-                CConstVerusSolutionVector::activationHeight.SetActivationHeight(minSolutionVersion, 1, true);
-                pblock->SetVersionByHeight(nHeight);
-            }
             currencyState = launchNotarization.currencyState;
         }
 
@@ -2958,7 +2950,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             }
             if (tx.IsCoinBase() ||
                 IsExpiredTx(tx, nHeight) ||
-                (mi->GetHeight() != nHeight &&
+                ((mi->GetHeight() + 1) != nHeight &&
                  !ContextualCheckTransaction(tx, state, Params(), nHeight, 0)))
             {
                 txesToRemove.push_back(tx);
@@ -3264,7 +3256,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             // entries accepted at an earlier height, so a transaction whose eval verdict has changed since never enters
             // the template; entries accepted at this height were checked against this tip already
             auto poolIt = mempool.mapTx.find(hash);
-            bool reRunEvals = poolIt != mempool.mapTx.end() && poolIt->GetHeight() != nHeight && KOMODO_CONNECTING <= 0;
+            bool reRunEvals = poolIt != mempool.mapTx.end() && (poolIt->GetHeight() + 1) != nHeight && KOMODO_CONNECTING <= 0;
             if (reRunEvals)
             {
                 KOMODO_CONNECTING = (1<<30) + (int32_t)nHeight;

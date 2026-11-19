@@ -867,16 +867,22 @@ CCurrencyValueMap CScript::ReserveOutValue(COptCCParams &p, bool spendableOnly) 
             case EVAL_RESERVE_DEPOSIT:
             {
                 CReserveDeposit rd(p.vData[0]);
-                retVal = rd.reserveValues;
-                retVal.valueMap.erase(ASSETCHAINS_CHAINID);
+                if (rd.IsValid())
+                {
+                    retVal = rd.reserveValues;
+                    retVal.valueMap.erase(ASSETCHAINS_CHAINID);
+                }
                 break;
             }
 
             case EVAL_RESERVE_TRANSFER:
             {
                 CReserveTransfer rt(p.vData[0]);
-                retVal = rt.TotalCurrencyOut();
-                retVal.valueMap.erase(ASSETCHAINS_CHAINID);
+                if (rt.IsValid())
+                {
+                    retVal = rt.TotalCurrencyOut();
+                    retVal.valueMap.erase(ASSETCHAINS_CHAINID);
+                }
                 break;
             }
 

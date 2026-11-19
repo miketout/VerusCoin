@@ -3184,7 +3184,7 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
 
                         bool updatedChecks = ConnectedChains.CheckZeroViaOnlyPostLaunch(nHeight);
 
-                        if ((IsBridgeCleanupWindowOpen(chainActive.ChainTimeAtOrBefore(nHeight)) &&
+                        if ((IsBridgeCleanupWindowOpen(chainActive.ChainTimeAtOrBefore(nHeight - 1)) &&
                              checkState.IsLaunchConfirmed())||
                             (updatedChecks &&
                              isClearLaunch &&
@@ -5952,7 +5952,9 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                         if (isAfterSecondBridgeCleanupWindowStarts)
                         {
                             CCurrencyDefinition nftCheckDef = ConnectedChains.GetCachedCurrency(destCurID);
-                            if (nftCheckDef.IsValid() && nftCheckDef.IsNFTToken() &&
+                            if (!curTransfer.IsCurrencyExport() &&
+                                nftCheckDef.IsValid() &&
+                                nftCheckDef.IsNFTToken() &&
                                 (curTransfer.FirstValue() != 1 || !nftTransferredThisImport.insert(destCurID).second))
                             {
                                 LogPrint("defi", "%s: absorbing excess NFT transfer %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());

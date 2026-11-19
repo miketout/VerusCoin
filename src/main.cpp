@@ -3568,17 +3568,23 @@ static DisconnectResult DisconnectBlock(const CBlock& block, CValidationState& s
     uint32_t nHeight = pindex->GetHeight();
     bool isPBaaS = CConstVerusSolutionVector::GetVersionByHeight(nHeight) >= CActivationHeight::ACTIVATE_PBAAS;
 
-    // if the block being removed triggered the next solution version, undo it
-    bool isExplicitHeight = false;
-    if (updateIndices && nHeight == CConstVerusSolutionVector::activationHeight.GetVersionActivationHeight(CActivationHeight::SOLUTION_VERUSV8, &isExplicitHeight) &&
-        !isExplicitHeight &&
-        pindex->nTime >= PBAAS_VERSION8_SOLUTION_TIME_START &&
-        (pindex->pprev->nTime < PBAAS_VERSION8_SOLUTION_TIME_START ||
-         CConstVerusSolutionVector::Version(pindex->pprev->nSolution.nSolution()) < CActivationHeight::SOLUTION_VERUSV7))
+    // if the block being removed switched on a time-activated solution version, undo it
+    if (updateIndices)
     {
-        printf("%s: Reverting activation height for version 8 solution back to block height %u\n", __func__, CActivationHeight::DEFAULT_UPGRADE_HEIGHT);
-        LogPrintf("%s: Reverting activation height for version 8 solution back to block height %u\n", __func__, CActivationHeight::DEFAULT_UPGRADE_HEIGHT);
-        CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV8, CActivationHeight::DEFAULT_UPGRADE_HEIGHT, false);
+        for (auto &oneStart : CConstVerusSolutionVector::activationHeight.timeStarts)
+        {
+            const int32_t v = oneStart.first;
+            const uint32_t timeStart = oneStart.second;
+            if (CConstVerusSolutionVector::activationHeight.IsTimeActivated(v) &&
+                nHeight == CConstVerusSolutionVector::activationHeight.GetVersionActivationHeight(v) &&
+                pindex->nTime >= timeStart &&
+                (pindex->pprev->nTime < timeStart ||
+                 CConstVerusSolutionVector::Version(pindex->pprev->nSolution.nSolution()) < CActivationHeight::SOLUTION_VERUSV7))
+            {
+                LogPrintf("%s: Reverting activation height for version %d solution back to default (pending time activation)\n", __func__, v);
+                CConstVerusSolutionVector::activationHeight.SetActivationHeight(v, CActivationHeight::DEFAULT_UPGRADE_HEIGHT, false);
+            }
+        }
     }
 
     // undo transactions in reverse order
@@ -5292,52 +5298,42 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                             REJECT_INVALID, "bad-cb-amount");
     }
 
-    // if the new block hits the update time for the next version, set it in height
-    // alternately, to handle reorgs, if this new block is legitimately version 7 when a non-explicit height setting
-    // says it should be version 8, reset height to default
-    bool setSolutionV8 = false;
-    bool resetSolutionV8 = false;
-    bool isSol8HeightExplicit = false;
-    uint32_t curSolVersion = CConstVerusSolutionVector::Version(pindex->nSolution.nSolution());
-    uint32_t solV8Height = CConstVerusSolutionVector::activationHeight.GetVersionActivationHeight(CActivationHeight::SOLUTION_VERUSV8, &isSol8HeightExplicit);
-    uint32_t solVersionByHeight = CConstVerusSolutionVector::activationHeight.ActiveVersion(pindex->GetHeight());
-    if (!isSol8HeightExplicit &&
-        solVersionByHeight > CActivationHeight::SOLUTION_VERUSV6 &&
-        (pindex->pprev->nTime < PBAAS_VERSION8_SOLUTION_TIME_START ||
-         CConstVerusSolutionVector::Version(pindex->pprev->nSolution.nSolution()) < CActivationHeight::SOLUTION_VERUSV7))
+    // time-activated solution versions. the header check has already held the version to the rule; it is re-checked here
+    // from the same two headers, then the height table learns or forgets the switch for the height-only readers: when the
+    // parent is before a version's start time (or not yet at version 7), a block at or past the start is the switch block
+    // and the table learns this height; a block before the start at a height the table had learned forgets it (reorg)
+    std::vector<std::pair<int32_t, int32_t>> solVersionHeightUpdates;
+    if (CConstVerusSolutionVector::activationHeight.ActiveVersion(pindex->GetHeight()) > CActivationHeight::SOLUTION_VERUSV6)
     {
-        if (pindex->nTime >= PBAAS_VERSION8_SOLUTION_TIME_START)
+        uint32_t curSolVersion = CConstVerusSolutionVector::Version(pindex->nSolution.nSolution());
+        uint32_t prevSolVersion = CConstVerusSolutionVector::Version(pindex->pprev->nSolution.nSolution());
+        int32_t ruleVersion = CConstVerusSolutionVector::activationHeight.RuleVersion(nHeight, pindex->nTime, pindex->pprev->nTime, prevSolVersion);
+        if (curSolVersion != ruleVersion)
         {
-            if (curSolVersion == CActivationHeight::SOLUTION_VERUSV8)
-            {
-                if (solV8Height != nHeight)
-                {
-                    setSolutionV8 = true;
-                }
-            }
-            else
-            {
-                return state.DoS(100,
-                                 error("ConnectBlock(): wrong block solution version (actual=%d vs expected=%d)",
-                                    CConstVerusSolutionVector::Version(pindex->nSolution.nSolution()), CActivationHeight::SOLUTION_VERUSV8),
-                                 REJECT_INVALID, "bad-solution-version");
-            }
+            return state.DoS(100,
+                             error("ConnectBlock(): wrong block solution version (actual=%d vs expected=%d)", curSolVersion, ruleVersion),
+                             REJECT_INVALID, "bad-solution-version");
         }
-        else if (pindex->nTime < PBAAS_VERSION8_SOLUTION_TIME_START)
+        for (auto &oneStart : CConstVerusSolutionVector::activationHeight.timeStarts)
         {
-            if (curSolVersion < CActivationHeight::SOLUTION_VERUSV8)
+            const int32_t v = oneStart.first;
+            const uint32_t timeStart = oneStart.second;
+            if (!CConstVerusSolutionVector::activationHeight.IsTimeActivated(v) ||
+                !(pindex->pprev->nTime < timeStart || prevSolVersion < CActivationHeight::SOLUTION_VERUSV7))
             {
-                if (solV8Height != CActivationHeight::DEFAULT_UPGRADE_HEIGHT)
+                continue;   // not a switch candidate for this version
+            }
+            uint32_t vHeight = CConstVerusSolutionVector::activationHeight.GetVersionActivationHeight(v);
+            if (pindex->nTime >= timeStart)
+            {
+                if (vHeight != nHeight)
                 {
-                    resetSolutionV8 = true;
+                    solVersionHeightUpdates.push_back({v, (int32_t)nHeight});
                 }
             }
-            else
+            else if (vHeight != CActivationHeight::DEFAULT_UPGRADE_HEIGHT)
             {
-                return state.DoS(100,
-                                 error("ConnectBlock(): invalid block solution version (actual=%d vs expected=%d)",
-                                    CConstVerusSolutionVector::Version(pindex->nSolution.nSolution()), CActivationHeight::SOLUTION_VERUSV7),
-                                 REJECT_INVALID, "bad-solution-version");
+                solVersionHeightUpdates.push_back({v, CActivationHeight::DEFAULT_UPGRADE_HEIGHT});
             }
         }
     }
@@ -5380,17 +5376,17 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         setDirtyBlockIndex.insert(pindex);
     }
 
-    if (setSolutionV8)
+    for (auto &oneUpdate : solVersionHeightUpdates)
     {
-        printf("%s: Setting activation height for version 8 solution to block height %u\n", __func__, pindex->GetHeight());
-        LogPrintf("%s: Setting activation height for version 8 solution to block height %u\n", __func__, pindex->GetHeight());
-        CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV8, pindex->GetHeight(), false);
-    }
-    else if (resetSolutionV8)
-    {
-        printf("%s: Resetting activation height for version 8 solution to default (pending time activation) height %u\n", __func__, CActivationHeight::DEFAULT_UPGRADE_HEIGHT);
-        LogPrintf("%s: Resetting activation height for version 8 solution to default (pending time activation) height %u\n", __func__, CActivationHeight::DEFAULT_UPGRADE_HEIGHT);
-        CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV8, CActivationHeight::DEFAULT_UPGRADE_HEIGHT, false);
+        if (oneUpdate.second == CActivationHeight::DEFAULT_UPGRADE_HEIGHT)
+        {
+            LogPrintf("%s: Resetting activation height for version %d solution to default (pending time activation)\n", __func__, oneUpdate.first);
+        }
+        else
+        {
+            LogPrintf("%s: Setting activation height for version %d solution to block height %d\n", __func__, oneUpdate.first, oneUpdate.second);
+        }
+        CConstVerusSolutionVector::activationHeight.SetActivationHeight(oneUpdate.first, oneUpdate.second, false);
     }
 
     if (fTxIndex)
@@ -6973,28 +6969,28 @@ bool ContextualCheckBlock(
         uint32_t ver = CVerusSolutionVector(vch).Version();
 
         // we let some V3's slip by, so enforce correct version for all versions after V3
+        // from version 7 on, a version may switch on by block time where this chain gives it no explicit height. judge the
+        // header by the block and its parent alone, so every node reaches the same verdict whatever its own chain has taught
+        // the height table (a competing branch may have switched at a different height, and this block may be timed before
+        // its parent). ConnectBlock teaches the table the switch height for the height-only readers
         int solutionVersion = CConstVerusSolutionVector::GetVersionByHeight(nHeight);
-        bool isSol8HeightExplicit = false;
-        (void)CConstVerusSolutionVector::activationHeight.GetVersionActivationHeight(CActivationHeight::SOLUTION_VERUSV8, &isSol8HeightExplicit);
+        int ruleVersion = pindexPrev ?
+                            CConstVerusSolutionVector::activationHeight.RuleVersion(nHeight,
+                                                                                   block.nTime,
+                                                                                   pindexPrev->nTime,
+                                                                                   CConstVerusSolutionVector::Version(pindexPrev->nSolution.nSolution())) :
+                            solutionVersion;
 
-        // version 8 can upgrade based on time, so if height says it should be version 7, but it should be version 8,
-        // or height says it should be V8, but it is legitimately V7, let it pass if the time allows the version and adjust
-        // the height to account for reorgs and time differences. If this block passes all checks, the height will be properly set in ConnectBlock
-        if (!isSol8HeightExplicit &&
-            (ver == CActivationHeight::SOLUTION_VERUSV7 || ver == CActivationHeight::SOLUTION_VERUSV8) &&
-            ver != solutionVersion)
+        if (ruleVersion >= CActivationHeight::SOLUTION_VERUSV7)
         {
-            if (!((ver == CActivationHeight::SOLUTION_VERUSV7 &&
-                   block.nTime < PBAAS_VERSION8_SOLUTION_TIME_START) ||
-                  (ver == CActivationHeight::SOLUTION_VERUSV8 &&
-                   block.nTime >= PBAAS_VERSION8_SOLUTION_TIME_START)))
+            if (ver != ruleVersion)
             {
-                return state.DoS(10, error("%s: block header with incorrect version %d, should be %d", __func__, ver, solutionVersion), REJECT_INVALID, "incorrect-block-version");
+                return state.DoS(100, error("%s: block header with incorrect version %d, should be %d", __func__, ver, ruleVersion), REJECT_INVALID, "incorrect-block-version");
             }
         }
         else if (ver < CActivationHeight::SOLUTION_VERUSV2 || (solutionVersion > CActivationHeight::SOLUTION_VERUSV3 && ver != solutionVersion))
         {
-            return state.DoS(10, error("%s: block header has incorrect version %d, should be %d", __func__, ver, solutionVersion), REJECT_INVALID, "incorrect-block-version");
+            return state.DoS(100, error("%s: block header has incorrect version %d, should be %d", __func__, ver, solutionVersion), REJECT_INVALID, "incorrect-block-version");
         }
 
         if (block.IsVerusPOSBlock() && !verusCheckPOSBlock(false, &block, nHeight))
@@ -7456,6 +7452,7 @@ bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams,
     auto verifier = libzcash::ProofVerifier::Disabled();
     // NOTE: CheckBlockHeader is called by CheckBlock
     int32_t futureblock;
+    KOMODO_CONNECTING = (int32_t)pindexPrev->GetHeight() + 1;
     if (ContextualCheckBlockHeader(block, state, chainparams, pindexPrev) &&
         CheckBlock(&futureblock,indexDummy.GetHeight(),0,block, state, chainparams, verifier, fCheckPOW, fCheckMerkleRoot) &&
         ContextualCheckBlock(block, state, chainparams, pindexPrev) &&
@@ -7464,7 +7461,7 @@ bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams,
     {
         success = true;
     }
-    //assert(state.IsValid());
+    KOMODO_CONNECTING = -1;
 
     return success;
 }

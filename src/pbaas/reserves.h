@@ -209,7 +209,18 @@ public:
     bool IsValid() const
     {
         // we don't support op returns, value must be in native or reserve
-        return nVersion >= VERSION_FIRSTVALID && nVersion <= VERSION_LASTVALID;
+        if (!(nVersion >= VERSION_FIRSTVALID && nVersion <= VERSION_LASTVALID))
+        {
+            return false;
+        }
+        for (auto &oneCur : reserveValues.valueMap)
+        {
+            if (oneCur.first.IsNull() || !MoneyRange(oneCur.second))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 };
 
@@ -374,6 +385,24 @@ public:
             (IsConversion() && (IsBurn() || IsMint() || IsFeeOutput() || IsCurrencyExport())))
         {
             return false;
+        }
+
+        // every amount this transfer carries is a valid money amount on its own, and so is their sum in the fee currency,
+        // so TotalCurrencyOut() and TotalTransferFee() cannot wrap and every consumer sees the funded value component by component.
+        // sums are tested without being formed, since two in-range values can overflow int64_t
+        if (!MoneyRange(nFees) || !MoneyRange(destination.fees) || destination.fees > (MAX_SUPPLY - nFees))
+        {
+            return false;
+        }
+
+        CAmount totalFees = nFees + destination.fees;
+
+        for (auto &oneCur : reserveValues.valueMap)
+        {
+            if (oneCur.first == feeCurrencyID && oneCur.second > (MAX_SUPPLY - totalFees))
+            {
+                return false;
+            }
         }
 
         bool isCrossSystemIDNull = destSystemID.IsNull();
@@ -1199,6 +1228,14 @@ public:
                     {
                         return false;
                     }
+                }
+            }
+            // a cross-system export carries its transfers; each must be a valid transfer on its own
+            for (auto &oneRt : reserveTransfers)
+            {
+                if (!oneRt.IsValid())
+                {
+                    return false;
                 }
             }
             return true;

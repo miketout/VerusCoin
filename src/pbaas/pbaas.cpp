@@ -3208,10 +3208,15 @@ bool ValidateReserveTransfer(struct CCcontract_info *cp, Eval* eval, const CTran
                 exportP.evalCode == EVAL_CROSSCHAIN_EXPORT &&
                 exportP.vData.size() > 1 &&
                 (ccx = CCrossChainExport(exportP.vData[0])).IsValid() &&
+                !ccx.IsSupplemental() &&
                 !ccx.IsSystemThreadExport() &&
                 ccx.destCurrencyID == importCurrencyID)
             {
-                if (ccx.firstInput < 0 || nIn < ccx.firstInput || nIn > ccx.firstInput + ccx.numInputs)
+                if (ccx.firstInput < 0 ||
+                    ccx.numInputs < 0 ||
+                    (uint64_t)ccx.firstInput + (uint64_t)ccx.numInputs > tx.vin.size() ||
+                    nIn < ccx.firstInput ||
+                    nIn >= ccx.firstInput + ccx.numInputs)
                 {
                     return eval->Error("Reserve transfer spend not accounted for in cross-chain export");
                 }
@@ -5454,7 +5459,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
         if (isAfterSecondCleanupWindowStart)
         {
             CCurrencyDefinition nftCheckDef = ConnectedChains.GetCachedCurrency(rt.FirstCurrency());
-            if (nftCheckDef.IsValid() && nftCheckDef.IsNFTToken() && (rt.FirstValue() != 1 || rt.IsCurrencyExport() && rt.FirstValue() <= 1))
+            if (!rt.IsCurrencyExport() && nftCheckDef.IsValid() && nftCheckDef.IsNFTToken() && rt.FirstValue() != 1)
             {
                 return state.Error("NFT or tokenized control currency transfers must carry exactly one satoshi " + rt.ToUniValue().write(1,2));
             }
@@ -9147,7 +9152,9 @@ bool CConnectedChains::CreateLatestImports(const CCurrencyDefinition &sourceSyst
             nHeight : std::min(nHeight, std::max(ccx.sourceHeightEnd, lastNotarization.notarizationHeight));
 
         if (IsBridgeCleanupWindowOpen(chainActive.LastTip()->nTime) ||
-            IsBridgeCleanupWindowOpen(chainActive.ChainTimeAtOrBefore(nextHeight - 1)))
+            IsBridgeCleanupWindowOpen(chainActive.ChainTimeAtOrBefore(nextHeight - 1)) ||
+            IsAfterSecondBridgeCleanupWindowStarts(chainActive.LastTip()->nTime) !=
+                IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(nextHeight - 1)))
         {
             nextHeight = nHeight;
         }

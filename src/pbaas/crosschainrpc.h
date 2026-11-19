@@ -1920,13 +1920,12 @@ static const uint32_t PBAAS_TESTNET_IDENTITY_START_CHECKSER = 1786147200; // Sat
 static const uint32_t PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START = 1795478400; // Saturday, November 24, 2026 at 12:00:00 AM UTC
 static const uint32_t PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_END = 1795564800; // Sunday, November 1, 2026 at 12:00:00 AM UTC
 
-static const uint32_t PBAAS_TESTING_DOUBLE_CAP_TIME_START = PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START; // Saturday, November 14, 2026 at 12:00:00 PM UTC
+static const uint32_t PBAAS_VERSION9_SOLUTION_TIME_START = PBAAS_SECONDBRIDGEEXPLOIT_CLEANUP_TIME_START; // VerusHash 2.3 (solution version 9) switches with the second window
 
 extern std::map<uint160,CTransferDestination> bridgeAdjustingAddresses;
 CCurrencyValueMap &BridgeCurrencyAdjustmentMap();
 bool IsBridgeCleanupWindowOpen(uint32_t chainTime);
 bool IsAfterBridgeCleanupWindowStarts(uint32_t chainTime);
 bool IsAfterSecondBridgeCleanupWindowStarts(uint32_t chainTime);
-bool IsAfterDoubleCapTestTime(uint32_t chainTime);
 
 #endif

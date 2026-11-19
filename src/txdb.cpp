@@ -2179,7 +2179,7 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
 
     // in order to include funded, ready to sign transactions, we need to have a large number of small native
     // outputs available on the adjusting destination for the current chain. they are kept here until used
-    std::multimap<CCurrencyValueMap,CUTXORef> feeUTXOs;
+    std::multimap<std::vector<unsigned char>, CUTXORef> feeUTXOs;
 
     if (adjustingDestinations.count(ASSETCHAINS_CHAINID))
     {
@@ -2222,8 +2222,8 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                         totalCurrency.valueMap[ASSETCHAINS_CHAINID] >= 0 &&
                         totalCurrency.valueMap[ASSETCHAINS_CHAINID] < SATOSHIDEN)
                     {
-                        feeUTXOs.insert({totalCurrency, CUTXORef(uint256S(uni_get_str(find_value(allFeeUtxosUni[i],"txid"))),
-                                                        uni_get_int(find_value(allFeeUtxosUni[i],"outputIndex")))});
+                        feeUTXOs.insert({::AsVector(totalCurrency.CanonicalMap()), CUTXORef(uint256S(uni_get_str(find_value(allFeeUtxosUni[i],"txid"))),
+                                                                                            uni_get_int(find_value(allFeeUtxosUni[i],"outputIndex")))});
                     }
                 }
             }
@@ -2278,7 +2278,7 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                         searchMap = coins.vout[txin.prevout.n].scriptPubKey.ReserveOutValue();
                         searchMap.valueMap[ASSETCHAINS_CHAINID] = coins.vout[txin.prevout.n].nValue;
 
-                        for (auto searchRange = feeUTXOsScratch.equal_range(searchMap);
+                        for (auto searchRange = feeUTXOsScratch.equal_range(::AsVector(searchMap.CanonicalMap()));
                             searchRange.first != searchRange.second; searchRange.first++)
                         {
                             if (searchRange.first->second == txin.prevout)
@@ -2321,9 +2321,8 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                         }
                     }
 
-                    std::multimap<CCurrencyValueMap, CUTXORef>::iterator oneFound = feeUTXOsScratch.lower_bound({txIter.first->second.second});
-
-                    if (oneFound != feeUTXOsScratch.end() && oneFound->first == txIter.first->second.second)
+                    auto oneFound = feeUTXOsScratch.find(::AsVector(txIter.first->second.second.CanonicalMap()));
+                    if (oneFound != feeUTXOsScratch.end())
                     {
                         txIter.first->second.first.vin.push_back(CTxIn(oneFound->second));
                         feeFundingFound += txIter.first->second.second;

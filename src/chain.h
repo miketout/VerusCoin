@@ -575,10 +575,19 @@ public:
         return 0;
     }
 
+    bool HasDoubleCappedTransactionMap() const
+    {
+        if (nVersion == CBlockHeader::VERUS_V2)
+        {
+            return CConstVerusSolutionVector::Version(nSolution.nSolution()) >= CActivationHeight::ACTIVATE_PBAAS_HARDEN2;
+        }
+        return 0;
+    }
+
     int PartialTransactionProofVersion() const
     {
         return HasCappedTransactionMap() ?
-                IsAfterDoubleCapTestTime(nTime) ? CPartialTransactionProof::VERSION_TXHASH_CAP_DOUBLE : CPartialTransactionProof::VERSION_TXHASH_CAP :
+                (HasDoubleCappedTransactionMap() ? CPartialTransactionProof::VERSION_TXHASH_CAP_DOUBLE : CPartialTransactionProof::VERSION_TXHASH_CAP) :
                 CPartialTransactionProof::VERSION_FIRST;
     }
 

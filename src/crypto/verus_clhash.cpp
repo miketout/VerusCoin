@@ -500,6 +500,12 @@ uint64_t verusclhash_sv2_2(void * random, const unsigned char buf[64], uint64_t 
     return precompReduction64(acc);
 }
 
+uint64_t verusclhash_sv2_3(void * random, const unsigned char buf[64], uint64_t keyMask, __m128i **pMoveScratch) {
+    __m128i acc = __verusclmulwithoutreduction64alignedrepeat_sv2_3((__m128i *)random, (const __m128i *)buf, keyMask, pMoveScratch);
+    acc = _mm_xor_si128(acc, lazyLengthHash(1024, 64));
+    return precompReduction64(acc);
+}
+
 __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_1(__m128i *randomsource, const __m128i buf[4], uint64_t keyMask, __m128i **pMoveScratch)
 {
     const __m128i pbuf_copy[4] = {_mm_xor_si128(buf[0], buf[2]), _mm_xor_si128(buf[1], buf[3]), buf[2], buf[3]};
@@ -781,7 +787,7 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_1(__m128i *randomsource,
     return acc;
 }
 
-__m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2(__m128i *randomsource, const __m128i buf[4], uint64_t keyMask, __m128i **pMoveScratch)
+static inline __m128i verusclhash_sv2_2_loop(__m128i *randomsource, const __m128i buf[4], uint64_t keyMask, __m128i **pMoveScratch, bool v2_3)
 {
     const __m128i pbuf_copy[4] = {_mm_xor_si128(buf[0], buf[2]), _mm_xor_si128(buf[1], buf[3]), buf[2], buf[3]};
     const __m128i *pbuf;
@@ -1062,6 +1068,38 @@ __m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2(__m128i *randomsource,
                 break;
             }
         }
+
+        if (v2_3)
+        {
+            // every case passes through here, so acc always changes. all four buffer lanes (including the
+            // nonce lanes [2..3]) feed the two clmuls, with the two key blocks just written at prand and prandex as the round key
+            const uint64_t pi = selector & 3;
+            const __m128i p = _mm_load_si128(pbuf_copy + pi);
+            const __m128i q = _mm_load_si128(pbuf_copy + (pi ^ 1));
+            const __m128i px = _mm_load_si128(pbuf_copy + (pi ^ 2));
+            const __m128i qx = _mm_load_si128(pbuf_copy + (pi ^ 3));
+            const __m128i rcst = _mm_set_epi64x(-1, i + 1);
+
+            // with the two key blocks just written at prand and prandex as the round key
+            const __m128i addp = _mm_xor_si128(_mm_xor_si128(p, qx), _mm_xor_si128(_mm_load_si128(prand), _mm_load_si128(prandex)));
+            const __m128i clp = _mm_clmulepi64_si128(addp, addp, 0x10);
+            const __m128i p2 = _mm_xor_si128(_mm_xor_si128(p, clp), rcst);
+
+            const __m128i addq = _mm_xor_si128(_mm_xor_si128(q, px), p2);
+            const __m128i clq = _mm_clmulepi64_si128(addq, addq, 0x10);
+
+            acc = _mm_xor_si128(acc, _mm_xor_si128(_mm_xor_si128(clp, clq), rcst));
+        }
     }
     return acc;
+}
+
+__m128i __verusclmulwithoutreduction64alignedrepeat_sv2_2(__m128i *randomsource, const __m128i buf[4], uint64_t keyMask, __m128i **pMoveScratch)
+{
+    return verusclhash_sv2_2_loop(randomsource, buf, keyMask, pMoveScratch, false);
+}
+
+__m128i __verusclmulwithoutreduction64alignedrepeat_sv2_3(__m128i *randomsource, const __m128i buf[4], uint64_t keyMask, __m128i **pMoveScratch)
+{
+    return verusclhash_sv2_2_loop(randomsource, buf, keyMask, pMoveScratch, true);
 }

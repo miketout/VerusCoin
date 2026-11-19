@@ -838,6 +838,71 @@ bool AppInitNetworking()
     return true;
 }
 
+// activation heights are not persisted: a chain already past a time-activated switch must find the switch block again at
+// startup. versions never decrease along a valid chain, so the first block at or above a version is its switch block,
+// and the time rule is checked there
+static bool DiscoverTimeActivatedSolutionVersion(int32_t version, std::string &errorOut)
+{
+    CActivationHeight &actHeight = CConstVerusSolutionVector::activationHeight;
+    auto startIt = actHeight.timeStarts.find(version);
+    if (startIt == actHeight.timeStarts.end() ||
+        CConstVerusSolutionVector::Version(chainActive.LastTip()->nSolution.nSolution()) < version)
+    {
+        return true;    // height-activated only, or not switched yet
+    }
+
+    const uint32_t timeStart = startIt->second;
+    bool isHeightExplicit = false;
+    if (actHeight.GetVersionActivationHeight(version, &isHeightExplicit) <= chainActive.LastTip()->GetHeight())
+    {
+        return true;    // already known
+    }
+
+    if (isHeightExplicit)
+    {
+        errorOut = strprintf("Invalid blockchain - incorrect PBaaS solution at explicitly set height requiring version %d", version);
+        return false;
+    }
+
+    if (chainActive.Height() > 0 &&
+        chainActive[1]->nVersion == CBlock::VERUS_V2 &&
+        CConstVerusSolutionVector::Version(chainActive[1]->nSolution.nSolution()) >= version)
+    {
+        // a chain that launched at or above this version: pin it, and every time-activated version below it, at block 1
+        for (int32_t v = CActivationHeight::SOLUTION_VERUSV8; v <= version; v++)
+        {
+            actHeight.SetActivationHeight(v, 1, true);
+        }
+        return true;
+    }
+
+    uint32_t lo = 1, hi = chainActive.Height();
+    while (lo < hi)
+    {
+        uint32_t mid = lo + ((hi - lo) >> 1);
+        if (CConstVerusSolutionVector::Version(chainActive[mid]->nSolution.nSolution()) >= version)
+        {
+            hi = mid;
+        }
+        else
+        {
+            lo = mid + 1;
+        }
+    }
+    CBlockIndex *pSwitch = chainActive[hi];
+    if (CConstVerusSolutionVector::Version(pSwitch->nSolution.nSolution()) < version ||
+        CConstVerusSolutionVector::Version(pSwitch->pprev->nSolution.nSolution()) >= version ||
+        pSwitch->nTime < timeStart ||
+        !(pSwitch->pprev->nTime < timeStart ||
+          CConstVerusSolutionVector::Version(pSwitch->pprev->nSolution.nSolution()) < CActivationHeight::SOLUTION_VERUSV7))
+    {
+        errorOut = strprintf("Invalid blockchain - incorrect switchover to PBaaS solution version %d", version);
+        return false;
+    }
+    actHeight.SetActivationHeight(version, pSwitch->GetHeight(), false);
+    return true;
+}
+
 bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 {
 #ifndef _WIN32
@@ -1248,6 +1313,9 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV6, 1, true);
             CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV7, 1, true);
         }
+        // versions that switch on by block time wherever this chain gives them no explicit height
+        CConstVerusSolutionVector::activationHeight.SetActivationTime(CActivationHeight::SOLUTION_VERUSV8, PBAAS_VERSION8_SOLUTION_TIME_START);
+        CConstVerusSolutionVector::activationHeight.SetActivationTime(CActivationHeight::SOLUTION_VERUSV9, PBAAS_VERSION9_SOLUTION_TIME_START);
     }
 
     MAX_OUR_UTXOS_ID_RESCAN = GetArg("-maxourutxosidrescan", MAX_OUR_UTXOS_ID_RESCAN);
@@ -1890,110 +1958,15 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                         ConnectedChains.ConfigureEthBridge(true);
                     }
 
-                    bool isHeightExplicit = false;
-
-                    // check and verify solution version, if we are at or past version 8 and it isn't already set
-                    if (CConstVerusSolutionVector::Version(chainActive.LastTip()->nSolution.nSolution()) >= CActivationHeight::SOLUTION_VERUSV8 &&
-                        CConstVerusSolutionVector::activationHeight.GetVersionActivationHeight(CActivationHeight::SOLUTION_VERUSV8, &isHeightExplicit) >
-                            chainActive.LastTip()->GetHeight())
+                    for (auto &oneStart : CConstVerusSolutionVector::activationHeight.timeStarts)
                     {
-                        if (isHeightExplicit)
+                        std::string solErr;
+                        if (!DiscoverTimeActivatedSolutionVersion(oneStart.first, solErr))
                         {
-                            return InitError("Invalid blockchain - incorrect PBaaS solution at explicitly set height requiring version 8");
-                        }
-                        // if block 1 is v8, set activation to block 1
-                        if (chainActive.Height() > 0 &&
-                            chainActive[1]->nVersion == CBlock::VERUS_V2 &&
-                            CConstVerusSolutionVector::Version(chainActive[1]->nSolution.nSolution()) >= CActivationHeight::SOLUTION_VERUSV8)
-                        {
-                            CConstVerusSolutionVector::activationHeight.SetActivationHeight(CConstVerusSolutionVector::Version(chainActive[1]->nSolution.nSolution()), 1, true);
-                        }
-                        else
-                        {
-                            uint32_t lowerBound = 1;
-                            uint32_t upperBound = chainActive.Height();
-                            uint32_t bracketLow = lowerBound;
-                            uint32_t bracketHigh = upperBound;
-                            CBlockIndex *pCheckIndex;
-                            uint32_t midBlock = lowerBound;
-
-                            do
-                            {
-                                midBlock = bracketLow + (((bracketHigh - bracketLow) == 1 && midBlock != bracketHigh) ? 1 : ((bracketHigh - bracketLow) >> 1));
-                                pCheckIndex = chainActive[midBlock];
-                                if (pCheckIndex->nTime < PBAAS_VERSION8_SOLUTION_TIME_START)
-                                {
-                                    bracketLow = midBlock;
-                                }
-                                else if (pCheckIndex->pprev->nTime < PBAAS_VERSION8_SOLUTION_TIME_START)
-                                {
-                                    // found it
-                                    break;
-                                }
-                                else
-                                {
-                                    bracketHigh = midBlock;
-                                }
-                            } while (bracketHigh != bracketLow &&
-                                     midBlock != lowerBound &&
-                                     midBlock != upperBound &&
-                                     !(pCheckIndex->nTime >= PBAAS_VERSION8_SOLUTION_TIME_START &&
-                                       pCheckIndex->pprev->nTime < PBAAS_VERSION8_SOLUTION_TIME_START));
-
-                            // now, we have the best candidate for time in pCheckIndex, and if it's not where things switch over,
-                            // then this has improperly switched over
-                            if (pCheckIndex->nTime < PBAAS_VERSION8_SOLUTION_TIME_START || pCheckIndex->pprev->nTime >= PBAAS_VERSION8_SOLUTION_TIME_START)
-                            {
-                                return InitError("Invalid blockchain - incorrect switchover to PBaaS solution version 8");
-                            }
-
-                            if (CConstVerusSolutionVector::Version(pCheckIndex->nSolution.nSolution()) != CActivationHeight::SOLUTION_VERUSV8 ||
-                                CConstVerusSolutionVector::Version(pCheckIndex->pprev->nSolution.nSolution()) == CActivationHeight::SOLUTION_VERUSV8)
-                            {
-                                // if we haven't switched because of not yet being at v7 solution, bisect to find the switch point
-                                if (CConstVerusSolutionVector::Version(pCheckIndex->nSolution.nSolution()) < CActivationHeight::SOLUTION_VERUSV7)
-                                {
-                                    lowerBound = pCheckIndex->GetHeight();
-                                    bracketLow = lowerBound;
-                                    bracketHigh = upperBound;
-
-                                    do
-                                    {
-                                        midBlock = bracketLow + (((bracketHigh - bracketLow) == 1 && midBlock != bracketHigh) ? 1 : ((bracketHigh - bracketLow) >> 1));
-                                        pCheckIndex = chainActive[midBlock];
-                                        if (CConstVerusSolutionVector::Version(pCheckIndex->nSolution.nSolution()) < CActivationHeight::SOLUTION_VERUSV8)
-                                        {
-                                            bracketLow = midBlock;
-                                        }
-                                        else if (CConstVerusSolutionVector::Version(pCheckIndex->pprev->nSolution.nSolution()) < CActivationHeight::SOLUTION_VERUSV8)
-                                        {
-                                            // found it
-                                            break;
-                                        }
-                                        else
-                                        {
-                                            bracketHigh = midBlock;
-                                        }
-                                    } while (bracketHigh != bracketLow &&
-                                             midBlock != lowerBound &&
-                                             midBlock != upperBound &&
-                                             !(CConstVerusSolutionVector::Version(pCheckIndex->nSolution.nSolution()) >= CActivationHeight::SOLUTION_VERUSV8 &&
-                                               CConstVerusSolutionVector::Version(pCheckIndex->pprev->nSolution.nSolution()) < CActivationHeight::SOLUTION_VERUSV8));
-
-                                    if (CConstVerusSolutionVector::Version(pCheckIndex->pprev->nSolution.nSolution()) >= CActivationHeight::SOLUTION_VERUSV7)
-                                    {
-                                        return InitError("Invalid blockchain, incorrect switchover to PBaaS solution version 8 from version 7");
-                                    }
-                                }
-                                else
-                                {
-                                    return InitError("Invalid blockchain, incorrect switchover to PBaaS solution version 8");
-                                }
-                            }
-
-                            CConstVerusSolutionVector::activationHeight.SetActivationHeight(CActivationHeight::SOLUTION_VERUSV8, midBlock, false);
+                            return InitError(solErr);
                         }
                     }
+
                     ConnectedChains.CheckOracleUpgrades();
                 }
 
