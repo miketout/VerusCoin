@@ -2525,7 +2525,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
 
     txn_count = pblock->vtx.size();
 
-    if ( txn_count > 1 )
+    if (txn_count > 1 && pblock->vtx[txn_count-1].vin.size() && pblock->vtx[txn_count-1].vout.size())
     {
         target.SetCompact(pblock->GetVerusPOSTarget());
         txid = pblock->vtx[txn_count-1].vin[0].prevout.hash;

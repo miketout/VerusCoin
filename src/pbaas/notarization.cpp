@@ -4549,7 +4549,8 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                             idAddressMap.insert(std::make_pair(oneId.GetID(), std::make_pair(oneId.minSigs, idAddrBytes)));
                         }
 
-                        if (!VerifyScript(lastStakeTx.vin[0].scriptSig,
+                        if (lastStakeTx.vin[0].prevout.n >= lastSourceTx.vout.size() ||
+                            !VerifyScript(lastStakeTx.vin[0].scriptSig,
                                           lastSourceTx.vout[lastStakeTx.vin[0].prevout.n].scriptPubKey,
                                           MANDATORY_SCRIPT_VERIFY_FLAGS,
                                           TransactionSignatureChecker(&lastStakeTx, (uint32_t)0, lastSourceTx.vout[lastStakeTx.vin[0].prevout.n].nValue, &idAddressMap),
@@ -11231,9 +11232,12 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
 
                 // block one and definition flags skip the descent and transition checks and are only valid in block 1
                 if (height > 1 &&
-                    (currentNotarization.IsBlockOneNotarization() || currentNotarization.IsDefinitionNotarization()))
+                    (currentNotarization.IsBlockOneNotarization() ||
+                    currentNotarization.IsDefinitionNotarization() ||
+                    currentNotarization.IsPreLaunch() ||
+                    currentNotarization.IsSameChain()))
                 {
-                    return state.Error("Block one or definition flags are invalid in an earned notarization after block 1");
+                    return state.Error("Block one, definition, pre-launch or same-chain flags are invalid in an earned notarization after block 1");
                 }
 
                 if ((curDef.IsPBaaSChain() || curDef.IsGateway()) &&

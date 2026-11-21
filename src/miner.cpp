@@ -2950,8 +2950,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             }
             if (tx.IsCoinBase() ||
                 IsExpiredTx(tx, nHeight) ||
-                ((mi->GetHeight() + 1) != nHeight &&
-                 !ContextualCheckTransaction(tx, state, Params(), nHeight, 0)))
+                !ContextualCheckTransaction(tx, state, Params(), nHeight, 0))
             {
                 txesToRemove.push_back(tx);
                 continue;
@@ -3252,11 +3251,10 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             CValidationState state;
             PrecomputedTransactionData txdata(tx);
 
-            // re-run the crypto-condition evals, as AcceptToMemoryPool did when the transaction entered the pool, for
-            // entries accepted at an earlier height, so a transaction whose eval verdict has changed since never enters
-            // the template; entries accepted at this height were checked against this tip already
+            // re-run the crypto-condition evals, as AcceptToMemoryPool did when the transaction entered the pool,
+            // so a transaction whose eval verdict has changed since never enters the template
             auto poolIt = mempool.mapTx.find(hash);
-            bool reRunEvals = poolIt != mempool.mapTx.end() && (poolIt->GetHeight() + 1) != nHeight && KOMODO_CONNECTING <= 0;
+            bool reRunEvals = poolIt != mempool.mapTx.end() && KOMODO_CONNECTING <= 0;
             if (reRunEvals)
             {
                 KOMODO_CONNECTING = (1<<30) + (int32_t)nHeight;
@@ -4256,9 +4254,8 @@ void static VerusStaker(CWallet *pwallet)
 
             uint256 hashTarget = ArithToUint256(arith_uint256().SetCompact(pblock->nBits));
 
-            pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, consensusParams);
-
             UpdateTime(pblock, consensusParams, pindexPrev);
+            pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, consensusParams);
 
             if (ProcessBlockFound(pblock, *pwallet, reservekey))
             {

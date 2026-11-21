@@ -23,6 +23,53 @@
 
 extern int32_t VERUS_MIN_STAKEAGE;
 
+typedef struct ccFulfillmentCheck {
+    std::vector<CPubKey> &vPK;
+    std::vector<uint32_t> &vCount;
+} ccFulfillmentCheck;
+
+// to figure out which node is signed
+int CCFulfillmentVisitor(CC *cc, struct CCVisitor visitor)
+{
+    //printf("cc_typeName: %s, cc_isFulfilled: %x, cc_isAnon: %x, cc_typeMask: %x, cc_condToJSONString:\n%s\n",
+    //       cc_typeName(cc), cc_isFulfilled(cc), cc_isAnon(cc), cc_typeMask(cc), cc_conditionToJSONString(cc));
+
+    if (strcmp(cc_typeName(cc), "secp256k1-sha-256") == 0)
+    {
+        cJSON *json = cc_conditionToJSON(cc);
+        if (json)
+        {
+            cJSON *pubKeyNode = json->child->next;
+            if (strcmp(pubKeyNode->string, "publicKey") == 0)
+            {
+                ccFulfillmentCheck *pfc = (ccFulfillmentCheck *)(visitor.context);
+
+                //printf("public key: %s\n", pubKeyNode->valuestring);
+                CPubKey pubKey = CPubKey(ParseHex(pubKeyNode->valuestring));
+
+                for (int i = 0; i < pfc->vPK.size(); i++)
+                {
+                    if (i < pfc->vCount.size() && (pfc->vPK[i] == pubKey))
+                    {
+                        pfc->vCount[i]++;
+                    }
+                }
+            }
+            cJSON_free(json);
+        }
+    }
+    return 1;
+}
+
+int IsCCFulfilled(CC *cc, ccFulfillmentCheck *ctx)
+{
+    struct CCVisitor visitor = {&CCFulfillmentVisitor, NULL, 0, (void *)ctx};
+    cc_visit(cc, visitor);
+
+    //printf("count key 1: %d, count key 2: %d\n", ctx->vCount[0], ctx->vCount[1]);
+    return ctx->vCount[0];
+}
+
 // this validates the format of the stake transaction and, optionally, whether or not it is
 // properly signed to spend the source stake.
 // it does not validate the relationship to a coinbase guard, PoS eligibility or the actual stake spend.
@@ -47,7 +94,8 @@ bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTra
         {
             return true;
         }
-        else if (myGetTransaction(stakeTx.vin[0].prevout.hash, srcTx, blkHash))
+        else if (myGetTransaction(stakeTx.vin[0].prevout.hash, srcTx, blkHash) &&
+                 stakeTx.vin[0].prevout.n < srcTx.vout.size())
         {
             if (sourceChain.IDStaking() && sourceChain.GetID() == ASSETCHAINS_CHAINID)
             {
@@ -126,6 +174,39 @@ bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTra
 
                         std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> idAddressMap;
                         idAddressMap = ServerTransactionSignatureChecker::ExtractIDMap(srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey, stakeParams.blkHeight, true);
+
+                        // a stake transaction is never signed by the stake guard's own key; that key only spends a guard output as
+                        // the cheat catcher, under the StakeGuard eval, which the non-server checker below does not run
+                        if (p.IsValid() && p.evalCode == EVAL_STAKEGUARD)
+                        {
+                            CCcontract_info *cp, C;
+                            cp = CCinit(&C, EVAL_STAKEGUARD);
+                            CKeyID guardKeyID = CPubKey(ParseHex(cp->CChexstr)).GetID();
+                            if (p.version >= p.VERSION_V3)
+                            {
+                                std::vector<unsigned char> ffVec = GetFulfillmentVector(stakeTx.vin[0].scriptSig);
+                                CSmartTransactionSignatures smartSigs(std::vector<unsigned char>(ffVec.begin(), ffVec.end()));
+                                for (auto &keySig : smartSigs.signatures)
+                                {
+                                    CPubKey thisKey;
+                                    thisKey.Set(keySig.second.pubKeyData.begin(), keySig.second.pubKeyData.end());
+                                    if (thisKey.GetID() == guardKeyID)
+                                    {
+                                        return false;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                std::vector<uint32_t> vc = {0};
+                                std::vector<CPubKey> keys({CPubKey(ParseHex(cp->CChexstr))});
+                                ccFulfillmentCheck fc = {keys, vc};
+                                CC *cc = GetCryptoCondition(stakeTx.vin[0].scriptSig);
+                                bool guardSigned = cc && IsCCFulfilled(cc, &fc);
+                                if (cc) cc_free(cc);
+                                if (guardSigned) return false;
+                            }
+                        }
 
                         if (VerifyScript(stakeTx.vin[0].scriptSig,
                                          srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey,
@@ -221,7 +302,7 @@ bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTr
 
     //printf("ValidateMatchingStake: ccTx.vin[0].prevout.hash: %s, ccTx.vin[0].prevout.n: %d\n", ccTx.vin[0].prevout.hash.GetHex().c_str(), ccTx.vin[0].prevout.n);
 
-    if (ccTx.IsCoinBase())
+    if (ccTx.IsCoinBase() && voutNum < ccTx.vout.size())
     {
         CStakeParams p;
         if (ValidateStakeTransaction(stakeTx, p, slowValidation))
@@ -361,53 +442,6 @@ bool PrecheckStakeGuardOutput(const CTransaction &tx, int32_t outNum, CValidatio
         return true;
     }
     return RawPrecheckStakeGuardOutput(tx, outNum, state);
-}
-
-typedef struct ccFulfillmentCheck {
-    std::vector<CPubKey> &vPK;
-    std::vector<uint32_t> &vCount;
-} ccFulfillmentCheck;
-
-// to figure out which node is signed
-int CCFulfillmentVisitor(CC *cc, struct CCVisitor visitor)
-{
-    //printf("cc_typeName: %s, cc_isFulfilled: %x, cc_isAnon: %x, cc_typeMask: %x, cc_condToJSONString:\n%s\n",
-    //       cc_typeName(cc), cc_isFulfilled(cc), cc_isAnon(cc), cc_typeMask(cc), cc_conditionToJSONString(cc));
-
-    if (strcmp(cc_typeName(cc), "secp256k1-sha-256") == 0)
-    {
-        cJSON *json = cc_conditionToJSON(cc);
-        if (json)
-        {
-            cJSON *pubKeyNode = json->child->next;
-            if (strcmp(pubKeyNode->string, "publicKey") == 0)
-            {
-                ccFulfillmentCheck *pfc = (ccFulfillmentCheck *)(visitor.context);
-
-                //printf("public key: %s\n", pubKeyNode->valuestring);
-                CPubKey pubKey = CPubKey(ParseHex(pubKeyNode->valuestring));
-
-                for (int i = 0; i < pfc->vPK.size(); i++)
-                {
-                    if (i < pfc->vCount.size() && (pfc->vPK[i] == pubKey))
-                    {
-                        pfc->vCount[i]++;
-                    }
-                }
-            }
-            cJSON_free(json);
-        }
-    }
-    return 1;
-}
-
-int IsCCFulfilled(CC *cc, ccFulfillmentCheck *ctx)
-{
-    struct CCVisitor visitor = {&CCFulfillmentVisitor, NULL, 0, (void *)ctx};
-    cc_visit(cc, visitor);
-
-    //printf("count key 1: %d, count key 2: %d\n", ctx->vCount[0], ctx->vCount[1]);
-    return ctx->vCount[0];
 }
 
 bool StakeGuardValidate(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn, bool fulfilled)

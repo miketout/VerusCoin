@@ -560,6 +560,11 @@ namespace {
                         }
                         return;
                     }
+                    if (pindex->GetBlockTime() > GetTime() + 60) {
+                        // AcceptBlock defers a body this far ahead of our clock; do not request it, or anything
+                        // past it on this peer's chain, until it is due
+                        return;
+                    }
                     vBlocks.push_back(pindex);
                     if (vBlocks.size() == count) {
                         return;
@@ -2839,13 +2844,12 @@ bool IsInitialBlockDownload(const CChainParams& chainParams)
     }
 
     bool state;
-    arith_uint256 bigZero = arith_uint256();
     arith_uint256 minWork = UintToArith256(chainParams.GetConsensus().nMinimumChainWork);
     CBlockIndex *ptr = chainActive.LastTip();
 
     if (ptr == NULL)
         return true;
-    if (ptr->chainPower < CChainPower(ptr, bigZero, minWork))
+    if (ptr->chainPower.chainWork < minWork)
         return true;
 
     state = ptr->GetBlockTime() < (GetTime() - nMaxTipAge);
@@ -2998,8 +3002,10 @@ void CheckForkWarningConditionsOnNewFork(CBlockIndex* pindexNewForkTip, const CC
     // or a chain that is entirely longer than ours and invalid (note that this should be detected by both)
     // We define it this way because it allows us to only store the highest fork tip (+ base) which meets
     // the 7-block condition and from this always have the most-likely-to-cause-warning fork
+    CChainPower sevenBlocks = pfork ? GetBlockProof(*pfork) * 7 : CChainPower();
     if (pfork && (!pindexBestForkTip || (pindexBestForkTip && pindexNewForkTip->GetHeight() > pindexBestForkTip->GetHeight())) &&
-        pindexNewForkTip->chainPower - pfork->chainPower > (GetBlockProof(*pfork) * 7) &&
+        pindexNewForkTip->IsStakeWeightedPower() == pfork->IsStakeWeightedPower() &&
+        pindexNewForkTip->chainPower - pfork->chainPower > CChainPower(pfork, sevenBlocks.chainStake, sevenBlocks.chainWork) &&
         chainActive.Height() - pindexNewForkTip->GetHeight() < 72)
     {
         pindexBestForkTip = pindexNewForkTip;
@@ -6176,6 +6182,22 @@ static bool ActivateBestChainStep(CValidationState& state, const CChainParams& c
                     fContinue = false;
                     break;
                 } else {
+                    // a block still ahead of our clock is not a system error of ours: take its chain out of the
+                    // candidates so the next best chain connects; a child arriving later, or a restart, puts it
+                    // back once it is due
+                    if (pindexConnect->GetBlockTime() > GetTime() + 60)
+                    {
+                        LogPrint("net", "%s: block %s is ahead of our time, deferring its chain\n", __func__, curHash.GetHex().c_str());
+                        setBlockIndexCandidates.erase(pindexMostWork);
+                        for (CBlockIndex *pindexDefer : vpindexToConnect)
+                        {
+                            setBlockIndexCandidates.erase(pindexDefer);
+                        }
+                        state = CValidationState();
+                        fContinue = false;
+                        break;
+                    }
+
                     // A system error occurred (disk space, database error, ...)
                     if (++blockTransientErrorMap[curHash] >= 10 && (blockTransientErrorMap[curHash] % 10) == 0)
                     {
@@ -6359,6 +6381,20 @@ bool ReconsiderBlock(CValidationState& state, CBlockIndex *pindex) {
     return true;
 }
 
+// chain power of a block from its parent's. From the first solution version 9 block on, bit 255 of the stake is
+// cleared: it is the credit of one degenerate PoS block (stake target 1) in VRSC history and it zeroed the stake term
+// of every comparison since. Version 8 powers keep it, so their comparison is exactly as before, and the proof roots'
+// compact power (the low 128 bits of stake) is unaffected either way.
+static CChainPower AccumulatedChainPower(CBlockIndex *pindex)
+{
+    CChainPower result = (pindex->pprev ? CChainPower(pindex) + pindex->pprev->chainPower : CChainPower(pindex)) + GetBlockProof(*pindex);
+    if (result.stakeWeighted)
+    {
+        result.chainStake &= ~(arith_uint256(1) << 255);
+    }
+    return result;
+}
+
 CBlockIndex* AddToBlockIndex(const CBlockHeader& block)
 {
     // Check for duplicate
@@ -6416,7 +6452,7 @@ CBlockIndex* AddToBlockIndex(const CBlockHeader& block)
         else fprintf(stderr,"unexpected null pprev %s\n",hash.ToString().c_str());
         pindexNew->BuildSkip();
     }
-    pindexNew->chainPower = (pindexNew->pprev ? CChainPower(pindexNew) + pindexNew->pprev->chainPower : CChainPower(pindexNew)) + GetBlockProof(*pindexNew);
+    pindexNew->chainPower = AccumulatedChainPower(pindexNew);
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
     if (pindexBestHeader == NULL || pindexBestHeader->chainPower < pindexNew->chainPower)
         pindexBestHeader = pindexNew;
@@ -7212,6 +7248,18 @@ static bool AcceptBlock(int32_t *futureblockp, const CBlock& block, CValidationS
         *futureblockp = true;
         return false;
     }
+
+    // the index entry was built from a header with this hash; the body must carry that header
+    CBlockHeader idxHdr = pindex->GetBlockHeader();
+    if (block.hashPrevBlock != idxHdr.hashPrevBlock || block.hashMerkleRoot != idxHdr.hashMerkleRoot ||
+        block.hashFinalSaplingRoot != idxHdr.hashFinalSaplingRoot || block.nBits != idxHdr.nBits ||
+        block.nNonce != idxHdr.nNonce || block.nTime != idxHdr.nTime || block.nVersion != idxHdr.nVersion ||
+        block.GetPrevMMRRoot() != pindex->PrevMMRRoot() || block.GetBlockMMRRoot() != pindex->BlockMMRRoot())
+    {
+        return state.DoS(100, error("%s: block header does not match index entry for %s", __func__, pindex->GetBlockHash().GetHex()),
+                         REJECT_INVALID, "header-index-mismatch");
+    }
+
     //fprintf(stderr,"acceptblockheader passed\n");
     // Try to process all requested blocks that we don't have, but only
     // process an unrequested block if it's new and has enough work to
@@ -7248,6 +7296,15 @@ static bool AcceptBlock(int32_t *futureblockp, const CBlock& block, CValidationS
         return false;
     }
 
+    // a block timed more than 60 seconds ahead of our clock keeps its header in the index but is neither stored nor
+    // made a candidate; FindNextBlocksToDownload requests the body again when its time arrives and it is accepted then
+    if (*futureblockp != 0)
+    {
+        LogPrint("net", "%s: block %s is %d seconds ahead of our time, deferring\n", __func__,
+                 pindex->GetBlockHash().GetHex().c_str(), (int)(block.GetBlockTime() - GetTime()));
+        return false;
+    }
+
     int nHeight = pindex->GetHeight();
     // Write block to history file
     try {
@@ -7268,10 +7325,7 @@ static bool AcceptBlock(int32_t *futureblockp, const CBlock& block, CValidationS
 
     if (fCheckForPruning)
         FlushStateToDisk(state, FLUSH_STATE_NONE); // we just allocated more disk space for block files
-    if ( *futureblockp == 0 )
-        return true;
-    LogPrintf("AcceptBlock block from future error\n");
-    return false;
+    return true;
 }
 
 static bool IsSuperMajority(int minVersion, const CBlockIndex* pstart, unsigned nRequired, const Consensus::Params& consensusParams)
@@ -7672,7 +7726,7 @@ bool static LoadBlockIndexDB()
     BOOST_FOREACH(const PAIRTYPE(int, CBlockIndex*)& item, vSortedByHeight)
     {
         CBlockIndex* pindex = item.second;
-        pindex->chainPower = (pindex->pprev ? CChainPower(pindex) + pindex->pprev->chainPower : CChainPower(pindex)) + GetBlockProof(*pindex);
+        pindex->chainPower = AccumulatedChainPower(pindex);
         // We can link the chain of blocks for which we've received transactions at some point.
         // Pruned nodes may have deleted the block.
         if (pindex->nTx > 0) {
@@ -9190,7 +9244,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         std::string strMsg;
         unsigned char ccode;
         string strReason;
-        bool isRejectNewTx = false;
         uint256 hash;
         try {
             vRecv >> LIMITED_STRING(strMsg, CMessageHeader::COMMAND_SIZE) >> ccode >> LIMITED_STRING(strReason, MAX_REJECT_MESSAGE_LENGTH);
@@ -9200,7 +9253,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
             if (strMsg == "block" || strMsg == "tx")
             {
-                isRejectNewTx = strMsg == "tx";
                 vRecv >> hash;
                 ss << ": hash " << hash.ToString();
             }
@@ -9211,55 +9263,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             pfrom->fDisconnect = true;
             return false;
         }
-        std::string sanitizedReason = SanitizeString(strReason);
-        int misbehavingLevel = (sanitizedReason == "txoverwinternotactive" || sanitizedReason == "txoverwinterexpired") ? 0 : 1;
-        if (isRejectNewTx && sanitizedReason == "badtxnsinputsspent")
-        {
-            CNodeStateStats statestats;
-            bool fStateStats = GetNodeStateStats(pfrom->id, statestats);
-            if (statestats.nCommonHeight < chainActive.Height())
-            {
-                misbehavingLevel = 0;
-            }
-            else
-            {
-                CTransaction mTx;
-                LOCK(mempool.cs);
-                if (mempool.lookup(hash, mTx))
-                {
-                    CObjectFinalization of;
-                    // if it is an import or export, don't report to reduce network traffic. that will happen.
-                    for (auto &oneOut : mTx.vout)
-                    {
-                        COptCCParams chkP;
-                        if (CCrossChainExport(oneOut.scriptPubKey).IsValid() ||
-                            CCrossChainImport(oneOut.scriptPubKey).IsValid() ||
-                            CPBaaSNotarization(oneOut.scriptPubKey).IsValid() ||
-                            (oneOut.scriptPubKey.IsPayToCryptoCondition(chkP) &&
-                            chkP.IsValid() &&
-                            chkP.vData.size() &&
-                            chkP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
-                            (of = CObjectFinalization(chkP.vData[0])).IsValid() &&
-                            of.IsConfirmed()))
-                        {
-                            misbehavingLevel = 0;
-                            break;
-                        }
-                    }
-                }
-                if (LogAcceptCategory("showinputnotfoundtxes"))
-                {
-                    printf("reject - inputs spent\n");
-                    LogPrintf("reject - inputs spent\n");
-                    UniValue jsonTx(UniValue::VOBJ);
-                    TxToUniv(mTx, uint256(), jsonTx);
-                    printf("\n%s\n", jsonTx.write(1,2).c_str());
-                    LogPrintf("\n%s\n", jsonTx.write(1,2).c_str());
-                }
-            }
-        }
-        LOCK(cs_main);
-        Misbehaving(pfrom->GetId(), misbehavingLevel);
+        // a reject means the peer disagrees (conflict, policy, fork); it is not evidence of misbehaviour.
+        // blocks of ours that peers reject are already scored on the block path.
         return false;
     }
 

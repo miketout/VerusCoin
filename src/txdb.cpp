@@ -741,7 +741,10 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                                                       const std::vector<CMutableTransaction> &unfundedTransactionsFromOtherChains,
                                                       const std::vector<CMutableTransaction> &fundedTransactionsForSigning,
                                                       bool sendFullySignedTransactions,
-                                                      bool outputCurrencyStatesOnly)
+                                                      bool outputCurrencyStatesOnly,
+                                                      const std::set<uint160> &excludedBaskets,
+                                                      const std::map<uint160, CAmount> &preservedSupply,
+                                                      const std::map<uint160, CCurrencyValueMap> &disgorgeExcess)
 {
     boost::scoped_ptr<CDBIterator> iter(NewIterator());
 
@@ -956,26 +959,30 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                     adjustmentStack.pop_back();
                     currencyStack.pop_back();
 
-                    // first, determine maximum adjustment of any currency in the map, since we are looking for negative adjustments
-                    // get minimum
-                    for (auto &oneAdj : lastAdjustment.valueMap)
+                    if (excludedBaskets.count(lastCurrency.first))
                     {
-                        largestAdjustment = std::max(largestAdjustment, oneAdj.second);
+                        // an excluded basket is not adjusted: no balancer, no holder cut, and a container holding it sees no cut from it
+                        largestAdjustment = 0;
+                        lastAdjustment = CCurrencyValueMap();
+                    }
+                    else
+                    {
+                        // first, determine maximum adjustment of any currency in the map, since we are looking for negative adjustments
+                        for (auto &oneAdj : lastAdjustment.valueMap)
+                        {
+                            largestAdjustment = std::max(largestAdjustment, oneAdj.second);
+                        }
+                        if (largestAdjustment != 0)
+                        {
+                            lastAdjustment.valueMap[lastCurrency.first] = largestAdjustment;
+                            currenciesByAdjustment.insert({lastCurrency.first, lastAdjustment});
+                            allCurrenciesToAdjust.valueMap[lastCurrency.first] = largestAdjustment;
+                        }
                     }
 
-                    if (largestAdjustment != 0)
-                    {
-                        // we remove equivalent of the largest amount from this currency's supply
-                        // and add disgorgement adjustments, reductions should be retrieved by allCurrenciesToAdjust
-                        lastAdjustment.valueMap[lastCurrency.first] = largestAdjustment;
-                        currenciesByAdjustment.insert({lastCurrency.first, lastAdjustment});
-                        allCurrenciesToAdjust.valueMap[lastCurrency.first] = largestAdjustment;
-                    }
-
-                    // if we are recursing and have a reduction value for this currency, return it
+                    // for recursion caller's reserves, this currency is removed by largestAdjustment
                     if (!adjustmentStack.empty() && largestAdjustment != 0)
                     {
-                        // for recursion caller's reserves, this currency is removed by largestAdjustment
                         adjustmentStack.back().valueMap[lastCurrency.first] = largestAdjustment;
                     }
 
@@ -1741,6 +1748,39 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
     // by creating an unfunded refund transaction to the adjustment ID for this chain. the adjustment ID
     // will burn these currencies in provable burn transactions
 
+    // override keys must name adjusted fractionals: a misnamed preservesupply would otherwise leave its basket cut in full with no notice
+    for (auto &onePreserved : preservedSupply)
+    {
+        if (!currenciesByAdjustment.count(onePreserved.first) || !allCurrencies[onePreserved.first].first.IsFractional())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "currencyoverrides: preservesupply names a currency that is not an adjusted fractional: " +
+                                                        EncodeDestination(CIdentityID(onePreserved.first)));
+        }
+    }
+    for (auto &oneExcess : disgorgeExcess)
+    {
+        if (!currenciesByAdjustment.count(oneExcess.first) || !allCurrencies[oneExcess.first].first.IsFractional())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "currencyoverrides: disgorgeexcess names a currency that is not an adjusted fractional: " +
+                                                    EncodeDestination(CIdentityID(oneExcess.first)));
+        }
+        CCurrencyValueMap basketReserves(allCurrencies[oneExcess.first].second.currencies, allCurrencies[oneExcess.first].second.reserves);
+        CAmount basketCut = allCurrenciesToAdjust.valueMap[oneExcess.first];
+        for (auto &oneReserve : oneExcess.second.valueMap)
+        {
+            if (!basketReserves.valueMap.count(oneReserve.first))
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "currencyoverrides: disgorgeexcess names a reserve the basket does not hold: " + EncodeDestination(CIdentityID(oneReserve.first)));
+            }
+            CAmount reserveCut = allCurrenciesToAdjust.valueMap.count(oneReserve.first) ? allCurrenciesToAdjust.valueMap[oneReserve.first] : 0;
+            if (basketCut - reserveCut + oneReserve.second >= SATOSHIDEN)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "currencyoverrides: disgorgeexcess plus the reimbursement fraction must stay below one for " +
+                                                        EncodeDestination(CIdentityID(oneReserve.first)));
+            }
+        }
+    }
+
     std::map<uint160, UniValue> allChainCurReductionMapUni;
     for (auto oneCurrency : currenciesByAdjustment)
     {
@@ -1756,6 +1796,21 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
 
             CCurrencyValueMap reservesMap = CCurrencyValueMap(allCurrencies[oneCurrency.first].second.currencies, allCurrencies[oneCurrency.first].second.reserves);
             CCurrencyValueMap burnedAmounts;
+
+            // a preserved amount of this basket's supply (tokens held where the cleanup cannot reach them, such as a gateway's
+            // reserve deposits) and the same fraction of every reserve are left out of the burn and the reserve pulls.
+            // Holders are still cut and reimbursed by the max-rule fraction, so the supply field ends equal to the tokens outstanding.
+            CAmount preserved = preservedSupply.count(oneCurrency.first) ? preservedSupply.find(oneCurrency.first)->second : 0;
+            if (preserved < 0 || preserved >= curState.supply)
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "currencyoverrides: preservesupply for " + curDef.name + " must be below its supply");
+            }
+            CAmount preservedFraction = preserved ? CCurrencyDefinition::CalculateRatioOfTwoValues(preserved, curState.supply) : 0;
+            CCurrencyValueMap preservedReserves;
+            for (auto &oneReserve : reservesMap.valueMap)
+            {
+                preservedReserves.valueMap[oneReserve.first] = CCurrencyState::NativeToReserveRaw(oneReserve.second, preservedFraction);
+            }
 
             // loop through all reductions for this currency and create an unfunded reserve transfer for each one
             // sending to this chain's adjusting ID
@@ -1773,12 +1828,12 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                     flags = CReserveTransfer::VALID + CReserveTransfer::REFUND + CReserveTransfer::PROHIBITED_DISGORGEMENT;
                 }
 
-                // CAmount amountToBurn = reservesMap.valueMap[oneCurReduction.first] -
-                //    CCurrencyState::NativeToReserveRaw(reservesMap.valueMap[oneCurReduction.first], SATOSHIDEN - oneCurReduction.second);
+                CAmount cutBase = (oneCurReduction.first == oneCurrency.first) ?
+                    allCurrencies[oneCurrency.first].second.supply - preserved :
+                    reservesMap.valueMap[oneCurReduction.first] - preservedReserves.valueMap[oneCurReduction.first];
                 CAmount amountToBurn = (oneCurReduction.first == oneCurrency.first) ?
-                    CCurrencyState::NativeToReserveRaw(allCurrencies[oneCurrency.first].second.supply, oneCurReduction.second) :
-                    reservesMap.valueMap[oneCurReduction.first] -
-                        CCurrencyState::NativeToReserveRaw(reservesMap.valueMap[oneCurReduction.first], SATOSHIDEN - oneCurReduction.second);
+                    CCurrencyState::NativeToReserveRaw(cutBase, oneCurReduction.second) :
+                    cutBase - CCurrencyState::NativeToReserveRaw(cutBase, SATOSHIDEN - oneCurReduction.second);
 
                 burnedAmounts.valueMap[oneCurReduction.first] = amountToBurn;
 
@@ -1817,6 +1872,25 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                 utxosOutput++;
             }
 
+            CCoinbaseCurrencyState postBalancerState = curState;
+            auto reserveIdxMap = postBalancerState.GetReserveMap();
+            for (auto &oneBurn : burnedAmounts.valueMap)
+            {
+                if (oneBurn.first == oneCurrency.first)
+                {
+                    postBalancerState.supply -= oneBurn.second;
+                }
+                else if (reserveIdxMap.count(oneBurn.first))
+                {
+                    postBalancerState.reserves[reserveIdxMap[oneBurn.first]] -= oneBurn.second;
+                }
+            }
+            bool postBalancerValid = postBalancerState.IsValid() && postBalancerState.ValidateConversionLimits(true);
+            if (!postBalancerValid)
+            {
+                errors.push_back("post-balancer state of " + curDef.name + " fails conversion limits; its adjustment import would refund every transfer");
+            }
+
             if (curDef.systemID == ASSETCHAINS_CHAINID)
             {
                 CCurrencyValueMap excludeBasket(burnedAmounts);
@@ -1830,6 +1904,14 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
             txOutput.pushKV("initialreserves", reservesMap.ToUniValue());
             txOutput.pushKV("reducedby", burnedAmounts.ToUniValue());
             txOutput.pushKV("reducedbymultiple", oneCurrency.second.ToUniValue());
+            txOutput.pushKV("postbalancerstate", postBalancerState.ToUniValue());
+            txOutput.pushKV("postbalancerstatevalid", postBalancerValid);
+            if (preserved)
+            {
+                txOutput.pushKV("preservedsupply", ValueFromAmount(preserved));
+                txOutput.pushKV("preservedreserves", preservedReserves.ToUniValue());
+            }
+
             txOutput.pushKV("txchain", EncodeDestination(CIdentityID(curDef.systemID)));
 
             if (curDef.systemID == ASSETCHAINS_CHAINID)
@@ -1933,8 +2015,14 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                                                         allCurrenciesToAdjust.valueMap[oneReserveCur.first] :
                                                         0;
 
-                        // if reserve was deducted less than basket, refund difference
+                        // if reserve was deducted less than basket, refund difference; an operator margin for this basket and reserve
+                        // (currencyoverrides disgorgeexcess) is paid out by the same shares
                         CAmount reimbursePercent = reductionPercent - reserveDeduction;
+                        auto excessIt = disgorgeExcess.find(recursionStack.back().second->first);
+                        if (excessIt != disgorgeExcess.end() && excessIt->second.valueMap.count(oneReserveCur.first))
+                        {
+                            reimbursePercent += excessIt->second.valueMap.find(oneReserveCur.first)->second;
+                        }
 
                         CAmount thisAddressPercent = CCurrencyDefinition::CalculateRatioOfTwoValues(recursionStack.back().second->second, curState.supply);
 
@@ -1945,21 +2033,12 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
 
                         if (allCurrencies[oneReserveCur.first].first.IsFractional() && reserveDeduction > 0)
                         {
-                            // if this reserve is a reduced fractional, we should recurse
-                            CCurrencyValueMap oneReserveMap(allCurrencies[oneReserveCur.first].second.currencies, allCurrencies[oneReserveCur.first].second.reserves);
-                            for (auto &oneCurID : allCurrencies[oneReserveCur.first].second.currencies)
+                            // this reserve is a reduced basket; the holder's indirect share of it is reimbursed from that
+                            // basket at the next level, which recurses further into baskets it holds
+                            CAmount derivativeAmount = CCoinbaseCurrencyState::NativeToReserveRaw(oneReserveCur.second, thisAddressPercent);
+                            if (derivativeAmount)
                             {
-                                // if it is a reduced fractional, there should be a chance for reimbursement
-                                if (allCurrencies[oneCurID].first.IsFractional() &&
-                                    allCurrenciesToAdjust.valueMap.count(oneCurID) &&
-                                    allCurrenciesToAdjust.valueMap[oneCurID] != 0)
-                                {
-                                    CAmount derivativeAmount = CCoinbaseCurrencyState::NativeToReserveRaw(oneReserveMap.valueMap[oneCurID], thisAddressPercent);
-                                    if (derivativeAmount)
-                                    {
-                                        reimbursableReserves.valueMap[oneCurID] += derivativeAmount;
-                                    }
-                                }
+                                reimbursableReserves.valueMap[oneReserveCur.first] += derivativeAmount;
                             }
                         }
 
@@ -2004,8 +2083,15 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
                                                 allCurrenciesToAdjust.valueMap[oneReserveCur.first] :
                                                 0;
 
-                // if reserve was deducted less than basket, refund difference
+                // if reserve was deducted less than basket, refund difference; an operator margin for this basket and reserve
+                // (currencyoverrides disgorgeexcess) is paid out by the same shares
                 CAmount reimbursePercent = reductionPercent - reserveDeduction;
+                auto excessIt = disgorgeExcess.find(oneReimbursementData.first);
+                if (excessIt != disgorgeExcess.end() && excessIt->second.valueMap.count(oneReserveCur.first))
+                {
+                    reimbursePercent += excessIt->second.valueMap.find(oneReserveCur.first)->second;
+                }
+
                 CAmount totalReimbursement = CCoinbaseCurrencyState::NativeToReserveRaw(curCurMap.valueMap[oneReserveCur.first], reimbursePercent);
                 CAmount thisReimbursement = CCoinbaseCurrencyState::NativeToReserveRaw(totalReimbursement, oneReserveCur.second);
 
@@ -2171,6 +2257,62 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
         allChainCurrencyReimbursementsUni.pushKV(EncodeDestination(CIdentityID(oneChain.first)), oneChainCurrencyReimbursementsUni);
     }
     result.pushKV("currencyreimbursementsbychain", allChainCurrencyReimbursementsUni);
+
+    // after the reimbursement pass: the state each basket's one-import posting leaves, and the dust it retains (native dust the
+    // aggregation skips, truncation). It stays in the basket with its holders; this row shows whether the limits still hold.
+    UniValue postImportUni(UniValue::VARR);
+    for (auto &oneCurrency : currenciesByAdjustment)
+    {
+        CCurrencyDefinition &curDef = allCurrencies[oneCurrency.first].first;
+        CCoinbaseCurrencyState &curState = allCurrencies[oneCurrency.first].second;
+        if (!curDef.IsFractional())
+        {
+            continue;
+        }
+        CCoinbaseCurrencyState postImportState = curState;
+        auto reserveIdxMap = postImportState.GetReserveMap();
+        CAmount basketCut = oneCurrency.second.valueMap[oneCurrency.first];
+        CAmount preserved = preservedSupply.count(oneCurrency.first) ? preservedSupply.find(oneCurrency.first)->second : 0;
+        CAmount preservedFraction = preserved ? CCurrencyDefinition::CalculateRatioOfTwoValues(preserved, curState.supply) : 0;
+        for (auto &oneBurn : allChainCurrencyAdjustments[curDef.systemID][oneCurrency.first].valueMap)       // the balancer's legs (:1786)
+        {
+            if (oneBurn.first == oneCurrency.first)
+            {
+                postImportState.supply -= oneBurn.second;
+            }
+            else if (reserveIdxMap.count(oneBurn.first))
+            {
+                postImportState.reserves[reserveIdxMap[oneBurn.first]] -= oneBurn.second;
+            }
+        }
+        CCurrencyValueMap dustRetained;
+        for (auto &oneReserve : CCurrencyValueMap(curState.currencies, curState.reserves).valueMap)
+        {
+            CAmount paid = allChainCurrencyReimbursements[curDef.systemID][oneCurrency.first].valueMap[oneReserve.first];
+            postImportState.reserves[reserveIdxMap[oneReserve.first]] -= paid;
+            CAmount reserveCut = oneCurrency.second.valueMap.count(oneReserve.first) ? oneCurrency.second.valueMap[oneReserve.first] : 0;
+            CAmount excessPercent = disgorgeExcess.count(oneCurrency.first) && disgorgeExcess.find(oneCurrency.first)->second.valueMap.count(oneReserve.first) ?
+                                        disgorgeExcess.find(oneCurrency.first)->second.valueMap.find(oneReserve.first)->second : 0;
+            CAmount base = oneReserve.second - CCurrencyState::NativeToReserveRaw(oneReserve.second, preservedFraction);    // the preserved share is never owed
+            CAmount owed = CCurrencyState::NativeToReserveRaw(base, std::max<CAmount>(0, basketCut - reserveCut) + excessPercent);
+            if (owed > paid)
+            {
+                dustRetained.valueMap[oneReserve.first] = owed - paid;
+            }
+        }
+        bool postImportValid = postImportState.IsValid() && postImportState.ValidateConversionLimits(true);
+        if (!postImportValid)
+        {
+            errors.push_back("post-import state of " + curDef.name + " fails conversion limits; its import would refund every transfer: set a disgorgeexcess margin on its uncut reserve");
+        }
+        UniValue oneUni(UniValue::VOBJ);
+        oneUni.pushKV("currency", EncodeDestination(CIdentityID(oneCurrency.first)));
+        oneUni.pushKV("postimportstate", postImportState.ToUniValue());
+        oneUni.pushKV("postimportstatevalid", postImportValid);
+        oneUni.pushKV("dustretained", dustRetained.ToUniValue());
+        postImportUni.push_back(oneUni);
+    }
+    result.pushKV("postimportstates", postImportUni);
 
     // now, go through all our transactions and calculate fees needed
     // for this chain, try to get exactly matching fee outputs for all transactions

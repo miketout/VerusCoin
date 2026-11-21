@@ -27,7 +27,6 @@ extern uint32_t ASSETCHAINS_ALGO, ASSETCHAINS_EQUIHASH, ASSETCHAINS_VERUSHASH, A
 extern char ASSETCHAINS_SYMBOL[65];
 extern int32_t VERUS_BLOCK_POSUNITS, VERUS_CONSECUTIVE_POS_THRESHOLD, VERUS_PBAAS_CONSECUTIVE_POS_THRESHOLD, VERUS_NOPOS_THRESHHOLD, VERUS_PBAAS_NOPOS_THRESHHOLD;
 unsigned int lwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params);
-unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const Consensus::Params& params);
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
@@ -118,11 +117,6 @@ unsigned int CalculateNextWorkRequired(arith_uint256 bnAvg,
 
 unsigned int lwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
-    return lwmaCalculateNextWorkRequired(pindexLast, params);
-}
-
-unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const Consensus::Params& params)
-{
     arith_uint256 nextTarget {0}, sumTarget {0}, bnTmp, bnLimit, bnDefault;
     if (_IsVerusMainnetActive() && pindexLast && pindexLast->GetHeight() <= 1568100 && pindexLast->GetHeight() >= 1567999)
     {
@@ -132,6 +126,10 @@ unsigned int lwmaCalculateNextWorkRequired(const CBlockIndex* pindexLast, const 
 
     int32_t nHeight = pindexLast ? pindexLast->GetHeight() : 0;
     bool isPBaaS = CConstVerusSolutionVector::activationHeight.ActiveVersion(nHeight + 1) >= CActivationHeight::ACTIVATE_PBAAS;
+
+    int solutionVersion = pblock->nVersion == CBlock::VERUS_V2 ? CConstVerusSolutionVector::Version(pblock->nSolution) : 0;
+    bool isPBaaSHarden2 = solutionVersion == CActivationHeight::ACTIVATE_PBAAS_HARDEN2;
+
 
     if (ASSETCHAINS_ALGO == ASSETCHAINS_EQUIHASH)
     {
@@ -462,7 +460,7 @@ extern std::string NOTARY_PUBKEY;
 bool CheckProofOfWork(const CBlockHeader &blkHeader, int32_t height, const Consensus::Params& params)
 {
     uint256 hash;
-    bool fNegative,fOverflow; 
+    bool fNegative,fOverflow;
     uint32_t tiptime, blocktimes[66];
     arith_uint256 bnTarget;
 

@@ -172,19 +172,21 @@ class CChainPower
         arith_uint256 chainWork;
         arith_uint256 chainStake;
         int32_t nHeight;
+        bool stakeWeighted;         // from a solution version >= 9 block index; selects the stake-weighted comparison
 
-        CChainPower() : nHeight(0), chainStake(0), chainWork(0) {}
+        CChainPower() : nHeight(0), chainStake(0), chainWork(0), stakeWeighted(false) {}
         CChainPower(CBlockIndex *pblockIndex);
         CChainPower(CBlockIndex *pblockIndex, const arith_uint256 &stake, const arith_uint256 &work);
-        CChainPower(int32_t height) : nHeight(height), chainStake(0), chainWork(0) {}
+        CChainPower(int32_t height) : nHeight(height), chainStake(0), chainWork(0), stakeWeighted(false) {}
         CChainPower(int32_t height, const arith_uint256 &stake, const arith_uint256 &work) :
-                    nHeight(height), chainStake(stake), chainWork(work) {}
+                    nHeight(height), chainStake(stake), chainWork(work), stakeWeighted(false) {}
 
         CChainPower &operator=(const CChainPower &chainPower)
         {
             chainWork = chainPower.chainWork;
             chainStake = chainPower.chainStake;
             nHeight = chainPower.nHeight;
+            stakeWeighted = chainPower.stakeWeighted;
             return *this;
         }
 
@@ -230,6 +232,8 @@ class CChainPower
             chainWork += nChainWork;
             return *this;
         }
+
+        static int Compare(const CChainPower &p1, const CChainPower &p2);
 
         friend bool operator==(const CChainPower &p1, const CChainPower &p2);
 
@@ -573,6 +577,12 @@ public:
             return CConstVerusSolutionVector::Version(nSolution.nSolution()) >= CActivationHeight::ACTIVATE_PBAAS_HARDEN1;
         }
         return 0;
+    }
+
+    // a block carrying solution version 9 or later; its chain power compares with the stake term live
+    bool IsStakeWeightedPower() const
+    {
+        return nVersion == CBlockHeader::VERUS_V2 && CConstVerusSolutionVector::Version(nSolution.nSolution()) >= CActivationHeight::ACTIVATE_PBAAS_HARDEN2;
     }
 
     bool HasDoubleCappedTransactionMap() const

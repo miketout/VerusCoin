@@ -331,6 +331,7 @@ CChainPower::CChainPower(CBlockIndex *pblockIndex)
      nHeight = pblockIndex->GetHeight();
      chainStake = arith_uint256(0);
      chainWork = arith_uint256(0);
+     stakeWeighted = pblockIndex->IsStakeWeightedPower();
 }
 
 CChainPower::CChainPower(CBlockIndex *pblockIndex, const arith_uint256 &stake, const arith_uint256 &work)
@@ -338,39 +339,47 @@ CChainPower::CChainPower(CBlockIndex *pblockIndex, const arith_uint256 &stake, c
      nHeight = pblockIndex->GetHeight();
      chainStake = stake;
      chainWork = work;
+     stakeWeighted = pblockIndex->IsStakeWeightedPower();
+}
+
+// orders two chain powers: negative when p1 is weaker, zero when equal, positive when stronger
+// - one side from a solution version 9 chain and the other not: the version 9 side is stronger; a version 9 block
+//   exists only after the switch, and a version 8 chain extended past the switch is invalid
+// - both version 9: work and stake each normalized to 64 bits of precision and summed
+// - otherwise the historical form, unchanged, which notarization comparisons on expanded compact powers also use
+int CChainPower::Compare(const CChainPower &p1, const CChainPower &p2)
+{
+    if (p1.stakeWeighted != p2.stakeWeighted)
+    {
+        return p1.stakeWeighted ? 1 : -1;
+    }
+
+    arith_uint256 bigZero = arith_uint256(0);
+    arith_uint256 stake1 = p1.chainStake, stake2 = p2.chainStake;
+
+    arith_uint256 workDivisor = p1.chainWork > p2.chainWork ? p1.chainWork : (p2.chainWork != bigZero ? p2.chainWork : 1);
+    arith_uint256 stakeDivisor = stake1 > stake2 ? stake1 : (stake2 != bigZero ? stake2 : 1);
+
+    // 64 bits of precision for the stake-weighted class, the historical 16 for everything else
+    unsigned int precision = p1.stakeWeighted ? 64 : 16;
+    arith_uint256 power1 = (p1.chainWork << precision) / workDivisor + (stake1 << precision) / stakeDivisor;
+    arith_uint256 power2 = (p2.chainWork << precision) / workDivisor + (stake2 << precision) / stakeDivisor;
+    return power1 < power2 ? -1 : (power1 == power2 ? 0 : 1);
 }
 
 bool operator==(const CChainPower &p1, const CChainPower &p2)
 {
-    arith_uint256 bigZero = arith_uint256(0);
-    arith_uint256 workDivisor = p1.chainWork > p2.chainWork ? p1.chainWork : (p2.chainWork != bigZero ? p2.chainWork : 1);
-    arith_uint256 stakeDivisor = p1.chainStake > p2.chainStake ? p1.chainStake : (p2.chainStake != bigZero ? p2.chainStake : 1);
-
-    // use up 16 bits for precision
-    return ((p1.chainWork << 16) / workDivisor + (p1.chainStake << 16) / stakeDivisor) ==
-            ((p2.chainWork << 16) / workDivisor + (p2.chainStake << 16) / stakeDivisor);
+    return CChainPower::Compare(p1, p2) == 0;
 }
 
 bool operator<(const CChainPower &p1, const CChainPower &p2)
 {
-    arith_uint256 bigZero = arith_uint256(0);
-    arith_uint256 workDivisor = p1.chainWork > p2.chainWork ? p1.chainWork : (p2.chainWork != bigZero ? p2.chainWork : 1);
-    arith_uint256 stakeDivisor = p1.chainStake > p2.chainStake ? p1.chainStake : (p2.chainStake != bigZero ? p2.chainStake : 1);
-
-    // use up 16 bits for precision
-    return ((p1.chainWork << 16) / workDivisor + (p1.chainStake << 16) / stakeDivisor) <
-            ((p2.chainWork << 16) / workDivisor + (p2.chainStake << 16) / stakeDivisor);
+    return CChainPower::Compare(p1, p2) < 0;
 }
 
 bool operator<=(const CChainPower &p1, const CChainPower &p2)
 {
-    arith_uint256 bigZero = arith_uint256(0);
-    arith_uint256 workDivisor = p1.chainWork > p2.chainWork ? p1.chainWork : (p2.chainWork != bigZero ? p2.chainWork : 1);
-    arith_uint256 stakeDivisor = p1.chainStake > p2.chainStake ? p1.chainStake : (p2.chainStake != bigZero ? p2.chainStake : 1);
-
-    // use up 16 bits for precision
-    return ((p1.chainWork << 16) / workDivisor + (p1.chainStake << 16) / stakeDivisor) <=
-            ((p2.chainWork << 16) / workDivisor + (p2.chainStake << 16) / stakeDivisor);
+    return CChainPower::Compare(p1, p2) <= 0;
 }
 
 CChainPower CChainPower::ExpandCompactPower(uint256 compactPower, uint32_t height)

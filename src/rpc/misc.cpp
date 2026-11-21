@@ -2619,6 +2619,8 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
                 "      \"allfundedtransactions\": [\"hextx\",...],         \n"
                 "      \"sendtransactions\":    bool - default false, sends transactions if funded and signed\n"
                 "      \"currencyreportonly\":  bool - default false, do not run full report and only output currencies and states\n"
+                "      \"currencyoverrides\":   {\"basket\": {} | {\"preservesupply\": amount, \"disgorgeexcess\": {\"reserve\": fraction, ...}}, ...}\n"
+                "                                optional: exclude basket, keep extra supply & same share of reserves, or disgorge excess to basket's holders\n"
 			    "  \"}\"\n"
 			    "\nResult:\n"
 			    "{\n"
@@ -2723,6 +2725,72 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. restitutionconversions must include conversion rates for all currencies in currencyadjustments.");
     }
 
+    // optional per-basket overrides: {"basket": {}} removes the basket from the adjustment; {"basket": {"preservesupply": amount}}
+    // leaves that amount of its supply, and the same fraction of every reserve, untouched (tokens held where the cleanup cannot
+    // reach them, such as a gateway's reserve deposits); {"basket": {"disgorgeexcess": {"reserve": fraction, ...}}} disgorges that
+    // fraction of each named reserve from the basket in addition to the cut, paid to the basket's direct and indirect holders by
+    // their share like every reimbursement, a margin for a basket whose cross prices sit near one satoshi. The two keys may be
+    // combined. Neither changes how holders are cut.
+    std::set<uint160> excludedBaskets;
+    std::map<uint160, CAmount> preservedSupply;
+    std::map<uint160, CCurrencyValueMap> disgorgeExcess;
+    UniValue currencyOverridesUni = find_value(params[0], "currencyoverrides");
+    if (!currencyOverridesUni.isNull())
+    {
+        if (!currencyOverridesUni.isObject())
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. currencyoverrides must be an object of {\"basket\": {} | {\"preservesupply\": amount}}.");
+        }
+        for (auto oneKey : currencyOverridesUni.getKeys())
+        {
+            uint160 basketID = ValidateCurrencyName(oneKey);
+            UniValue oneOverride = find_value(currencyOverridesUni, oneKey);
+            if (basketID.IsNull() || !oneOverride.isObject())
+            {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. currencyoverrides keys must be valid currencies with an object value.");
+            }
+            if (oneOverride.getKeys().size() == 0)
+            {
+                excludedBaskets.insert(basketID);
+                continue;
+            }
+            for (auto oneField : oneOverride.getKeys())
+            {
+                if (oneField == "preservesupply")
+                {
+                    CAmount preserved = AmountFromValueNoErr(find_value(oneOverride, oneField));
+                    if (preserved <= 0)
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. currencyoverrides preservesupply must be a positive amount.");
+                    }
+                    preservedSupply[basketID] = preserved;
+                }
+                else if (oneField == "disgorgeexcess")
+                {
+                    UniValue excessUni = find_value(oneOverride, oneField);
+                    if (!excessUni.isObject())
+                    {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. currencyoverrides disgorgeexcess must be {\"reserve\": fraction, ...}.");
+                    }
+                    for (auto oneReserve : excessUni.getKeys())
+                    {
+                        uint160 reserveID = ValidateCurrencyName(oneReserve);
+                        CAmount excess = AmountFromValueNoErr(find_value(excessUni, oneReserve));
+                        if (reserveID.IsNull() || excess <= 0 || excess >= SATOSHIDEN)
+                        {
+                            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. currencyoverrides disgorgeexcess names valid reserves with fractions between 0 and 1.");
+                        }
+                        disgorgeExcess[basketID].valueMap[reserveID] = excess;
+                    }
+                }
+                else
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter. a currencyoverrides value is {} or an object with preservesupply and/or disgorgeexcess.");
+                }
+            }
+        }
+    }
+
     std::map<uint160,CCurrencyDefinition> crossChainCurrencies;
     for (auto oneObj : currenciesUni.getValues())
     {
@@ -2779,7 +2847,10 @@ UniValue generateadjustmentreport(const UniValue& params, bool fHelp)
                                                       offChainTransactions,
                                                       fundedTransactionsToSign,
                                                       sendTransactions,
-                                                      currencyReportOnly);
+                                                      currencyReportOnly,
+                                                      excludedBaskets,
+                                                      preservedSupply,
+                                                      disgorgeExcess);
 }
 
 UniValue getaddresstxids(const UniValue& params, bool fHelp)
