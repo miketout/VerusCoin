@@ -3515,12 +3515,91 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                         flags |= IS_REJECT;
                         return;
                     }
-                    if (ConnectedChains.notarySystems.count(of.currencyID) &&
-                        (of.output.hash.IsNull() ||
-                         of.IsConfirmed() || of.IsRejected() ||
-                         of.evidenceOutputs.size() || of.evidenceInputs.size()))
+                    if (ConnectedChains.notarySystems.count(of.currencyID))
                     {
-                        flags |= IS_CHAIN_NOTARIZATION;
+                        // the protocol exemption belongs to finalizations that carry notary work: a confirmation, a
+                        // rejection or pending with evidence outputs, or declared evidence inputs that are really
+                        // evidence or finalization outputs. A bare rejection (a stale notarization is rejected with
+                        // no evidence) or a declared input that is neither costs nothing to make and earns nothing
+                        bool hasEvidenceInputs = false;
+                        for (auto oneIn : of.evidenceInputs)
+                        {
+                            const CCoins *inCoins = (oneIn >= 0 && oneIn < tx.vin.size()) ? view.AccessCoins(tx.vin[oneIn].prevout.hash) : nullptr;
+                            COptCCParams inP;
+                            if (inCoins &&
+                                inCoins->IsAvailable(tx.vin[oneIn].prevout.n) &&
+                                inCoins->vout[tx.vin[oneIn].prevout.n].scriptPubKey.IsPayToCryptoCondition(inP) &&
+                                inP.IsValid() &&
+                                (inP.evalCode == EVAL_NOTARY_EVIDENCE || inP.evalCode == EVAL_FINALIZE_NOTARIZATION))
+                            {
+                                hasEvidenceInputs = true;
+                                break;
+                            }
+                        }
+
+                        // a pending finalization with evidence outputs earns the exemption only when that evidence carries a
+                        // verified notary signature for the finalized output, while this notary system requires signatures.
+                        // TODO AUTONOTARIZATION: reenable when autonotarization is reenabled
+                        bool pendingWithEvidence = !of.output.hash.IsNull() && !of.IsConfirmed() && !of.IsRejected() && of.evidenceOutputs.size();
+                        bool evidenceQualifies = pendingWithEvidence;
+                        if (pendingWithEvidence)
+                        {
+                            CCurrencyDefinition notaryCur = ConnectedChains.GetCachedCurrency(of.currencyID);
+                            bool signaturesRequired = !notaryCur.IsValid() ||
+                                                      notaryCur.proofProtocol != notaryCur.PROOF_PBAASMMR ||
+                                                      notaryCur.notarizationProtocol != notaryCur.NOTARIZATION_AUTO ||
+                                                      IsAfterBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(nHeight - 1));
+                            if (signaturesRequired)
+                            {
+                                evidenceQualifies = false;
+                                CTransaction notarizationTx;
+                                uint256 notarizationBlkHash;
+                                CPBaaSNotarization notarization;
+                                if (notaryCur.IsValid() &&
+                                    of.output.GetOutputTransaction(notarizationTx, notarizationBlkHash) &&
+                                    notarizationTx.vout.size() > of.output.n &&
+                                    (notarization = CPBaaSNotarization(notarizationTx.vout[of.output.n].scriptPubKey)).IsValid() &&
+                                    notarization.SetMirror(false))
+                                {
+                                    // the same hash, notary set and minimum the finalization precheck uses
+                                    const CCurrencyDefinition &sigCur = (IsVerusActive() || !ConnectedChains.notarySystems.count(of.currencyID)) ?
+                                                                            notaryCur : ConnectedChains.ThisChain();
+                                    CNativeHashWriter hw((sigCur.IsGateway() &&
+                                                          sigCur.launchSystemID == ASSETCHAINS_CHAINID &&
+                                                          sigCur.proofProtocol == sigCur.PROOF_ETHNOTARIZATION) ?
+                                                             notaryCur.PROOF_ETHNOTARIZATION : sigCur.PROOF_PBAASMMR);
+                                    hw << notarization;
+                                    uint256 objHash = hw.GetHash();
+                                    auto notarySet = sigCur.GetNotarySet();
+                                    for (auto oneOut : of.evidenceOutputs)
+                                    {
+                                        COptCCParams eP;
+                                        CNotaryEvidence oneEvidence;
+                                        std::map<CIdentityID, CIdentitySignature> rejects, confirms;
+                                        if (oneOut >= 0 &&
+                                            oneOut < tx.vout.size() &&
+                                            tx.vout[oneOut].scriptPubKey.IsPayToCryptoCondition(eP) &&
+                                            eP.IsValid() &&
+                                            eP.evalCode == EVAL_NOTARY_EVIDENCE &&
+                                            eP.vData.size() &&
+                                            (oneEvidence = CNotaryEvidence(eP.vData[0])).IsValid() &&
+                                            oneEvidence.output == of.output &&
+                                            oneEvidence.GetNotarySignatures().size() &&
+                                            oneEvidence.CheckSignatureConfirmation(objHash, hw.GetHashType(), notarySet, sigCur.MinimumNotariesConfirm(), nHeight - 1,
+                                                                                   nullptr, &rejects, &confirms) != CNotaryEvidence::STATE_INVALID &&
+                                            (rejects.size() || confirms.size()))
+                                        {
+                                            evidenceQualifies = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (of.output.hash.IsNull() || of.IsConfirmed() || evidenceQualifies || hasEvidenceInputs)
+                        {
+                            flags |= IS_CHAIN_NOTARIZATION;
+                        }
                     }
                 }
                 break;

@@ -1645,14 +1645,15 @@ bool ValidateSpendingIdentityReservation(const CTransaction &tx, int32_t outNum,
             return state.Error("Invalid identity registration - must include native currency import fee as well as registration fee.");
         }
 
+        std::map<uint160, int32_t> reserveIdx = pricingState.GetReserveMap();
+        auto feeCurIt = burnAmount.valueMap.size() ? reserveIdx.find(burnAmount.valueMap.begin()->first) : reserveIdx.end();
+
         int64_t feePaid = issuerID == ASSETCHAINS_CHAINID ?
                         rtxd.NativeFees() :
                         (burnAmount.valueMap.size() == 0 ? 0 :
-                          (burnAmount.valueMap.begin()->first == issuerID ?
-                          burnAmount.valueMap.begin()->second :
-                          (issuingCurrency.IsFractional() ?
-                          pricingState.ReserveToNative(burnAmount.valueMap.begin()->second, pricingState.GetReserveMap()[burnAmount.valueMap.begin()->first]) :
-                          0)));
+                          (burnAmount.valueMap.begin()->first == issuerID ? burnAmount.valueMap.begin()->second :
+                            (issuingCurrency.IsFractional() && feeCurIt != reserveIdx.end() ?
+                            pricingState.ReserveToNative(burnAmount.valueMap.begin()->second, feeCurIt->second) : 0)));
 
         // CHECK #4 - if blockchain referrals are not enabled or if there is no referring identity, make sure the fees of this transaction are full price for an identity,
         // all further checks only if referrals are enabled and there is a referrer
@@ -2163,10 +2164,12 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
     // if issuing currency is fractional, verify burn amount based on pricing state
     if (issuingCurrency.IsFractional())
     {
+        std::map<uint160, int32_t> reserveIdx = pricingState.GetReserveMap();
+        auto feeCurIt = burnAmount.valueMap.size() ? reserveIdx.find(burnAmount.valueMap.begin()->first) : reserveIdx.end();
         int64_t feePaid = burnAmount.valueMap.size() == 0 ? 0 :
-                    (burnAmount.valueMap.begin()->first == issuerID ?
-                        burnAmount.valueMap.begin()->second :
-                        pricingState.ReserveToNative(burnAmount.valueMap.begin()->second, pricingState.GetReserveMap()[burnAmount.valueMap.begin()->first]));
+                    (burnAmount.valueMap.begin()->first == issuerID ? burnAmount.valueMap.begin()->second :
+             (issuingCurrency.IsFractional() && feeCurIt != reserveIdx.end() ?
+              pricingState.ReserveToNative(burnAmount.valueMap.begin()->second, feeCurIt->second) : 0));
         if (feePaid < (referrers.size() ? (idReferredRegistrationFee - (referrers.size() * idReferralFee)) : idFullRegistrationFee))
         {
             return state.Error("Inadequate fee paid for ID registration");
@@ -2198,8 +2201,6 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
         }
     }
 
-    int commitmentHeight = 0;
-
     LOCK2(cs_main, mempool.cs);
 
     CCommitmentHash ch;
@@ -2207,40 +2208,20 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
 
     {
         // from here, we must spend a matching name commitment
-        std::map<uint256, std::pair<uint256, CTransaction>> txMap;
-        uint256 hashBlk;
         for (auto &oneTxIn : tx.vin)
         {
-            CTransaction sourceTx;
-            auto sourceTxIt = txMap.find(oneTxIn.prevout.hash);
-            if (sourceTxIt == txMap.end() && !myGetTransaction(oneTxIn.prevout.hash, sourceTx, hashBlk))
+            // resolve the spent output from the mempool or the UTXO set, loading from the block store only
+            // within the per-transaction budget; an input this cannot resolve is not the commitment, and
+            // the inputs check refuses the transaction if it is really missing
+            CTxOut sourceOut;
+            if (!GetSpentOutput(oneTxIn.prevout, sourceOut, PrecheckTxContext().parentLoads, MAX_PRECHECK_PARENT_LOADS))
             {
-                //LogPrintf("Cannot access input from output %u of transaction %s in transaction %s\n", oneTxIn.prevout.n, oneTxIn.prevout.hash.GetHex().c_str(), tx.GetHash().GetHex().c_str());
-                //printf("Cannot access input from output %u of transaction %s in transaction %s\n", oneTxIn.prevout.n, oneTxIn.prevout.hash.GetHex().c_str(), tx.GetHash().GetHex().c_str());
-                return state.Error("Cannot access input");
-            }
-            else if (sourceTxIt != txMap.end())
-            {
-                hashBlk = sourceTxIt->second.first;
-                sourceTx = sourceTxIt->second.second;
-            }
-            else
-            {
-                txMap[oneTxIn.prevout.hash] = {hashBlk, sourceTx};
-            }
-
-            if (oneTxIn.prevout.n >= sourceTx.vout.size())
-            {
-                //extern void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry);
-                //UniValue uniTx;
-                //TxToJSON(tx, uint256(), uniTx);
-                //printf("%s\n", uniTx.write(1, 2).c_str());
-                return state.Error("Input index out of range");
+                continue;
             }
 
             COptCCParams p;
             if (idx == -1 &&
-                sourceTx.vout[oneTxIn.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
+                sourceOut.scriptPubKey.IsPayToCryptoCondition(p) &&
                 p.IsValid() &&
                 p.evalCode == EVAL_IDENTITY_COMMITMENT &&
                 p.vData.size())
@@ -2248,10 +2229,9 @@ bool PrecheckIdentityReservation(const CTransaction &tx, int32_t outNum, CValida
                 idx = oneTxIn.prevout.n;
                 ::FromVector(p.vData[0], ch);
 
-                BlockMap::iterator commitmentBlkIt;
-                if (hashBlk.IsNull() ||
-                    (commitmentBlkIt = mapBlockIndex.find(hashBlk)) == mapBlockIndex.end() ||
-                    !chainActive.Contains(commitmentBlkIt->second))
+                // the commitment must be confirmed before the name is revealed; one still in the mempool is not.
+                // Whether its block is on the active chain is the inputs check's question, not this one's
+                if (mempool.exists(oneTxIn.prevout.hash))
                 {
                     return state.Error("Invalid commitment reference");
                 }
@@ -2521,15 +2501,13 @@ bool VerifyIdentityOutput(const CTransaction &tx, int32_t outNum, const CIdentit
 
         // we need to have at least 2 of 3 authority spend conditions mandatory at a top level for any primary ID output
         bool revocation = false, recovery = false;
-        bool primaryValid = false, revocationValid = false, recoveryValid = false;
+        bool revocationValid = false, recoveryValid = false;
         bool isRevoked = identity.IsRevoked();
-        for (auto dest : p.vKeys)
-        {
-            if (dest.which() == COptCCParams::ADDRTYPE_ID && idID == GetDestinationID(dest))
-            {
-                primaryValid = true;
-            }
-        }
+
+        bool primaryValid = p.m == 1 && p.n == 1 && p.vKeys.size() == 1 &&
+                            p.vKeys[0].which() == COptCCParams::ADDRTYPE_ID &&
+                            idID == GetDestinationID(p.vKeys[0]);
+
         if (!isRevoked && !primaryValid)
         {
             std::string errorOut = "Primary identity output condition of \"" + identity.name + "\" is neither revoked nor spendable by self";
@@ -2986,21 +2964,19 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
         if (unauthorizedIDs.size())
         {
             // if we made it to here without an early, authorized flag, we must determine that we are spending a matching identity, and if so, all is fine so far
-            CTransaction inTx;
-            uint256 blkHash;
             LOCK(mempool.cs);
             for (const auto &input : tx.vin)
             {
-                // first time through may be null
-                if (!input.prevout.hash.IsNull() && (input.prevout.hash == inTx.GetHash() || myGetTransaction(input.prevout.hash, inTx, blkHash)))
+                // resolve the spent output from the mempool or the UTXO set, loading from the block store only
+                // within the per-transaction budget; an input this cannot resolve is not the identity being spent,
+                // and the inputs check refuses the transaction if it is really missing
+                CTxOut inOut;
+                if (!input.prevout.hash.IsNull() &&
+                    GetSpentOutput(input.prevout, inOut, PrecheckTxContext().parentLoads, MAX_PRECHECK_PARENT_LOADS))
                 {
                     CIdentity tmpIdentity;
-                    if (input.prevout.n >= inTx.vout.size())
-                    {
-                        return state.Error("Invalid, malformed transaction");
-                    }
                     uint160 idID;
-                    if (inTx.vout[input.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
+                    if (inOut.scriptPubKey.IsPayToCryptoCondition(p) &&
                         p.IsValid() &&
                         p.evalCode == EVAL_IDENTITY_PRIMARY &&
                         p.vData.size() > 1 &&
@@ -3014,10 +2990,6 @@ bool PrecheckIdentityPrimary(const CTransaction &tx, int32_t outNum, CValidation
                             break;
                         }
                     }
-                }
-                else if (!input.prevout.hash.IsNull())
-                {
-                    return state.Error("Failure to retrieve input transaction");
                 }
             }
         }

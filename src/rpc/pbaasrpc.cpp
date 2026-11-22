@@ -65,6 +65,8 @@ extern int32_t PBAAS_STARTBLOCK, PBAAS_ENDBLOCK, ASSETCHAINS_LWMAPOS;
 extern uint32_t ASSETCHAINS_ALGO, ASSETCHAINS_VERUSHASH, ASSETCHAINS_LASTERA;
 extern std::string VERUS_CHAINNAME;
 
+int64_t RPC_MAX_CURRENCY_STATE_ENTRIES = DEFAULT_MAX_CURRENCY_STATE_ENTRIES;
+int64_t RPC_MAX_SAPLING_TREE_STATE_ENTRIES = DEFAULT_SAPLING_TREE_STATE_ENTRIES;
 
 std::set<uint160> ClosedPBaaSChains({});
 
@@ -4997,6 +4999,7 @@ bool GetNotarizationData(const uint160 &currencyID,
                             IsValidChallengeEvidence(chainDef,
                                                     notarizationData.vtx[i].second.proofRoots[currencyID],
                                                     oneEItem.second,
+                                                    std::get<3>(oneChallenge).output,
                                                     (*optionalTxOut)[i].second,
                                                     invalidates,
                                                     challengeStartRoot,
@@ -5059,6 +5062,7 @@ bool GetNotarizationData(const uint160 &currencyID,
                                 IsValidChallengeEvidence(chainDef,
                                                         notarizationData.vtx[i].second.proofRoots[currencyID],
                                                         oneEItem.second,
+                                                        std::get<3>(oneChallenge).output,
                                                         (*optionalTxOut)[i].second,
                                                         invalidates,
                                                         challengeStartRoot,
@@ -6324,6 +6328,7 @@ UniValue submitchallenges(const UniValue& params, bool fHelp)
                         challengeRoot = IsValidChallengeEvidence(challengeDef,
                                                                 challengedNotarization.proofRoots[std::get<2>(oneChallenge.second).systemID],
                                                                 std::get<3>(oneChallenge.second),
+                                                                of.output,
                                                                 blockHash,
                                                                 invalidates,
                                                                 std::get<1>(oneChallenge.second),
@@ -13161,6 +13166,13 @@ UniValue getcurrencystate(const UniValue& params, bool fHelp)
         end = startEnd[1];
         step = startEnd[2];
 
+        if (((startEnd[1] - startEnd[0]) / startEnd[2]) + 1 > RPC_MAX_CURRENCY_STATE_ENTRIES)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Block range / step yields more than " +
+                                                    std::to_string(RPC_MAX_CURRENCY_STATE_ENTRIES) +
+                                                    " entries; increase the step or narrow the range");
+        }
+
         if (params.size() > 2 && currencyToCheck.IsFractional())
         {
             if (end - start > GetArg("-maximumimportrange", chainActive.Height()))
@@ -13392,6 +13404,13 @@ UniValue getsaplingtree(const UniValue& params, bool fHelp)
     if (startEnd[2] > INT_MAX)
     {
         startEnd[2] = INT_MAX;
+    }
+
+    if (((startEnd[1] - startEnd[0]) / startEnd[2]) + 1 > RPC_MAX_SAPLING_TREE_STATE_ENTRIES)
+    {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Block range / step yields more than " +
+                                                  std::to_string(RPC_MAX_SAPLING_TREE_STATE_ENTRIES) +
+                                                  " entries; increase the step or narrow the range");
     }
 
     uint32_t start = startEnd[0], end = startEnd[1], step = startEnd[2];
@@ -16527,7 +16546,18 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         }
     }
 
-    tb.AddTransparentOutput(newID.IdentityUpdateOutputScript(nHeight + 1), oldIdTx.vout[idTxIn.prevout.n].nValue);
+    // a revocation is signed by the revocation authority, not the primary, and consensus requires the primary spend
+    // condition unchanged in that case (ValidateIdentityPrimary, the !fulfilled && !oldIdentity.IsRevoked() arm): carry
+    // the input's over. A recovery of a revoked identity may change anything and builds the canonical form
+    COptCCParams oldPrimaryP;
+    const COptCCParams *pPrimaryShape = nullptr;
+    if (newID.IsRevoked() && !oldID.IsRevoked() &&
+        oldIdTx.vout[idTxIn.prevout.n].scriptPubKey.IsPayToCryptoCondition(oldPrimaryP) &&
+        oldPrimaryP.IsValid())
+    {
+        pPrimaryShape = &oldPrimaryP;
+    }
+    tb.AddTransparentOutput(newID.IdentityUpdateOutputScript(nHeight + 1, nullptr, pPrimaryShape), oldIdTx.vout[idTxIn.prevout.n].nValue);
 
     // if we are supposed to get our authority from the token, make sure it is present and prepare to spend it
     // this is handled separately from other currency in and out to ensure no mixing and the ability to use a

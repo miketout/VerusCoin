@@ -471,7 +471,8 @@ void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMem
         }
 
         CValidationState state;
-        if (!ContextualCheckTransaction(tx, state, Params(), nMemPoolHeight, 0))
+        if (!ContextualCheckTransaction(tx, state, Params(), nMemPoolHeight, 0, IsInitialBlockDownload,
+                                        it->GetValidatedBranchId() == CurrentEpochBranchId(nMemPoolHeight, Params().GetConsensus())))
         {
             transactionsToRemove.push_back(tx);
         }

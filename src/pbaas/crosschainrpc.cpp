@@ -488,59 +488,21 @@ CIdentitySignature::ESignatureVerification CIdentitySignature::CheckSignature(co
 
     for (auto &oneSig : signatures)
     {
-        if (oneSig.size() != ECDSA_RECOVERABLE_SIZE)
+        // an entry that is not a signature of this identity adds nothing. A caller that asked for the list of
+        // entries adding nothing (pDupSigs) gets it there and grading goes on, as for a duplicate: a block merged
+        // from several evidence outputs may carry a stranger's entry under this identity. Every other caller stays strict
+        if (oneSig.size() != ECDSA_RECOVERABLE_SIZE ||
+            !checkKey.RecoverCompact(signatureHash, oneSig) ||
+            !idKeys.count(checkKey.GetID()))
         {
-            return SIGNATURE_INVALID;
-        }
-        if (!checkKey.RecoverCompact(signatureHash, oneSig))
-        {
-            return SIGNATURE_INVALID;
-        }
-        uint160 checkKeyID = checkKey.GetID();
-
-        if (!idKeys.count(checkKeyID))
-        {
-            if (LogAcceptCategory("notarysignatures"))
+            if (pDupSigs)
             {
-                printf("Invalid signature - recovered %s\nfrom signature %s\nfor hash %s\nexpected: %s\nidentity: %s\n", EncodeDestination(CKeyID(checkKeyID)).c_str(), EncodeBase64(std::string(oneSig.begin(), oneSig.end())).c_str(), signatureHash.GetHex().c_str(), idKeys.begin() == idKeys.end() ? "empty" : EncodeDestination(CKeyID(*idKeys.begin())).c_str(), signingID.ToUniValue().write(1,2).c_str());
-                LogPrintf("Invalid signature - recovered %s\nfrom signature %s\nfor hash %s\nexpected: %s\nidentity: %s\n", EncodeDestination(CKeyID(checkKeyID)).c_str(), EncodeBase64(std::string(oneSig.begin(), oneSig.end())).c_str(), signatureHash.GetHex().c_str(), idKeys.begin() == idKeys.end() ? "empty" : EncodeDestination(CKeyID(*idKeys.begin())).c_str(), signingID.ToUniValue().write(1,2).c_str());
-
-                UniValue vdxfCodesUni(UniValue::VARR);
-                UniValue vdxfCodeNamesUni(UniValue::VARR);
-                UniValue statementsUni(UniValue::VARR);
-                for (auto &oneItem : vdxfCodes)
-                {
-                    vdxfCodesUni.push_back(EncodeDestination(CIdentityID(oneItem)));
-                }
-                for (auto &oneItem : vdxfCodeNames)
-                {
-                    vdxfCodeNamesUni.push_back(oneItem);
-                }
-                for (auto &oneItem : statements)
-                {
-                    statementsUni.push_back(oneItem.GetHex());
-                }
-                printf("Ready to check signature on system: %s\nvdxfCodes: %s\nvdxfCodeNames: %s\nstatements: %s\nblockHeight: %u\nsigningID.name: %s\nprefixString: %s\nmsgHash: %s\n",
-                        EncodeDestination(CIdentityID(systemID)).c_str(),
-                        vdxfCodesUni.write().c_str(),
-                        vdxfCodeNamesUni.write().c_str(),
-                        statementsUni.write().c_str(),
-                        blockHeight,
-                        signingID.name.c_str(),
-                        prefixString.c_str(),
-                        msgHash.GetHex().c_str());
-                LogPrintf("Ready to check signature on system: %s\nvdxfCodes: %s\nvdxfCodeNames: %s\nstatements: %s\nblockHeight: %u\nsigningID.name: %s\nprefixString: %s\nmsgHash: %s\n",
-                        EncodeDestination(CIdentityID(systemID)).c_str(),
-                        vdxfCodesUni.write().c_str(),
-                        vdxfCodeNamesUni.write().c_str(),
-                        statementsUni.write().c_str(),
-                        blockHeight,
-                        signingID.name.c_str(),
-                        prefixString.c_str(),
-                        msgHash.GetHex().c_str());
+                pDupSigs->push_back(oneSig);
+                continue;
             }
             return SIGNATURE_INVALID;
         }
+        uint160 checkKeyID = checkKey.GetID();
 
         if (pDupSigs && keys.count(checkKeyID))
         {

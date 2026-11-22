@@ -182,8 +182,10 @@ std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> Serve
                         }
                         else
                         {
-                            uint32_t idHeightDef;
-                            if (!id.IsValid() && (id = CIdentity::LookupFirstIdentity(destId, &idHeightDef)).IsValid())
+                            uint32_t idHeightDef = 0;
+                            if (!id.IsValid() &&
+                                (id = CIdentity::LookupFirstIdentity(destId, &idHeightDef)).IsValid() &&
+                                idHeightDef && idHeightDef <= spendHeight)
                             {
                                 LogPrintf("%s: ERROR - ACTION REQUIRED: Corrupt Index, should not move forward as a node. Please bootstrap, sync from scratch, or reindex to continue\n", __func__);
                                 printf("%s: ERROR - ACTION REQUIRED: Corrupt Index, should not move forward as a node. Please bootstrap, sync from scratch, or reindex to continue\n", __func__);

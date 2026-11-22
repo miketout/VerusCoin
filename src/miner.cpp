@@ -2252,7 +2252,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                         }
 
                         // send to the same pub key as the destination of this block reward
-                        if (MakeCheatEvidence(mtx, b.vtx[0], voutNum, cheatTx))
+                        if (MakeCheatEvidence(mtx, b.vtx[0], voutNum, cheatTx, cheatHeight))
                         {
                             LOCK(pwalletMain->cs_wallet);
                             TransactionBuilder tb = TransactionBuilder(consensusParams, nHeight);
@@ -2950,7 +2950,8 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             }
             if (tx.IsCoinBase() ||
                 IsExpiredTx(tx, nHeight) ||
-                !ContextualCheckTransaction(tx, state, Params(), nHeight, 0))
+                !ContextualCheckTransaction(tx, state, Params(), nHeight, 0, IsInitialBlockDownload,
+                                            mi->GetValidatedBranchId() == CurrentEpochBranchId(nHeight, Params().GetConsensus())))
             {
                 txesToRemove.push_back(tx);
                 continue;

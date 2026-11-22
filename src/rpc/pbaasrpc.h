@@ -17,6 +17,12 @@
 
 #include <univalue.h>
 
+// the three-value form answers one entry per step; bound the count as the two-value form is bounded by range
+static const int64_t DEFAULT_MAX_CURRENCY_STATE_ENTRIES = 100;
+static const int64_t DEFAULT_SAPLING_TREE_STATE_ENTRIES = 100;
+extern int64_t RPC_MAX_CURRENCY_STATE_ENTRIES;
+extern int64_t RPC_MAX_SAPLING_TREE_STATE_ENTRIES;
+
 bool GetCurrencyDefinition(const std::string &name, CCurrencyDefinition &chainDef);
 bool GetCurrencyDefinition(const uint160 &chainID, CCurrencyDefinition &chainDef, int32_t *pDefHeight=nullptr, bool checkMempool=false, bool notarizationCheck=false, CUTXORef *pUTXO=nullptr, std::vector<CNodeData> *pGoodNodes=nullptr);
 

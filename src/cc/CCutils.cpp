@@ -101,7 +101,7 @@ CPubKey pubkey2pk(std::vector<uint8_t> pubkey)
 }
 
 bool GetCCParams(Eval* eval, const CTransaction &tx, uint32_t nIn,
-                 CTransaction &txOut, std::vector<std::vector<unsigned char>> &preConditions, std::vector<std::vector<unsigned char>> &params)
+                 CTransaction &txOut, std::vector<std::vector<unsigned char>> &preConditions, std::vector<std::vector<unsigned char>> &params, uint32_t *pSourceHeight)
 {
     uint256 blockHash;
 
@@ -111,6 +111,10 @@ bool GetCCParams(Eval* eval, const CTransaction &tx, uint32_t nIn,
         CBlockIndex index;
         if (eval->GetBlock(blockHash, index))
         {
+            if (pSourceHeight)
+            {
+                *pSourceHeight = index.GetHeight();
+            }
             // read preconditions
             CScript subScript = CScript();
             preConditions.clear();

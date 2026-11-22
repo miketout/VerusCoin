@@ -418,7 +418,7 @@ public:
 
     bool IsInstantSpendOrUnspendable() const;
 
-    bool IsEvalPKOut() const;
+    bool IsEvalPKOut(bool exclusiveOnly=true) const;
 };
 
 // This is for STAKEGUARD2, which is versioned and enables staking the reserve of a reserve currency
@@ -442,7 +442,7 @@ public:
 
     CStakeInfo() : version(VERSION_INVALID), height(0), sourceHeight(0) {}
     CStakeInfo(uint32_t Height, uint32_t SourceHeight, const uint256 &UTXO, const uint256 &PrevHash, uint32_t Version=VERSION_CURRENT) :
-                version(Version), height(0), sourceHeight(0), utxo(UTXO), prevHash(PrevHash) {}
+                version(Version), height(Height), sourceHeight(SourceHeight), utxo(UTXO), prevHash(PrevHash) {}
     CStakeInfo(std::vector<unsigned char> vch);
 
     std::vector<unsigned char> AsVector() const;

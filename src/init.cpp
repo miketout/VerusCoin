@@ -554,6 +554,9 @@ std::string HelpMessage(HelpMessageMode mode)
         strUsage += HelpMessageOpt("-rpcservertimeout=<n>", strprintf("Timeout during HTTP requests (default: %d)", DEFAULT_HTTP_SERVER_TIMEOUT));
     }
 
+    strUsage += HelpMessageOpt("-rpcmaxcurrencystatereturn=n", strprintf(_("Maximum number of currency states returned from getcurrencystate RPC, default: %ld"), DEFAULT_MAX_CURRENCY_STATE_ENTRIES));
+    strUsage += HelpMessageOpt("-rpcmaxsaplingtreestatereturn=n", strprintf(_("Maximum number of Sapling tree states returned from getsaplingtree RPC, default: %ld"), DEFAULT_SAPLING_TREE_STATE_ENTRIES));
+
     // Disabled until we can lock notes and also tune performance of the prover which by default uses multiple threads
     //strUsage += HelpMessageOpt("-rpcasyncthreads=<n>", strprintf(_("Set the number of threads to service Async RPC calls (default: %d)"), 1));
 
@@ -1229,6 +1232,9 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             LogPrintf("Mempool configured to reject transactions with greater than %lld transparent inputs\n", limit);
         }
     }
+
+    RPC_MAX_CURRENCY_STATE_ENTRIES =  GetArg("-rpcmaxcurrencystatereturn", DEFAULT_MAX_CURRENCY_STATE_ENTRIES);
+    RPC_MAX_SAPLING_TREE_STATE_ENTRIES =  GetArg("-rpcmaxsaplingtreestatereturn", DEFAULT_SAPLING_TREE_STATE_ENTRIES);
 
     const vector<string> deployments = GetArgs("-nuparams");
     if (!deployments.empty()) {

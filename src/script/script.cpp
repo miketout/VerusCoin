@@ -1825,7 +1825,7 @@ bool COptCCParams::IsValid(bool strict, uint32_t nHeight) const
     return false;
 }
 
-bool COptCCParams::IsEvalPKOut() const
+bool COptCCParams::IsEvalPKOut(bool exclusiveOnly) const
 {
     if (evalCode > EVAL_LAST)
     {
@@ -1842,7 +1842,10 @@ bool COptCCParams::IsEvalPKOut() const
         vData.size() == 2 &&
         (master = COptCCParams(vData.back())).IsValid() &&
         master.evalCode == EVAL_NONE &&
-        master.m == 1)
+        master.m == 1 &&
+        (!exclusiveOnly ||
+         (vKeys.size() == 1 &&
+          m == 1)))
     {
         for (auto &oneKey : vKeys)
         {

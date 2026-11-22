@@ -25,7 +25,7 @@ so you can pay to a pubkey, or to its hash. or to a script's hash. the last is h
 all of the above are the standard bitcoin vout types and there should be plenty of materials about it
 Encrypted by a verified device
 what I did with the CC contracts is created a fourth type of vout, the CC vout. this is using the cryptoconditions standard and it is even a different signature mechanism. ed25519 instead of secp256k1. it is basically a big extension to the bitcoin script. There is a special opcode that is added that says it is a CC script.
- 
+
 but it gets more interesting
 each CC script has an evalcode
 this is just an arbitrary number. but what it does is allows to create a self-contained universe of CC utxo that all have the same evalcode and that is how a faucet CC differentiates itself from a dice CC, the eval code is different
@@ -76,7 +76,7 @@ bool GetAddressUnspent(const uint160& addressHash, int type, std::vector<CAddres
 bool myGetTransaction(const uint256 &hash, CTransaction &txOut, uint256 &hashBlock, bool checkMempool=true);
 bool myAddtomempool(CTransaction &tx, CValidationState *pstate = NULL, int32_t simHeight = 0, bool limitFree=true, bool limitDust=true, bool *missinginputs = NULL);
 bool GetCCParams(Eval* eval, const CTransaction &tx, uint32_t nIn,
-                 CTransaction &txOut, std::vector<std::vector<unsigned char>> &preConditions, std::vector<std::vector<unsigned char>> &params);
+                 CTransaction &txOut, std::vector<std::vector<unsigned char>> &preConditions, std::vector<std::vector<unsigned char>> &params, uint32_t *pSourceHeight = nullptr);
 
 // CCcustom
 CPubKey GetUnspendable(struct CCcontract_info *cp,uint8_t *unspendablepriv);
@@ -235,9 +235,9 @@ template <typename TOBJ1, typename TOBJ2, typename TOBJ3, typename TOBJ4>
 std::vector<unsigned char> MakeMofNCCCond(int M, TOBJ1 &condition1, TOBJ2 &condition2, TOBJ3 &condition3, TOBJ4 &condition4)
 {
     if (M > 4) M = 4;
-    std::vector<CC*> conditions({MakeCCcondMofN(condition1.evalCode, condition1.dests, condition1.m), 
-                                 MakeCCcondMofN(condition2.evalCode, condition2.dests, condition2.m), 
-                                 MakeCCcondMofN(condition3.evalCode, condition3.dests, condition3.m), 
+    std::vector<CC*> conditions({MakeCCcondMofN(condition1.evalCode, condition1.dests, condition1.m),
+                                 MakeCCcondMofN(condition2.evalCode, condition2.dests, condition2.m),
+                                 MakeCCcondMofN(condition3.evalCode, condition3.dests, condition3.m),
                                  MakeCCcondMofN(condition4.evalCode, condition4.dests, condition4.m)});
     CC *cond = CCNewThreshold(M, conditions);
     std::vector<unsigned char> vecRet = CCPubKeyVec(cond);

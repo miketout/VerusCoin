@@ -175,29 +175,32 @@ bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTra
                         std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> idAddressMap;
                         idAddressMap = ServerTransactionSignatureChecker::ExtractIDMap(srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey, stakeParams.blkHeight, true);
 
-                        // a stake transaction is never signed by the stake guard's own key; that key only spends a guard output as
-                        // the cheat catcher, under the StakeGuard eval, which the non-server checker below does not run
+                       // the stake must verify on the staker's own signatures. The stake guard's key is public and the wallet
+                        // signs a guarded output with it beside the staker's keys, so its signature proves nothing; without it, a
+                        // fulfillment that only the cheat catcher may use (guard key alone) has no signature left, while the
+                        // non-server checker below, whose eval always passes, would otherwise accept it
+                        CMutableTransaction prunedTx(stakeTx);
                         if (p.IsValid() && p.evalCode == EVAL_STAKEGUARD)
                         {
                             CCcontract_info *cp, C;
                             cp = CCinit(&C, EVAL_STAKEGUARD);
-                            CKeyID guardKeyID = CPubKey(ParseHex(cp->CChexstr)).GetID();
                             if (p.version >= p.VERSION_V3)
                             {
                                 std::vector<unsigned char> ffVec = GetFulfillmentVector(stakeTx.vin[0].scriptSig);
                                 CSmartTransactionSignatures smartSigs(std::vector<unsigned char>(ffVec.begin(), ffVec.end()));
-                                for (auto &keySig : smartSigs.signatures)
+                                if (!smartSigs.IsValid())
                                 {
-                                    CPubKey thisKey;
-                                    thisKey.Set(keySig.second.pubKeyData.begin(), keySig.second.pubKeyData.end());
-                                    if (thisKey.GetID() == guardKeyID)
-                                    {
-                                        return false;
-                                    }
+                                    return false;
+                                }
+                                if (smartSigs.signatures.erase(CPubKey(ParseHex(cp->CChexstr)).GetID()))
+                                {
+                                    prunedTx.vin[0].scriptSig = CScript() << smartSigs.AsVector();
                                 }
                             }
                             else
                             {
+                                // a pre-V3 fulfillment carries exactly one fulfilled branch of the 1-of-2, so the guard key present
+                                // means the guard branch was taken and the staker did not sign
                                 std::vector<uint32_t> vc = {0};
                                 std::vector<CPubKey> keys({CPubKey(ParseHex(cp->CChexstr))});
                                 ccFulfillmentCheck fc = {keys, vc};
@@ -207,11 +210,12 @@ bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTra
                                 if (guardSigned) return false;
                             }
                         }
+                        const CTransaction checkTx(prunedTx);
 
-                        if (VerifyScript(stakeTx.vin[0].scriptSig,
+                        if (VerifyScript(checkTx.vin[0].scriptSig,
                                          srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey,
                                          MANDATORY_SCRIPT_VERIFY_FLAGS,
-                                         TransactionSignatureChecker(&stakeTx, (uint32_t)0, srcTx.vout[stakeTx.vin[0].prevout.n].nValue, &idAddressMap),
+                                         TransactionSignatureChecker(&checkTx, (uint32_t)0, srcTx.vout[stakeTx.vin[0].prevout.n].nValue, &idAddressMap),
                                          consensusBranchId))
                         {
                             return true;
@@ -295,7 +299,7 @@ bool MakeGuardedOutput(CAmount value, CTxDestination &dest, CTransaction &stakeT
 // validates if a stake transaction is both valid and cheating, defined by:
 // the same exact utxo source, a target block height of later than that of the provided coinbase tx that is also targeting a fork
 // of the chain. the source transaction must be a coinbase
-bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTransaction &stakeTx, bool &cheating, bool slowValidation)
+bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTransaction &stakeTx, bool &cheating, uint32_t guardHeight, bool slowValidation)
 {
     // an invalid or non-matching stake transaction cannot cheat
     cheating = false;
@@ -324,13 +328,13 @@ bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTr
 
                     if (utxo == stakeInfo.utxo)
                     {
-                        if (p.prevHash != stakeInfo.prevHash && p.blkHeight >= stakeInfo.height)
+                        if (p.prevHash != stakeInfo.prevHash && p.blkHeight >= guardHeight)
                         {
                             cheating = true;
                             return true;
                         }
                         // if block height is equal and we are at the else, prevHash must have been equal
-                        else if (p.blkHeight >= stakeInfo.height)
+                        else if (p.blkHeight >= guardHeight)
                         {
                             return true;
                         }
@@ -376,13 +380,13 @@ bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTr
 }
 
 // this attaches an opret to a mutable transaction that provides the necessary evidence of a signed, cheating stake transaction
-bool MakeCheatEvidence(CMutableTransaction &mtx, const CTransaction &ccTx, uint32_t voutNum, const CTransaction &cheatTx)
+bool MakeCheatEvidence(CMutableTransaction &mtx, const CTransaction &ccTx, uint32_t voutNum, const CTransaction &cheatTx, uint32_t checkHeight)
 {
     std::vector<unsigned char> vch;
     CDataStream s = CDataStream(SER_DISK, PROTOCOL_VERSION);
     bool isCheater = false;
 
-    if (ValidateMatchingStake(ccTx, voutNum, cheatTx, isCheater, true) && isCheater)
+    if (ValidateMatchingStake(ccTx, voutNum, cheatTx, isCheater, checkHeight, true) && isCheater)
     {
         CTxOut vOut = CTxOut();
         int64_t opretype_stakecheat = OPRETTYPE_STAKECHEAT;
@@ -466,7 +470,8 @@ bool StakeGuardValidate(struct CCcontract_info *cp, Eval* eval, const CTransacti
     CC *cc = GetCryptoCondition(tx.vin[nIn].scriptSig);
 
     // tx is the spending tx, the cc transaction comes back in txOut
-    bool validCCParams = GetCCParams(eval, tx, nIn, txOut, preConditions, params);
+    uint32_t checkHeight = 0;
+    bool validCCParams = GetCCParams(eval, tx, nIn, txOut, preConditions, params, &checkHeight);
     COptCCParams ccp;
     if (preConditions.size() > 0)
     {
@@ -520,7 +525,7 @@ bool StakeGuardValidate(struct CCcontract_info *cp, Eval* eval, const CTransacti
                 catch (...)
                 {
                 }
-                if (checkOK && !ValidateMatchingStake(txOut, tx.vin[0].prevout.n, cheatTx, validCheat, true))
+                if (checkOK && !ValidateMatchingStake(txOut, tx.vin[0].prevout.n, cheatTx, validCheat, checkHeight, true))
                 {
                     validCheat = false;
                 }
@@ -564,7 +569,7 @@ bool StakeGuardValidate(struct CCcontract_info *cp, Eval* eval, const CTransacti
                     catch (...)
                     {
                     }
-                    if (checkOK && !ValidateMatchingStake(txOut, tx.vin[0].prevout.n, cheatTx, validCheat, true))
+                    if (checkOK && !ValidateMatchingStake(txOut, tx.vin[0].prevout.n, cheatTx, validCheat, checkHeight, true))
                     {
                         validCheat = false;
                     }

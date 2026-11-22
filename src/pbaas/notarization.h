@@ -626,6 +626,7 @@ std::vector<__uint128_t> GetBlockCommitments(uint32_t lastNotarizationHeight, ui
 CProofRoot IsValidChallengeEvidence(const CCurrencyDefinition &externalSystem,
                                     const CProofRoot &defaultProofRoot,
                                     const CNotaryEvidence &e,
+                                    const CUTXORef &finalizedOutput,
                                     const uint256 &entropyHash,
                                     bool &invalidates,
                                     CProofRoot &challengeStartRoot,

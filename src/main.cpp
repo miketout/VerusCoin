@@ -260,6 +260,10 @@ namespace {
     /** Dirty block index entries. */
     set<CBlockIndex*> setDirtyBlockIndex;
 
+    /** PoS-format headers accepted from headers messages without a body, by parent; see the headers handler. */
+    std::map<uint256, std::set<uint256>> mapDatalessPosChildren;
+    static const size_t MAX_DATALESS_POS_CHILDREN = 8;
+
     /** Dirty block file entries. */
     set<int> setDirtyFileInfo;
 } // anon namespace
@@ -1183,7 +1187,8 @@ bool ContextualCheckTransaction(
         const CChainParams& chainparams,
         const int nHeight,
         int dosLevel,
-        bool (*isInitBlockDownload)(const CChainParams&))
+        bool (*isInitBlockDownload)(const CChainParams&),
+        bool fSkipShieldedProofs)
 {
     bool overwinterActive = chainparams.GetConsensus().NetworkUpgradeActive(nHeight, Consensus::UPGRADE_OVERWINTER);
     bool saplingActive = chainparams.GetConsensus().NetworkUpgradeActive(nHeight, Consensus::UPGRADE_SAPLING);
@@ -1363,8 +1368,9 @@ bool ContextualCheckTransaction(
         }
     }
 
-    if (!tx.vShieldedSpend.empty() ||
-        !tx.vShieldedOutput.empty())
+    if (!fSkipShieldedProofs &&
+        (!tx.vShieldedSpend.empty() ||
+         !tx.vShieldedOutput.empty()))
     {
         auto ctx = librustzcash_sapling_verification_ctx_init();
 
@@ -1933,9 +1939,23 @@ bool AcceptToMemoryPoolInt(CTxMemPool& pool, CValidationState &state, const CTra
 
     LOCK2(smartTransactionCS, pool.cs);
 
+    // a transaction already in the pool had its Sapling proofs and signatures verified at acceptance; when the branch
+    // it was validated under is the one in force, that work is not repeated here (ConnectBlock re-runs this on pool entries)
+    bool fSkipShieldedProofs = false;
+    {
+        auto poolIt = pool.mapTx.find(tx.GetHash());
+        fSkipShieldedProofs = poolIt != pool.mapTx.end() && poolIt->GetValidatedBranchId() == consensusBranchId;
+    }
+
     // DoS level set to 1 to be more forgiving.
     // Check transaction contextually against the set of consensus rules which apply in the next block to be mined.
-    if (!ContextualCheckTransaction(tx, state, chainParams, nextBlockHeight, (dosLevel == -1) ? 1 : dosLevel))
+    if (!ContextualCheckTransaction(tx,
+                                    state,
+                                    chainParams,
+                                    nextBlockHeight,
+                                    (dosLevel == -1) ? 1 : dosLevel,
+                                    IsInitialBlockDownload,
+                                    fSkipShieldedProofs))
     {
         return error("AcceptToMemoryPool: ContextualCheckTransaction failed");
     }
@@ -2897,6 +2917,8 @@ int IsNotInSync()
         return false;
     }
 
+    bool countInFlight = pbi->GetBlockTime() < GetTime() - (int64_t)ConnectedChains.ThisChain().blockTime * 10;
+
     // a PoS header is free to forge until its body connects: count the lead only through blocks we have,
     // blocks that cost work, or blocks a peer is delivering
     std::vector<CBlockIndex *> path(heightDiff, nullptr);
@@ -2910,7 +2932,9 @@ int IsNotInSync()
     for (CBlockIndex *p = path[0] ? path[0]->pprev : nullptr; p && !chainActive.Contains(p); p = p->pprev)
     {
         if ((p->nStatus & BLOCK_FAILED_MASK) ||
-            (!(p->nStatus & BLOCK_HAVE_DATA) && p->IsVerusPOSBlock() && !mapBlocksInFlight.count(p->GetBlockHash())))
+            (!(p->nStatus & BLOCK_HAVE_DATA) &&
+               p->IsVerusPOSBlock() &&
+               !(countInFlight && mapBlocksInFlight.count(p->GetBlockHash()))))
         {
             return 0;
         }
@@ -2922,7 +2946,9 @@ int IsNotInSync()
         CBlockIndex *p = *it;
         if (!p ||
             (p->nStatus & BLOCK_FAILED_MASK) ||
-            (!(p->nStatus & BLOCK_HAVE_DATA) && p->IsVerusPOSBlock() && !mapBlocksInFlight.count(p->GetBlockHash())))
+            (!(p->nStatus & BLOCK_HAVE_DATA) &&
+               p->IsVerusPOSBlock() &&
+               !(countInFlight && mapBlocksInFlight.count(p->GetBlockHash()))))
         {
             break;
         }
@@ -6024,6 +6050,21 @@ static void PruneBlockIndexCandidates() {
     while (it != setBlockIndexCandidates.end() && setBlockIndexCandidates.value_comp()(*it, chainActive.LastTip())) {
         setBlockIndexCandidates.erase(it++);
     }
+
+    for (auto it = mapDatalessPosChildren.begin(); it != mapDatalessPosChildren.end();)
+    {
+        auto parentIt = mapBlockIndex.find(it->first);
+        if (parentIt == mapBlockIndex.end() ||
+            parentIt->second->GetHeight() + (int)BLOCK_DOWNLOAD_WINDOW < chainActive.Height())
+        {
+            it = mapDatalessPosChildren.erase(it);
+        }
+        else
+        {
+            it++;
+        }
+    }
+
     // Either the current tip or a successor of it we're working towards is left in setBlockIndexCandidates.
     assert(!setBlockIndexCandidates.empty());
 }
@@ -6534,6 +6575,19 @@ bool ReceivedBlockTransactions(
     pindexNew->nDataPos = pos.nPos;
     pindexNew->nUndoPos = 0;
     pindexNew->nStatus |= BLOCK_HAVE_DATA;
+
+    // a PoS-format header that gains its body no longer counts against its parent
+    if (pindexNew->pprev)
+    {
+        auto childIt = mapDatalessPosChildren.find(pindexNew->pprev->GetBlockHash());
+        if (childIt != mapDatalessPosChildren.end() &&
+            childIt->second.erase(pindexNew->GetBlockHash()) &&
+            childIt->second.empty())
+        {
+            mapDatalessPosChildren.erase(childIt);
+        }
+    }
+
     pindexNew->RaiseValidity(BLOCK_VALID_TRANSACTIONS);
     setDirtyBlockIndex.insert(pindexNew);
 
@@ -7249,12 +7303,13 @@ static bool AcceptBlock(int32_t *futureblockp, const CBlock& block, CValidationS
         return false;
     }
 
-    // the index entry was built from a header with this hash; the body must carry that header
+    // the index entry was built from a header with this hash; the body must carry that header. The hash covers everything
+    // but the standard fields and the two MMR roots, which are compared here, both sides through the header accessor
     CBlockHeader idxHdr = pindex->GetBlockHeader();
     if (block.hashPrevBlock != idxHdr.hashPrevBlock || block.hashMerkleRoot != idxHdr.hashMerkleRoot ||
         block.hashFinalSaplingRoot != idxHdr.hashFinalSaplingRoot || block.nBits != idxHdr.nBits ||
         block.nNonce != idxHdr.nNonce || block.nTime != idxHdr.nTime || block.nVersion != idxHdr.nVersion ||
-        block.GetPrevMMRRoot() != pindex->PrevMMRRoot() || block.GetBlockMMRRoot() != pindex->BlockMMRRoot())
+        block.GetPrevMMRRoot() != idxHdr.GetPrevMMRRoot() || block.GetBlockMMRRoot() != idxHdr.GetBlockMMRRoot())
     {
         return state.DoS(100, error("%s: block header does not match index entry for %s", __func__, pindex->GetBlockHash().GetHex()),
                          REJECT_INVALID, "header-index-mismatch");
@@ -9834,6 +9889,19 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 Misbehaving(pfrom->GetId(), 20);
                 return error("non-continuous headers sequence");
             }
+            // a PoS-format header has no work behind its index entry, so one parent may gain only a few of them from
+            // headers messages before a body must arrive; a later body releases the slot (ReceivedBlockTransactions)
+            uint256 headerHash = header.GetHash();
+            bool newPosHeader = header.IsVerusPOSBlock() && !mapBlockIndex.count(headerHash);
+            if (newPosHeader)
+            {
+                auto childIt = mapDatalessPosChildren.find(header.hashPrevBlock);
+                if (childIt != mapDatalessPosChildren.end() && childIt->second.size() >= MAX_DATALESS_POS_CHILDREN)
+                {
+                    Misbehaving(pfrom->GetId(), 10);
+                    return error("too many data-less PoS headers on one parent");
+                }
+            }
             int32_t futureblock;
             if (!AcceptBlockHeader(&futureblock, header, state, chainparams, &pindexLast)) {
                 int nDoS;
@@ -9842,6 +9910,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                     Misbehaving(pfrom->GetId(), nDoS);
                     return error("invalid header received");
                 }
+            }
+            else if (newPosHeader)
+            {
+                mapDatalessPosChildren[header.hashPrevBlock].insert(headerHash);
             }
         }
 

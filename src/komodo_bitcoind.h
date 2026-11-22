@@ -847,8 +847,8 @@ int8_t komodo_segid(int32_t nocache,int32_t height)
 }
 
 bool GetStakeParams(const CTransaction &stakeTx, CStakeParams &stakeParams);
-bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTransaction &stakeTx, bool &cheating, bool slowValidation=true);
-bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakeParams, bool validateSig = true);
+bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTransaction &stakeTx, bool &cheating, uint32_t guardHeight, bool slowValidation);
+bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakeParams, bool validateSig);
 bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height);
 
 int64_t komodo_checkcommission(CBlock *pblock,int32_t height)

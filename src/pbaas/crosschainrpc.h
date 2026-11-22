@@ -1571,7 +1571,7 @@ public:
                                           const uint160 systemID,
                                           const std::string &prefixString,
                                           const uint256 &msgHash,
-                                          std::vector<std::vector<unsigned char>> *pDupSigs=nullptr) const;
+                                          std::vector<std::vector<unsigned char>> *pDupOrBadSigs=nullptr) const;
 
     uint32_t Version() const
     {

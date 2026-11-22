@@ -1871,7 +1871,7 @@ CScript CIdentity::TransparentOutput(const CIdentityID &destinationID)
     return MakeMofNCCScript(ccObj);
 }
 
-CScript CIdentity::IdentityUpdateOutputScript(uint32_t height, const std::vector<CTxDestination> *indexDests) const
+CScript CIdentity::IdentityUpdateOutputScript(uint32_t height, const std::vector<CTxDestination> *indexDests, const COptCCParams *pPrimaryShape) const
 {
     CScript ret;
 
@@ -1880,8 +1880,10 @@ CScript CIdentity::IdentityUpdateOutputScript(uint32_t height, const std::vector
         return ret;
     }
 
-    std::vector<CTxDestination> dests1({CTxDestination(CIdentityID(GetID()))});
-    CConditionObj<CIdentity> primary(EVAL_IDENTITY_PRIMARY, dests1, 1, this);
+    // a revocation may not change the primary spend condition (consensus requires it unchanged when the primary did
+    // not sign and the identity is not yet revoked), so that caller hands in the input's condition to carry over
+    std::vector<CTxDestination> dests1 = pPrimaryShape ? pPrimaryShape->vKeys : std::vector<CTxDestination>({CTxDestination(CIdentityID(GetID()))});
+    CConditionObj<CIdentity> primary(EVAL_IDENTITY_PRIMARY, dests1, pPrimaryShape ? pPrimaryShape->m : 1, this);
 
     // when PBaaS activates, we no longer need redundant entries, so reduce the size a bit
     uint32_t consensusVersion = CConstVerusSolutionVector::GetVersionByHeight(height);

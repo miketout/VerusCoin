@@ -522,7 +522,7 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
         p.IsValid() &&
         p.evalCode == EVAL_CROSSCHAIN_IMPORT &&
         p.vData.size() > 1 &&
-        p.IsEvalPKOut() &&
+        p.IsEvalPKOut()  &&
         (cci = CCrossChainImport(p.vData[0])).IsValid() &&
         ::AsVector(cci) == p.vData[0] &&
         cci.GetImportInfo(tx, height, outNum, ccx, sysCCI, sysOutNum, notarization, notarizationOut, evidenceOutStart, evidenceOutEnd, reserveTransfers, state))
@@ -2602,7 +2602,7 @@ bool verusCheckPOSBlock(int32_t slowflag, const CBlock *pblock, int32_t height)
                                    !IsVerusActive() &&
                                    reserveOutVal.valueMap.size() == 1 &&
                                    reserveOutVal.valueMap.count(VERUS_CHAINID)))) ||
-                                ValidateMatchingStake(pblock->vtx[0], i, pblock->vtx[txn_count-1], validHash, slowflag) && !validHash)
+                                ValidateMatchingStake(pblock->vtx[0], i, pblock->vtx[txn_count-1], validHash, height, slowflag) && !validHash)
                             {
                                 validHash = true;
                             }
@@ -3169,7 +3169,7 @@ bool ValidateReserveTransfer(struct CCcontract_info *cp, Eval* eval, const CTran
     // get reserve transfer to spend
     CReserveTransfer rt = GetReserveTransferToSpend(tx, nIn, txToSpend, spendingFromHeight, p);
 
-    if (p.IsValid() && !p.IsEvalPKOut())
+    if (p.IsValid() && !p.IsEvalPKOut(false))
     {
         // if this is an arbitrage transfer with a wallet spend, it can be spent by any controller to a wallet
         return true;
@@ -4803,14 +4803,12 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
             for (auto &input : tx.vin)
             {
                 COptCCParams p;
-                // first time through may be null
-                if ((!input.prevout.hash.IsNull() && input.prevout.hash == idTx.GetHash()) || myGetTransaction(input.prevout.hash, idTx, blkHash))
+                // resolve the spent output from the mempool or the UTXO set, loading from the block store only
+                // within the per-transaction budget; an input this cannot resolve is not the defining identity
+                CTxOut idOut;
+                if (GetSpentOutput(input.prevout, idOut, PrecheckTxContext().parentLoads, MAX_PRECHECK_PARENT_LOADS))
                 {
-                    if (input.prevout.n >= idTx.vout.size())
-                    {
-                        return state.Error("Invalid, malformed transaction 2");
-                    }
-                    if (idTx.vout[input.prevout.n].scriptPubKey.IsPayToCryptoCondition(p) &&
+                    if (idOut.scriptPubKey.IsPayToCryptoCondition(p) &&
                         p.IsValid() &&
                         p.evalCode == EVAL_IDENTITY_PRIMARY &&
                         p.vData.size() > 1 &&
@@ -5431,7 +5429,9 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
         p.vData.size() &&
         (rt = CReserveTransfer(p.vData[0])).IsValid() &&
         rt.TotalCurrencyOut().valueMap[ASSETCHAINS_CHAINID] == tx.vout[outNum].nValue &&
-        (rt.IsArbitrageOnly() || p.IsEvalPKOut()) &&
+        (p.IsEvalPKOut() ||
+         ((rt.IsArbitrageOnly() || !IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1))) &&
+          p.IsEvalPKOut(false))) &&
         rt.destination.AuxDestCount() <= 3 &&
         ::AsVector(rt) == p.vData[0])
     {
@@ -8147,7 +8147,7 @@ CCoinbaseCurrencyState CConnectedChains::GetCurrencyState(const uint160 &currenc
 {
     int32_t curDefHeight;
     CCurrencyDefinition curDef;
-    if (GetCurrencyDefinition(currencyID, curDef, &curDefHeight, true))
+    if (GetCurrencyDefinition(currencyID, curDef, &curDefHeight))
     {
         return GetCurrencyState(curDef, height, curDefHeight, loadPendingTransfers);
     }
@@ -8185,12 +8185,14 @@ CCurrencyDefinition CConnectedChains::GetCachedCurrency(const uint160 &currencyI
         (chainActive.Height() + 1) < std::get<0>(specificCurDef))
     {
         int32_t defHeight;
-        if (!GetCurrencyDefinition(currencyID, currencyDef, &defHeight, true))
+        if (!GetCurrencyDefinition(currencyID, currencyDef, &defHeight))
         {
             return CCurrencyDefinition();
         }
-        uint256 blockHash = defHeight == 0 || defHeight > chainActive.Height() ? uint256() : chainActive[defHeight]->GetBlockHash();
-        currencyDefCache.Put(currencyID, {defHeight, blockHash, currencyDef});
+        if (defHeight <= chainActive.Height())
+        {
+            currencyDefCache.Put(currencyID, {defHeight, chainActive[defHeight]->GetBlockHash(), currencyDef});
+        }
     }
     return currencyDef;
 }
