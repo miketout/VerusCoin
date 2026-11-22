@@ -231,14 +231,17 @@ bool ValidateCrossChainExport(struct CCcontract_info *cp, Eval* eval, const CTra
 
         for (auto &oneOut : tx.vout)
         {
-            // there must be an output with a valid export to the same destination
+            // there must be an output with a valid export to the same destination; a supplemental is never a successor, and a
+            // system thread export may only continue its own system's thread
             if (oneOut.scriptPubKey.IsPayToCryptoCondition(p) &&
                 p.IsValid() &&
                 p.evalCode == EVAL_CROSSCHAIN_EXPORT &&
                 p.version >= COptCCParams::VERSION_V3 &&
                 p.vData.size() &&
                 (matchedExport = CCrossChainExport(p.vData[0])).IsValid() &&
-                matchedExport.destCurrencyID == thisExport.destCurrencyID)
+                matchedExport.destCurrencyID == thisExport.destCurrencyID &&
+                !matchedExport.IsSupplemental() &&
+                (!matchedExport.IsSystemThreadExport() || matchedExport.destCurrencyID == matchedExport.destSystemID))
             {
                 return true;
             }
@@ -1620,6 +1623,18 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
 
         CCrossChainExport ccxp = CCrossChainExport(tx.vout[primaryExportOut].scriptPubKey);
 
+        // a system thread export carries its destination system's own thread: it names that system as its currency, the
+        // system is another chain or gateway, and the primary beside it exports a currency other than that system
+        CCurrencyDefinition sysDef;
+        if (ccx.destCurrencyID != ccx.destSystemID ||
+            ccx.destSystemID == ASSETCHAINS_CHAINID ||
+            ccxp.destCurrencyID == ccxp.destSystemID ||
+            !(sysDef = ConnectedChains.GetCachedCurrency(ccx.destSystemID)).IsValid() ||
+            sysDef.SystemOrGatewayID() != ccx.destSystemID)
+        {
+            return state.Error("Invalid system thread export");
+        }
+
         // get primary export out and ensure consistency
         if (ccxp.IsValid() &&
             !ccx.IsSupplemental() &&
@@ -2424,8 +2439,9 @@ bool ValidateFinalizeExport(struct CCcontract_info *cp, Eval* eval, const CTrans
                 p.evalCode == EVAL_CROSSCHAIN_IMPORT &&
                 p.vData.size() &&
                 (cci = CCrossChainImport(p.vData[0])).IsValid() &&
-                cci.exportTxId == exportTx.GetHash() &&
-                cci.exportTxOutNum == of.output.n)
+                 !cci.IsDefinitionImport() &&
+                 cci.exportTxId == exportTx.GetHash() &&
+                 cci.exportTxOutNum == of.output.n)
             {
                 return true;
             }

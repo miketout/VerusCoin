@@ -49,6 +49,8 @@ using namespace libzcash;
 CAmount GetIdentityFeeFactor(const CTransaction &tx, CReserveTransactionDescriptor &txDesc, bool &isIdentity);
 CAmount GetMinRelayFeeForOutputs(const std::vector<SendManyRecipient> &tOutputs, const std::vector<SendManyRecipient> &zOutputs, CAmount identityFeeFactor, bool isIdentity);
 
+bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakeParams, bool validateSig);
+
 extern char ASSETCHAINS_SYMBOL[KOMODO_ASSETCHAIN_MAXLEN];
 extern int32_t VERUS_MIN_STAKEAGE;
 const std::string ADDR_TYPE_SPROUT = "sprout";
