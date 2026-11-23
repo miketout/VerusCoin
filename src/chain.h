@@ -282,7 +282,13 @@ public:
     int64_t immature;       // how much in this block is immature
     uint32_t maturity;      // when do the immature funds in this block mature?
 
-    int8_t segid; // jl777 fields
+    //! (memory only) PoS-format headers under this block accepted from headers messages and still without a body
+    enum {
+        POS_DATALESS_COUNTED = 1,
+        POS_DATALESS_DEFERRED = 2
+    };
+    uint16_t nDatalessPosChildren;
+    uint8_t statusFlags;
 
     //! Which # file this block is stored in (blk?????.dat)
     int nFile;
@@ -355,7 +361,8 @@ public:
         newcoins = zfunds = 0;
         maturity = 0;
         immature = 0;
-        segid = -2;
+        statusFlags = 0;
+        nDatalessPosChildren = 0;
         pprev = NULL;
         pskip = NULL;
         nFile = 0;

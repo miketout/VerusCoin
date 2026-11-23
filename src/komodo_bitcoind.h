@@ -809,43 +809,6 @@ uint64_t komodo_commission(const CBlock *pblock)
     return(commission);
 }
 
-uint32_t komodo_segid32(char *coinaddr)
-{
-    bits256 addrhash;
-    vcalc_sha256(0,(uint8_t *)&addrhash,(uint8_t *)coinaddr,(int32_t)strlen(coinaddr));
-    return(addrhash.uints[0]);
-}
-
-int8_t komodo_segid(int32_t nocache,int32_t height)
-{
-    CTxDestination voutaddress; CBlock block; CBlockIndex *pindex; uint64_t value; uint32_t txtime; char voutaddr[64],destaddr[64]; int32_t txn_count,vout; uint256 txid; int8_t segid = -1;
-    if ( height > 0 && (pindex= komodo_chainactive(height)) != 0 )
-    {
-        if ( nocache == 0 && pindex->segid >= -1 )
-            return(pindex->segid);
-        if ( komodo_blockload(block,pindex) == 0 )
-        {
-            txn_count = block.vtx.size();
-            if ( txn_count > 1 && block.vtx[txn_count-1].vin.size() == 1 && block.vtx[txn_count-1].vout.size() == 1 )
-            {
-                txid = block.vtx[txn_count-1].vin[0].prevout.hash;
-                vout = block.vtx[txn_count-1].vin[0].prevout.n;
-                txtime = komodo_txtime(&value,txid,vout,destaddr);
-                if ( ExtractDestination(block.vtx[txn_count-1].vout[0].scriptPubKey,voutaddress) )
-                {
-                    strcpy(voutaddr,CBitcoinAddress(voutaddress).ToString().c_str());
-                    if ( strcmp(destaddr,voutaddr) == 0 && block.vtx[txn_count-1].vout[0].nValue == value )
-                    {
-                        segid = komodo_segid32(voutaddr) & 0x3f;
-                        //fprintf(stderr,"komodo_segid.(%d) -> %02x\n",height,segid);
-                    }
-                } else fprintf(stderr,"komodo_segid ht.%d couldnt extract voutaddress\n",height);
-            }
-        }
-    }
-    return(segid);
-}
-
 bool GetStakeParams(const CTransaction &stakeTx, CStakeParams &stakeParams);
 bool ValidateMatchingStake(const CTransaction &ccTx, uint32_t voutNum, const CTransaction &stakeTx, bool &cheating, uint32_t guardHeight, bool slowValidation);
 bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakeParams, bool validateSig);

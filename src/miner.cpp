@@ -2919,6 +2919,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
 
         // store export counts to ensure we don't exceed any limits
         std::set<uint160> newIDRegistrations;
+        std::set<uint160> currencyDefinitions;
         std::map<uint160, std::pair<int32_t, int32_t>> exportTransferCount;
         std::map<uint160, int32_t> currencyExportTransferCount;
         std::map<uint160, int32_t> identityExportTransferCount;
@@ -3178,6 +3179,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             std::map<uint160, int32_t> tmpCurrencyExportTransfers;
             std::map<uint160, int32_t> tmpIdentityExportTransfers;
 
+            std::set<uint160> tmpCurrencyDefinitions;
             std::set<uint160> tmpNewIDRegistrations;
             std::set<uint160> tmpCurrencyImports;
             std::set<std::pair<uint160, uint160>> tmpIDDestAndExport;
@@ -3276,7 +3278,12 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
             if (isReserve)
             {
                 // we have already looped through to determine these things, so don't do it again if we know it's not them
-                if (rtxd.IsValid() && (rtxd.IsIdentityDefinition() || rtxd.IsImport() || rtxd.IsExport() || rtxd.IsReserveTransfer()))
+                if (rtxd.IsValid() &&
+                    (rtxd.IsIdentityDefinition() ||
+                     rtxd.IsImport() ||
+                     rtxd.IsExport() ||
+                     rtxd.IsReserveTransfer() ||
+                     rtxd.IsCurrencyDefinition()))
                 {
                     // this is in the prioritization loop to eliminate dups early and
                     // enable consideration of delayed reserve transfer rewards when prioritizing
@@ -3285,6 +3292,11 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                     // identity reservations to check for collision, which is disallowed
                     bool disqualified = false;
                     bool isImport = false;
+
+                    // currency definitions reached so far in this transaction, by ID: output number and definition. A lookup that
+                    // misses the chain is served only for a later output (a definecurrency carries its launch transfers after its definitions)
+                    std::map<uint160, std::pair<int32_t, CCurrencyDefinition>> txDefs;
+
                     for (int j = 0; j < tx.vout.size(); j++)
                     {
                         auto &oneOut = tx.vout[j];
@@ -3335,19 +3347,44 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                     break;
                                 }
 
+                                case EVAL_CURRENCY_DEFINITION:
+                                {
+                                    // a currency is defined once per block, as ConnectBlock requires (bad-txns-dup-currency); a later
+                                    // output of this transaction may resolve the definition before the chain has it
+                                    CCurrencyDefinition curDef;
+                                    if ((curDef = CCurrencyDefinition(p.vData[0])).IsValid())
+                                    {
+                                        uint160 curDefID = curDef.GetID();
+                                        if (currencyDefinitions.count(curDefID) || tmpCurrencyDefinitions.count(curDefID))
+                                        {
+                                            disqualified = true;
+                                            break;
+                                        }
+                                        tmpCurrencyDefinitions.insert(curDefID);
+                                        txDefs[curDefID] = {j, curDef};
+                                    }
+                                    break;
+                                }
+
                                 case EVAL_CROSSCHAIN_EXPORT:
                                 {
                                     // make sure we don't export the same identity or currency to the same destination more than once in any block
                                     // we cover the single block case here, and the protocol for each must reject anything invalid on prior blocks
-                                    CCrossChainExport ccx;
+                                    CCrossChainExport ccx(p.vData[0]);
                                     int primaryExportOut;
                                     int32_t nextOutput;
                                     CPBaaSNotarization exportNotarization;
-                                    CCurrencyDefinition destSystem;
+
+                                    bool checkExport = ccx.IsValid() && !(ccx.IsSupplemental() || ccx.IsSystemThreadExport());
+                                    CCurrencyDefinition destSystem = checkExport ? ConnectedChains.GetCachedCurrency(ccx.destSystemID) : CCurrencyDefinition();
+                                    auto defIt = txDefs.find(ccx.destSystemID);
+                                    if (checkExport && !destSystem.IsValid() && defIt != txDefs.end() && defIt->second.first < j)
+                                    {
+                                        destSystem = defIt->second.second;
+                                    }
+
                                     std::vector<CReserveTransfer> reserveTransfers;
-                                    if ((ccx = CCrossChainExport(p.vData[0])).IsValid() &&
-                                        !ccx.IsSystemThreadExport() &&
-                                        (destSystem = ConnectedChains.GetCachedCurrency(ccx.destSystemID)).IsValid() &&
+                                    if (destSystem.IsValid() &&
                                         (destSystem.IsGateway() || destSystem.IsPBaaSChain()) &&
                                         destSystem.SystemOrGatewayID() != ASSETCHAINS_CHAINID &&
                                         ccx.GetExportInfo(tx, j, primaryExportOut, nextOutput, exportNotarization, reserveTransfers, state,
@@ -3392,7 +3429,18 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                     {
                                         uint160 destCurrencyID = rt.GetImportCurrency();
                                         CCurrencyDefinition destCurrency = ConnectedChains.GetCachedCurrency(destCurrencyID);
+                                        auto defIt = txDefs.find(destCurrencyID);
+                                        if (!destCurrency.IsValid() && defIt != txDefs.end() && defIt->second.first < j)
+                                        {
+                                            destCurrency = defIt->second.second;
+                                        }
                                         CCurrencyDefinition destSystem = ConnectedChains.GetCachedCurrency(destCurrency.SystemOrGatewayID());
+                                        auto sysIt = txDefs.find(destCurrency.SystemOrGatewayID());
+                                        if (!destSystem.IsValid() && sysIt != txDefs.end() && sysIt->second.first < j)
+                                        {
+                                            // a new chain is its own system
+                                            destSystem = sysIt->second.second;
+                                        }
                                         CCurrencyDefinition secondLegSystem;
 
                                         if (!destCurrency.IsValid() || !destSystem.IsValid())
@@ -3413,6 +3461,12 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                         if (rt.destination.HasGatewayLeg() && rt.destination.gatewayID != destSystem.GetID())
                                         {
                                             secondLegSystem = ConnectedChains.GetCachedCurrency(rt.destination.gatewayID);
+                                            auto slsIt = txDefs.find(rt.destination.gatewayID);
+                                            if (!secondLegSystem.IsValid() && slsIt != txDefs.end() && slsIt->second.first < j)
+                                            {
+                                                // a next-leg system defined earlier in this transaction
+                                                secondLegSystem = slsIt->second.second;
+                                            }
                                             if (!secondLegSystem.IsValid())
                                             {
                                                 if (LogAcceptCategory("crosschainexports"))
@@ -3586,6 +3640,11 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                     currencyDestAndExport.insert(*it);
                 }
                 tmpCurrencyDestAndExport.clear();
+                for (auto it = tmpCurrencyDefinitions.begin(); it != tmpCurrencyDefinitions.end(); it++)
+                {
+                    currencyDefinitions.insert(*it);
+                }
+                tmpCurrencyDefinitions.clear();
             }
 
             UpdateCoins(tx, view, nHeight);

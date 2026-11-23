@@ -127,11 +127,12 @@ unsigned int lwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const CBlock
     int32_t nHeight = pindexLast ? pindexLast->GetHeight() : 0;
     bool isPBaaS = CConstVerusSolutionVector::activationHeight.ActiveVersion(nHeight + 1) >= CActivationHeight::ACTIVATE_PBAAS;
 
-    int solutionVersion = pblock->nVersion == (pblock && pblock->nVersion == CBlock::VERUS_V2) ?
-                                                CConstVerusSolutionVector::Version(pblock->nSolution) :
-                                                0;
+    // placeholder for hash and difficulty change
+    int solutionVersion = pblock &&
+                          pblock->nVersion == CBlock::VERUS_V2 ?
+                                CConstVerusSolutionVector::Version(pblock->nSolution) :
+                                0;
     bool isPBaaSHarden2 = solutionVersion == CActivationHeight::ACTIVATE_PBAAS_HARDEN2;
-
 
     if (ASSETCHAINS_ALGO == ASSETCHAINS_EQUIHASH)
     {

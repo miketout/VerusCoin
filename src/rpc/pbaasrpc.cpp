@@ -11608,11 +11608,12 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                                         convertToCurrencyDef :
                                         (exportToCurrencyDef.IsFractional() ?
                                             exportToCurrencyDef :
-                                            (exportToCurrencyDef.GatewayConverterID().IsNull() &&
-                                            exportToCurrencyID == thisChain.launchSystemID &&
-                                            !thisChain.GatewayConverterID().IsNull() ?
-                                                ConnectedChains.GetCachedCurrency(thisChain.GatewayConverterID()) :
-                                                CCurrencyDefinition())));
+                                            (!exportToCurrencyDef.GatewayConverterID().IsNull() ?
+                                                ConnectedChains.GetCachedCurrency(exportToCurrencyDef.GatewayConverterID()) :
+                                                (exportToCurrencyID == thisChain.launchSystemID &&
+                                                 !thisChain.GatewayConverterID().IsNull() ?
+                                                    ConnectedChains.GetCachedCurrency(thisChain.GatewayConverterID()) :
+                                                    CCurrencyDefinition()))));
                         }
                         else
                         {
@@ -11620,14 +11621,24 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                         }
                     }
 
-                    if (tmpConverterDef.IsValid() &&
-                        (tmpConverterDef.systemID == ASSETCHAINS_CHAINID || tmpConverterDef.systemID == destSystemID))
+                    if (tmpConverterDef.IsValid() && tmpConverterDef.systemID == ASSETCHAINS_CHAINID)
                     {
+                        // a converter on this chain converts the fee on the way out, so the converter
+                        // and every one of its reserves can pay the fee
                         validFeeCurrencies.valueMap[tmpConverterDef.GetID()] = 1;
                         for (auto &oneCur : tmpConverterDef.currencies)
                         {
                             validFeeCurrencies.valueMap[oneCur] = 1;
                         }
+                    }
+                    else if (tmpConverterDef.IsValid() &&
+                             tmpConverterDef.systemID == destSystemID &&
+                             tmpConverterDef.GetCurrenciesMap().count(sourceCurrencyID))
+                    {
+                        // a converter on the destination system receives the fee with the transfer, and its
+                        // import accepts a fee only in its system's currency, the launch system's currency
+                        // (both already admitted above) or the currency being sent, when that is a reserve
+                        validFeeCurrencies.valueMap[sourceCurrencyID] = 1;
                     }
                     if (!validFeeCurrencies.valueMap.count(feeCurrencyID))
                     {

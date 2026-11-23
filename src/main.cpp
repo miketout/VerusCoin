@@ -260,9 +260,13 @@ namespace {
     /** Dirty block index entries. */
     set<CBlockIndex*> setDirtyBlockIndex;
 
-    /** PoS-format headers accepted from headers messages without a body, by parent; see the headers handler. */
-    std::map<uint256, std::set<uint256>> mapDatalessPosChildren;
-    static const size_t MAX_DATALESS_POS_CHILDREN = 8;
+    /** data-less PoS-format headers charged as extras (a second one under a parent, or one under a parent far behind the
+     *  best header), by header hash: the peer charged. Released when the body arrives or the peer disconnects. */
+    std::map<uint256, NodeId> mapDatalessPosExtras;
+    static const int MAX_DATALESS_POS_EXTRAS_PER_PEER = 16;
+    static const int MAX_DATALESS_POS_HISTORICAL_EXTRAS = 4096;
+    static const int DATALESS_POS_FRONTIER_DEPTH = BLOCK_DOWNLOAD_WINDOW;
+    int nDatalessPosHistoricalExtras = 0;
 
     /** Dirty block file entries. */
     set<int> setDirtyFileInfo;
@@ -315,6 +319,8 @@ namespace {
         int nBlocksInFlightValidHeaders;
         //! Whether we consider this a preferred download peer.
         bool fPreferredDownload;
+        //! data-less PoS-format headers from this peer charged as extras and still without a body
+        int nDatalessPosExtras;
 
         CNodeState() {
             fCurrentlyConnected = false;
@@ -328,6 +334,7 @@ namespace {
             nBlocksInFlight = 0;
             nBlocksInFlightValidHeaders = 0;
             fPreferredDownload = false;
+            nDatalessPosExtras = 0;
         }
     };
 
@@ -386,6 +393,17 @@ namespace {
         mapBlocksInFlight.erase(entry.hash);
         EraseOrphansFor(nodeid);
         nPreferredDownload -= state->fPreferredDownload;
+
+        for (auto it = mapDatalessPosExtras.begin(); it != mapDatalessPosExtras.end(); it++)
+        {
+            if (it->second == nodeid)
+            {
+                auto idxIt = mapBlockIndex.find(it->first);
+                bool historical = idxIt != mapBlockIndex.end() && idxIt->second && idxIt->second->pprev && pindexBestHeader &&
+                                  idxIt->second->pprev->GetHeight() + DATALESS_POS_FRONTIER_DEPTH < pindexBestHeader->GetHeight();
+                it->second = historical ? -1 : -2;
+            }
+        }
 
         mapNodeState.erase(nodeid);
     }
@@ -4345,6 +4363,10 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
             if (isPBaaS && (rtxd.flags & (rtxd.IS_IMPORT | rtxd.IS_RESERVETRANSFER | rtxd.IS_EXPORT | rtxd.IS_IDENTITY_DEFINITION | rtxd.IS_CURRENCY_DEFINITION)))
             {
+                // currency definitions reached so far in this transaction, by ID: output number and definition. A lookup that
+                // misses the chain is served only for a later output (a definecurrency carries its launch transfers after its definitions)
+                std::map<uint160, std::pair<int32_t, CCurrencyDefinition>> txDefs;
+
                 // go through all outputs and record all currency and identity definitions, either import-based definitions or
                 // identity reservations to check for collision, which is disallowed
                 for (int j = 0; j < tx.vout.size(); j++)
@@ -4404,6 +4426,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                 {
                                     newThisChain = curDef;
                                     currencyDefinitions.insert(curDef.GetID());
+                                    txDefs[curDef.GetID()] = {j, curDef};
                                 }
                                 else if (curDef.IsValid())
                                 {
@@ -4412,6 +4435,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                         return state.DoS(10, error("%s: attempt to submit block with invalid or duplicate currency definitions", __func__), REJECT_INVALID, "bad-txns-dup-currency");
                                     }
                                     currencyDefinitions.insert(curDef.GetID());
+                                    txDefs[curDef.GetID()] = {j, curDef};
                                 }
                                 break;
                             }
@@ -4440,15 +4464,21 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                             {
                                 // make sure we don't export the same identity or currency to the same destination more than once in any block
                                 // we cover the single block case here, and the protocol for each must reject anything invalid on prior blocks
-                                CCrossChainExport ccx;
+                                CCrossChainExport ccx(p.vData[0]);
                                 int primaryExportOut;
                                 int32_t nextOutput;
                                 CPBaaSNotarization exportNotarization;
-                                CCurrencyDefinition destSystem;
                                 std::vector<CReserveTransfer> reserveTransfers;
-                                if ((ccx = CCrossChainExport(p.vData[0])).IsValid() &&
-                                    !(ccx.IsSupplemental() || ccx.IsSystemThreadExport()) &&
-                                    (destSystem = ConnectedChains.GetCachedCurrency(ccx.destSystemID)).IsValid() &&
+
+                                bool checkExport = ccx.IsValid() && !(ccx.IsSupplemental() || ccx.IsSystemThreadExport());
+                                CCurrencyDefinition destSystem = checkExport ? ConnectedChains.GetCachedCurrency(ccx.destSystemID) : CCurrencyDefinition();
+                                auto defIt = txDefs.find(ccx.destSystemID);
+                                if (checkExport && !destSystem.IsValid() && defIt != txDefs.end() && defIt->second.first < j)
+                                {
+                                    destSystem = defIt->second.second;
+                                }
+
+                                if (destSystem.IsValid() &&
                                     (destSystem.IsGateway() || destSystem.IsPBaaSChain()) &&
                                     destSystem.SystemOrGatewayID() != ASSETCHAINS_CHAINID &&
                                     ccx.GetExportInfo(tx, j, primaryExportOut, nextOutput, exportNotarization, reserveTransfers, state,
@@ -4509,7 +4539,18 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                     }
                                     uint160 destCurrencyID = rt.GetImportCurrency();
                                     CCurrencyDefinition destCurrency = ConnectedChains.GetCachedCurrency(destCurrencyID);
+                                    auto defIt = txDefs.find(destCurrencyID);
+                                    if (!destCurrency.IsValid() && defIt != txDefs.end() && defIt->second.first < j)
+                                    {
+                                        destCurrency = defIt->second.second;
+                                    }
                                     CCurrencyDefinition destSystem = ConnectedChains.GetCachedCurrency(destCurrency.SystemOrGatewayID());
+                                    auto sysIt = txDefs.find(destCurrency.SystemOrGatewayID());
+                                    if (!destSystem.IsValid() && sysIt != txDefs.end() && sysIt->second.first < j)
+                                    {
+                                        // a new chain is its own system
+                                        destSystem = sysIt->second.second;
+                                    }
                                     CCurrencyDefinition secondLegSystem;
 
                                     if (!destCurrency.IsValid() || !destSystem.IsValid())
@@ -4521,6 +4562,12 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                     if (rt.destination.HasGatewayLeg() && rt.destination.gatewayID != destSystem.GetID())
                                     {
                                         secondLegSystem = ConnectedChains.GetCachedCurrency(rt.destination.gatewayID);
+                                        auto slsIt = txDefs.find(rt.destination.gatewayID);
+                                        if (!secondLegSystem.IsValid() && slsIt != txDefs.end() && slsIt->second.first < j)
+                                        {
+                                            // a next-leg system defined earlier in this transaction
+                                            secondLegSystem = slsIt->second.second;
+                                        }
                                         if (!secondLegSystem.IsValid())
                                         {
                                             if (LogAcceptCategory("crosschainexports"))
@@ -5779,7 +5826,6 @@ bool static DisconnectTip(CValidationState &state, const CChainParams& chainpara
             return state.Error(strprintf("DisconnectTip(): DisconnectBlock %s failed", pindexDelete->GetBlockHash().ToString()));
         assert(view.Flush());
     }
-    pindexDelete->segid = -2;
     pindexDelete->newcoins = 0;
     pindexDelete->zfunds = 0;
     pindexDelete->maturity = 0;
@@ -6049,20 +6095,6 @@ static void PruneBlockIndexCandidates() {
     std::set<CBlockIndex*, CBlockIndexWorkComparator>::iterator it = setBlockIndexCandidates.begin();
     while (it != setBlockIndexCandidates.end() && setBlockIndexCandidates.value_comp()(*it, chainActive.LastTip())) {
         setBlockIndexCandidates.erase(it++);
-    }
-
-    for (auto it = mapDatalessPosChildren.begin(); it != mapDatalessPosChildren.end();)
-    {
-        auto parentIt = mapBlockIndex.find(it->first);
-        if (parentIt == mapBlockIndex.end() ||
-            parentIt->second->GetHeight() + (int)BLOCK_DOWNLOAD_WINDOW < chainActive.Height())
-        {
-            it = mapDatalessPosChildren.erase(it);
-        }
-        else
-        {
-            it++;
-        }
     }
 
     // Either the current tip or a successor of it we're working towards is left in setBlockIndexCandidates.
@@ -6498,7 +6530,24 @@ CBlockIndex* AddToBlockIndex(const CBlockHeader& block)
     if (pindexBestHeader == NULL || pindexBestHeader->chainPower < pindexNew->chainPower)
         pindexBestHeader = pindexNew;
 
-    setDirtyBlockIndex.insert(pindexNew);
+    // a PoS-format header carries its stake proof (source output and entropy headers) and can be checked against our chain, but
+    // any sibling can carry a copy of a real block's proof: only the body's stake transaction shows which header is real. Until a
+    // body arrives it is not written to the disk index, unless a child header is indexed over it (the loader builds a placeholder
+    // for a missing parent, so a persisted child must never reload over an unpersisted parent); every other header is written as before
+    if (block.IsVerusPOSBlock())
+    {
+        pindexNew->statusFlags |= CBlockIndex::POS_DATALESS_DEFERRED;
+    }
+    else
+    {
+        setDirtyBlockIndex.insert(pindexNew);
+    }
+    if (pindexNew->pprev && (pindexNew->pprev->statusFlags & CBlockIndex::POS_DATALESS_DEFERRED))
+    {
+        pindexNew->pprev->statusFlags &= ~CBlockIndex::POS_DATALESS_DEFERRED;
+        setDirtyBlockIndex.insert(pindexNew->pprev);
+    }
+
     //fprintf(stderr,"added to block index %s %p\n",hash.ToString().c_str(),pindexNew);
     mi->second = pindexNew;
     return pindexNew;
@@ -6576,15 +6625,30 @@ bool ReceivedBlockTransactions(
     pindexNew->nUndoPos = 0;
     pindexNew->nStatus |= BLOCK_HAVE_DATA;
 
-    // a PoS-format header that gains its body no longer counts against its parent
-    if (pindexNew->pprev)
+    // a PoS-format header that gains its body no longer counts against its parent or its sender, and is written to disk below
+    pindexNew->statusFlags &= ~CBlockIndex::POS_DATALESS_DEFERRED;
+    if (pindexNew->statusFlags & CBlockIndex::POS_DATALESS_COUNTED)
     {
-        auto childIt = mapDatalessPosChildren.find(pindexNew->pprev->GetBlockHash());
-        if (childIt != mapDatalessPosChildren.end() &&
-            childIt->second.erase(pindexNew->GetBlockHash()) &&
-            childIt->second.empty())
+        pindexNew->statusFlags &= ~CBlockIndex::POS_DATALESS_COUNTED;
+        if (pindexNew->pprev && pindexNew->pprev->nDatalessPosChildren)
         {
-            mapDatalessPosChildren.erase(childIt);
+            pindexNew->pprev->nDatalessPosChildren--;
+        }
+        auto extraIt = mapDatalessPosExtras.find(pindexNew->GetBlockHash());
+        if (extraIt != mapDatalessPosExtras.end())
+        {
+            if (extraIt->second == -1)
+            {
+                nDatalessPosHistoricalExtras--;
+            }
+            else if (CNodeState *nodestate = State(extraIt->second))
+            {
+                if (nodestate->nDatalessPosExtras)
+                {
+                    nodestate->nDatalessPosExtras--;
+                }
+            }
+            mapDatalessPosExtras.erase(extraIt);
         }
     }
 
@@ -9860,46 +9924,35 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             */
 
             CValidationState state;
-            if (pindexLast != NULL && header.hashPrevBlock != pindexLast->GetBlockHash()) {
-
-                /*
-                if (lastIndex != mapBlockIndex.end())
-                {
-                    CBlockIndex *pidx = lastIndex->second;
-                    if (pidx)
-                    {
-                        printf("lastIndex->GetBlockHash(): %s, header.hashPrevBlock: %s\n", pidx->GetBlockHash().GetHex().c_str(), header.hashPrevBlock.GetHex().c_str());
-                    }
-                }
-                else
-                {
-                    printf("header.hashPrevBlock: %s\n", header.hashPrevBlock.GetHex().c_str());
-                }
-
-                if (thisIndex != mapBlockIndex.end())
-                {
-                    CBlockIndex *pidx = thisIndex->second;
-                    if (pidx)
-                    {
-                        printf("thisIndex->GetBlockHash(): %s, thisIndex->GetBlockHeader().GetHash(): %s\n", pidx->GetBlockHash().GetHex().c_str(), pidx->GetBlockHeader().GetHash().GetHex().c_str());
-                    }
-                }
-                */
-
+            if (pindexLast != NULL && header.hashPrevBlock != pindexLast->GetBlockHash())
+            {
                 Misbehaving(pfrom->GetId(), 20);
                 return error("non-continuous headers sequence");
             }
-            // a PoS-format header has no work behind its index entry, so one parent may gain only a few of them from
-            // headers messages before a body must arrive; a later body releases the slot (ReceivedBlockTransactions)
+
+            // a PoS-format header has no work behind it, and the stake proof it carries can be copied from a real block into any
+            // sibling, so only its body tells a forgery from the real block. The first one under a frontier
+            // parent is free, so an honest block's header is never refused for someone else's forgeries. A second one under a
+            // parent, or one under a parent far behind the best header, is an extra: charged to the sending peer's budget, and
+            // the historical kind to a global cap as well, where no honest header can appear. A later body releases the charge.
             uint256 headerHash = header.GetHash();
             bool newPosHeader = header.IsVerusPOSBlock() && !mapBlockIndex.count(headerHash);
+            bool isExtra = false, isHistorical = false;
             if (newPosHeader)
             {
-                auto childIt = mapDatalessPosChildren.find(header.hashPrevBlock);
-                if (childIt != mapDatalessPosChildren.end() && childIt->second.size() >= MAX_DATALESS_POS_CHILDREN)
+                auto parentIt = mapBlockIndex.find(header.hashPrevBlock);
+                if (parentIt != mapBlockIndex.end() && parentIt->second)
+                {
+                    isHistorical = pindexBestHeader && parentIt->second->GetHeight() + DATALESS_POS_FRONTIER_DEPTH < pindexBestHeader->GetHeight();
+                    isExtra = isHistorical || parentIt->second->nDatalessPosChildren > 0;
+                }
+                CNodeState *nodestate = State(pfrom->GetId());
+                if (isExtra &&
+                    ((nodestate && nodestate->nDatalessPosExtras >= MAX_DATALESS_POS_EXTRAS_PER_PEER) ||
+                     (isHistorical && nDatalessPosHistoricalExtras >= MAX_DATALESS_POS_HISTORICAL_EXTRAS)))
                 {
                     Misbehaving(pfrom->GetId(), 10);
-                    return error("too many data-less PoS headers on one parent");
+                    return error("too many data-less PoS headers outstanding from peer");
                 }
             }
             int32_t futureblock;
@@ -9911,9 +9964,25 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                     return error("invalid header received");
                 }
             }
-            else if (newPosHeader)
+            else if (newPosHeader && pindexLast && pindexLast->pprev && !(pindexLast->nStatus & BLOCK_HAVE_DATA))
             {
-                mapDatalessPosChildren[header.hashPrevBlock].insert(headerHash);
+                pindexLast->statusFlags |= CBlockIndex::POS_DATALESS_COUNTED;
+                if (pindexLast->pprev->nDatalessPosChildren < std::numeric_limits<uint16_t>::max())
+                {
+                    pindexLast->pprev->nDatalessPosChildren++;
+                }
+                if (isExtra)
+                {
+                    mapDatalessPosExtras[headerHash] = isHistorical ? -1 : pfrom->GetId();
+                    if (isHistorical)
+                    {
+                        nDatalessPosHistoricalExtras++;
+                    }
+                    else if (CNodeState *nodestate = State(pfrom->GetId()))
+                    {
+                        nodestate->nDatalessPosExtras++;
+                    }
+                }
             }
         }
 
