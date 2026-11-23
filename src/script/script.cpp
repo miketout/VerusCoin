@@ -295,7 +295,10 @@ CTxDestination TransferDestinationToDestination(const CTransferDestination &tran
                 if (transferDest.destination.size() == CPubKey::COMPRESSED_PUBLIC_KEY_SIZE)
                 {
                     pk.Set(transferDest.destination.begin(), transferDest.destination.end());
-                    retDest = pk;
+                    if (pk.IsValid())
+                    {
+                        retDest = pk;
+                    }
                 }
             }
             break;
@@ -335,7 +338,6 @@ CTxDestination TransferDestinationToDestination(const CTransferDestination &tran
                     case CTransferDestination::DEST_ID:
                     case CTransferDestination::DEST_PK:
                     case CTransferDestination::DEST_PKH:
-                    case CTransferDestination::DEST_SH:
                         return TransferDestinationToDestination(auxDest);
                 }
             }

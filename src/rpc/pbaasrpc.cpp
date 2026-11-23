@@ -16351,6 +16351,10 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
 
     newID.flags &= newID.FLAG_LOCKED + newID.FLAG_REVOKED;
     newID.flags |= (oldID.flags & (oldID.FLAG_ACTIVECURRENCY + oldID.FLAG_TOKENIZED_CONTROL));
+    if (CIdentity::IdentityNeedsCurrencyFlag(oldID, nHeight + 1))
+    {
+        newID.ActivateCurrency();
+    }
 
     if (!newID.IsValid(true))
     {

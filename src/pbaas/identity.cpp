@@ -61,6 +61,21 @@ CIdentity::CIdentity(const CTransaction &tx, int *voutNum, const uint160 &onlyTh
     }
 }
 
+// an identity whose ID is a currency this chain knows must carry the active-currency flag. three VRSC identities
+// (Bridge.vETH@, MKR.vETH@, DAI.vETH@) were defined without it. after the window, the next update of such an identity
+// must set the flag, and setting it then is a repair, not a definition: no definition output and no revocation or
+// recovery authority is required for it
+bool CIdentity::IdentityNeedsCurrencyFlag(const CIdentity &oldIdentity, uint32_t height)
+{
+    static std::set<uint160> identitySet({CVDXF::GetID("Bridge.vETH.VRSC."),
+                                        CVDXF::GetID("MKR.vETH.VRSC."),
+                                        CVDXF::GetID("DAI.vETH.VRSC.")});
+    return identitySet.count(oldIdentity.GetID()) &&
+           IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) &&
+           !oldIdentity.HasActiveCurrency() &&
+           ConnectedChains.GetCachedCurrency(oldIdentity.GetID()).IsValid();
+}
+
 bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height, uint32_t expiryHeight) const
 {
     bool heightLocking = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1));
@@ -79,6 +94,7 @@ bool CIdentity::IsInvalidMutation(const CIdentity &newIdentity, uint32_t height,
         ((newIdentity.flags & ~(FLAG_REVOKED + FLAG_ACTIVECURRENCY + FLAG_LOCKED + FLAG_TOKENIZED_CONTROL)) && (newIdentity.nVersion >= VERSION_PBAAS)) ||
         (IsLocked(height) && (!newIdentity.IsRevoked() && !newIdentity.IsLocked(height))) ||
         (HasActiveCurrency() && !newIdentity.HasActiveCurrency()) ||
+        (CIdentity::IdentityNeedsCurrencyFlag(*this, height) && !newIdentity.HasActiveCurrency()) ||
         (HasTokenizedControl() && !newIdentity.HasTokenizedControl()) ||
         newIdentity.nVersion < VERSION_FIRSTVALID ||
         newIdentity.nVersion > VERSION_LASTVALID)
@@ -3104,7 +3120,7 @@ CIdentity GetOldIdentity(const CTransaction &spendingTx, uint32_t nIn, CTransact
     return oldIdentity;
 }
 
-bool ValidateIdentitySpendMutation(Eval* eval, const CTransaction &spendingTx, const CIdentity &oldIdentity, const CIdentity &newIdentity)
+bool ValidateIdentitySpendMutation(Eval* eval, const CTransaction &spendingTx, const CIdentity &oldIdentity, const CIdentity &newIdentity, uint32_t height)
 {
     uint160 idID = oldIdentity.GetID();
     CCurrencyDefinition matchingCurDef;
@@ -3118,11 +3134,12 @@ bool ValidateIdentitySpendMutation(Eval* eval, const CTransaction &spendingTx, c
     }
 
     bool isCurrencyDef = matchingCurDef.IsValid() && matchingCurDef.GetID() == idID;
+    bool isCurrencyFlagRepair = CIdentity::IdentityNeedsCurrencyFlag(oldIdentity, height) && newIdentity.HasActiveCurrency();
 
     if ((oldIdentity.HasActiveCurrency() && !newIdentity.HasActiveCurrency()) ||
         (oldIdentity.HasTokenizedControl() && !newIdentity.HasTokenizedControl()) ||
         (!isCurrencyDef &&
-            (oldIdentity.HasActiveCurrency() != newIdentity.HasActiveCurrency() ||
+            ((oldIdentity.HasActiveCurrency() != newIdentity.HasActiveCurrency() && !isCurrencyFlagRepair) ||
             oldIdentity.HasTokenizedControl() != newIdentity.HasTokenizedControl())) ||
         (isCurrencyDef && !matchingCurDef.IsNFTToken() && newIdentity.HasTokenizedControl()))
     {
@@ -3162,7 +3179,7 @@ bool ValidateIdentityPrimary(struct CCcontract_info *cp, Eval* eval, const CTran
         return eval->Error("Invalid identity modification");
     }
 
-    if (!ValidateIdentitySpendMutation(eval, spendingTx, oldIdentity, newIdentity))
+    if (!ValidateIdentitySpendMutation(eval, spendingTx, oldIdentity, newIdentity, height))
     {
         return eval->Error("Invalid ID currency state modification");
     }
@@ -3234,7 +3251,7 @@ bool ValidateIdentityRevoke(struct CCcontract_info *cp, Eval* eval, const CTrans
         return eval->Error("Cannot revoke an identity with self as the recovery authority");
     }
 
-    if (!ValidateIdentitySpendMutation(eval, spendingTx, oldIdentity, newIdentity))
+    if (!ValidateIdentitySpendMutation(eval, spendingTx, oldIdentity, newIdentity, height))
     {
         return eval->Error("Invalid ID currency state modification");
     }
@@ -3256,7 +3273,8 @@ bool ValidateIdentityRevoke(struct CCcontract_info *cp, Eval* eval, const CTrans
     if (!fulfilled)
     {
         if (!oldIdentity.HasActiveCurrency() &&
-            newIdentity.HasActiveCurrency())
+            newIdentity.HasActiveCurrency() &&
+            !CIdentity::IdentityNeedsCurrencyFlag(oldIdentity, height))
         {
             return eval->Error("Missing revocation signature. All authorities must sign for currency or token definition");
         }
@@ -3383,7 +3401,7 @@ bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTran
         return eval->Error("Invalid identity modification");
     }
 
-    if (!ValidateIdentitySpendMutation(eval, spendingTx, oldIdentity, newIdentity))
+    if (!ValidateIdentitySpendMutation(eval, spendingTx, oldIdentity, newIdentity, height))
     {
         return eval->Error("Invalid ID currency state modification");
     }
@@ -3404,7 +3422,10 @@ bool ValidateIdentityRecover(struct CCcontract_info *cp, Eval* eval, const CTran
 
     // before we start conditioning decisions on fulfilled status,
     // check to see if it has been fulfilled by using a control token/NFT
-    if (!fulfilled && !oldIdentity.HasActiveCurrency() && newIdentity.HasActiveCurrency())
+      if (!fulfilled &&
+          !oldIdentity.HasActiveCurrency() &&
+          newIdentity.HasActiveCurrency() &&
+          !CIdentity::IdentityNeedsCurrencyFlag(oldIdentity, height))
     {
         return eval->Error("Missing recovery signature. All authorities must sign for currency or token definition");
     }

@@ -3360,6 +3360,7 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                             disqualified = true;
                                             break;
                                         }
+                                        usedImportExportIDCounters = true;
                                         tmpCurrencyDefinitions.insert(curDefID);
                                         txDefs[curDefID] = {j, curDef};
                                     }

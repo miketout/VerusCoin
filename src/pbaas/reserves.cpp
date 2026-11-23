@@ -444,7 +444,12 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
     if (pBaseImport->IsSameChain())
     {
         std::tuple<int, CCrossChainExport, CPBaaSNotarization, std::vector<CReserveTransfer>, CCurrencyDefinition::EProofProtocol> cachedExport;
-        if (CCrossChainExport::exportInfoCache.Get(CUTXORef(pBaseImport->exportTxId, pBaseImport->exportTxOutNum), cachedExport))
+        if (pBaseImport->IsDefinitionImport() && !pBaseImport->exportTxId.IsNull())
+        {
+            return state.Error(strprintf("%s: definition import cannot reference an export", __func__));
+        }
+        if (!pBaseImport->IsDefinitionImport() &&
+            CCrossChainExport::exportInfoCache.Get(CUTXORef(pBaseImport->exportTxId, pBaseImport->exportTxOutNum), cachedExport))
         {
             reserveTransfers = std::get<3>(cachedExport);
             ccx = std::get<1>(cachedExport);
@@ -3589,8 +3594,110 @@ CReserveTransactionDescriptor::CReserveTransactionDescriptor(const CTransaction 
                                                                                    nullptr, &rejects, &confirms) != CNotaryEvidence::STATE_INVALID &&
                                             (rejects.size() || confirms.size()))
                                         {
-                                            evidenceQualifies = true;
-                                            break;
+                                            // the exemption, like admission, needs a signature that is not already pending for
+                                            // this notarization in chain or mempool, unless this transaction spends that pending
+                                            std::set<CIdentityID> newSigners;
+                                            for (auto &oneSig : confirms)
+                                            {
+                                                newSigners.insert(oneSig.first);
+                                            }
+                                            for (auto &oneSig : rejects)
+                                            {
+                                                newSigners.insert(oneSig.first);
+                                            }
+                                            std::set<CUTXORef> spentByThisTx;
+                                            for (auto &oneIn : tx.vin)
+                                            {
+                                                spentByThisTx.insert(CUTXORef(oneIn.prevout));
+                                            }
+                                            // standing pendings for this output, in chain or mempool, each read from the index value's script;
+                                            // their evidence outputs resolve through the view (UTXO set and mempool), never the block store, so
+                                            // no planted pending's size enters the cost and nothing here can refuse for cost
+                                            uint160 pendingKey = CCrossChainRPCData::GetConditionID(CObjectFinalization::ObjectFinalizationPendingKey(),
+                                                                                                    of.output.hash,
+                                                                                                    of.output.n);
+                                            auto eraseSigners = [&newSigners, &of](const uint256 &priorHash, const CTxOut &evidenceOut)
+                                            {
+                                                COptCCParams evP;
+                                                CNotaryEvidence priorEvidence;
+                                                if (evidenceOut.scriptPubKey.IsPayToCryptoCondition(evP) &&
+                                                    evP.IsValid() &&
+                                                    evP.evalCode == EVAL_NOTARY_EVIDENCE &&
+                                                    evP.vData.size() &&
+                                                    (priorEvidence = CNotaryEvidence(evP.vData[0])).IsValid() &&
+                                                    (priorEvidence.output == of.output ||
+                                                     (priorEvidence.output.hash.IsNull() &&
+                                                      priorHash == of.output.hash &&
+                                                      priorEvidence.output.n == of.output.n)))
+                                                {
+                                                    for (auto &oneNotarySig : priorEvidence.GetNotarySignatures())
+                                                    {
+                                                        for (auto &oneSig : oneNotarySig.signatures)
+                                                        {
+                                                            newSigners.erase(oneSig.first);
+                                                        }
+                                                    }
+                                                }
+                                            };
+                                            std::vector<std::pair<CInputDescriptor, uint32_t>> standingPendings;
+                                            ConnectedChains.GetUnspentByIndex(pendingKey, standingPendings, false);
+                                            for (auto &onePending : standingPendings)
+                                            {
+                                                const COutPoint &priorOut = onePending.first.txIn.prevout;
+                                                COptCCParams priorP;
+                                                CObjectFinalization priorOF;
+                                                if (priorOut.hash == tx.GetHash() ||
+                                                    spentByThisTx.count(CUTXORef(priorOut)) ||
+                                                    !(onePending.first.scriptPubKey.IsPayToCryptoCondition(priorP) &&
+                                                      priorP.IsValid() &&
+                                                      priorP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
+                                                      priorP.vData.size() &&
+                                                      (priorOF = CObjectFinalization(priorP.vData[0])).IsValid()))
+                                                {
+                                                    continue;
+                                                }
+                                                const CCoins *priorCoins = view.AccessCoins(priorOut.hash);
+                                                std::set<int32_t> priorEvidenceOuts(priorOF.evidenceOutputs.begin(), priorOF.evidenceOutputs.end());
+                                                for (auto oneEvidenceOut : priorEvidenceOuts)
+                                                {
+                                                    if (priorCoins && oneEvidenceOut >= 0 && priorCoins->IsAvailable(oneEvidenceOut))
+                                                    {
+                                                        eraseSigners(priorOut.hash, priorCoins->vout[oneEvidenceOut]);
+                                                    }
+                                                }
+                                            }
+                                            // a pending on the notarization's own transaction references its output with a null hash and is
+                                            // indexed under that form, so it is read from the notarization transaction already in hand
+                                            const CCoins *notarizationCoins = view.AccessCoins(of.output.hash);
+                                            for (int ownOut = 0; notarizationCoins && ownOut < notarizationTx.vout.size(); ownOut++)
+                                            {
+                                                COptCCParams ownP;
+                                                CObjectFinalization ownOF;
+                                                if (notarizationCoins->IsAvailable(ownOut) &&
+                                                    !spentByThisTx.count(CUTXORef(of.output.hash, ownOut)) &&
+                                                    notarizationTx.vout[ownOut].scriptPubKey.IsPayToCryptoCondition(ownP) &&
+                                                    ownP.IsValid() &&
+                                                    ownP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
+                                                    ownP.vData.size() &&
+                                                    (ownOF = CObjectFinalization(ownP.vData[0])).IsValid() &&
+                                                    ownOF.IsPending() &&
+                                                    ownOF.output.hash.IsNull() &&
+                                                    ownOF.output.n == of.output.n)
+                                                {
+                                                    for (auto oneEvidenceOut : std::set<int32_t>(ownOF.evidenceOutputs.begin(), ownOF.evidenceOutputs.end()))
+                                                    {
+                                                        if (oneEvidenceOut >= 0 && oneEvidenceOut < notarizationTx.vout.size())
+                                                        {
+                                                            eraseSigners(of.output.hash, notarizationTx.vout[oneEvidenceOut]);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if (newSigners.size())
+                                            {
+                                                evidenceQualifies = true;
+                                                break;
+                                            }
                                         }
                                     }
                                 }
@@ -4090,6 +4197,10 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
             }
             else
             {
+                if (dest.which() == COptCCParams::ADDRTYPE_SH)
+                {
+                    dest = CIdentityID(ASSETCHAINS_CHAINID);
+                }
                 std::vector<CTxDestination> dests = std::vector<CTxDestination>({dest});
                 CTokenOutput ro = CTokenOutput(reserves);
                 txOut = CTxOut(nativeAmount, MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, dests, 1, &ro)));
@@ -4702,7 +4813,16 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                             if (onePreAlloc.first.IsNull())
                             {
                                 // if pre-alloc/pre-mine goes to NULL, send it to fee recipient who mines the final export
-                                dests = std::vector<CTxDestination>({TransferDestinationToDestination(curTransfer.destination)});
+                                CTxDestination exporterDest = TransferDestinationToDestination(curTransfer.destination);
+                                if (isAfterSecondBridgeCleanupWindowStarts &&
+                                    exporterDest.which() != COptCCParams::ADDRTYPE_ID &&
+                                    exporterDest.which() != COptCCParams::ADDRTYPE_PK &&
+                                    exporterDest.which() != COptCCParams::ADDRTYPE_PKH &&
+                                    !(importCurrencyDef.IsPBaaSChain() && exporterDest.which() == COptCCParams::ADDRTYPE_SH))
+                                {
+                                    exporterDest = CIdentityID(importCurrencyID);
+                                }
+                                dests = std::vector<CTxDestination>({exporterDest});
                             }
                             else
                             {

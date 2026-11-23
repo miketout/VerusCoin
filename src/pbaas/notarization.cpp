@@ -4388,6 +4388,29 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                                                                 outTx.vin[0].prevout.n,
                                                                 posBlockHeaderAndProof.blockHeader.nVersion));
 
+                    // the stake transaction must spend the proven source output, that output must be a type the chain lets
+                    // stake, and the stake entered in the contest is that output's value, not a number written into the
+                    // stake transaction (GetStakeParams has already required one input and two outputs)
+                    COptCCParams srcP;
+                    txnouttype srcType;
+                    std::vector<std::vector<unsigned char>> srcSolutions;
+                    if (!outTx.vin.size() ||
+                        outTx.vin[0].prevout.hash != posSourceProof.TransactionHash() ||
+                        outTx.vin[0].prevout.n >= lastSourceTx.vout.size() ||
+                        !outTx.vout.size() ||
+                        outTx.vout[0].nValue > lastSourceTx.vout[outTx.vin[0].prevout.n].nValue ||
+                        !((lastSourceTx.vout[outTx.vin[0].prevout.n].scriptPubKey.IsPayToCryptoCondition(srcP) &&
+                           srcP.IsValid() &&
+                           lastSourceTx.vout[outTx.vin[0].prevout.n].scriptPubKey.IsSpendableOutputType(srcP)) ||
+                          (!srcP.IsValid() &&
+                           Solver(lastSourceTx.vout[outTx.vin[0].prevout.n].scriptPubKey, srcType, srcSolutions) &&
+                           (srcType == TX_PUBKEY || srcType == TX_PUBKEYHASH))))
+                    {
+                        proofState = EXPECT_NOTHING;
+                        break;
+                    }
+                    const CAmount stakeValue = lastSourceTx.vout[outTx.vin[0].prevout.n].nValue;
+
                     if (proofPreHeader.hashPrevMMRRoot != posSourceProof.CheckPartialTransaction(lastSourceTx, &isPartial) ||
                         posSourceProof.GetProofHeight() != (proofPreHeaderHeight - 1))
                     {
@@ -4454,7 +4477,7 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                             provingBlockHeight,
                             (!PBAAS_TESTMODE && evidence.systemID == VERUS_CHAINID));
 
-                        if (externalCurrency.IsValid() && outTx.vout[0].nValue && (UintToArith256(rawPosHash) / outTx.vout[0].nValue) > posTarget)
+                        if (externalCurrency.IsValid() && stakeValue && (UintToArith256(rawPosHash) / stakeValue) > posTarget)
                         {
                             if (LogAcceptCategory("notarization"))
                             {
@@ -4556,11 +4579,19 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                             idAddressMap.insert(std::make_pair(oneId.GetID(), std::make_pair(oneId.minSigs, idAddrBytes)));
                         }
 
+                        // the stake must verify on the staker's own signatures; the guard key is public (§308's rule, shared helper)
+                        CMutableTransaction prunedStakeTx(lastStakeTx);
                         if (lastStakeTx.vin[0].prevout.n >= lastSourceTx.vout.size() ||
-                            !VerifyScript(lastStakeTx.vin[0].scriptSig,
+                            !StakeWithoutGuardSignature(lastStakeTx, lastSourceTx.vout[lastStakeTx.vin[0].prevout.n].scriptPubKey, prunedStakeTx))
+                        {
+                            proofState = EXPECT_NOTHING;
+                            break;
+                        }
+                        const CTransaction checkStakeTx(prunedStakeTx);
+                        if (!VerifyScript(checkStakeTx.vin[0].scriptSig,
                                           lastSourceTx.vout[lastStakeTx.vin[0].prevout.n].scriptPubKey,
                                           MANDATORY_SCRIPT_VERIFY_FLAGS,
-                                          TransactionSignatureChecker(&lastStakeTx, (uint32_t)0, lastSourceTx.vout[lastStakeTx.vin[0].prevout.n].nValue, &idAddressMap),
+                                          TransactionSignatureChecker(&checkStakeTx, (uint32_t)0, lastSourceTx.vout[lastStakeTx.vin[0].prevout.n].nValue, &idAddressMap),
                                           consensusBranchId))
                         {
                             proofState = EXPECT_NOTHING;
@@ -5711,6 +5742,10 @@ bool CPBaaSNotarization::CheckEntropyHashMatch(const uint256 &entropyHash,
 
     std::vector<__uint128_t> checkCommitments;
     uint256 blockTypes = commitments.GetSmallCommitments(checkCommitments);
+    if (endHeight <= startingHeight)
+    {
+        return false;
+    }
     auto commitmentRanges = CPBaaSNotarization::GetBlockCommitmentRanges(startingHeight, endHeight, entropyHash);
 
     int checkIndex = 0;
@@ -5767,7 +5802,13 @@ CPBaaSNotarization::GetBlockCommitmentRanges(uint32_t fromHeight, uint32_t toHei
     std::vector<std::pair<uint32_t, uint32_t>> retVal;
 
     int priorHeight = std::max((int)fromHeight - NUM_COMMITMENT_BLOCKS_START_OFFSET, 1);
-    int startingHeight = std::max((int)fromHeight, 1);
+
+    // heights are unsigned and the end height comes from evidence: a span that is not forward, or that does not fit
+    // the int arithmetic below, has no commitment ranges, and the callers then find no matching commitments
+    if (toHeight <= (uint32_t)priorHeight || (toHeight - (uint32_t)priorHeight) > (uint32_t)INT32_MAX)
+    {
+        return retVal;
+    }
 
     if ((toHeight - priorHeight) < numBlocksPerCommitmentRange)
     {
@@ -9926,6 +9967,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                 // though we should agree with the data, also make sure that if it required proof,
                 // it is proven with a future root we agree with, ensuring that it is not forking off from or trying to front run this chain
                 bool isValid = true;
+                bool signedRootMismatch = false;
                 bool isPotentialRevoke = false;
                 std::set<uint160> idSigSet;
                 auto proofIt = crosschainCND.vtx[i].second.proofRoots.find(ASSETCHAINS_CHAINID);
@@ -9939,6 +9981,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                          proofIt->second != CProofRoot::GetProofRoot(proofIt->second.rootHeight))
                 {
                     isValid = false;
+                    signedRootMismatch = true;
                     if (i == 0)
                     {
                         // the other chain's confirmed notarization is not on this chain: a compromised notary set or contract,
@@ -9980,7 +10023,7 @@ std::vector<uint256> CPBaaSNotarization::SubmitFinalizedNotarizations(const CRPC
                                 std::get<1>(oneEvidenceItem).CheckSignatureConfirmation(hw.GetHash(), hashType, notarySet, 1, chainActive.Height(),
                                                                                        nullptr, nullptr, &notarySetConfirms);
                             }
-                            if (notarySetConfirms.count(notaryRevokeID))
+                            if (signedRootMismatch && notarySetConfirms.count(notaryRevokeID))
                             {
                                 isPotentialRevoke = true;
                             }
@@ -11195,6 +11238,11 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
     }
 
     CCurrencyDefinition curDef = ConnectedChains.GetCachedCurrency(currentNotarization.currencyID);
+
+    // a definition notarization may only accompany the definition; the chain-only lookup tells the two apart before
+    // the in-sync block below resolves a same-transaction definition into curDef
+    bool currencyOnChain = curDef.IsValid();
+
     bool absenceAllowed = false;
     if (p.evalCode == EVAL_ACCEPTEDNOTARIZATION &&
         curDef.IsValid() &&
@@ -11334,6 +11382,12 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                     currentNotarization.IsSameChain()))
                 {
                     return state.Error("Block one, definition, pre-launch or same-chain flags are invalid in an earned notarization after block 1");
+                }
+
+                if (height > 1 &&
+                    !((curDef.IsPBaaSChain() || curDef.IsGateway()) && curDef.SystemOrGatewayID() != ASSETCHAINS_CHAINID))
+                {
+                    return state.Error("Earned notarizations after block 1 must notarize an external system or gateway");
                 }
 
                 if ((curDef.IsPBaaSChain() || curDef.IsGateway()) &&
@@ -11694,6 +11748,17 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
             }
             else
             {
+                // the block-one flag belongs to block one; the definition flag belongs to the transaction defining the
+                // currency, so a currency the chain already has can carry neither
+                if (currentNotarization.IsBlockOneNotarization() && height != 1)
+                {
+                    return state.Error("Block one notarization flag outside block one");
+                }
+                if (currentNotarization.IsDefinitionNotarization() && currencyOnChain)
+                {
+                    return state.Error("Definition notarization for a currency the chain already defines");
+                }
+
                 std::tuple<uint32_t, CTransaction, CUTXORef, CPBaaSNotarization> priorNotarizationInfo;
 
                 if (!(currentNotarization.IsDefinitionNotarization() ||
@@ -13535,6 +13600,11 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
             }
         }
 
+        // a pending finalization that carries notary signatures must bring at least one notary whose signature is not
+        // already in a pending finalization of this notarization that this transaction leaves standing. a copied
+        // signature verifies but adds nothing, and earns neither admission nor the protocol exemption; a merge that
+        // spends the earlier pending keeps its signatures
+        std::set<CIdentityID> newSigners;
         for (auto &oneItem : evidenceVec)
         {
             std::map<CIdentityID, CIdentitySignature> notarySetRejects, notarySetConfirms;
@@ -13544,7 +13614,141 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
                 (!isAfterSecondCleanupStarts || notarySetRejects.size() || notarySetConfirms.size()))
             {
                 hasSignature = true;
-                break;
+                if (!isAfterSecondCleanupStarts)
+                {
+                    break;
+                }
+                for (auto &oneSig : notarySetConfirms)
+                {
+                    newSigners.insert(oneSig.first);
+                }
+                for (auto &oneSig : notarySetRejects)
+                {
+                    newSigners.insert(oneSig.first);
+                }
+            }
+        }
+
+        if (hasSignature && isAfterSecondCleanupStarts)
+        {
+            // only a pending finalization still standing on the chain can hold a signature this one copies, so the walk
+            // reads the chain-only unspent index for this output's pending key, the same set the builder reads at every
+            // tip; its size is what stands, never what was ever created. a pending this transaction spends is a merge
+            // and keeps its signatures
+            std::set<CUTXORef> spentByThisTx;
+            for (auto &oneIn : tx.vin)
+            {
+                spentByThisTx.insert(CUTXORef(oneIn.prevout));
+            }
+            auto eraseSigners = [&newSigners, &currentFinalization](const CTransaction &priorTx, const CObjectFinalization &priorOF)
+            {
+                for (auto oneOut : priorOF.evidenceOutputs)
+                {
+                    COptCCParams eP;
+                    CNotaryEvidence priorEvidence;
+                    if (oneOut >= 0 &&
+                        oneOut < priorTx.vout.size() &&
+                        priorTx.vout[oneOut].scriptPubKey.IsPayToCryptoCondition(eP) &&
+                        eP.IsValid() &&
+                        eP.evalCode == EVAL_NOTARY_EVIDENCE &&
+                        eP.vData.size() &&
+                        (priorEvidence = CNotaryEvidence(eP.vData[0])).IsValid() &&
+                        (priorEvidence.output == currentFinalization.output ||
+                         (priorEvidence.output.hash.IsNull() &&
+                          priorTx.GetHash() == currentFinalization.output.hash &&
+                          priorEvidence.output.n == currentFinalization.output.n)))
+                    {
+                        for (auto &oneNotarySig : priorEvidence.GetNotarySignatures())
+                        {
+                            for (auto &oneSig : oneNotarySig.signatures)
+                            {
+                                newSigners.erase(oneSig.first);
+                            }
+                        }
+                    }
+                }
+            };
+
+            // standing pendings indexed under this output's pending key
+            uint160 pendingKey = CCrossChainRPCData::GetConditionID(CObjectFinalization::ObjectFinalizationPendingKey(),
+                                                                    currentFinalization.output.hash,
+                                                                    currentFinalization.output.n);
+            std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> standingPendings;
+            GetAddressUnspent(pendingKey, CScript::P2IDX, standingPendings);
+            for (auto &onePending : standingPendings)
+            {
+                // the finalization object is in the index value's script; its evidence outputs resolve from the mempool or
+                // the UTXO set at no load, and from the block store only inside the per-transaction budget, so a planted
+                // pending's size never enters the cost and no honest pending is refused for cost: an output the budget
+                // cannot reach is skipped
+                CUTXORef priorRef(onePending.first.txhash, onePending.first.index);
+                COptCCParams priorP;
+                CObjectFinalization priorOF;
+                if (spentByThisTx.count(priorRef) ||
+                    !(onePending.second.script.IsPayToCryptoCondition(priorP) &&
+                    priorP.IsValid() &&
+                    priorP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
+                    priorP.vData.size() &&
+                    (priorOF = CObjectFinalization(priorP.vData[0])).IsValid()))
+                {
+                    continue;
+                }
+                std::set<int32_t> priorEvidenceOuts(priorOF.evidenceOutputs.begin(), priorOF.evidenceOutputs.end());
+                for (auto oneOut : priorEvidenceOuts)
+                {
+                    CTxOut evidenceOut;
+                    COptCCParams eP;
+                    CNotaryEvidence priorEvidence;
+                    if (oneOut >= 0 &&
+                        GetSpentOutput(COutPoint(priorRef.hash, oneOut), evidenceOut, PrecheckTxContext().parentLoads, MAX_PRECHECK_PARENT_LOADS) &&
+                        evidenceOut.scriptPubKey.IsPayToCryptoCondition(eP) &&
+                        eP.IsValid() &&
+                        eP.evalCode == EVAL_NOTARY_EVIDENCE &&
+                        eP.vData.size() &&
+                        (priorEvidence = CNotaryEvidence(eP.vData[0])).IsValid() &&
+                        (priorEvidence.output == currentFinalization.output ||
+                        (priorEvidence.output.hash.IsNull() &&
+                        priorRef.hash == currentFinalization.output.hash &&
+                        priorEvidence.output.n == currentFinalization.output.n)))
+                    {
+                        for (auto &oneNotarySig : priorEvidence.GetNotarySignatures())
+                        {
+                            for (auto &oneSig : oneNotarySig.signatures)
+                            {
+                                newSigners.erase(oneSig.first);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // a pending on the notarization's own transaction references its output with a null hash and is indexed
+            // under that form, so it is read from the notarization transaction already in hand
+            CCoins notarizationCoins;
+            if (pcoinsTip->GetCoins(currentFinalization.output.hash, notarizationCoins))
+            {
+                for (int ownOut = 0; ownOut < finalizedTx.vout.size(); ownOut++)
+                {
+                    COptCCParams ownP;
+                    CObjectFinalization ownOF;
+                    if (notarizationCoins.IsAvailable(ownOut) &&
+                        !spentByThisTx.count(CUTXORef(currentFinalization.output.hash, ownOut)) &&
+                        finalizedTx.vout[ownOut].scriptPubKey.IsPayToCryptoCondition(ownP) &&
+                        ownP.IsValid() &&
+                        ownP.evalCode == EVAL_FINALIZE_NOTARIZATION &&
+                        ownP.vData.size() &&
+                        (ownOF = CObjectFinalization(ownP.vData[0])).IsValid() &&
+                        ownOF.IsPending() &&
+                        ownOF.output.hash.IsNull() &&
+                        ownOF.output.n == currentFinalization.output.n)
+                    {
+                        eraseSigners(finalizedTx, ownOF);
+                    }
+                }
+            }
+            if (!newSigners.size())
+            {
+                return state.Error("pending finalization brings no notary signature that is not already pending for this notarization");
             }
         }
 

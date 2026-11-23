@@ -26,6 +26,8 @@ bool UnpackStakeOpRet(const CTransaction &stakeTx, std::vector<std::vector<unsig
 
 bool GetStakeParams(const CTransaction &stakeTx, CStakeParams &stakeParams);
 
+bool StakeWithoutGuardSignature(const CTransaction &stakeTx, const CScript &sourceScript, CMutableTransaction &prunedTx);
+
 bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTransaction &stakeTx, CStakeParams &stakeParams, bool slowValidation);
 
 bool ValidateStakeTransaction(const CTransaction &stakeTx, CStakeParams &stakeParams, bool slowValidation);

@@ -848,6 +848,8 @@ public:
 
     bool IsInvalidMutation(const CIdentity &newIdentity, uint32_t height, uint32_t expiryHeight) const;
 
+    static bool IdentityNeedsCurrencyFlag(const CIdentity &oldIdentity, uint32_t height);
+
     bool IsPrimaryMutation(const CIdentity &newIdentity, uint32_t height) const
     {
         auto nSolVersion = CConstVerusSolutionVector::GetVersionByHeight(height);

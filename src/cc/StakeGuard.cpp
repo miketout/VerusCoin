@@ -70,6 +70,41 @@ int IsCCFulfilled(CC *cc, ccFulfillmentCheck *ctx)
     return ctx->vCount[0];
 }
 
+bool StakeWithoutGuardSignature(const CTransaction &stakeTx, const CScript &sourceScript, CMutableTransaction &prunedTx)
+{
+    prunedTx = CMutableTransaction(stakeTx);
+    COptCCParams p;
+    if (!(sourceScript.IsPayToCryptoCondition(p) && p.IsValid() && p.evalCode == EVAL_STAKEGUARD) || !stakeTx.vin.size())
+    {
+        return true;
+    }
+    CCcontract_info *cp, C;
+    cp = CCinit(&C, EVAL_STAKEGUARD);
+    if (p.version >= p.VERSION_V3)
+    {
+        std::vector<unsigned char> ffVec = GetFulfillmentVector(stakeTx.vin[0].scriptSig);
+        CSmartTransactionSignatures smartSigs(std::vector<unsigned char>(ffVec.begin(), ffVec.end()));
+        if (!smartSigs.IsValid())
+        {
+            return false;
+        }
+        if (smartSigs.signatures.erase(CPubKey(ParseHex(cp->CChexstr)).GetID()))
+        {
+            prunedTx.vin[0].scriptSig = CScript() << smartSigs.AsVector();
+        }
+        return true;
+    }
+    // a pre-V3 fulfillment carries exactly one fulfilled branch of the 1-of-2, so the guard key present
+    // means the guard branch was taken and the staker did not sign
+    std::vector<uint32_t> vc = {0};
+    std::vector<CPubKey> keys({CPubKey(ParseHex(cp->CChexstr))});
+    ccFulfillmentCheck fc = {keys, vc};
+    CC *cc = GetCryptoCondition(stakeTx.vin[0].scriptSig);
+    bool guardSigned = cc && IsCCFulfilled(cc, &fc);
+    if (cc) cc_free(cc);
+    return !guardSigned;
+}
+
 // this validates the format of the stake transaction and, optionally, whether or not it is
 // properly signed to spend the source stake.
 // it does not validate the relationship to a coinbase guard, PoS eligibility or the actual stake spend.
@@ -175,40 +210,10 @@ bool ValidateStakeTransaction(const CCurrencyDefinition &sourceChain, const CTra
                         std::map<uint160, std::pair<int, std::vector<std::vector<unsigned char>>>> idAddressMap;
                         idAddressMap = ServerTransactionSignatureChecker::ExtractIDMap(srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey, stakeParams.blkHeight, true);
 
-                       // the stake must verify on the staker's own signatures. The stake guard's key is public and the wallet
-                        // signs a guarded output with it beside the staker's keys, so its signature proves nothing; without it, a
-                        // fulfillment that only the cheat catcher may use (guard key alone) has no signature left, while the
-                        // non-server checker below, whose eval always passes, would otherwise accept it
-                        CMutableTransaction prunedTx(stakeTx);
-                        if (p.IsValid() && p.evalCode == EVAL_STAKEGUARD)
+                        CMutableTransaction prunedTx;
+                        if (!StakeWithoutGuardSignature(stakeTx, srcTx.vout[stakeTx.vin[0].prevout.n].scriptPubKey, prunedTx))
                         {
-                            CCcontract_info *cp, C;
-                            cp = CCinit(&C, EVAL_STAKEGUARD);
-                            if (p.version >= p.VERSION_V3)
-                            {
-                                std::vector<unsigned char> ffVec = GetFulfillmentVector(stakeTx.vin[0].scriptSig);
-                                CSmartTransactionSignatures smartSigs(std::vector<unsigned char>(ffVec.begin(), ffVec.end()));
-                                if (!smartSigs.IsValid())
-                                {
-                                    return false;
-                                }
-                                if (smartSigs.signatures.erase(CPubKey(ParseHex(cp->CChexstr)).GetID()))
-                                {
-                                    prunedTx.vin[0].scriptSig = CScript() << smartSigs.AsVector();
-                                }
-                            }
-                            else
-                            {
-                                // a pre-V3 fulfillment carries exactly one fulfilled branch of the 1-of-2, so the guard key present
-                                // means the guard branch was taken and the staker did not sign
-                                std::vector<uint32_t> vc = {0};
-                                std::vector<CPubKey> keys({CPubKey(ParseHex(cp->CChexstr))});
-                                ccFulfillmentCheck fc = {keys, vc};
-                                CC *cc = GetCryptoCondition(stakeTx.vin[0].scriptSig);
-                                bool guardSigned = cc && IsCCFulfilled(cc, &fc);
-                                if (cc) cc_free(cc);
-                                if (guardSigned) return false;
-                            }
+                            return false;
                         }
                         const CTransaction checkTx(prunedTx);
 

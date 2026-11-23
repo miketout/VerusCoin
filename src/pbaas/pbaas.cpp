@@ -613,6 +613,17 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                 return state.Error("Definition import without accompanying notarization: " + cci.ToUniValue().write(1,2));
             }
 
+            // the notarization that follows a definition import is the definition notarization of the imported currency, from
+            // that currency's own system, same-chain exactly when the currency is defined on this chain
+            if (height > 1 &&
+                (notarization.currencyID != cci.importCurrencyID ||
+                 cci.sourceSystemID != importCurrency.SystemOrGatewayID() ||
+                 cci.IsSameChain() != (importCurrency.systemID == ASSETCHAINS_CHAINID) ||
+                 !notarization.IsDefinitionNotarization()))
+            {
+                return state.Error("Definition import notarization must be the definition notarization of the imported currency: " + cci.ToUniValue().write(1,2));
+            }
+
             if (!notarization.currencyState.IsValid())
             {
                 return state.Error("Invalid currency state in notarization: " + cci.ToUniValue().write(1,2));
@@ -1574,6 +1585,7 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
         if (!(cci.IsValid() &&
               cci.sourceSystemID != ASSETCHAINS_CHAINID &&
               cci.sourceSystemID == ccx.sourceSystemID &&
+              !cci.IsDefinitionImport() &&
               !ccx.IsSystemThreadExport() &&
               ccx.reserveTransfers.size() > 0))
         {
@@ -1585,8 +1597,10 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
     uint32_t exportChainTime = chainActive.ChainTimeAtOrBefore(height - 1);
     if (IsAfterSecondBridgeCleanupWindowStarts(exportChainTime))
     {
-        auto isPayeeType = [&ccx, &destSystem](int t) {
-            return t == CTransferDestination::DEST_PK || t == CTransferDestination::DEST_PKH ||
+        auto isPayee = [&destSystem](const CTransferDestination &d) {
+            int t = d.TypeNoFlags();
+            return (t == CTransferDestination::DEST_PK && CPubKey(d.destination).IsValid()) ||
+                   t == CTransferDestination::DEST_PKH ||
                    t == CTransferDestination::DEST_ID ||
                    (destSystem.proofProtocol == destSystem.PROOF_ETHNOTARIZATION && t == CTransferDestination::DEST_ETH);
         };
@@ -1594,11 +1608,11 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
 
         bool exporterOk = exporterType == CTransferDestination::DEST_INVALID ?
                               (ccx.exporter.destination.empty() && ccx.exporter.AuxDestCount() == 0) :
-                              isPayeeType(exporterType);
+                              isPayee(ccx.exporter);
         if (!exporterOk ||
             ccx.exporter.HasGatewayLeg() ||
             ccx.exporter.AuxDestCount() > 1 ||
-            (ccx.exporter.AuxDestCount() == 1 && !isPayeeType(ccx.exporter.GetAuxDest(0).TypeNoFlags())))
+            (ccx.exporter.AuxDestCount() == 1 && !isPayee(ccx.exporter.GetAuxDest(0))))
         {
             return state.Error("Invalid exporter destination in cross chain export");
         }
@@ -4651,6 +4665,17 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
                             }
                         }
                     }
+                }
+
+                // only a PBaaS chain or a gateway is its own system, and a fractional currency must hold its
+                // system's currency as a reserve; the import simulation indexes that reserve directly
+                if (newCurrency.systemID == newCurrency.GetID() && !(newCurrency.IsPBaaSChain() || newCurrency.IsGateway()))
+                {
+                    return state.Error("Only PBaaS chains and gateways may be their own system");
+                }
+                if (newCurrency.IsFractional() && !newCurrency.GetCurrenciesMap().count(newCurrency.SystemOrGatewayID()))
+                {
+                    return state.Error("A fractional currency must hold its system's currency as a reserve");
                 }
 
                 // now, make sure new currency matches any initial notarization
