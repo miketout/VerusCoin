@@ -132,7 +132,14 @@ unsigned int lwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const CBlock
                           pblock->nVersion == CBlock::VERUS_V2 ?
                                 CConstVerusSolutionVector::Version(pblock->nSolution) :
                                 0;
+
+    // from solution 9 on, a v2.2 block in the window counts as this target: v2.2 targets under the fixed-point attack were
+    // set by a rate v2.3 removes, and honest v2.3 hashes succeed at the same per-hash rate honest v2.2 hashes did
     bool isPBaaSHarden2 = solutionVersion == CActivationHeight::ACTIVATE_PBAAS_HARDEN2;
+    static std::map<uint160, arith_uint256> bnV9StartMap({
+        {CVDXF::GetID("VRSC."),UintToArith256(uint256S("00000000000c0000000000000000000000000000000000000000000000000000"))},
+        {CVDXF::GetID("vARRR.VRSC."),UintToArith256(uint256S("0000000000300000000000000000000000000000000000000000000000000000"))},
+        {CVDXF::GetID("vDEX.VRSC."),UintToArith256(uint256S("0000000000300000000000000000000000000000000000000000000000000000"))}});
 
     if (ASSETCHAINS_ALGO == ASSETCHAINS_EQUIHASH)
     {
@@ -182,10 +189,19 @@ unsigned int lwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const CBlock
         // Target sum divided by a factor, (k N^2).
         // The factor is a part of the final equation. However we divide
         // here to avoid potential overflow.
-        bnTmp.SetCompact(pindexNext->nBits);
-        if (targetShift && !(CConstVerusSolutionVector::activationHeight.ActiveVersion(pindexNext->GetHeight()) > CConstVerusSolutionVector::activationHeight.SOLUTION_VERUSV1))
+        if (isPBaaSHarden2 &&
+            bnV9StartMap.count(ASSETCHAINS_CHAINID) &&
+            CConstVerusSolutionVector::Version(pindexNext->nSolution.nSolution()) < CActivationHeight::ACTIVATE_PBAAS_HARDEN2)
         {
-            bnTmp <<= targetShift;
+            bnTmp = bnV9StartMap[ASSETCHAINS_CHAINID];
+        }
+        else
+        {
+            bnTmp.SetCompact(pindexNext->nBits);
+            if (targetShift && !(CConstVerusSolutionVector::activationHeight.ActiveVersion(pindexNext->GetHeight()) > CConstVerusSolutionVector::activationHeight.SOLUTION_VERUSV1))
+            {
+                bnTmp <<= targetShift;
+            }
         }
         sumTarget += bnTmp / (k * N * N);
     }
