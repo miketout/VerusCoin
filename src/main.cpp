@@ -6097,6 +6097,29 @@ static void PruneBlockIndexCandidates() {
         setBlockIndexCandidates.erase(it++);
     }
 
+    // a data-less PoS header at or below the tip lost its race or never had one; its sender's charge is released
+    // (the entry itself stays, inert). The map holds at most the per-peer budgets plus the historical cap, so this is short
+    for (auto it = mapDatalessPosExtras.begin(); it != mapDatalessPosExtras.end();)
+    {
+        auto idxIt = mapBlockIndex.find(it->first);
+        if (it->second != -1 &&
+            (idxIt == mapBlockIndex.end() || !idxIt->second || idxIt->second->GetHeight() <= chainActive.Height()))
+        {
+            if (CNodeState *nodestate = State(it->second))
+            {
+                if (nodestate->nDatalessPosExtras)
+                {
+                    nodestate->nDatalessPosExtras--;
+                }
+            }
+            it = mapDatalessPosExtras.erase(it);
+        }
+        else
+        {
+            it++;
+        }
+    }
+
     // Either the current tip or a successor of it we're working towards is left in setBlockIndexCandidates.
     assert(!setBlockIndexCandidates.empty());
 }
