@@ -11756,7 +11756,21 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                 }
                 if (currentNotarization.IsDefinitionNotarization() && currencyOnChain)
                 {
-                    return state.Error("Definition notarization for a currency the chain already defines");
+                    bool onChain = true;
+                    if (IsVerusActive() && currentNotarization.currencyID == ASSETCHAINS_CHAINID)
+                    {
+                        CCurrencyDefinition onChainDef;
+                        int32_t chainDefHeight = 0;
+                        if (!GetCurrencyDefinition(currentNotarization.currencyID, onChainDef, &chainDefHeight) ||
+                            !chainDefHeight)
+                        {
+                            onChain = false;
+                        }
+                    }
+                    if (onChain)
+                    {
+                        return state.Error("Definition notarization for a currency the chain already defines");
+                    }
                 }
 
                 std::tuple<uint32_t, CTransaction, CUTXORef, CPBaaSNotarization> priorNotarizationInfo;
