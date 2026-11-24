@@ -5729,12 +5729,14 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
             return state.Error("Invalid currency system in reserve transfer " + rt.ToUniValue().write(1,2));
         }
 
-        if (rt.flags & rt.CROSS_SYSTEM)
+        // a transfer names the system that imports it. a pre-conversion to a currency launching from this chain is
+        // imported here at launch, so the stock sender builds it without the cross-system flag
+        bool launchPreconversion = rt.IsPreConversion() &&
+                                    !rt.IsCrossSystem() &&
+                                    importCurrencyDef.launchSystemID == ASSETCHAINS_CHAINID;
+        if (rt.SystemDestination() != systemDestID && !launchPreconversion)
         {
-            if (systemDestID != rt.destSystemID)
-            {
-                return state.Error("Mismatched destination system in reserve transfer " + rt.ToUniValue().write(1,2));
-            }
+            return state.Error("Mismatched destination system in reserve transfer " + rt.ToUniValue().write(1,2));
         }
 
         // ensure that we have enough fees for the currency definition import
@@ -6027,6 +6029,13 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 rt.destination.gatewayID != ASSETCHAINS_CHAINID)
             {
                 {
+                    // the carried bytes are the registry's definition of the exported currency, as the direct arm requires
+                    if (rt.destination.TypeNoFlags() != CTransferDestination::DEST_REGISTERCURRENCY ||
+                        ::AsVector(registeredCurrency) != rt.destination.destination)
+                    {
+                        return state.Error("Mismatched export and currency registration in reserve transfer " + rt.ToUniValue().write(1,2));
+                    }
+
                     CReserveTransfer dummyTransfer = rt;
                     dummyTransfer.destination = CTransferDestination(CTransferDestination::DEST_REGISTERCURRENCY, ::AsVector(registeredCurrency), rt.destination.gatewayID, rt.destination.gatewayCode, rt.DEFAULT_PER_STEP_FEE);
                     for (int i = 0; i < rt.destination.AuxDestCount(); i++)
@@ -6366,6 +6375,17 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 {
                     return state.Error("Minting and/or burning while changing reserve ratios is only allowed by the controller of a centralized currency " + rt.ToUniValue().write(1,2));
                 }
+            }
+        }
+
+        if (systemDest.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION)
+        {
+            // an Ethereum import has no onward leg and only pays an ETH address or registers the carried currency
+            if (rt.HasNextLeg() ||
+                !(rt.destination.TypeNoFlags() == CTransferDestination::DEST_ETH ||
+                  (rt.IsCurrencyExport() && rt.destination.TypeNoFlags() == CTransferDestination::DEST_REGISTERCURRENCY)))
+            {
+                return state.Error("Invalid reserve transfer destination for Ethereum gateway " + rt.ToUniValue().write(1,2));
             }
         }
 
