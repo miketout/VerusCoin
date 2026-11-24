@@ -1090,7 +1090,7 @@ UniValue CReserveTransfer::ToUniValue() const
 {
     UniValue ret(((CTokenOutput *)this)->ToUniValue());
 
-    ret.push_back(Pair("flags", (int32_t)flags));
+    ret.push_back(Pair("flags", (int64_t)flags));
 
     if (IsCrossSystem())
     {

@@ -249,6 +249,7 @@ public:
         IDENTITY_EXPORT = 0x1000,           // this exports a full identity when the next cross-chain leg is processed
         CURRENCY_EXPORT = 0x2000,           // this exports a currency definition
         ARBITRAGE_ONLY = 0x4000,            // in PBaaS V1, one additional reserve transfer from the local system may be added by the importer
+        RESERVED_FLAG_BITS = 0xffff8000     // every bit above ARBITRAGE_ONLY
     };
 
     enum EConstants
@@ -1542,6 +1543,17 @@ public:
                                         CValidationState &validationState,
                                         const std::vector<std::vector<CAmount>> *pCrossConversions=nullptr,
                                         std::vector<CAmount> *pViaPrices=nullptr) const;
+
+    // one clearing price per reserve for every conversion in an import: the fixed point at which each reserve's net flow and
+    // the units it creates or burns sit exactly on the curve. same signature and conventions as ConvertAmounts; via legs clear
+    // at the same prices, so pViaPrices receives the same vector
+    std::vector<CAmount> ClearConversions(const std::vector<CAmount> &inputReserve,
+                                          const std::vector<CAmount> &inputFractional,
+                                          CCurrencyState &newState,
+                                          uint32_t height,
+                                          CValidationState &validationState,
+                                          const std::vector<std::vector<CAmount>> *pCrossConversions=nullptr,
+                                          std::vector<CAmount> *pViaPrices=nullptr) const;
 
     CAmount ReserveToNative(CAmount reserveAmount, int32_t reserveIndex, bool promoteExchangeRate=true, bool legacyOverflowWrap=false) const;
     CAmount ReserveToNative(const CCurrencyValueMap &reserveAmounts) const;

@@ -5485,6 +5485,11 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
             return state.Error("Arbitrage transfers must be simple and from/to same chain, even when arbitraging cross-chain imports " + rt.ToUniValue().write(1,2));
         }
 
+        if (rt.flags & CReserveTransfer::RESERVED_FLAG_BITS)
+        {
+            return state.Error("Reserved flag bits set in reserve transfer " + rt.ToUniValue().write(1,2));
+        }
+
         if (p.AsVector().size() >= CScript::MAX_SCRIPT_ELEMENT_SIZE)
         {
             return state.Error("Reserve transfer exceeds maximum size " + rt.ToUniValue().write(1,2));

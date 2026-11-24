@@ -2065,6 +2065,22 @@ void DumpConvertData(const std::vector<CAmount> &_inputReserves,
     LogPrintf("currencystate: %s\n", _newState.ToUniValue().write(1,2).c_str());
 }
 
+// a fractional currency's position on its curve, Π R_i^{w_i} / S, as a decimal. the one-directional conversion formulas
+// hold it constant; liquidity fees and burns raise it; nothing honest lowers it
+static cpp_dec_float_50 CurveValue(const CCurrencyState &cs)
+{
+    static cpp_dec_float_50 bigSatoshi("100000000");
+    cpp_dec_float_50 value("1");
+    for (int i = 0; i < cs.currencies.size(); i++)
+    {
+        cpp_dec_float_50 reserve(std::to_string(cs.reserves[i] > 0 ? cs.reserves[i] : 1));
+        cpp_dec_float_50 weight(std::to_string(cs.weights[i]));
+        value *= pow(reserve, weight / bigSatoshi);
+    }
+    cpp_dec_float_50 supply(std::to_string(cs.supply > 0 ? cs.supply : 1));
+    return value / supply;
+}
+
 // This can handle multiple aggregated, bidirectional conversions in one block of transactions. To determine the conversion price, it
 // takes both input amounts of any number of reserves and the fractional currencies targeting those reserves to merge the conversion into one
 // merged calculation with the same price across currencies for all transactions in the block. It returns the newly calculated
@@ -2463,7 +2479,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
 
         // before-buy starting point
         CAmount totalLayerReservesBB = ((bigSupply * bigLayerWeight) / bigSatoshi).GetLow64() + priorOutflowBB;
-        CAmount totalLayerReservesAB = ((arith_uint256(supplyAfterBuy) * bigLayerWeight) / bigSatoshi).GetLow64() + priorOutflowAB;
+        CAmount totalLayerReservesAB = (((layerReserveFixActive ? bigSupply : arith_uint256(supplyAfterBuy)) * bigLayerWeight) / bigSatoshi).GetLow64() + priorOutflowAB;
 
         CAmount newNormalizedReserveBB = CalculateReserveOut(layer.second.first, supply + addSupply, layerFixActive ? totalLayerReservesBB : totalLayerReservesBB + addNormalizedReservesBB, layer.first, enhancedUnderflowCheck);
         CAmount newNormalizedReserveAB = CalculateReserveOut(layer.second.first, supplyAfterBuy + addSupply, layerFixActive ? totalLayerReservesAB : totalLayerReservesAB + addNormalizedReservesAB, layer.first, enhancedUnderflowCheck);
@@ -2576,7 +2592,7 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             }
         }
 
-        CAmount totalLayerReserves = ((arith_uint256(supplyAfterSell) * bigLayerWeight) / bigSatoshi).GetLow64() + priorLayerInflow;
+        CAmount totalLayerReserves = (((layerReserveFixActive ? bigSupply : arith_uint256(supplyAfterSell)) * bigLayerWeight) / bigSatoshi).GetLow64() + priorLayerInflow;
         addNormalizedReserves += layer.second.first;
         CAmount newSupply = CalculateFractionalOut(layer.second.first, supplyAfterSell + addSupply, totalLayerReserves, layer.first);
         arith_uint256 bigNewSupply(newSupply);
@@ -2768,6 +2784,187 @@ std::vector<CAmount> CCurrencyState::ConvertAmounts(const std::vector<CAmount> &
             rates[i] = PriceInReserve(i);
         }
     }
+    return rates;
+}
+
+// one clearing price per reserve for every conversion in an import. prices are in the conversionPrice convention
+// (reserve per unit, times SATOSHIDEN). inputs follow ConvertAmounts: inputReserves[i] is reserve i converting to units
+// (including the first legs of via conversions, which pCrossConversions then routes on as sells of the units bought),
+// inputFractional[i] is units converting to reserve i
+std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount> &inputReserves,
+                                                      const std::vector<CAmount> &inputFractional,
+                                                      CCurrencyState &_newState,
+                                                      uint32_t height,
+                                                      CValidationState &state,
+                                                      const std::vector<std::vector<CAmount>> *pCrossConversions,
+                                                      std::vector<CAmount> *pViaPrices) const
+{
+    static const cpp_dec_float_50 bigSatoshi(std::to_string(SATOSHIDEN));
+    static const cpp_dec_float_50 bigZero(0);
+    static const int MAX_CLEARING_ITERATIONS = 32;    // fixed, so every node computes the same prices, settled or not
+
+    int32_t numCurrencies = currencies.size();
+    std::vector<CAmount> initialRates = PricesInReserve();
+
+    if (inputReserves.size() != numCurrencies || inputFractional.size() != numCurrencies ||
+        (pCrossConversions && pCrossConversions->size() != numCurrencies))
+    {
+        state.Error(std::string(__func__) + " invalid starting conditions");
+        return initialRates;
+    }
+    bool haveConversion = false;
+    for (int i = 0; i < numCurrencies; i++)
+    {
+        if (inputReserves[i] < 0 || inputFractional[i] < 0 || (pCrossConversions && (*pCrossConversions)[i].size() != numCurrencies))
+        {
+            state.Error(std::string(__func__) + " invalid starting conditions");
+            return initialRates;
+        }
+        haveConversion = haveConversion || inputReserves[i] || inputFractional[i];
+    }
+    if (!haveConversion)
+    {
+        _newState = *this;
+        return initialRates;
+    }
+
+    // a state with no supply or an empty reserve has no curve to clear on; those keep the legacy pricing
+    bool degenerate = supply <= 0;
+    for (int i = 0; i < numCurrencies && !degenerate; i++)
+    {
+        degenerate = reserves[i] <= 0 || weights[i] <= 0;
+    }
+    if (degenerate)
+    {
+        return ConvertAmounts(inputReserves, inputFractional, _newState, true, height, state, pCrossConversions, pViaPrices);
+    }
+
+    std::vector<cpp_dec_float_50> R(numCurrencies), w(numCurrencies), a(numCurrencies), b(numCurrencies), p(numCurrencies);
+    std::vector<cpp_dec_float_50> sellIn(numCurrencies), dR(numCurrencies), Rend(numCurrencies);
+    cpp_dec_float_50 S(std::to_string(supply));
+    std::vector<CAmount> rates = initialRates;
+    for (int i = 0; i < numCurrencies; i++)
+    {
+        R[i] = cpp_dec_float_50(std::to_string(reserves[i]));
+        w[i] = cpp_dec_float_50(std::to_string(weights[i])) / bigSatoshi;
+        a[i] = cpp_dec_float_50(std::to_string(inputReserves[i]));
+        b[i] = cpp_dec_float_50(std::to_string(inputFractional[i]));
+        p[i] = cpp_dec_float_50(std::to_string(rates[i]));
+    }
+
+    for (int iter = 0; iter < MAX_CLEARING_ITERATIONS; iter++)
+    {
+        // flows at the current prices. a via leg j->k is a buy already counted in a[j] and a sell into k of the units it buys
+        for (int i = 0; i < numCurrencies; i++)
+        {
+            sellIn[i] = b[i];
+        }
+        if (pCrossConversions)
+        {
+            for (int j = 0; j < numCurrencies; j++)
+            {
+                for (int k = 0; k < numCurrencies; k++)
+                {
+                    if ((*pCrossConversions)[j][k])
+                    {
+                        sellIn[k] += (cpp_dec_float_50(std::to_string((*pCrossConversions)[j][k])) * bigSatoshi) / p[j];
+                    }
+                }
+            }
+        }
+
+        // the curve fixes the end supply from the net reserve changes
+        cpp_dec_float_50 lnRatio(0);
+        for (int i = 0; i < numCurrencies; i++)
+        {
+            dR[i] = a[i] - (sellIn[i] * p[i]) / bigSatoshi;
+            Rend[i] = R[i] + dR[i];
+            if (Rend[i] <= bigZero)
+            {
+                state.Error(std::string(__func__) + " conversion empties reserve " + EncodeDestination(CIdentityID(currencies[i])));
+                return initialRates;
+            }
+            lnRatio += w[i] * log(Rend[i] / R[i]);
+        }
+        cpp_dec_float_50 Send = S * exp(lnRatio);
+        cpp_dec_float_50 dS = Send - S;
+
+        // each reserve's share of the supply change is its log-contribution; its price is its net flow over that share.
+        // the limit at lnRatio == 0 is S times the contribution. a reserve with no net flow takes the end spot price
+        bool converged = true;
+        for (int i = 0; i < numCurrencies; i++)
+        {
+            cpp_dec_float_50 contribution = w[i] * log(Rend[i] / R[i]);
+            cpp_dec_float_50 dSi = (lnRatio == bigZero) ? (cpp_dec_float_50)(S * contribution) : (cpp_dec_float_50)((dS * contribution) / lnRatio);
+            cpp_dec_float_50 newPrice = (dSi == bigZero) ? (cpp_dec_float_50)((Rend[i] * bigSatoshi) / (w[i] * Send)) : (cpp_dec_float_50)((dR[i] * bigSatoshi) / dSi);
+            int64_t priceInt;
+            if (!to_int64(newPrice, priceInt) || priceInt <= 0)
+            {
+                state.Error(std::string(__func__) + " clearing price out of range for " + EncodeDestination(CIdentityID(currencies[i])));
+                return initialRates;
+            }
+            if (priceInt > rates[i] + 1 || priceInt + 1 < rates[i])
+            {
+                converged = false;
+            }
+            rates[i] = priceInt;
+            p[i] = cpp_dec_float_50(std::to_string(priceInt));
+        }
+        if (converged)
+        {
+            break;
+        }
+    }
+
+    // the end state from the integer payouts at the clearing prices, as the caller will pay them
+    CCurrencyState newState = *this;
+    std::vector<CAmount> viaUnits(numCurrencies, 0);
+    if (pCrossConversions)
+    {
+        for (int j = 0; j < numCurrencies; j++)
+        {
+            for (int k = 0; k < numCurrencies; k++)
+            {
+                if ((*pCrossConversions)[j][k])
+                {
+                    CAmount units = ReserveToNativeRaw((*pCrossConversions)[j][k], rates[j]);
+                    if (units < 0)
+                    {
+                        state.Error(std::string(__func__) + " via conversion overflow");
+                        return initialRates;
+                    }
+                    viaUnits[k] += units;
+                }
+            }
+        }
+    }
+    for (int i = 0; i < numCurrencies; i++)
+    {
+        CAmount unitsBought = ReserveToNativeRaw(inputReserves[i], rates[i]);
+        CAmount reserveOut = NativeToReserveRaw(inputFractional[i] + viaUnits[i], rates[i]);
+        if (unitsBought < 0 || reserveOut < 0 || reserveOut >= newState.reserves[i] + inputReserves[i])
+        {
+            state.Error(std::string(__func__) + " conversion overflow or emptied reserve");
+            return initialRates;
+        }
+        newState.reserves[i] += inputReserves[i] - reserveOut;
+        newState.supply = newState.AddToSupply(unitsBought - (inputFractional[i] + viaUnits[i]));
+    }
+
+    if (pViaPrices)
+    {
+        *pViaPrices = rates;
+    }
+    // the conversion must not move the state below its starting curve (tolerance one basis point for the layered
+    // integer arithmetic); logged, not refused, since a refusal would let anyone force an honest batch to refund
+    static cpp_dec_float_50 tolerance("0.9999");
+    cpp_dec_float_50 curveRatio = CurveValue(newState) / CurveValue(*this);
+    if (curveRatio < tolerance)
+    {
+        LogPrintf("%s: conversion end state below the starting curve, ratio %s, currency %s\n", __func__,
+                    curveRatio.str(12).c_str(), EncodeDestination(CIdentityID(GetID())).c_str());
+    }
+    _newState = newState;
     return rates;
 }
 
@@ -6369,7 +6566,14 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
         {
             CCurrencyState dummyCurState;
             CValidationState state;
-            std::vector<int64_t> newPrices =
+            std::vector<int64_t> newPrices = isAfterSecondBridgeCleanupWindowStarts ?
+                scratchCurrencyState.ClearConversions(adjustedReserveConverted.AsCurrencyVector(importCurrencyState.currencies),
+                                                      fractionalConverted.AsCurrencyVector(importCurrencyState.currencies),
+                                                      dummyCurState,
+                                                      height,
+                                                      state,
+                                                      &crossConversions,
+                                                      &newCurrencyState.viaConversionPrice) :
                 scratchCurrencyState.ConvertAmounts(adjustedReserveConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     fractionalConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     dummyCurState,

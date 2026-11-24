@@ -1048,6 +1048,15 @@ public:
                 }
                 break;
             }
+            case CTransferDestination::DEST_NESTEDTRANSFER:
+            {
+                // an Ethereum-protocol system gives a nested transfer no destination
+                if (proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION)
+                {
+                    return false;
+                }
+                break;
+            }
         }
         return true;
     }
