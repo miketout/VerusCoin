@@ -7198,6 +7198,33 @@ CAmount CReserveTransactionDescriptor::CalculateDelayedFees(CAmount &nTotalIn, C
 
         if (IsReserveTransfer() || IsImport())
         {
+            // a transfer in a transaction that defines its destination (a launch's contributions, a PBaaS child with its
+            // converter) resolves the destination from the transaction itself: the chain lookup is chain-only, and the
+            // template calls this with a removal list, so a miss here would evict the definition from the pool
+            std::map<uint160, CCurrencyDefinition> txDefs;
+            bool txDefsLoaded = false;
+            auto resolveCurrency = [&](const uint160 &currencyID) -> CCurrencyDefinition
+            {
+                CCurrencyDefinition def = ConnectedChains.GetCachedCurrency(currencyID);
+                if (!def.IsValid())
+                {
+                    if (!txDefsLoaded)
+                    {
+                        for (auto &oneDef : CCurrencyDefinition::GetCurrencyDefinitions(*ptx))
+                        {
+                            txDefs[oneDef.GetID()] = oneDef;
+                        }
+                        txDefsLoaded = true;
+                    }
+                    auto defIt = txDefs.find(currencyID);
+                    if (defIt != txDefs.end())
+                    {
+                        def = defIt->second;
+                    }
+                }
+                return def;
+            };
+
             for (int j = 0; j < ptx->vout.size(); j++)
             {
                 auto &oneOut = ptx->vout[j];
@@ -7253,8 +7280,8 @@ CAmount CReserveTransactionDescriptor::CalculateDelayedFees(CAmount &nTotalIn, C
                                 pOrphanArbs->insert(CUTXORef(ptx->GetHash(), j));
                             }
                             uint160 destCurrencyID = rt.GetImportCurrency();
-                            CCurrencyDefinition destCurrency = ConnectedChains.GetCachedCurrency(destCurrencyID);
-                            CCurrencyDefinition destSystem = ConnectedChains.GetCachedCurrency(destCurrency.SystemOrGatewayID());
+                            CCurrencyDefinition destCurrency = resolveCurrency(destCurrencyID);
+                            CCurrencyDefinition destSystem = resolveCurrency(destCurrency.SystemOrGatewayID());
                             CCurrencyDefinition secondLegSystem;
 
                             if (!destCurrency.IsValid() || !destSystem.IsValid())
@@ -7276,7 +7303,7 @@ CAmount CReserveTransactionDescriptor::CalculateDelayedFees(CAmount &nTotalIn, C
                             // determine second system dest if there is any, and enforce limits to that system as well
                             if (rt.destination.HasGatewayLeg() && rt.destination.gatewayID != destSystem.GetID())
                             {
-                                secondLegSystem = ConnectedChains.GetCachedCurrency(rt.destination.gatewayID);
+                                secondLegSystem = resolveCurrency(rt.destination.gatewayID);
                                 if (!secondLegSystem.IsValid())
                                 {
                                     if (LogAcceptCategory("crosschainexports"))
