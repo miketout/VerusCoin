@@ -191,6 +191,7 @@ BITCOIN_CORE_H = \
   netbase.h \
   noui.h \
   pbaas/crosschainrpc.h \
+  pbaas/clearing_fp.h \
   pbaas/vdxf.h \
   pbaas/identity.h \
   pbaas/notarization.h \

@@ -11,6 +11,7 @@
 #include "main.h"
 #include "pbaas/pbaas.h"
 #include "pbaas/reserves.h"
+#include "pbaas/clearing_fp.h"
 #include "pbaas/notarization.h"
 #include "rpc/pbaasrpc.h"
 #include "rpc/server.h"
@@ -2801,7 +2802,6 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
 {
     static const cpp_dec_float_50 bigSatoshi(std::to_string(SATOSHIDEN));
     static const cpp_dec_float_50 bigZero(0);
-    static const int MAX_CLEARING_ITERATIONS = 32;    // fixed, so every node computes the same prices, settled or not
 
     int32_t numCurrencies = currencies.size();
     std::vector<CAmount> initialRates = PricesInReserve();
@@ -2839,81 +2839,23 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
         return ConvertAmounts(inputReserves, inputFractional, _newState, true, height, state, pCrossConversions, pViaPrices);
     }
 
-    std::vector<cpp_dec_float_50> R(numCurrencies), w(numCurrencies), a(numCurrencies), b(numCurrencies), p(numCurrencies);
-    std::vector<cpp_dec_float_50> sellIn(numCurrencies), dR(numCurrencies), Rend(numCurrencies);
-    cpp_dec_float_50 S(std::to_string(supply));
-    std::vector<CAmount> rates = initialRates;
-    for (int i = 0; i < numCurrencies; i++)
+    std::vector<int64_t> weightsAsAmounts(weights.begin(), weights.end());
+    std::vector<CAmount> rates;
+    int clearingPasses = 0;
+    int clearingError = clearingfp::Clear(reserves, weightsAsAmounts, supply, inputReserves, inputFractional, pCrossConversions, rates, clearingPasses);
+    if (clearingError == clearingfp::ERR_EMPTIES)
     {
-        R[i] = cpp_dec_float_50(std::to_string(reserves[i]));
-        w[i] = cpp_dec_float_50(std::to_string(weights[i])) / bigSatoshi;
-        a[i] = cpp_dec_float_50(std::to_string(inputReserves[i]));
-        b[i] = cpp_dec_float_50(std::to_string(inputFractional[i]));
-        p[i] = cpp_dec_float_50(std::to_string(rates[i]));
+        state.Error(std::string(__func__) + " conversion empties a reserve");
+        return initialRates;
     }
-
-    for (int iter = 0; iter < MAX_CLEARING_ITERATIONS; iter++)
+    else if (clearingError != clearingfp::ERR_NONE)
     {
-        // flows at the current prices. a via leg j->k is a buy already counted in a[j] and a sell into k of the units it buys
-        for (int i = 0; i < numCurrencies; i++)
-        {
-            sellIn[i] = b[i];
-        }
-        if (pCrossConversions)
-        {
-            for (int j = 0; j < numCurrencies; j++)
-            {
-                for (int k = 0; k < numCurrencies; k++)
-                {
-                    if ((*pCrossConversions)[j][k])
-                    {
-                        sellIn[k] += (cpp_dec_float_50(std::to_string((*pCrossConversions)[j][k])) * bigSatoshi) / p[j];
-                    }
-                }
-            }
-        }
-
-        // the curve fixes the end supply from the net reserve changes
-        cpp_dec_float_50 lnRatio(0);
-        for (int i = 0; i < numCurrencies; i++)
-        {
-            dR[i] = a[i] - (sellIn[i] * p[i]) / bigSatoshi;
-            Rend[i] = R[i] + dR[i];
-            if (Rend[i] <= bigZero)
-            {
-                state.Error(std::string(__func__) + " conversion empties reserve " + EncodeDestination(CIdentityID(currencies[i])));
-                return initialRates;
-            }
-            lnRatio += w[i] * log(Rend[i] / R[i]);
-        }
-        cpp_dec_float_50 Send = S * exp(lnRatio);
-        cpp_dec_float_50 dS = Send - S;
-
-        // each reserve's share of the supply change is its log-contribution; its price is its net flow over that share.
-        // the limit at lnRatio == 0 is S times the contribution. a reserve with no net flow takes the end spot price
-        bool converged = true;
-        for (int i = 0; i < numCurrencies; i++)
-        {
-            cpp_dec_float_50 contribution = w[i] * log(Rend[i] / R[i]);
-            cpp_dec_float_50 dSi = (lnRatio == bigZero) ? (cpp_dec_float_50)(S * contribution) : (cpp_dec_float_50)((dS * contribution) / lnRatio);
-            cpp_dec_float_50 newPrice = (dSi == bigZero) ? (cpp_dec_float_50)((Rend[i] * bigSatoshi) / (w[i] * Send)) : (cpp_dec_float_50)((dR[i] * bigSatoshi) / dSi);
-            int64_t priceInt;
-            if (!to_int64(newPrice, priceInt) || priceInt <= 0)
-            {
-                state.Error(std::string(__func__) + " clearing price out of range for " + EncodeDestination(CIdentityID(currencies[i])));
-                return initialRates;
-            }
-            if (priceInt > rates[i] + 1 || priceInt + 1 < rates[i])
-            {
-                converged = false;
-            }
-            rates[i] = priceInt;
-            p[i] = cpp_dec_float_50(std::to_string(priceInt));
-        }
-        if (converged)
-        {
-            break;
-        }
+        state.Error(std::string(__func__) + (clearingError == clearingfp::ERR_INPUT ? " invalid starting conditions" : " clearing price out of range"));
+        return initialRates;
+    }
+    if (LogAcceptCategory("conversion"))
+    {
+        LogPrintf("%s: cleared %d currencies in %d via pass(es)\n", __func__, (int)numCurrencies, clearingPasses);
     }
 
     // the end state from the integer payouts at the clearing prices, as the caller will pay them

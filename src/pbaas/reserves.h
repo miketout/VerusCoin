@@ -1410,7 +1410,7 @@ public:
         MAX_RESERVE_RATIO = 100000000,      // we will not start a chain with greater than 100% reserve ratio
         SHUTDOWN_RESERVE_RATIO = 500000,    // if we hit this reserve ratio in any currency, initiate chain shutdown
         CONVERSION_TX_SIZE_MIN = 1024,      // minimum size accounted for in a conversion transaction
-        MAX_RESERVE_CURRENCIES = 10,        // maximum number of reserve currencies that can underly a fractional reserve
+        MAX_RESERVE_CURRENCIES = 20,        // maximum number of reserve currencies that can underly a fractional reserve
         MAX_ARBITRAGE_INPUTS = 10,          // maximum arbitrage inputs for fractional currencies
         MAX_IMPORT_INPUTS_BEFORE_ARBITRAGE = 2, // prior import + prior source system import, see CreateLatestImports
         MIN_CONVERTER_RESERVE_TO_INDEX = 1000, // must have at least this much in native reserves to be indexed as a converter

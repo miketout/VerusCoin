@@ -13736,7 +13736,7 @@ CCurrencyDefinition ValidateNewUnivalueCurrencyDefinition(const UniValue &uniObj
         // carve-outs, pre-allocations, and initial supply
         if (newCurrency.currencies.size() > CCurrencyDefinition::MAX_RESERVE_CURRENCIES)
         {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Fractional currencies may have a maximum of 10 reserve currencies specified");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Fractional currencies may have a maximum of " + std::to_string(CCurrencyDefinition::MAX_RESERVE_CURRENCIES) + " reserve currencies specified");
         }
 
         CCurrencyDefinition tmpDef = newCurrency;
