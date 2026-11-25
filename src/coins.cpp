@@ -6,9 +6,7 @@
 
 #include "memusage.h"
 #include "random.h"
-#include "version.h"
 #include "policy/fees.h"
-#include "komodo_defs.h"
 #include "pbaas/notarization.h"
 #include "pbaas/reserves.h"
 #include "util.h"
