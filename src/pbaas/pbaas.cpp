@@ -4610,9 +4610,15 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
                     {
                         return state.Error("Only a gateway or a PBaaS chain may have notaries: " + newCurrency.name);
                     }
-                    if ((newCurrency.IsPBaaSChain() || newCurrency.IsGateway()) && newCurrency.systemID != newCurrency.GetID())
+                    // a PBaaS chain is its own system; a gateway's system is the chain that defines it (vETH on VRSC), and its own id
+                    // is carried in gatewayID, which SystemOrGatewayID() selects for routing
+                    if (newCurrency.IsPBaaSChain() && newCurrency.systemID != newCurrency.GetID())
                     {
-                        return state.Error("A PBaaS chain or gateway must be its own system: " + newCurrency.name);
+                        return state.Error("A PBaaS chain must be its own system: " + newCurrency.name);
+                    }
+                    if (newCurrency.IsGateway() && newCurrency.systemID != ASSETCHAINS_CHAINID)
+                    {
+                        return state.Error("A gateway's system must be the chain that defines it: " + newCurrency.name);
                     }
                     if (newCurrency.currencies.size() && newCurrency.launchSystemID.IsNull())
                     {
@@ -4628,9 +4634,10 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
                     return state.Error("Currency definition in output violates current definition rules");
                 }
 
-                // an Ethereum-protocol currency lives on an Ethereum-protocol system: the gateway itself or a currency mapped to it.
-                // on a PBaaS-protocol system the protocol would select only the Ethereum export limits and address rules
-                if (newCurrency.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION && newCurrency.systemID != newCurrency.GetID())
+                // an Ethereum-protocol currency is the gateway itself, whose system is the chain that defines it, or a currency
+                // mapped to the gateway, whose system must share the protocol. on a PBaaS-protocol system the protocol would
+                // select only the Ethereum export limits and address rules
+                if (newCurrency.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION && !newCurrency.IsGateway())
                 {
                     CCurrencyDefinition protocolSystem = ConnectedChains.GetCachedCurrency(newCurrency.systemID);
                     if (!protocolSystem.IsValid())
