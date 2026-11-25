@@ -6138,9 +6138,33 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 }
             }
 
+            // the import fee is owed to the system that imports the definition, priced at that system's notarized gas rate:
+            // the destination system for a direct export, or the next leg's system for an export routed through a converter
+            // on this chain, whose fee equivalent above is already expressed in that system's currency
+            const CCurrencyDefinition &importingSystem = (exportDestination.IsValid() && exportDestination.GetID() != systemDestID) ? exportDestination : systemDest;
+            CAmount importGasRate = adjustedImportFee;
+            if (importingSystem.GetID() != systemDestID)
+            {
+                importGasRate = 0;
+                if (importingSystem.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION)
+                {
+                    uint160 importingID = importingSystem.GetID();
+                    std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastConfirmedImporting = currenciesAndNotarizations.count(importingID) ?
+                            std::tuple<uint32_t, CUTXORef, CPBaaSNotarization>({1, CUTXORef(), currenciesAndNotarizations[importingID].second}) :
+                            GetLastConfirmedNotarization(importingID, height - 1, true);
+                    if (!std::get<0>(lastConfirmedImporting))
+                    {
+                        return TransientError(state, "Cannot get notarization data for destination system of currency export: " + rt.ToUniValue().write(1,2));
+                    }
+                    const CPBaaSNotarization &importingNotarization = std::get<2>(lastConfirmedImporting);
+                    importGasRate = importingNotarization.currencyState.conversionPrice.size() ?
+                                        importingNotarization.currencyState.conversionPrice[0] :
+                                        (importingNotarization.proofRoots.count(importingID) ? importingNotarization.proofRoots.find(importingID)->second.gasPrice : 0);
+                }
+            }
             adjustedImportFee = CCoinbaseCurrencyState::NativeGasToReserveRaw(
-                        systemDest.GetCurrencyImportFee(curToExport.ChainOptions() & curToExport.OPTION_NFT_TOKEN),
-                        adjustedImportFee);
+                        importingSystem.GetCurrencyImportFee(curToExport.ChainOptions() & curToExport.OPTION_NFT_TOKEN),
+                        importGasRate);
             if (haveFullChain && (adjustedImportFee < 0 || feeEquivalentInNative < adjustedImportFee))
             {
                 return state.Error("Not enough fee for currency import in reserve transfer " + rt.ToUniValue().write(1,2));
