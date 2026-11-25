@@ -664,48 +664,45 @@ public:
         return preHeader;
     }
 
-    uint256 GetBlockPower() const
+    // the power-node branch of this header proof, only when the proof has the honest shape: at most two branches, the
+    // indexed one a power node whose branch is exactly as long as its claimed position and size require
+    const CMMRPowerNodeBranch *ShapedPowerNodeBranch() const
     {
         int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        if (headerProof.proofSequence.size() && headerProof.proofSequence.size() <= 2 &&
+            headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
         {
-            std::vector<uint256> &branch = ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->branch;
-            if (branch.size() >= 1)
+            const CMMRPowerNodeBranch *pBranch = (const CMMRPowerNodeBranch *)headerProof.proofSequence[proofIdx];
+            if (pBranch->branch.size() == pBranch->ExpectedBranchSize())
             {
-                return branch[0];
+                return pBranch;
             }
         }
-        return uint256();
+        return nullptr;
+    }
+
+    uint256 GetBlockPower() const
+    {
+        const CMMRPowerNodeBranch *pBranch = ShapedPowerNodeBranch();
+        return pBranch && pBranch->branch.size() >= 1 ? pBranch->branch[0] : uint256();
     }
 
     uint256 GetChainPower() const
     {
-        int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
-        {
-            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->GetPrefixPower();
-        }
-        return uint256();
+        const CMMRPowerNodeBranch *pBranch = ShapedPowerNodeBranch();
+        return pBranch && pBranch->branch.size() >= 1 ? pBranch->GetPrefixPower() : uint256();
     }
 
     uint32_t GetBlockHeight() const
     {
-        int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
-        {
-            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->nIndex;
-        }
-        return 0;
+        const CMMRPowerNodeBranch *pBranch = ShapedPowerNodeBranch();
+        return pBranch && pBranch->branch.size() >= 1 ? pBranch->nIndex : 0;
     }
 
     uint32_t GetProofHeight() const
     {
-        int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
-        {
-            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->nSize - 1;
-        }
-        return 0;
+        const CMMRPowerNodeBranch *pBranch = ShapedPowerNodeBranch();
+        return pBranch && pBranch->branch.size() >= 1 ? pBranch->nSize - 1 : 0;
     }
 
     // a block header proof validates the block MMR root, which is used
@@ -809,48 +806,43 @@ public:
         return CPBaaSPreHeader(blockHeader);
     }
 
-    uint256 GetBlockPower() const
+    const CMMRPowerNodeBranch *ShapedPowerNodeBranch() const
     {
         int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
+        if (headerProof.proofSequence.size() && headerProof.proofSequence.size() <= 2 &&
+            headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
         {
-            std::vector<uint256> &branch = ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->branch;
-            if (branch.size() >= 1)
+            const CMMRPowerNodeBranch *pBranch = (const CMMRPowerNodeBranch *)headerProof.proofSequence[proofIdx];
+            if (pBranch->branch.size() == pBranch->ExpectedBranchSize())
             {
-                return branch[0];
+                return pBranch;
             }
         }
-        return uint256();
+        return nullptr;
+    }
+
+    uint256 GetBlockPower() const
+    {
+        const CMMRPowerNodeBranch *pBranch = ShapedPowerNodeBranch();
+        return pBranch && pBranch->branch.size() >= 1 ? pBranch->branch[0] : uint256();
     }
 
     uint256 GetChainPower() const
     {
-        int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
-        {
-            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->GetPrefixPower();
-        }
-        return uint256();
+        const CMMRPowerNodeBranch *pBranch = ShapedPowerNodeBranch();
+        return pBranch && pBranch->branch.size() >= 1 ? pBranch->GetPrefixPower() : uint256();
     }
 
     uint32_t GetBlockHeight() const
     {
-        int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
-        {
-            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->nIndex;
-        }
-        return 0;
+        const CMMRPowerNodeBranch *pBranch = ShapedPowerNodeBranch();
+        return pBranch && pBranch->branch.size() >= 1 ? pBranch->nIndex : 0;
     }
 
     uint32_t GetProofHeight() const
     {
-        int proofIdx = headerProof.proofSequence.size() == 2 ? 1 : 0;
-        if (headerProof.proofSequence.size() && headerProof.proofSequence[proofIdx]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE)
-        {
-            return ((CMMRPowerNodeBranch *)(headerProof.proofSequence[proofIdx]))->nSize - 1;
-        }
-        return 0;
+        const CMMRPowerNodeBranch *pBranch = ShapedPowerNodeBranch();
+        return pBranch && pBranch->branch.size() >= 1 ? pBranch->nSize - 1 : 0;
     }
 
     // a block header proof validates the block MMR root, which is used

@@ -1656,7 +1656,7 @@ UniValue CBlockTreeDB::GenerateAdjustmentTransactions(const CCurrencyValueMap &c
         {
             // create a transaction for cross-chain to disgorge the bridge amount into the adjustment address
             // for that chain
-            uint32_t flags = flags = CReserveTransfer::VALID + CReserveTransfer::PROHIBITED_DISGORGEMENT + CReserveTransfer::CROSS_SYSTEM;
+            uint32_t flags = CReserveTransfer::VALID + CReserveTransfer::PROHIBITED_DISGORGEMENT + CReserveTransfer::CROSS_SYSTEM;
             //CAmount amountToBurn = oneChainDeposits.valueMap[oneCurReduction.first] -
             //    CCurrencyState::NativeToReserveRaw(oneChainDeposits.valueMap[oneCurReduction.first], SATOSHIDEN - oneCurReduction.second);
             CAmount amountToBurn = CCurrencyState::NativeToReserveRaw(oneChainDeposits.valueMap[oneCurReduction.first], oneCurReduction.second);

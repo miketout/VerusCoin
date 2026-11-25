@@ -408,6 +408,7 @@ public:
 
         bool isCrossSystemIDNull = destSystemID.IsNull();
         return CTokenOutput::IsValid() &&
+                (flags & VALID) &&
                 reserveValues.valueMap.size() == 1 &&
                 destination.IsValid() &&
                 ((IsCrossSystem() &&  !isCrossSystemIDNull) || (!IsCrossSystem() &&  isCrossSystemIDNull));

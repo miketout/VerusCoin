@@ -1167,9 +1167,13 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                 {
                     return state.Error("Invalid import to incorrect system: " + cci.ToUniValue().write(1,2));
                 }
-                // block one is checked completely elsewhere
+                // block one is checked completely elsewhere, and only as the coinbase
                 if (height == 1)
                 {
+                    if (!tx.IsCoinBase())
+                    {
+                        return state.Error("Non-coinbase import in block one");
+                    }
                     return true;
                 }
                 if (!importingToDef.IsValid() || !((notarization.IsRefunding() && importingToDef.launchSystemID == ASSETCHAINS_CHAINID) ||
@@ -2240,6 +2244,29 @@ bool PrecheckCrossChainExport(const CTransaction &tx, int32_t outNum, CValidatio
             }
 
             CPBaaSNotarization &pbn = std::get<3>(priorNotarization);
+
+            // from the second window on, a pre-launch export continues the notarization thread. spending an accepted
+            // notarization already requires the spender to carry the currency's next notarization (ValidateAcceptedNotarization),
+            // so once every pre-launch export spends the notarization it derives from, the thread is one chain and the
+            // newest unspent notarization for the currency carries every export before it. the builder always spends it
+            if (!notarization.IsMirror() &&
+                IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+            {
+                const COutPoint &priorNotarizationOut = std::get<2>(priorNotarization);
+                int priorIn;
+                for (priorIn = 0; priorIn < tx.vin.size(); priorIn++)
+                {
+                    if (tx.vin[priorIn].prevout == priorNotarizationOut)
+                    {
+                        break;
+                    }
+                }
+                if (priorIn >= tx.vin.size())
+                {
+                    return state.Error("Pre-launch export must spend the notarization it derives its state from");
+                }
+            }
+
             CCurrencyDefinition destCurrency = ConnectedChains.GetCachedCurrency(pbn.currencyID);
 
             if (ccx.sourceSystemID != ASSETCHAINS_CHAINID || !destCurrency.IsValid())
@@ -4291,6 +4318,7 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
     // 3. Imported currency from another system on an import from a system, which controls the imported currency
     bool isBlockOneDefinition = tx.IsCoinBase() && height == 1;
     bool isImportDefinition = false;
+    bool isAferSecondBridgeCleanupWindow = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1));
 
     CIdentity oldIdentity;
     CCrossChainImport cci, sysCCI;
@@ -4320,7 +4348,7 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
         return state.Error("Invalid, non-unicode scalar name characters specified in currency definition");
     }
 
-    if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+    if (isAferSecondBridgeCleanupWindow)
     {
         if (newCurrency.name.find('\0') != std::string::npos)
         {
@@ -4418,7 +4446,7 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
     {
         return state.Error("Currency definition must include launch system native currency in currencies");
     }
-    if (IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+    if (isAferSecondBridgeCleanupWindow)
     {
         if (newCurrency.preconverted.size() != newCurrency.currencies.size() ||
             newCurrency.contributions.size() != newCurrency.currencies.size())
@@ -4544,12 +4572,82 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
             }
             try
             {
+                // direct rules on the stored definition for the fields the JSON round trip below normalizes or omits: weights
+                // are re-derived to total 100%, preconverted is not emitted and is set from contributions by definecurrency,
+                // converter issuance and notaries are emitted only for systems, a system's own id replaces its systemID,
+                // and a null launchSystemID is defaulted. definecurrency's output satisfies every one of these
+                if (isAferSecondBridgeCleanupWindow)
+                {
+                    if (newCurrency.IsFractional())
+                    {
+                        if (newCurrency.weights.size() != newCurrency.currencies.size())
+                        {
+                            return state.Error("Fractional currency weights must match its currencies: " + newCurrency.name);
+                        }
+                        int64_t weightTotal = 0;
+                        for (auto oneWeight : newCurrency.weights)
+                        {
+                            if (oneWeight < CCurrencyDefinition::MIN_RESERVE_RATIO)
+                            {
+                                return state.Error("Fractional currency reserve weight below the minimum ratio: " + newCurrency.name);
+                            }
+                            weightTotal += oneWeight;
+                        }
+                        if (weightTotal != SATOSHIDEN)
+                        {
+                            return state.Error("Fractional currency reserve weights must total 100%: " + newCurrency.name);
+                        }
+                    }
+                    if (newCurrency.preconverted != newCurrency.contributions)
+                    {
+                        return state.Error("Currency definition preconverted amounts must equal its contributions: " + newCurrency.name);
+                    }
+                    if (!(newCurrency.IsGateway() || newCurrency.IsGatewayConverter() || newCurrency.IsPBaaSChain()) && newCurrency.gatewayConverterIssuance != 0)
+                    {
+                        return state.Error("Only a gateway, its converter or a PBaaS chain may carry converter issuance: " + newCurrency.name);
+                    }
+                    if (!(newCurrency.IsGateway() || newCurrency.IsPBaaSChain()) && newCurrency.notaries.size())
+                    {
+                        return state.Error("Only a gateway or a PBaaS chain may have notaries: " + newCurrency.name);
+                    }
+                    if ((newCurrency.IsPBaaSChain() || newCurrency.IsGateway()) && newCurrency.systemID != newCurrency.GetID())
+                    {
+                        return state.Error("A PBaaS chain or gateway must be its own system: " + newCurrency.name);
+                    }
+                    if (newCurrency.currencies.size() && newCurrency.launchSystemID.IsNull())
+                    {
+                        return state.Error("Currency definition with reserves must name its launch system: " + newCurrency.name);
+                    }
+                }
+
                 std::map<uint160, std::string> requiredDefinitions = newDefinitions;
 
                 if (!ValidateNewUnivalueCurrencyDefinition(newCurrency.ToUniValue(), height - 1, newCurrency.systemID, requiredDefinitions, false).IsValid())
                 {
                     LogPrint("currencydefinition", "%s: Currency definition in output violates current definition rules.\n%s\n", __func__, newCurrency.ToUniValue().write(1,2).c_str());
                     return state.Error("Currency definition in output violates current definition rules");
+                }
+
+                // an Ethereum-protocol currency lives on an Ethereum-protocol system: the gateway itself or a currency mapped to it.
+                // on a PBaaS-protocol system the protocol would select only the Ethereum export limits and address rules
+                if (newCurrency.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION && newCurrency.systemID != newCurrency.GetID())
+                {
+                    CCurrencyDefinition protocolSystem = ConnectedChains.GetCachedCurrency(newCurrency.systemID);
+                    if (!protocolSystem.IsValid())
+                    {
+                        for (auto &oneDef : currencyDefs)
+                        {
+                            if (oneDef.GetID() == newCurrency.systemID)
+                            {
+                                protocolSystem = oneDef;
+                                break;
+                            }
+                        }
+                    }
+                    if (!protocolSystem.IsValid() || protocolSystem.proofProtocol != CCurrencyDefinition::PROOF_ETHNOTARIZATION)
+                    {
+                        return state.Error("Ethereum proof protocol requires an Ethereum-protocol system: " + newCurrency.name);
+                    }
                 }
 
                 bool isMappedCurrency = (newCurrency.systemID != ASSETCHAINS_CHAINID &&
@@ -5487,6 +5585,11 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
         rt.destination.AuxDestCount() <= 3 &&
         ::AsVector(rt) == p.vData[0])
     {
+        if (!(rt.flags & rt.VALID) && IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)))
+        {
+            return state.Error("Reserve transfer must carry the VALID flag " + rt.ToUniValue().write(1,2));
+        }
+
         // arbitrage transactions are determined by their context and statically setting the flags is prohibited
         if (rt.IsArbitrageOnly() &&
             (rt.IsCurrencyExport() ||

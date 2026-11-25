@@ -2841,8 +2841,8 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
 
     std::vector<int64_t> weightsAsAmounts(weights.begin(), weights.end());
     std::vector<CAmount> rates;
-    int clearingPasses = 0;
-    int clearingError = clearingfp::Clear(reserves, weightsAsAmounts, supply, inputReserves, inputFractional, pCrossConversions, rates, clearingPasses);
+    int clearingEvaluations = 0;
+    int clearingError = clearingfp::Clear(reserves, weightsAsAmounts, supply, inputReserves, inputFractional, pCrossConversions, rates, clearingEvaluations);
     if (clearingError == clearingfp::ERR_EMPTIES)
     {
         state.Error(std::string(__func__) + " conversion empties a reserve");
@@ -2855,7 +2855,7 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
     }
     if (LogAcceptCategory("conversion"))
     {
-        LogPrintf("%s: cleared %d currencies in %d via pass(es)\n", __func__, (int)numCurrencies, clearingPasses);
+        LogPrintf("%s: cleared %d currencies in %d pass(es)\n", __func__, (int)numCurrencies, clearingEvaluations);
     }
 
     // the end state from the integer payouts at the clearing prices, as the caller will pay them

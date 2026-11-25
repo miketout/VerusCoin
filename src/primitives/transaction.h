@@ -1619,7 +1619,9 @@ public:
                 (TYPE_PBAAS == type &&
                  txProof.proofSequence.size() >= 3 &&
                  txProof.proofSequence[1]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_NODE &&
-                 txProof.proofSequence[2]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE));
+                 ((CMMRNodeBranch *)txProof.proofSequence[1])->branch.size() == ((CMMRNodeBranch *)txProof.proofSequence[1])->ExpectedBranchSize() &&
+                 txProof.proofSequence[2]->branchType == CMerkleBranchBase::BRANCH_MMRBLAKE_POWERNODE &&
+                 ((CMMRPowerNodeBranch *)txProof.proofSequence[2])->branch.size() == ((CMMRPowerNodeBranch *)txProof.proofSequence[2])->ExpectedBranchSize()));
     }
 
     bool IsValid() const

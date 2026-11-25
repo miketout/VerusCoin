@@ -4581,8 +4581,8 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                         }
                                     }
 
-                                    if (++exportTransferCount[destCurrencyID].first > destSystem.MaxTransferExportCount(pindex->nTime) ||
-                                        (exportTransferCount[destCurrencyID].second += oneOut.scriptPubKey.size()) > destSystem.MaxTransferExportSize())
+                                    if (++exportTransferCount[destCurrencyID].first > std::min(destSystem.MaxTransferExportCount(pindex->nTime), destCurrency.MaxTransferExportCount(pindex->nTime)) ||
+                                        (exportTransferCount[destCurrencyID].second += oneOut.scriptPubKey.size()) > std::min(destSystem.MaxTransferExportSize(), destCurrency.MaxTransferExportSize()))
                                     {
                                         return state.DoS(10, error("%s: attempt to submit block with too many transfers exporting to %s", __func__, EncodeDestination(CIdentityID(destCurrencyID)).c_str()), REJECT_INVALID, "bad-txns-too-many-transfers");
                                     }
@@ -4604,11 +4604,11 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                                         }
                                     }
 
-                                    if (rt.IsCurrencyExport() && ++currencyExportTransferCount[destCurrencyID] > destSystem.MaxCurrencyDefinitionExportCount())
+                                    if (rt.IsCurrencyExport() && ++currencyExportTransferCount[destCurrencyID] > std::min(destSystem.MaxCurrencyDefinitionExportCount(), destCurrency.MaxCurrencyDefinitionExportCount()))
                                     {
                                         return state.DoS(10, error("%s: attempt to submit block with too many currency definition transfers exporting to %s", __func__, EncodeDestination(CIdentityID(destCurrencyID)).c_str()), REJECT_INVALID, "bad-txns-too-many-currency-transfers");
                                     }
-                                    if (rt.IsIdentityExport() && ++identityExportTransferCount[destCurrencyID] > destSystem.MaxIdentityDefinitionExportCount())
+                                    if (rt.IsIdentityExport() && ++identityExportTransferCount[destCurrencyID] > std::min(destSystem.MaxIdentityDefinitionExportCount(), destCurrency.MaxIdentityDefinitionExportCount()))
                                     {
                                         return state.DoS(10, error("%s: attempt to submit block with too many identity definition transfers exporting to %s", __func__, EncodeDestination(CIdentityID(destCurrencyID)).c_str()), REJECT_INVALID, "bad-txns-too-many-identity-transfers");
                                     }

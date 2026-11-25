@@ -443,6 +443,10 @@ public:
         }
         return ArithToUint256(prefix);
     }
+
+    // the number of hashes an honest branch for this node type carries from position nIndex in a view of nSize elements,
+    // including the extra hashes for different node types; zero when the position is outside the view
+    size_t ExpectedBranchSize() const;
 };
 typedef CMMRBranch<CBLAKE2bWriter> CMMRNodeBranch;
 typedef CMMRBranch<CBLAKE2bWriter, CMMRPowerNode<CBLAKE2bWriter>> CMMRPowerNodeBranch;
@@ -1605,5 +1609,10 @@ public:
     }
 };
 
+template <typename HASHALGOWRITER, typename NODETYPE>
+size_t CMMRBranch<HASHALGOWRITER, NODETYPE>::ExpectedBranchSize() const
+{
+    return CMerkleMountainView<NODETYPE>::GetProofBits(nIndex, nSize).size();
+}
 
 #endif // MMR_H

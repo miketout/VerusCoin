@@ -4263,7 +4263,8 @@ bool GetChainTransfersUnspentBy(std::multimap<std::pair<uint32_t, uint160>, std:
             std::tuple<uint256, CInputDescriptor, CReserveTransfer> cacheValue;
             bool inCache = false;
             if ((inCache = (reserveTransferCache.Get({it->first.txhash, (uint32_t)it->first.index}, cacheValue)) && mapBlockIndex.count(std::get<0>(cacheValue)) && chainActive.Contains(mapBlockIndex[std::get<0>(cacheValue)])) &&
-                ((chainFilter.IsNull() || chainFilter == std::get<2>(cacheValue).GetImportCurrency()) && (flags == CReserveTransfer::VALID)))
+                ((chainFilter.IsNull() || chainFilter == std::get<2>(cacheValue).GetImportCurrency()) &&
+                 (std::get<2>(cacheValue).flags & flags) == flags))
             {
                 if (mevCheckTrigger)
                 {

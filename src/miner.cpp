@@ -3567,11 +3567,11 @@ CBlockTemplate* CreateNewBlock(const CChainParams& chainparams, const std::vecto
                                             }
                                         }
 
-                                        if ((++tmpExportTransfers[destCurrencyID].first + exportTransferCount[destCurrencyID].first) > destSystem.MaxTransferExportCount(pblock->nTime) ||
+                                        if ((++tmpExportTransfers[destCurrencyID].first + exportTransferCount[destCurrencyID].first) > std::min(destSystem.MaxTransferExportCount(pblock->nTime), destCurrency.MaxTransferExportCount(pblock->nTime)) ||
                                             ((tmpExportTransfers[destCurrencyID].second += oneOut.scriptPubKey.size()) +
-                                                        exportTransferCount[destCurrencyID].second) > destSystem.MaxTransferExportSize() ||
-                                            (rt.IsCurrencyExport() && (++tmpCurrencyExportTransfers[destCurrencyID] + currencyExportTransferCount[destCurrencyID]) > destSystem.MaxCurrencyDefinitionExportCount()) ||
-                                            (rt.IsIdentityExport() && (++tmpIdentityExportTransfers[destCurrencyID] + identityExportTransferCount[destCurrencyID]) > destSystem.MaxIdentityDefinitionExportCount()))
+                                                        exportTransferCount[destCurrencyID].second) > std::min(destSystem.MaxTransferExportSize(), destCurrency.MaxTransferExportSize()) ||
+                                            (rt.IsCurrencyExport() && (++tmpCurrencyExportTransfers[destCurrencyID] + currencyExportTransferCount[destCurrencyID]) > std::min(destSystem.MaxCurrencyDefinitionExportCount(), destCurrency.MaxCurrencyDefinitionExportCount())) ||
+                                            (rt.IsIdentityExport() && (++tmpIdentityExportTransfers[destCurrencyID] + identityExportTransferCount[destCurrencyID]) > std::min(destSystem.MaxIdentityDefinitionExportCount(), destCurrency.MaxIdentityDefinitionExportCount())))
                                         {
                                             disqualified = true;
                                             break;
