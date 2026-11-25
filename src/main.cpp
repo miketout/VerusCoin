@@ -5998,6 +5998,11 @@ bool static ConnectTip(CValidationState& state, const CChainParams& chainparams,
     // Update chainActive & related variables.
     UpdateTip(pindexNew, chainparams);
 
+    if (!IsInitialBlockDownload(chainparams))
+    {
+        ConnectedChains.CheckOracleUpgrades(pindexNew->GetHeight());
+    }
+
     // Tell wallet about transactions that went from mempool
     // to conflicted:
     BOOST_FOREACH(const CTransaction &tx, txConflicted) {

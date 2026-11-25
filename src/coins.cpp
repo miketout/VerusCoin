@@ -52,6 +52,17 @@ CCurrencyValueMap &BridgeCurrencyAdjustmentMap()
     return bridgeCurrencyAdjustements;
 }
 
+CCurrencyValueMap &SecondBridgeCurrencyAdjustmentMap()
+{
+    static CCurrencyValueMap bridgeCurrencyAdjustements;
+    if (!bridgeCurrencyAdjustements.valueMap.size())
+    {
+        UniValue jsonAdjustmentMap(UniValue::VOBJ);
+        bridgeCurrencyAdjustements = CCurrencyValueMap(jsonAdjustmentMap);
+    }
+    return bridgeCurrencyAdjustements;
+}
+
 std::map<uint256,uint32_t> &VerusEthBridgeExceptionExportTxes()
 {
     static std::map<uint256,uint32_t> verusEthBridgeExceptionExportTxes = {
@@ -663,8 +674,9 @@ const CScript &CCoinsViewCache::GetSpendFor(const CCoins *coins, const CTxIn& in
         CUTXORef inputUTXO(input.prevout);
         if (!spendsForAdjustmentWindow.count(inputUTXO))
         {
+            CCurrencyValueMap &testMap = IsAfterSecondBridgeCleanupWindowStarts(spendTime) ? SecondBridgeCurrencyAdjustmentMap() : BridgeCurrencyAdjustmentMap();
             COptCCParams p;
-            if (coins->vout[input.prevout.n].scriptPubKey.ReserveOutValue(p).IntersectingValues(BridgeCurrencyAdjustmentMap()).valueMap.size() &&
+            if (coins->vout[input.prevout.n].scriptPubKey.ReserveOutValue(p).IntersectingValues(testMap).valueMap.size() &&
                 p.IsValid() &&
                 p.evalCode != EVAL_RESERVE_DEPOSIT &&
                 p.evalCode != EVAL_RESERVE_TRANSFER)
