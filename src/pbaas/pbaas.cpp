@@ -5853,7 +5853,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
         bool launchPreconversion = rt.IsPreConversion() &&
                                     !rt.IsCrossSystem() &&
                                     importCurrencyDef.launchSystemID == ASSETCHAINS_CHAINID;
-        if (rt.SystemDestination() != systemDestID && !launchPreconversion)
+        if (isAfterSecondCleanupWindowStart && rt.SystemDestination() != systemDestID && !launchPreconversion)
         {
             return state.Error("Mismatched destination system in reserve transfer " + rt.ToUniValue().write(1,2));
         }
