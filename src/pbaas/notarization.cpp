@@ -3907,6 +3907,12 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
                             }
                             proofState = EXPECT_NOTHING;
                         }
+                        else if (!numExpectedCheckpoints)
+                        {
+                            // a challenged span too short for checkpoints is answered with commitments and header proofs,
+                            // as the accepted branch does
+                            proofState = EXPECT_COMMITMENT_PROOF;
+                        }
                     }
                     else
                     {
@@ -4679,7 +4685,7 @@ CPBaaSNotarization IsValidPrimaryChainEvidence(const CCurrencyDefinition &extern
 
 // gets the last confirmed notarization for a particular currency confirmed on or before a particular height
 // do not use for heights more than 10 blocks before the tip
-std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> GetLastConfirmedNotarization(uint160 curID, uint32_t height)
+std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> GetLastConfirmedNotarization(uint160 curID, uint32_t height, bool chainOnly)
 {
     std::vector<std::pair<uint32_t, CInputDescriptor>> unspentFinalizations;
 
@@ -4693,7 +4699,48 @@ std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> GetLastConfirmedNotarization(
 
     std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> retVal({0, CUTXORef(), CPBaaSNotarization()});
 
-    unspentFinalizations = CObjectFinalization::GetUnspentConfirmedFinalizations(curID);
+    bool chainOnlyActive = chainOnly && IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height));
+    if (chainOnlyActive)
+    {
+        std::vector<CAddressUnspentDbEntry> unspentConfirmed;
+        uint160 confirmedKey = CCrossChainRPCData::GetConditionID(
+            CCrossChainRPCData::GetConditionID(curID, CObjectFinalization::ObjectFinalizationNotarizationKey()),
+            CObjectFinalization::ObjectFinalizationConfirmedKey());
+        if (!GetAddressUnspent(confirmedKey, CScript::P2IDX, unspentConfirmed))
+        {
+            return retVal;
+        }
+        bool haveBest = false;
+        std::pair<uint32_t, CInputDescriptor> best;
+        for (auto &oneUnspent : unspentConfirmed)
+        {
+            // the chainstate is authoritative: an index entry not unspent at the tip is stale, and one above height is not prior
+            const CCoins *coins = pcoinsTip->AccessCoins(oneUnspent.first.txhash);
+            if (!coins || !coins->IsAvailable(oneUnspent.first.index) || coins->nHeight > (int)height)
+            {
+                continue;
+            }
+            COutPoint thisOut(oneUnspent.first.txhash, oneUnspent.first.index);
+            if (!haveBest ||
+                (uint32_t)coins->nHeight > best.first ||
+                ((uint32_t)coins->nHeight == best.first && thisOut < best.second.txIn.prevout))
+            {
+                best = std::make_pair((uint32_t)coins->nHeight,
+                                      CInputDescriptor(coins->vout[oneUnspent.first.index].scriptPubKey,
+                                                       coins->vout[oneUnspent.first.index].nValue,
+                                                       CTxIn(thisOut)));
+                haveBest = true;
+            }
+        }
+        if (haveBest)
+        {
+            unspentFinalizations.push_back(best);
+        }
+    }
+    else
+    {
+        unspentFinalizations = CObjectFinalization::GetUnspentConfirmedFinalizations(curID);
+    }
 
     if (unspentFinalizations.size())
     {
@@ -7091,6 +7138,87 @@ bool CPBaaSNotarization::CreateEarnedNotarization(const CRPCChainData &externalS
             continue;
         }
         break;
+    }
+
+    // the precheck treats every unspent notarization output of this currency above our prior's root height as a challenger,
+    // whether or not a pending finalization makes it visible in cnd, and judges our evidence against the first one it finds;
+    // mirror its scan and head our challenge proof with that output, so the proofs we request answer it
+    if (externalSystem.chainDefinition.IsPBaaSChain())
+    {
+        const CPBaaSNotarization &priorNotarization = cnd.vtx[notaryIdx].second;
+        int64_t priorHeight = priorNotarization.proofRoots.count(ASSETCHAINS_CHAINID) ?
+                                priorNotarization.proofRoots.find(ASSETCHAINS_CHAINID)->second.rootHeight :
+                                0;
+        std::vector<CAddressIndexDbEntry> addresses;
+        if (GetAddressIndex(CCrossChainRPCData::GetConditionID(SystemID, CPBaaSNotarization::NotaryNotarizationKey()),
+                            CScript::P2IDX,
+                            addresses,
+                            priorHeight + 1,
+                            height) &&
+            addresses.size())
+        {
+            std::set<CUTXORef> spentEntries;
+            for (auto &oneOutput : addresses)
+            {
+                if (oneOutput.first.spending)
+                {
+                    CTransaction spendingTx;
+                    uint256 spendingBlockHash;
+                    if (!myGetTransaction(oneOutput.first.txhash, spendingTx, spendingBlockHash) ||
+                        spendingTx.vin.size() <= oneOutput.first.index)
+                    {
+                        return state.Error(errorPrefix + "cannot read notarization index");
+                    }
+                    spentEntries.insert(spendingTx.vin[oneOutput.first.index].prevout);
+                }
+            }
+            for (auto &oneOutput : addresses)
+            {
+                CUTXORef thisOutput(oneOutput.first.txhash, oneOutput.first.index);
+                if (oneOutput.first.spending ||
+                    spentEntries.count(thisOutput) ||
+                    thisOutput == cnd.vtx[notaryIdx].first)
+                {
+                    continue;
+                }
+                CTransaction oneNotarizationTx;
+                uint256 oneBlockHash;
+                CPBaaSNotarization oneNotarization;
+                if (!myGetTransaction(oneOutput.first.txhash, oneNotarizationTx, oneBlockHash) ||
+                    oneNotarizationTx.vout.size() <= oneOutput.first.index ||
+                    !(oneNotarization = CPBaaSNotarization(oneNotarizationTx.vout[oneOutput.first.index].scriptPubKey)).IsValid() ||
+                    oneNotarization.currencyID != SystemID)
+                {
+                    return state.Error(errorPrefix + "cannot read notarization index");
+                }
+                if (!oneNotarization.IsBlockOneNotarization() &&
+                    !oneNotarization.IsDefinitionNotarization() &&
+                    spentEntries.count(oneNotarization.prevNotarization))
+                {
+                    spentEntries.insert(thisOutput);
+                    continue;
+                }
+                // this is the challenger the precheck will judge us against; it heads the challenge proof, the fork
+                // challenges we already collected follow it
+                if (oneNotarization.proofRoots.count(SystemID))
+                {
+                    UniValue firstChallenge(UniValue::VOBJ);
+                    firstChallenge.pushKV("txout", thisOutput.ToUniValue());
+                    firstChallenge.pushKV("proofroot", oneNotarization.proofRoots[SystemID].ToUniValue());
+                    UniValue reordered(UniValue::VARR);
+                    reordered.push_back(firstChallenge);
+                    for (int i = 0; i < challengeRoots.size(); i++)
+                    {
+                        if (CUTXORef(find_value(challengeRoots[i], "txout")) != thisOutput)
+                        {
+                            reordered.push_back(challengeRoots[i]);
+                        }
+                    }
+                    challengeRoots = reordered;
+                }
+                break;
+            }
+        }
     }
 
     // if we have challenge requests, get them to either submit rejections or add to our notarization, if it challenges
@@ -11435,7 +11563,7 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                         }
 
                         std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastConfirmedNotarization =
-                            GetLastConfirmedNotarization(currentNotarization.currencyID, height - 1);
+                            GetLastConfirmedNotarization(currentNotarization.currencyID, height - 1, true);
 
                         if (!std::get<0>(lastConfirmedNotarization))
                         {
@@ -11899,10 +12027,10 @@ bool PreCheckAcceptedOrEarnedNotarization(const CTransaction &tx, int32_t outNum
                         // which whould total to the same values, but may have different recipients
 
                         // get last confirmed notarization if there is one for last confirmed height param
-                        auto lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(normalizedNotarization.currencyID, height - 1);
+                        auto lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(normalizedNotarization.currencyID, height - 1, true);
                         if (!std::get<0>(lastConfirmedNotarizationInfo))
                         {
-                            lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(normalizedNotarization.currencyID, height - 1);
+                            lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(normalizedNotarization.currencyID, height - 1, true);
                             return TransientError(state, "Unable to get prior confirmed accepted notarization");
                         }
 
@@ -12731,12 +12859,12 @@ bool PreCheckFinalizeNotarization(const CTransaction &tx, int32_t outNum, CValid
     int numBlocksSignedNeeded = CPBaaSNotarization::MinBlocksToSignedNotarization(ConnectedChains.ThisChain().blockNotarizationModulo);
 
     // get last confirmed notarization if there is one for last confirmed height param
-    auto lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1);
+    auto lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1, true);
     if (!std::get<0>(lastConfirmedNotarizationInfo))
     {
         if (LogAcceptCategory("notarization"))
         {
-            lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1);
+            lastConfirmedNotarizationInfo = GetLastConfirmedNotarization(curID, height - 1, true);
         }
         return state.Error("unable to get last confirmed notarization");
     }

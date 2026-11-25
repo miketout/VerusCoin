@@ -338,7 +338,8 @@ bool ImportHasAdequateFees(const CTransaction &tx,
             CAddressIndexDbEntry txOutIdx;
             CTransaction txOut;
 
-            std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastNotarization = GetLastConfirmedNotarization(ccx.sourceSystemID, height - 1);
+            std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastNotarization =
+                GetLastConfirmedNotarization(ccx.sourceSystemID, height - 1, true);
 
             if (!std::get<0>(lastNotarization))
             {
@@ -451,7 +452,7 @@ bool ImportHasAdequateFees(const CTransaction &tx,
             CCurrencyDefinition nextSys = ConnectedChains.GetCachedCurrency(exportingDef.systemID);
             if (nextSys.IsValid() && nextSys.IsGateway() && nextSys.proofProtocol == nextSys.PROOF_ETHNOTARIZATION)
             {
-                auto lastConfirmedNotarization = GetLastConfirmedNotarization(exportingDef.systemID, height - 1);
+                auto lastConfirmedNotarization = GetLastConfirmedNotarization(exportingDef.systemID, height - 1, true);
                 if (!std::get<0>(lastConfirmedNotarization) ||
                     !std::get<2>(lastConfirmedNotarization).proofRoots.count(exportingDef.systemID))
                 {
@@ -1274,6 +1275,14 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                     pbn.currencyState.SetLaunchCompleteMarker(false);
                 }
 
+                if (notarization.IsSameChain() &&
+                    IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(height - 1)) &&
+                    (notarization.notarizationHeight < pbn.notarizationHeight ||
+                    (ccx.sourceSystemID == ASSETCHAINS_CHAINID && notarization.notarizationHeight < ccx.sourceHeightEnd)))
+                {
+                    return state.Error("Import notarization height precedes its export or prior notarization: " + cci.ToUniValue().write(1,2));
+                }
+
                 uint32_t checkHeight = ccx.sourceHeightStart ? ccx.sourceHeightStart - 1 : 0;
                 if (!pbn.NextNotarizationInfo(sourceSystem,
                                                 importingToDef,
@@ -1293,7 +1302,7 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                 {
                     return state.Error("Invalid import notarization mutation\n");
                 }
-                if (ConnectedChains.ShouldForceRefundDeFi(notarization.notarizationHeight, notarization.currencyID))
+                if (ConnectedChains.ShouldForceRefundDeFi(height, notarization.currencyID))
                 {
                     checkNotarization = notarization;
                 }
@@ -1362,7 +1371,8 @@ bool PrecheckCrossChainImport(const CTransaction &tx, int32_t outNum, CValidatio
                             CAddressIndexDbEntry txOutIdx;
                             CTransaction txOut;
 
-                            std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastNotarization = GetLastConfirmedNotarization(ccx.sourceSystemID, height - 1);
+                            std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastNotarization =
+                                GetLastConfirmedNotarization(ccx.sourceSystemID, height - 1, true);
 
                             if (!std::get<0>(lastNotarization))
                             {
@@ -4823,7 +4833,8 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
                         }
                         if (oneReserveCur.launchSystemID == ASSETCHAINS_CHAINID)
                         {
-                            std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastNotarization = GetLastConfirmedNotarization(oneCurID.first, height - 1);
+                            std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastNotarization =
+                                GetLastConfirmedNotarization(oneCurID.first, height - 1, true);
                             if (std::get<0>(lastNotarization) &&
                                 (!std::get<2>(lastNotarization).IsLaunchConfirmed() ||
                                     !std::get<2>(lastNotarization).IsLaunchComplete()))
@@ -5634,7 +5645,8 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 return state.Error("Invalid preconversion reserve transfer " + rt.ToUniValue().write(1,2));
             }
 
-            std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastConfirmedForImport = GetLastConfirmedNotarization(importCurrencyID, height - 1);
+            std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastConfirmedForImport =
+                GetLastConfirmedNotarization(importCurrencyID, height - 1, true);
 
             // if pre-conversion, we may find definitions on the transaction
             // false is error, empty is not false
@@ -5822,7 +5834,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                                                                 CPBaaSNotarization();
                 std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastConfirmed = lastConfirmedNotarization.IsValid() ?
                         std::tuple<uint32_t, CUTXORef, CPBaaSNotarization>({1, CUTXORef(), lastConfirmedNotarization}) :
-                        GetLastConfirmedNotarization(systemDestID, height - 1);
+                        GetLastConfirmedNotarization(systemDestID, height - 1, true);
                 if (!std::get<0>(lastConfirmed))
                 {
                     return TransientError(state, "Cannot get notarization data for destination system of transfer: " + rt.ToUniValue().write(1,2));
@@ -5846,7 +5858,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 if (isAfterSecondCleanupWindowStart &&
                     importCurrencyID != systemDestID &&
                     !currenciesAndNotarizations.count(importCurrencyID) &&
-                    !std::get<0>(GetLastConfirmedNotarization(importCurrencyID, height - 1)))
+                    !std::get<0>(GetLastConfirmedNotarization(importCurrencyID, height - 1, true)))
                 {
                     return state.Error("No confirmed notarization for destination currency of cross-system transfer: " + rt.ToUniValue().write(1,2));
                 }
@@ -6423,7 +6435,7 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                                                                     CPBaaSNotarization();
                     std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> lastConfirmed = lastConfirmedNotarization.IsValid() ?
                             std::tuple<uint32_t, CUTXORef, CPBaaSNotarization>({1, CUTXORef(), lastConfirmedNotarization}) :
-                            GetLastConfirmedNotarization(nlDestID, height - 1);
+                            GetLastConfirmedNotarization(nlDestID, height - 1, true);
 
                     if (!std::get<0>(lastConfirmed))
                     {

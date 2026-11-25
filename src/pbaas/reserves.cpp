@@ -4100,7 +4100,19 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
     bool makeNormalOutput = true;
     uint160 systemDestID = destSystem.GetID();
 
+    // from the second window, a next leg that could jam a destination system on import is paid out on this chain instead,
+    // so no transfer the chain accepted at creation can wedge an import thread
+    bool payoutOnFailure = IsAfterSecondBridgeCleanupWindowStarts(chainActive.ChainTimeAtOrBefore(std::max((int)height - 1, 0)));
+
     CTxDestination dest = TransferDestinationToDestination(destination);
+
+    if (payoutOnFailure && destination.TypeNoFlags() == destination.DEST_RAW)
+    {
+        // a raw destination has no address on this chain; creation requires a compatible auxiliary destination for it
+        // (PrecheckReserveTransfer), and that is where a raw-addressed payout on this chain goes
+        dest = GetCompatibleAuxDestination(destination, (CCurrencyDefinition::EProofProtocol)destSystem.proofProtocol);
+    }
+
     CCurrencyDefinition exportCurDef;
     if (HasNextLeg())
     {
@@ -4166,9 +4178,12 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                 }
                 else
                 {
-                    printf("%s: Invalid currency export to system: %s\n", __func__, EncodeDestination(CIdentityID(nextDest.GetID())).c_str());
-                    LogPrintf("%s: Invalid currency export to system: %s\n", __func__, EncodeDestination(CIdentityID(nextDest.GetID())).c_str());
-                    return false;
+                    LogPrintf("%s: Invalid currency export to system %s%s\n", __func__, EncodeDestination(CIdentityID(nextDest.GetID())).c_str(), payoutOnFailure ? ", paying out on this chain" : "");
+                    if (!payoutOnFailure)
+                    {
+                        return false;
+                    }
+                    makeNormalOutput = true;
                 }
             }
             // if we're supposed to export the destination identity, do so
@@ -4181,13 +4196,16 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                     !(fullID = CIdentity::LookupIdentity(GetDestinationID(dest), height - 1)).IsValid() ||
                     destination.gatewayID == ASSETCHAINS_CHAINID)
                 {
-                    printf("%s: Invalid export identity or identity not found for %s\n", __func__, EncodeDestination(dest).c_str());
-                    LogPrintf("%s: Invalid export identity or identity not found for %s\n", __func__, EncodeDestination(dest).c_str());
-                    return false;
+                    LogPrintf("%s: Invalid export identity or identity not found for %s%s\n", __func__, EncodeDestination(dest).c_str(), payoutOnFailure ? ", paying out on this chain" : "");
+                    if (!payoutOnFailure)
+                    {
+                        return false;
+                    }
+                    makeNormalOutput = true;
                 }
-                if (CCurrencyDefinition::IsValidDefinitionImport(sourceSystem, destSystem, fullID.parent.IsNull() ? VERUS_CHAINID : fullID.parent, height) &&
-                    ((systemDestID != sourceSystem.GetID() && systemDestID != ASSETCHAINS_CHAINID) ||
-                     CCurrencyDefinition::IsValidDefinitionImport(destSystem, nextDest, fullID.parent.IsNull() ? VERUS_CHAINID : fullID.parent, height)))
+                else if (CCurrencyDefinition::IsValidDefinitionImport(sourceSystem, destSystem, fullID.parent.IsNull() ? VERUS_CHAINID : fullID.parent, height) &&
+                         ((systemDestID != sourceSystem.GetID() && systemDestID != ASSETCHAINS_CHAINID) ||
+                          CCurrencyDefinition::IsValidDefinitionImport(destSystem, nextDest, fullID.parent.IsNull() ? VERUS_CHAINID : fullID.parent, height)))
                 {
                     fullID.contentMap.clear();
                     fullID.contentMultiMap.clear();
@@ -4275,13 +4293,29 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                                     ConnectedChains.GetCachedCurrency(destination.gatewayID) :
                                     ConnectedChains.ThisChain();
 
-            if (!nextSys.IsValid() ||
-                (destination.gatewayID != ASSETCHAINS_CHAINID &&
-                 (nextLegTransfer.feeCurrencyID != nextSys.GetID())))
+            // the pass-through output this leg becomes is prechecked by the chain; from the second window a leg that would
+            // fail there is paid out on this chain instead. the conditions mirror PrecheckReserveTransfer for that output
+            bool feeCurrencyOk = nextSys.IsValid() &&
+                                 (destination.gatewayID == ASSETCHAINS_CHAINID || nextLegTransfer.feeCurrencyID == nextSys.GetID());
+            if (!feeCurrencyOk && !payoutOnFailure)
             {
-                printf("%s: Invalid fee currency for next leg of transfer %s\n", __func__, nextLegTransfer.ToUniValue().write(1,2).c_str());
                 LogPrintf("%s: Invalid fee currency for next leg of transfer %s\n", __func__, nextLegTransfer.ToUniValue().write(1,2).c_str());
                 return false;
+            }
+            CDataStream ds(SER_DISK, PROTOCOL_VERSION);
+            bool nextLegOk = feeCurrencyOk &&
+                             (!payoutOnFailure ||
+                              (!(IsMint() && nextLegTransfer.IsCurrencyExport()) &&                                                                 // a minted currency export never registers (A)
+                               !(nextSys.IsGateway() && ConnectedChains.activeUpgradesByKey.count(ConnectedChains.DisableGatewayCrossChainKey())) &&
+                               !(nextSys.GetID() != ASSETCHAINS_CHAINID && ConnectedChains.activeUpgradesByKey.count(ConnectedChains.DisablePBaaSCrossChainKey())) && // cross-chain keys (C)
+                               (!nextLegTransfer.IsIdentityExport() || GetSerializeSize(ds, nextLegTransfer) <= MAX_IDENTITYEXPORT_SIZE) &&         // identity size at import height (D)
+                               nextSys.IsValidTransferDestinationType(nextLegTransfer.destination.TypeNoFlags()) &&                               // destination type for the next system (E)
+                               (nextSys.proofProtocol != CCurrencyDefinition::PROOF_ETHNOTARIZATION ||                                            // §344's Ethereum rule (E')
+                                nextLegTransfer.destination.TypeNoFlags() == CTransferDestination::DEST_ETH ||
+                                (nextLegTransfer.IsCurrencyExport() && nextLegTransfer.destination.TypeNoFlags() == CTransferDestination::DEST_REGISTERCURRENCY))));
+            if (!nextLegOk)
+            {
+                LogPrintf("%s: next leg cannot be imported by its destination system, paying out on this chain: %s\n", __func__, nextLegTransfer.ToUniValue().write(1,2).c_str());
             }
 
             CAmount feeConversionRate = 0;
@@ -4293,7 +4327,7 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                 std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> pbnTuple;
                 if (chainActive.Height() > height)
                 {
-                    pbnTuple = GetLastConfirmedNotarization(nextSysID, height);
+                    pbnTuple = GetLastConfirmedNotarization(nextSysID, height, true);
                 }
                 if (GetNotarizationData(nextSysID, cnd) && cnd.vtx.size())
                 {
@@ -4325,8 +4359,9 @@ bool CReserveTransfer::GetTxOut(const CCurrencyDefinition &sourceSystem,
                 txImportFee = INT64_MAX;
             }
 
-            bool nextLegDestUsable = IsCurrencyExport() || IsIdentityExport() ||
-                                        HasCompatibleDestination(nextLegTransfer.destination, (CCurrencyDefinition::EProofProtocol)nextSys.proofProtocol);
+            bool nextLegDestUsable = nextLegOk && (IsCurrencyExport() || IsIdentityExport() ||
+                                        HasCompatibleDestination(nextLegTransfer.destination, (CCurrencyDefinition::EProofProtocol)nextSys.proofProtocol));
+
             if (!nextLegDestUsable ||
                 (nextSys.GetID() == ASSETCHAINS_CHAINID && nextLegTransfer.nFees < nextSys.GetTransactionTransferFee()) ||
                 (nextSys.GetID() != ASSETCHAINS_CHAINID && nextLegTransfer.nFees < txImportFee))
