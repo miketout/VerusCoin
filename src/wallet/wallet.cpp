@@ -2123,7 +2123,10 @@ bool CWallet::VerusSelectStakeOutput(CBlock *pBlock, arith_uint256 &hashResult, 
 
             if (UintToArith256(txout.tx->GetVerusPOSHash(&(pBlock->nNonce), txout.i, nHeight, pastHash)) <= target)
             {
-                if (isVerusETHBridgeCleanup && txout.tx->vout[txout.i].scriptPubKey.ReserveOutValue().Intersects(BridgeCurrencyAdjustmentMap()))
+                if (isVerusETHBridgeCleanup &&
+                    txout.tx->vout[txout.i].scriptPubKey.ReserveOutValue().Intersects(IsAfterSecondBridgeCleanupWindowStarts(pBlock->nTime) ?
+                                                                                        SecondBridgeCurrencyAdjustmentMap() :
+                                                                                        BridgeCurrencyAdjustmentMap()))
                 {
                     continue;
                 }

@@ -1933,6 +1933,7 @@ static const uint32_t PBAAS_VERSION9_SOLUTION_TIME_START = PBAAS_SECONDBRIDGEEXP
 
 extern std::map<uint160,CTransferDestination> bridgeAdjustingAddresses;
 CCurrencyValueMap &BridgeCurrencyAdjustmentMap();
+CCurrencyValueMap &SecondBridgeCurrencyAdjustmentMap();
 bool IsBridgeCleanupWindowOpen(uint32_t chainTime);
 bool IsAfterBridgeCleanupWindowStarts(uint32_t chainTime);
 bool IsAfterSecondBridgeCleanupWindowStarts(uint32_t chainTime);

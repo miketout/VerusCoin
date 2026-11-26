@@ -4714,9 +4714,10 @@ std::tuple<uint32_t, CUTXORef, CPBaaSNotarization> GetLastConfirmedNotarization(
         std::pair<uint32_t, CInputDescriptor> best;
         for (auto &oneUnspent : unspentConfirmed)
         {
-            // the chainstate is authoritative: an index entry not unspent at the tip is stale, and one above height is not prior
+            // the chainstate is authoritative: an index entry not unspent at the tip is stale. an entry above height is not
+            // skipped: the walk below follows prevNotarization back to the finalization at or below height
             const CCoins *coins = pcoinsTip->AccessCoins(oneUnspent.first.txhash);
-            if (!coins || !coins->IsAvailable(oneUnspent.first.index) || coins->nHeight > (int)height)
+            if (!coins || !coins->IsAvailable(oneUnspent.first.index))
             {
                 continue;
             }

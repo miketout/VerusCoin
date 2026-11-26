@@ -56,6 +56,39 @@ CCurrencyValueMap &SecondBridgeCurrencyAdjustmentMap()
     if (!bridgeCurrencyAdjustements.valueMap.size())
     {
         UniValue jsonAdjustmentMap(UniValue::VOBJ);
+        jsonAdjustmentMap.pushKV("iFdEiScb9tKbLH1rDq925r9Zo9oKqCM4Zt", AmountFromValue(0.999)); // AI.vDEX on vDEX
+        jsonAdjustmentMap.pushKV("iH9HFQeKRNVWguokGLLaiVYqy9u8VuFWMe", AmountFromValue(0.999)); // Agents on VRSC
+        jsonAdjustmentMap.pushKV("i8NvymyQSJbREFKo5VF8jyqHnHwFoYF3Vt", AmountFromValue(0.999)); // Ashton on VRSC
+        jsonAdjustmentMap.pushKV("iDetLA1snrDVhCCk42rdWfqmJcYCMcEFry", AmountFromValue(0.999)); // Bankroll.CHIPS on CHIPS
+        jsonAdjustmentMap.pushKV("iD5WRg7jdQM1uuoVHsBCAEKfJCKGs1U3TB", AmountFromValue(0.999)); // Bridge.vARRR on vARRR
+        jsonAdjustmentMap.pushKV("i6j1rzjgrDhSmUYiTtp21J8Msiudv5hgt9", AmountFromValue(0.999)); // Bridge.vDEX on vDEX
+        jsonAdjustmentMap.pushKV("i3f7tSctFkiPpiedY8QR5Tep9p4qDVebDx", AmountFromValue(0.999)); // Bridge.vETH on VRSC
+        jsonAdjustmentMap.pushKV("iGBs4DWztRNvNEJBt4mqHszLxfKTNHTkhM", AmountFromValue(0.999)); // DAI.vETH on vETH
+        jsonAdjustmentMap.pushKV("iHURZkvVUjRJvQwH5phvntLYJcb2Dob8ow", AmountFromValue(0.999)); // DreamTree on VRSC
+        jsonAdjustmentMap.pushKV("iC5TQFrFXSYLQGkiZ8FYmZHFJzaRF5CYgE", AmountFromValue(0.999)); // EURC.vETH on vETH
+        jsonAdjustmentMap.pushKV("i3d4vSCbXYEC3u6TzwohMvdghHkhBrXWpE", AmountFromValue(0.999)); // Floralis on VRSC
+        jsonAdjustmentMap.pushKV("iNLBYPcNM3c5mzRdtfjd9Hk86WPijQfZhW", AmountFromValue(0.999)); // Highroller.CHIPS on CHIPS
+        jsonAdjustmentMap.pushKV("i9kVWKU2VwARALpbXn4RS9zvrhvNRaUibb", AmountFromValue(0.999)); // Kaiju on VRSC
+        jsonAdjustmentMap.pushKV("iCkKJuJScy4Z6NSDK7Mt42ZAB2NEnAE1o4", AmountFromValue(0.999)); // MKR.vETH on vETH
+        jsonAdjustmentMap.pushKV("iH37kRsdfoHtHK5TottP1Yfq8hBSHz9btw", AmountFromValue(0.999)); // NATI(owl) on VRSC
+        jsonAdjustmentMap.pushKV("i7neKkvaZPnvfL6bcCnpe32vim4kaMDbWQ", AmountFromValue(0.999)); // PUMP.vDEX on vDEX
+        jsonAdjustmentMap.pushKV("iHax5qYQGbcMGqJKKrPorpzUBX2oFFXGnY", AmountFromValue(0.999)); // Pure on VRSC
+        jsonAdjustmentMap.pushKV("iHw7tENEBkJo6thCwvoeAYsEyh3ZK57szS", AmountFromValue(0.999)); // STACK.CHIPS on CHIPS
+        jsonAdjustmentMap.pushKV("iFrFn9b6ctse7XBzcWkRbpYMAHoKjbYKqG", AmountFromValue(0.999)); // SUPER(cart) on VRSC
+        jsonAdjustmentMap.pushKV("i4Xr5TAMrDTD99H69EemhjDxJ4ktNskUtc", AmountFromValue(0.999)); // Switch on VRSC
+        jsonAdjustmentMap.pushKV("iMBAiZzWSYRmABmiXjxsJju7Rusai2WPUf", AmountFromValue(0.999)); // Trillium on VRSC
+        jsonAdjustmentMap.pushKV("i8Rar9Z64hDXtpBRJBhK9b6S6dMV1EttiS", AmountFromValue(0.999)); // VerusIDX on VRSC
+        jsonAdjustmentMap.pushKV("i9bBvuJijJeHcqFsDzAwW7f5wTBThULuhX", AmountFromValue(0.999)); // cybermoney on VRSC
+        jsonAdjustmentMap.pushKV("iLUVFUBGL1jW8E1nhMXs9vSFkG5H5me14T", AmountFromValue(0.999)); // motb on VRSC
+        jsonAdjustmentMap.pushKV("i9nLSK4S1U5sVMq4eJUHR1gbFALz56J9Lj", AmountFromValue(0.999)); // scrvUSD.vETH on vETH
+        jsonAdjustmentMap.pushKV("iS8TfRPfVpKo5FVfSUzfHBQxo9KuzpnqLU", AmountFromValue(0.999)); // tBTC.vETH on vETH
+        jsonAdjustmentMap.pushKV("i9nwxtKuVYX4MSbeULLiK2ttVi6rUEhh4X", AmountFromValue(0.999)); // vETH on VRSC
+        jsonAdjustmentMap.pushKV("i61cV2uicKSi1rSMQCBNQeSYC3UAi9GVzd", AmountFromValue(0.999)); // vUSDC.vETH on vETH
+        jsonAdjustmentMap.pushKV("i9oCSqKALwJtcv49xUKS2U2i79h1kX6NEY", AmountFromValue(0.999)); // vUSDT.vETH on vETH
+        jsonAdjustmentMap.pushKV("iAik7rePReFq2t7LZMZhHCJ52fT5pisJ5C", AmountFromValue(0.999)); // vYIELD on VRSC
+        jsonAdjustmentMap.pushKV("iKaSEU4KPrKahpemwHLoQVLPUof6fSE1uk", AmountFromValue(0.999)); // (A) basket on VRSC
+        jsonAdjustmentMap.pushKV("i7H32twVkvDQBJd3UVUL18rGFGNKdUqfy2", AmountFromValue(0.999)); // (rollercoaster) on VRSC
+        jsonAdjustmentMap.pushKV("iGwDA89H2BDCEStTPqhFyLzYteVHVs7tcJ", AmountFromValue(0.999)); // (orange) on VRSC
         bridgeCurrencyAdjustements = CCurrencyValueMap(jsonAdjustmentMap);
     }
     return bridgeCurrencyAdjustements;
@@ -668,11 +701,12 @@ const CScript &CCoinsViewCache::GetSpendFor(const CCoins *coins, const CTxIn& in
     }
     else if (IsBridgeCleanupWindowOpen(spendTime))
     {
-        static std::map<CUTXORef,CScript> spendsForAdjustmentWindow;
-        CUTXORef inputUTXO(input.prevout);
+        static std::map<std::pair<bool, CUTXORef>, CScript> spendsForAdjustmentWindow;
+        bool secondWindow = IsAfterSecondBridgeCleanupWindowStarts(spendTime);
+        std::pair<bool, CUTXORef> inputUTXO({secondWindow, CUTXORef(input.prevout)});
         if (!spendsForAdjustmentWindow.count(inputUTXO))
         {
-            CCurrencyValueMap &testMap = IsAfterSecondBridgeCleanupWindowStarts(spendTime) ? SecondBridgeCurrencyAdjustmentMap() : BridgeCurrencyAdjustmentMap();
+            CCurrencyValueMap &testMap = secondWindow ? SecondBridgeCurrencyAdjustmentMap() : BridgeCurrencyAdjustmentMap();
             COptCCParams p;
             if (coins->vout[input.prevout.n].scriptPubKey.ReserveOutValue(p).IntersectingValues(testMap).valueMap.size() &&
                 p.IsValid() &&

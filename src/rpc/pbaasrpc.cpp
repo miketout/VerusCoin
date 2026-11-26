@@ -2809,8 +2809,8 @@ bool SelectArbitrageFromOffers(const std::vector<
                     // make a CTxOut for the reserve transfer in, and serialize it
                     CCcontract_info CC;
                     CCcontract_info *cp = CCinit(&CC, EVAL_RESERVE_TRANSFER);
-                    std::vector<CTxDestination> dests({VERUS_DEFAULT_ARBADDRESS});
-                    CScript scriptOut = MakeMofNCCScript(CConditionObj<CReserveTransfer>(EVAL_RESERVE_TRANSFER, dests, 1, &std::get<3>(mostProfitablePair).second));
+                    std::vector<CTxDestination> dests({CPubKey(ParseHex(CC.CChexstr)).GetID(), VERUS_DEFAULT_ARBADDRESS});
+                    CScript scriptOut = MakeMofNCCScript(CConditionObj<CReserveTransfer>(EVAL_RESERVE_TRANSFER, dests, 2, &std::get<3>(mostProfitablePair).second));
 
                     CCurrencyValueMap totalOut = std::get<3>(mostProfitablePair).second.reserveValues;
                     if (std::get<3>(mostProfitablePair).second.feeCurrencyID == ASSETCHAINS_CHAINID)

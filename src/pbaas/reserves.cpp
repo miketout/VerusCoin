@@ -1323,6 +1323,11 @@ CCrossChainImport CCrossChainImport::GetPriorImportFromSystem(const CTransaction
 
 LRUCache<std::tuple<uint256, uint32_t, uint32_t, CUTXORef, uint160, uint160>, CCurrencyValueMap> priorConversionCache;
 
+// one clearing per distinct input: a validator reconstructs each import's descriptor about ten times per connect with
+// byte-identical solver inputs. the key is the complete input and the value the result, refusals included; every solve is
+// serialized (callers hold cs_main, the reserve-deposit eval runs under smartTransactionCS), so the cache is not thread safe
+LRUCache<std::vector<int64_t>, std::pair<int, std::vector<int64_t>>> clearingCache(2048);
+
 // returns the best conversion prices for all currencies in a currency converter over a period of time to go from any currency in
 // the converter to the fee currency.
 //
@@ -2842,7 +2847,35 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
     std::vector<int64_t> weightsAsAmounts(weights.begin(), weights.end());
     std::vector<CAmount> rates;
     int clearingEvaluations = 0;
-    int clearingError = clearingfp::Clear(reserves, weightsAsAmounts, supply, inputReserves, inputFractional, pCrossConversions, rates, clearingEvaluations);
+    std::vector<int64_t> clearingKey;
+    clearingKey.reserve(6 + 4 * numCurrencies + (pCrossConversions ? numCurrencies * (numCurrencies + 1) : 0));
+    clearingKey.push_back(numCurrencies);
+    clearingKey.push_back(supply);
+    clearingKey.push_back(pCrossConversions ? 1 : 0);
+    clearingKey.insert(clearingKey.end(), reserves.begin(), reserves.end());
+    clearingKey.insert(clearingKey.end(), weightsAsAmounts.begin(), weightsAsAmounts.end());
+    clearingKey.insert(clearingKey.end(), inputReserves.begin(), inputReserves.end());
+    clearingKey.insert(clearingKey.end(), inputFractional.begin(), inputFractional.end());
+    if (pCrossConversions)
+    {
+        for (auto &oneRow : *pCrossConversions)
+        {
+            clearingKey.push_back(oneRow.size());
+            clearingKey.insert(clearingKey.end(), oneRow.begin(), oneRow.end());
+        }
+    }
+    std::pair<int, std::vector<int64_t>> cachedClearing;
+    int clearingError;
+    if (clearingCache.Get(clearingKey, cachedClearing))
+    {
+        clearingError = cachedClearing.first;
+        rates = cachedClearing.second;
+    }
+    else
+    {
+        clearingError = clearingfp::Clear(reserves, weightsAsAmounts, supply, inputReserves, inputFractional, pCrossConversions, rates, clearingEvaluations);
+        clearingCache.Put(clearingKey, std::make_pair(clearingError, clearingError == clearingfp::ERR_NONE ? rates : std::vector<int64_t>()));
+    }
     if (clearingError == clearingfp::ERR_EMPTIES)
     {
         state.Error(std::string(__func__) + " conversion empties a reserve");

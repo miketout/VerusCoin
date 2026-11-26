@@ -3236,14 +3236,14 @@ bool ValidateReserveTransfer(struct CCcontract_info *cp, Eval* eval, const CTran
     // get reserve transfer to spend
     CReserveTransfer rt = GetReserveTransferToSpend(tx, nIn, txToSpend, spendingFromHeight, p);
 
-    if (p.IsValid() && !p.IsEvalPKOut(false))
-    {
-        // if this is an arbitrage transfer with a wallet spend, it can be spent by any controller to a wallet
-        return true;
-    }
-
     if (rt.IsValid())
     {
+        if (p.IsValid() && (!p.IsEvalPKOut(false) || (rt.IsArbitrageOnly() && !p.IsEvalPKOut())))
+        {
+            // if this is an arbitrage transfer with a wallet spend, it can be spent by any controller to a wallet
+            return true;
+        }
+
         uint160 systemDestID, importCurrencyID;
         CCurrencyDefinition systemDest, importCurrencyDef;
         CChainNotarizationData cnd;
@@ -6158,13 +6158,6 @@ bool PrecheckReserveTransfer(const CTransaction &tx, int32_t outNum, CValidation
                 rt.destination.gatewayID != ASSETCHAINS_CHAINID)
             {
                 {
-                    // the carried bytes are the registry's definition of the exported currency, as the direct arm requires
-                    if (rt.destination.TypeNoFlags() != CTransferDestination::DEST_REGISTERCURRENCY ||
-                        ::AsVector(registeredCurrency) != rt.destination.destination)
-                    {
-                        return state.Error("Mismatched export and currency registration in reserve transfer " + rt.ToUniValue().write(1,2));
-                    }
-
                     CReserveTransfer dummyTransfer = rt;
                     dummyTransfer.destination = CTransferDestination(CTransferDestination::DEST_REGISTERCURRENCY, ::AsVector(registeredCurrency), rt.destination.gatewayID, rt.destination.gatewayCode, rt.DEFAULT_PER_STEP_FEE);
                     for (int i = 0; i < rt.destination.AuxDestCount(); i++)
