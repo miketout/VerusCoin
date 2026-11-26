@@ -2915,15 +2915,25 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
     }
     for (int i = 0; i < numCurrencies; i++)
     {
+        // every operand is a non-negative CAmount, so each test is arranged to stay in range: the sells including via units,
+        // the end reserve against the emptying bound and against INT64_MAX
+        if (viaUnits[i] > INT64_MAX - inputFractional[i])
+        {
+            state.Error(std::string(__func__) + " conversion overflow");
+            return initialRates;
+        }
+        CAmount unitsSold = inputFractional[i] + viaUnits[i];
         CAmount unitsBought = ReserveToNativeRaw(inputReserves[i], rates[i]);
-        CAmount reserveOut = NativeToReserveRaw(inputFractional[i] + viaUnits[i], rates[i]);
-        if (unitsBought < 0 || reserveOut < 0 || reserveOut >= newState.reserves[i] + inputReserves[i])
+        CAmount reserveOut = NativeToReserveRaw(unitsSold, rates[i]);
+        if (unitsBought < 0 || reserveOut < 0 ||
+            reserveOut - inputReserves[i] >= newState.reserves[i] ||
+            inputReserves[i] - reserveOut > INT64_MAX - newState.reserves[i])
         {
             state.Error(std::string(__func__) + " conversion overflow or emptied reserve");
             return initialRates;
         }
         newState.reserves[i] += inputReserves[i] - reserveOut;
-        newState.supply = newState.AddToSupply(unitsBought - (inputFractional[i] + viaUnits[i]));
+        newState.supply = newState.AddToSupply(unitsBought - unitsSold);
     }
 
     if (pViaPrices)

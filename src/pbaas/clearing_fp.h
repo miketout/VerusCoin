@@ -656,6 +656,7 @@ namespace clearingfp
     }
 
     static const int BRACKET_TOL_X_BITS = 72;   // 2^-56 in x = ln(S'/S): a relative price error far below a satoshi
+    static const int MIXED_TOL_X_BITS = 48;     // a mixed root is resolved until its error in x = ln(S'/S) is below 2^-48 whatever the remainder (N-19)
     static const int MAX_BRACKET_STEPS = 256;   // never reached: interpolation converges superlinearly and the fallback is bisection
     static const int MAX_VIA_ITERATIONS = 6;    // via units at a fixed x, warm-started from the last evaluation; one iteration for a via graph without cycles
     static const int MAX_FLOOR_EXTENSIONS = 8;  // via sells can put the root below the sells-only floor; the floor doubles down at most this often
@@ -743,15 +744,16 @@ namespace clearingfp
         return pos > negm;
     }
 
-    // the root of an increasing predicate between lo (false) and hi (true). probe(x, haveValue, value) returns the predicate
-    // at x and, when it can, |f(x)|. Illinois interpolation when both end values are known, bisection otherwise or after one
-    // side has been kept twice; the new point is always strictly inside the bracket. the result is the bracket's midpoint
-    template <typename PROBE>
+   // the root of an increasing predicate between lo (false) and hi (true). probe(x, haveValue, value) returns the predicate
+    // at x and, when it can, |f(x)|. tol(lo, hi) is the width at which the bracket is converged. Illinois interpolation when
+    // both end values are known, bisection otherwise or after one side has been kept twice; the new point is always strictly
+    // inside the bracket. the result is the bracket's midpoint
+    template <typename PROBE, typename TOL>
     inline U256 Bracket(U256 lo, U256 hi, bool haveLo, U256 vlo, bool haveHi, U256 vhi,
-                                 const PROBE &probe, const U256 &tol, bool &converged)
+                        const PROBE &probe, const TOL &tol, bool &converged)
     {
         int kept = 0, consecutive = 0;
-        for (int step = 0; step < MAX_BRACKET_STEPS && hi - lo > tol; step++)
+        for (int step = 0; step < MAX_BRACKET_STEPS && hi - lo > tol(lo, hi); step++)
         {
             U256 w = hi - lo;
             bool interpolated = false;
@@ -806,7 +808,7 @@ namespace clearingfp
                 }
             }
         }
-        converged = hi - lo <= tol;
+        converged = hi - lo <= tol(lo, hi);
         return (lo + hi) >> 1;
     }
 
@@ -873,11 +875,17 @@ namespace clearingfp
         {
             return hi;
         }
-        U256 tol = (bq / U256(static_cast<uint64_t>(SATOSHI))) >> 8;
-        if (tol == 0)
+        // the root feeds the outer equation through w ln((R + a - q)/R), whose sensitivity to q is w/(R + a - q): the tolerance
+        // bounds that term's error by 2^-MIXED_TOL_X_BITS in x whatever the remainder (it tightens as the reserve drains, N-19)
+        // and never exceeds a 256th of a satoshi of price (q = b p)
+        U256 priceTol = (bq / U256(static_cast<uint64_t>(SATOSHI))) >> 8;
+        U256 top = rq + aq;
+        auto tol = [&](const U256 &, const U256 &h) -> U256
         {
-            tol = 1;
-        }
+            U256 remTol = (((top - h) * static_cast<uint32_t>(SATOSHI)) / U256(static_cast<uint64_t>(W))) >> MIXED_TOL_X_BITS;
+            U256 t = remTol < priceTol ? remTol : priceTol;
+            return t == 0 ? U256(1) : t;
+        };
         return Bracket(lo, hi, haveLo, vlo, haveHi, vhi, probe, tol, converged);
     }
 
@@ -1234,7 +1242,7 @@ namespace clearingfp
             bool converged = true;
             tFinal = Bracket(lo, hi, haveLo, vlo, haveHi, vhi,
                              [&](const U256 &t, bool &haveValue, U256 &value) { return evaluate(t, off, haveValue, value); },
-                             tolX,
+                             [&](const U256 &, const U256 &) -> U256 { return tolX; },
                              converged);
             if (!converged)
             {
