@@ -2171,11 +2171,11 @@ UniValue decryptdata(const UniValue& params, bool fHelp)
                         {
                             if (wIvk.IsNull())
                             {
-                                mmrDescr.Decrypt();
+                                mmrDescr = mmrDescr.Decrypt();
                             }
                             else
                             {
-                                mmrDescr.Decrypt(wIvk);
+                                mmrDescr = mmrDescr.Decrypt(wIvk);
                             }
                             newVDXFData.push_back(mmrDescr.ToUniValue());
                         }

@@ -1472,8 +1472,15 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(VARINT(version));
-        READWRITE(VARINT((int32_t)objectHashType));
-        READWRITE(VARINT((int32_t)mmrHashType));
+        int32_t objectHashTypeInt = (int32_t)objectHashType;
+        int32_t mmrHashTypeInt = (int32_t)mmrHashType;
+        READWRITE(VARINT(objectHashTypeInt));
+        READWRITE(VARINT(mmrHashTypeInt));
+        if (ser_action.ForRead())
+        {
+            objectHashType = (CVDXF::EHashTypes)objectHashTypeInt;
+            mmrHashType = (CVDXF::EHashTypes)mmrHashTypeInt;
+        }
         READWRITE(mmrRoot);
         READWRITE(mmrHashes);
         READWRITE(dataDescriptors);
