@@ -897,7 +897,7 @@ CPBaaSNotarization::CPBaaSNotarization(const UniValue &obj)
 
     notarizationHeight = (uint32_t)uni_get_int64(find_value(obj, "notarizationheight"));
     currencyState = CCoinbaseCurrencyState(find_value(obj, "currencystate"));
-    prevNotarization = CUTXORef(uint256S(uni_get_str(find_value(obj, "prevnotarizationtxid"))), (uint32_t)uni_get_int(find_value(obj, "prevnotarizationout")));
+    prevNotarization = CUTXORef(uint256S(uni_get_str(find_value(obj, "prevnotarizationtxid"))), (uint32_t)uni_get_int64(find_value(obj, "prevnotarizationout")));
     hashPrevCrossNotarization = uint256S(uni_get_str(find_value(obj, "hashprevcrossnotarization")));
     prevHeight = (uint32_t)uni_get_int64(find_value(obj, "prevheight"));
 

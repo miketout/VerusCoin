@@ -717,6 +717,7 @@ public:
                             initialFractionalSupply(0),
                             gatewayConverterIssuance(0),
                             preLaunchDiscount(0),
+                            preLaunchCarveOut(0),
                             minNotariesConfirm(0),
                             idRegistrationFees(IDENTITY_REGISTRATION_FEE),
                             idReferralLevels(DEFAULT_ID_REFERRAL_LEVELS),

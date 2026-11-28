@@ -8539,7 +8539,7 @@ void CleanupExportOutDups(std::vector<std::pair<int, CInputDescriptor>> &exportO
                 removedHashes.insert(oneTx.GetHash());
             }
 
-            std::vector<std::pair<int, CInputDescriptor>> newOuts = {exportOuts.back()};
+            std::vector<std::pair<int, CInputDescriptor>> newOuts;
 
             for (auto &oneOut : exportOuts)
             {
@@ -11637,7 +11637,7 @@ bool CConnectedChains::CreateNextExport(const CCurrencyDefinition &_curDef,
         // when it gets imported back to the chain
         std::vector<CTxDestination> dests({CPubKey(ParseHex(CC.CChexstr))});
         // if going off-system, reserve deposits accrue to the destination system, if same system, to the currency
-        CReserveDeposit rd = CReserveDeposit(crossSystem ? destSystemID : (newNotarization.IsRefunding() && _curDef.systemID != destSystemID ? _curDef.systemID : currencyID), newReserveDeposits);
+        CReserveDeposit rd = CReserveDeposit(destSystemID != ASSETCHAINS_CHAINID ? destSystemID : (newNotarization.IsRefunding() && _curDef.systemID != destSystemID ? _curDef.systemID : currencyID), newReserveDeposits);
         exportOutputs.push_back(CTxOut(nativeReserveDeposit, MakeMofNCCScript(CConditionObj<CReserveDeposit>(EVAL_RESERVE_DEPOSIT, dests, 1, &rd))));
     }
 

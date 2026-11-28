@@ -629,6 +629,10 @@ uint160 DecodeCurrencyName(std::string currencyStr)
 }
 
 CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
+    notarizationProtocol(NOTARIZATION_INVALID),
+    proofProtocol(PROOF_INVALID),
+    startBlock(0),
+    endBlock(0),
     initialFractionalSupply(0),
     gatewayConverterIssuance(0),
     preLaunchDiscount(0),
@@ -1288,6 +1292,7 @@ CCurrencyDefinition::CCurrencyDefinition(const UniValue &obj) :
 CCurrencyDefinition::CCurrencyDefinition(const std::string &currencyName, bool testMode) :
     nVersion(VERSION_CURRENT),
     preLaunchDiscount(0),
+    preLaunchCarveOut(0),
     initialFractionalSupply(0),
     gatewayConverterIssuance(0),
     minNotariesConfirm(0),

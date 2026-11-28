@@ -11114,7 +11114,8 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
             "      \"feecurrency\":\"name\", (string, optional) Valid currency that should be pulled from the current wallet and used to pay fee\n"
             "      \"via\":\"name\",        (string, optional) If source and destination currency are reserves, via is a common fractional to convert through\n"
             "      \"address\":\"dest\"     (string, required) The address and optionally chain/system after the \"@\" as a system specific destination\n"
-            "      \"refundto\":\"dest\"    (string, optional) For pre-conversions, this is where refunds will go, defaults to fromaddress\n"
+            "      \"refundto\":\"dest\"    (string, optional) For pre-conversions, this is where refunds will go, defaults to fromaddress if it is a transparent,\n"
+            "                                                   non-wildcard address, then to -defaultid, then to the destination address\n"
             "      \"memo\":memo            (string, optional) If destination is a zaddr (not supported on testnet), a string message (not hexadecimal) to include.\n"
             "      \"data\":\"dataobject\", (object, optional) (for data-only outputs with no other function) stores large, optionally signed data in one or more outputs.\n"
             "      \"preconvert\":\"false\", (bool,  optional) convert to currency at market price (default=false), only works if transaction is mined before start of currency\n"
@@ -12039,6 +12040,10 @@ UniValue sendcurrency(const UniValue& params, bool fHelp)
                 CTxDestination destination = ValidateDestination(destStr);
 
                 CTxDestination refundDestination = DecodeDestination(refundToStr);
+                if (!refundToStr.empty() && refundDestination.which() == COptCCParams::ADDRTYPE_INVALID)
+                {
+                    throw JSONRPCError(RPC_INVALID_PARAMETER, "If present, \"refundto\" address must be valid");
+                }
                 if (refundDestination.which() == COptCCParams::ADDRTYPE_INVALID)
                 {
                     if (!hasZSource && !wildCardAddress && sourceDest.which() != COptCCParams::ADDRTYPE_INVALID)

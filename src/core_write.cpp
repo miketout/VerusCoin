@@ -1199,7 +1199,7 @@ UniValue CUTXORef::ToUniValue() const
 CUTXORef::CUTXORef(const UniValue &uni)
 {
     hash = uint256S(uni_get_str(find_value(uni, "txid")));
-    n = uni_get_int(find_value(uni, "voutnum"));
+    n = (uint32_t)uni_get_int64(find_value(uni, "voutnum"));
 }
 
 CPBaaSEvidenceRef::CPBaaSEvidenceRef(const UniValue &uni) :

@@ -1469,24 +1469,6 @@ CTransferDestination::CTransferDestination(const UniValue &obj) : fees(0)
                 {
                     destID = CIdentity();
                 }
-                // DEBUG ONLY
-                auto checkVec = ::AsVector(CIdentity(find_value(obj, "identity")));
-                std::string checkString(HexBytes(&(checkVec[0]), checkVec.size()));
-                if (checkString != serializedHex)
-                {
-                    CIdentity checkID;
-                    try
-                    {
-                        ::FromVector(ParseHex(checkString), checkID);
-                    }
-                    catch(...)
-                    {
-                        checkID = CIdentity();
-                    }
-                    printf("%s: mismatch check in serialized identity vs. JSON identity\nserializedHex: \"%s\"\nsourceID: \"%s\"\ncheckString: \"%s\"\ncheckID: \"%s\"\n",
-                           __func__, serializedHex.c_str(), destID.ToUniValue().write(1,2).c_str(), checkString.c_str(), checkID.ToUniValue().write(1,2).c_str());
-                }
-                // END DEBUG */
             }
             else
             {
@@ -1517,24 +1499,6 @@ CTransferDestination::CTransferDestination(const UniValue &obj) : fees(0)
                 {
                     currencyToRegister = CCurrencyDefinition();
                 }
-                // DEBUG ONLY
-                auto checkVec = ::AsVector(CCurrencyDefinition(find_value(obj, "currency")));
-                std::string checkString(HexBytes(&(checkVec[0]), checkVec.size()));
-                if (checkString != serializedHex)
-                {
-                    CCurrencyDefinition checkCur;
-                    try
-                    {
-                        ::FromVector(ParseHex(checkString), checkCur);
-                    }
-                    catch(...)
-                    {
-                        checkCur = CCurrencyDefinition();
-                    }
-                    printf("%s: mismatch check in serialized currency vs. JSON currency\nserializedHex: \"%s\"\nsourceID: \"%s\"\ncheckString: \"%s\"\nprocessedID: \"%s\"\n",
-                           __func__, serializedHex.c_str(), currencyToRegister.ToUniValue().write(1,2).c_str(), checkString.c_str(), checkCur.ToUniValue().write(1,2).c_str());
-                }
-                // END DEBUG */
             }
             else
             {
