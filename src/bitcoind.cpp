@@ -45,7 +45,7 @@ static bool fDaemon;
 #define KOMODO_ASSETCHAIN_MAXLEN 65
 extern char ASSETCHAINS_SYMBOL[KOMODO_ASSETCHAIN_MAXLEN];
 int32_t komodo_longestchain();
-UniValue closeoffers(const UniValue& params, bool fHelp);
+UniValue CloseOffers(const UniValue& params, bool fHelp, bool allowWalletFunding);
 
 void WaitForShutdown(boost::thread_group* threadGroup)
 {
@@ -65,7 +65,7 @@ void WaitForShutdown(boost::thread_group* threadGroup)
             try
             {
                 UniValue params(UniValue::VARR);
-                closeoffers(params, false);
+                CloseOffers(params, false, false);
             }
             catch(...)
             {

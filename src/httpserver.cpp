@@ -51,7 +51,14 @@ public:
     }
     void operator()()
     {
-        func(req.get(), path);
+        try
+        {
+            func(req.get(), path);
+        }
+        catch (const std::exception &e)
+        {
+            LogPrintf("HTTP handler exception: %s\n", e.what());
+        }
     }
 
     boost::scoped_ptr<HTTPRequest> req;

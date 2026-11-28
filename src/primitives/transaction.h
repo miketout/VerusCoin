@@ -1796,6 +1796,7 @@ class CSmartTransactionSignatures
 {
 public:
     enum {
+        VERSION_INVALID = 0,
         FIRST_VERSION = 1,
         LAST_VERSION = 1,
         VERSION = 1
@@ -1806,9 +1807,16 @@ public:
 
     CSmartTransactionSignatures() : version(VERSION), sigHashType(1) {}
     CSmartTransactionSignatures(uint8_t hashType, const std::map<uint160, CSmartTransactionSignature> &signatureMap, uint8_t ver=VERSION) : version(ver), sigHashType(hashType), signatures(signatureMap) {}
-    CSmartTransactionSignatures(const std::vector<unsigned char> &asVector)
+    CSmartTransactionSignatures(const std::vector<unsigned char> &asVector) :
+        version(VERSION_INVALID), sigHashType(1)
     {
-        ::FromVector(asVector, *this);
+        bool success = false;
+        ::FromVector(asVector, *this, &success);
+        if (!success)
+        {
+            version = VERSION_INVALID;
+        }
+
     }
 
     ADD_SERIALIZE_METHODS;

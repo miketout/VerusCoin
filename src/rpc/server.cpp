@@ -545,7 +545,7 @@ void JSONRequest::parse(const UniValue& valRequest)
         LogPrint("rpc", "ThreadRPCServer method=%s\n", SanitizeString(strMethod));
 
     // Parse params
-    UniValue valParams = find_value(request, "params");
+    const UniValue &valParams = find_value(request, "params");
     if (valParams.isArray())
         params = valParams.get_array();
     else if (valParams.isNull())

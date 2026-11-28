@@ -1285,7 +1285,7 @@ public:
     std::vector<uint256> boundHashes;
     std::vector<unsigned char> signatureAsVch; // binary encoded signature
 
-    CSignatureData(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version) {}
+    CSignatureData(uint32_t Version=CVDXF_Data::VERSION_INVALID) : version(Version), hashType(CVDXF::EHashTypes::HASH_INVALID), sigType(TYPE_VERUSID_DEFAULT) {}
 
     CSignatureData(const UniValue &uni);
 
@@ -1308,7 +1308,12 @@ public:
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(VARINT(version));
         READWRITE(systemID);
-        READWRITE(VARINT((int32_t)hashType));
+        int32_t nHashType = (int32_t)hashType;
+        READWRITE(VARINT(nHashType));
+        if (ser_action.ForRead())
+        {
+            hashType = (CVDXF::EHashTypes)nHashType;
+        }
         READWRITE(signatureHash);
         READWRITE(identityID);
         READWRITE(VARINT(sigType));
@@ -1704,11 +1709,17 @@ public:
         if (ser_action.ForRead()) {
             std::string credStr;
             READWRITE(LIMITED_STRING(credStr, MAX_JSON_STRING_LENGTH));
-            credential.read(credStr);
+            if (!credential.read(credStr))
+            {
+                credential.clear();
+            }
 
             std::string scopesStr;
             READWRITE(LIMITED_STRING(scopesStr, MAX_JSON_STRING_LENGTH));
-            scopes.read(scopesStr);
+            if (!scopes.read(scopesStr))
+            {
+                scopes.clear();
+            }
         } else {
             std::string credStr = credential.write();
             READWRITE(LIMITED_STRING(credStr, MAX_JSON_STRING_LENGTH));

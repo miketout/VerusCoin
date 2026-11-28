@@ -1554,7 +1554,9 @@ public:
                                           uint32_t height,
                                           CValidationState &validationState,
                                           const std::vector<std::vector<CAmount>> *pCrossConversions=nullptr,
-                                          std::vector<CAmount> *pViaPrices=nullptr) const;
+                                          std::vector<CAmount> *pViaPrices=nullptr,
+                                          const std::vector<CAmount> *pLiquidityFees=nullptr,
+                                          CAmount burnedLiquidityUnits=0) const;
 
     CAmount ReserveToNative(CAmount reserveAmount, int32_t reserveIndex, bool promoteExchangeRate=true, bool legacyOverflowWrap=false) const;
     CAmount ReserveToNative(const CCurrencyValueMap &reserveAmounts) const;

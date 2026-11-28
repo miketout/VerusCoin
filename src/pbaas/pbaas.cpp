@@ -4637,7 +4637,7 @@ bool PrecheckCurrencyDefinition(const CTransaction &tx, int32_t outNum, CValidat
                 // an Ethereum-protocol currency is the gateway itself, whose system is the chain that defines it, or a currency
                 // mapped to the gateway, whose system must share the protocol. on a PBaaS-protocol system the protocol would
                 // select only the Ethereum export limits and address rules
-                if (newCurrency.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION && !newCurrency.IsGateway())
+                if (isAferSecondBridgeCleanupWindow && newCurrency.proofProtocol == CCurrencyDefinition::PROOF_ETHNOTARIZATION && !newCurrency.IsGateway())
                 {
                     CCurrencyDefinition protocolSystem = ConnectedChains.GetCachedCurrency(newCurrency.systemID);
                     if (!protocolSystem.IsValid())

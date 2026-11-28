@@ -663,21 +663,24 @@ uint256 CPartialTransactionProof::GetPartialTransaction(CTransaction &outTx, boo
                 // validate the header and calculate a transaction root
                 txRoot = components[0].CheckProof(CappedType());
 
-                mtx = txh.RehydrateTransactionScaffold();
-                std::map<std::pair<uint16_t, uint16_t>, int32_t> elHash = txh.GetElementHashMap();
+                // the element count from the header alone: the proof's shape is tested against it before anything is sized from it
+                int64_t elCount = ((int64_t)txh.nVins * 2) + (int64_t)txh.nVouts + (int64_t)txh.nShieldedSpends + (int64_t)txh.nShieldedOutputs + 1;
 
-                if (elHash.size() == 0 ||
+                if (elCount > UINT16_MAX ||
                     components[0].elProof.proofSequence.size() != 1 ||
                     components[0].elProof.proofSequence[0]->branchType != CMerkleBranchBase::BRANCH_MMRBLAKE_NODE ||
-                    elHash.size() != ((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->nSize ||
+                    elCount != ((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->nSize ||
                     ((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->nIndex != 0 ||
                     ((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->branch.size() == 0 ||
-                    TransactionMMView::GetProofBits(((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->nIndex, elHash.size()).size() !=
+                    TransactionMMView::GetProofBits(((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->nIndex, elCount).size() !=
                             (((CMMRNodeBranch *)components[0].elProof.proofSequence[0])->branch.size() - (IsCapped() ? 1 : 0)))
                 {
                     // error
                     return uint256();
                 }
+
+                mtx = txh.RehydrateTransactionScaffold();
+                std::map<std::pair<uint16_t, uint16_t>, int32_t> elHash = txh.GetElementHashMap();
 
                 checkOK = true;
 

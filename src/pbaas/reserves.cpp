@@ -541,7 +541,7 @@ bool CCrossChainImport::GetImportInfo(const CTransaction &importTx,
             {
                 importNotarizationOut++;
             }
-            else if (!importCurDef.IsValid())
+            else if (LogAcceptCategory("crosschainimports") && !importCurDef.IsValid())
             {
                 UniValue jsonTx(UniValue::VOBJ);
                 TxToUniv(importTx, uint256(), jsonTx);
@@ -2071,22 +2071,6 @@ void DumpConvertData(const std::vector<CAmount> &_inputReserves,
     LogPrintf("currencystate: %s\n", _newState.ToUniValue().write(1,2).c_str());
 }
 
-// a fractional currency's position on its curve, Π R_i^{w_i} / S, as a decimal. the one-directional conversion formulas
-// hold it constant; liquidity fees and burns raise it; nothing honest lowers it
-static cpp_dec_float_50 CurveValue(const CCurrencyState &cs)
-{
-    static cpp_dec_float_50 bigSatoshi("100000000");
-    cpp_dec_float_50 value("1");
-    for (int i = 0; i < cs.currencies.size(); i++)
-    {
-        cpp_dec_float_50 reserve(std::to_string(cs.reserves[i] > 0 ? cs.reserves[i] : 1));
-        cpp_dec_float_50 weight(std::to_string(cs.weights[i]));
-        value *= pow(reserve, weight / bigSatoshi);
-    }
-    cpp_dec_float_50 supply(std::to_string(cs.supply > 0 ? cs.supply : 1));
-    return value / supply;
-}
-
 // This can handle multiple aggregated, bidirectional conversions in one block of transactions. To determine the conversion price, it
 // takes both input amounts of any number of reserves and the fractional currencies targeting those reserves to merge the conversion into one
 // merged calculation with the same price across currencies for all transactions in the block. It returns the newly calculated
@@ -2803,11 +2787,10 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
                                                       uint32_t height,
                                                       CValidationState &state,
                                                       const std::vector<std::vector<CAmount>> *pCrossConversions,
-                                                      std::vector<CAmount> *pViaPrices) const
+                                                      std::vector<CAmount> *pViaPrices,
+                                                      const std::vector<CAmount> *pLiquidityFees,
+                                                      CAmount burnedLiquidityUnits) const
 {
-    static const cpp_dec_float_50 bigSatoshi(std::to_string(SATOSHIDEN));
-    static const cpp_dec_float_50 bigZero(0);
-
     int32_t numCurrencies = currencies.size();
     std::vector<CAmount> initialRates = PricesInReserve();
 
@@ -2846,7 +2829,7 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
 
     std::vector<int64_t> weightsAsAmounts(weights.begin(), weights.end());
     std::vector<CAmount> rates;
-    int clearingEvaluations = 0;
+    clearingfp::ClearStats clearingStats;
     std::vector<int64_t> clearingKey;
     clearingKey.reserve(6 + 4 * numCurrencies + (pCrossConversions ? numCurrencies * (numCurrencies + 1) : 0));
     clearingKey.push_back(numCurrencies);
@@ -2873,7 +2856,7 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
     }
     else
     {
-        clearingError = clearingfp::Clear(reserves, weightsAsAmounts, supply, inputReserves, inputFractional, pCrossConversions, rates, clearingEvaluations);
+        clearingError = clearingfp::Clear(reserves, weightsAsAmounts, supply, inputReserves, inputFractional, pCrossConversions, rates, clearingStats);
         clearingCache.Put(clearingKey, std::make_pair(clearingError, clearingError == clearingfp::ERR_NONE ? rates : std::vector<int64_t>()));
     }
     if (clearingError == clearingfp::ERR_EMPTIES)
@@ -2883,12 +2866,13 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
     }
     else if (clearingError != clearingfp::ERR_NONE)
     {
-        state.Error(std::string(__func__) + (clearingError == clearingfp::ERR_INPUT ? " invalid starting conditions" : " clearing price out of range"));
+        state.Error(std::string(__func__) + (clearingError == clearingfp::ERR_INPUT ? " invalid starting conditions" :
+                                             clearingError == clearingfp::ERR_UNCERTIFIED ? " clearing not certified" : " clearing price out of range"));
         return initialRates;
     }
     if (LogAcceptCategory("conversion"))
     {
-        LogPrintf("%s: cleared %d currencies in %d pass(es)\n", __func__, (int)numCurrencies, clearingEvaluations);
+        LogPrintf("%s: cleared %d currencies, %d exponentials\n", __func__, (int)numCurrencies, clearingStats.exponentials);
     }
 
     // the end state from the integer payouts at the clearing prices, as the caller will pay them
@@ -2940,14 +2924,29 @@ std::vector<CAmount> CCurrencyState::ClearConversions(const std::vector<CAmount>
     {
         *pViaPrices = rates;
     }
-    // the conversion must not move the state below its starting curve (tolerance one basis point for the layered
-    // integer arithmetic); logged, not refused, since a refusal would let anyone force an honest batch to refund
-    static cpp_dec_float_50 tolerance("0.9999");
-    cpp_dec_float_50 curveRatio = CurveValue(newState) / CurveValue(*this);
-    if (curveRatio < tolerance)
+    // with the liquidity fees the import leaves in the basket, the conversions must not end below the curve the import
+    // started on. one price per reserve can cost the pool about (two-way flow) x (satoshi / price)^2 to rounding, which
+    // exceeds the fees only where a reserve trades at a few hundred satoshis a unit or less; such an import is refused and
+    // its conversions refund. the caller has already burned burnedLiquidityUnits out of this state's supply, so the curve
+    // the import started on has them back
+    if (pLiquidityFees)
     {
-        LogPrintf("%s: conversion end state below the starting curve, ratio %s, currency %s\n", __func__,
-                    curveRatio.str(12).c_str(), EncodeDestination(CIdentityID(GetID())).c_str());
+        std::vector<CAmount> endReserves(newState.reserves);
+        for (int i = 0; i < numCurrencies && i < (int)pLiquidityFees->size(); i++)
+        {
+            if ((*pLiquidityFees)[i] < 0 || (*pLiquidityFees)[i] > INT64_MAX - endReserves[i])
+            {
+                state.Error(std::string(__func__) + " conversion overflow");
+                return initialRates;
+            }
+            endReserves[i] += (*pLiquidityFees)[i];
+        }
+        if (burnedLiquidityUnits < 0 || burnedLiquidityUnits > INT64_MAX - supply ||
+            clearingfp::EndsBelowCurve(reserves, weightsAsAmounts, supply + burnedLiquidityUnits, endReserves, newState.supply))
+        {
+            state.Error(std::string(__func__) + " conversions end below the starting curve");
+            return initialRates;
+        }
     }
     _newState = newState;
     return rates;
@@ -5113,60 +5112,49 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                             }
                             int curIdx = curIt->second;
 
-                            // printf("%s: *this 1: %s\n", __func__, ToUniValue().write(1,2).c_str());
-
-                            CAmount oneFeeValue = 0;
-                            reserveConverted.valueMap[oneFee.first] += oneFee.second;
-                            crossConversions[curIdx][systemDestIdx] += oneFee.second;
                             CAmount conversionPrice = importCurrencyState.IsLaunchCompleteMarker() ?
                                                         importCurrencyState.conversionPrice[curIdx] :
                                                         importCurrencyState.viaConversionPrice[curIdx];
-                            oneFeeValue = importCurrencyState.ReserveToNativeRaw(oneFee.second, conversionPrice);
+                            CAmount oneFeeValue = importCurrencyState.ReserveToNativeRaw(oneFee.second, conversionPrice);
+                            if (oneFeeValue != -1 && systemDestID != importCurrencyID)
+                            {
+                                // if fractional currency is not native, one more conversion to native
+                                oneFeeValue = CCurrencyState::NativeToReserveRaw(oneFeeValue, importCurrencyState.viaConversionPrice[systemDestIdx]);
+                            }
                             if (oneFeeValue == -1)
                             {
-                                printf("%s: Invalid fee amount for %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
-                                LogPrintf("%s: Invalid fee amount for %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
-                                return false;
+                                // out of range at these prices: the fee is paid in its own currency
+                                continue;
                             }
 
+                            reserveConverted.valueMap[oneFee.first] += oneFee.second;
+                            crossConversions[curIdx][systemDestIdx] += oneFee.second;
                             if (systemDestID == importCurrencyID)
                             {
                                 AddNativeOutConverted(oneFee.first, oneFeeValue);
                             }
                             else
                             {
-                                // if fractional currency is not native, one more conversion to native
-                                oneFeeValue =
-                                    CCurrencyState::NativeToReserveRaw(oneFeeValue, importCurrencyState.viaConversionPrice[systemDestIdx]);
-                                if (oneFeeValue == -1)
-                                {
-                                    printf("%s: Invalid fee conversion for %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
-                                    LogPrintf("%s: Invalid fee conversion for %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
-                                    return false;
-                                }
-
                                 newConvertedReservePool.valueMap[systemDestID] += oneFeeValue;
                                 AddReserveOutConverted(systemDestID, oneFeeValue);
                             }
 
                             feeConversions.push_back(std::make_pair(std::make_pair(oneFee.first, oneFee.second),
                                                                     std::make_pair(systemDestID, oneFeeValue)));
-                            // printf("%s: *this 2: %s\n", __func__, ToUniValue().write(1,2).c_str());
                         }
                         else if (oneFee.first == importCurrencyID)
                         {
                             // convert from fractional to system ID in the first, non-via stage, since this was
                             // already fractional to begin with
-                            fractionalConverted.valueMap[systemDestID] += oneFee.second;
-                            AddNativeOutConverted(oneFee.first, -oneFee.second);
 
                             CAmount convertedFractionalFee = CCurrencyState::NativeToReserveRaw(oneFee.second, importCurrencyState.conversionPrice[systemDestIdx]);
                             if (convertedFractionalFee == -1)
                             {
-                                printf("%s: Invalid converted fee for %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
-                                LogPrintf("%s: Invalid converted fee for %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
-                                return false;
+                                continue;
                             }
+
+                            fractionalConverted.valueMap[systemDestID] += oneFee.second;
+                            AddNativeOutConverted(oneFee.first, -oneFee.second);
 
                             newConvertedReservePool.valueMap[systemDestID] += convertedFractionalFee;
                             AddReserveOutConverted(systemDestID, convertedFractionalFee);
@@ -6153,7 +6141,13 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                     newCurrencyConverted = importCurrencyState.NativeToReserveRaw(valueOut, importCurrencyState.conversionPrice[reserveIdx]);
                 }
 
-                if (newCurrencyConverted == -1 && ConnectedChains.IsEnhancedUnderflowCheck(height))
+                // the via conversion of a reserve to reserve conversion must be in range as well, or the transfer refunds
+                bool viaOverflow = isAfterSecondBridgeCleanupWindowStarts &&
+                                        newCurrencyConverted > 0 &&
+                                        curTransfer.IsReserveToReserve() &&
+                                        CCurrencyState::NativeToReserveRaw(newCurrencyConverted, importCurrencyState.viaConversionPrice[currencyIndexMap[curTransfer.secondReserveID]], true, false) == -1;
+
+                if ((newCurrencyConverted == -1 || viaOverflow) && ConnectedChains.IsEnhancedUnderflowCheck(height))
                 {
                     printf("%s: Overflow in converted amount for %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
                     LogPrintf("%s: Overflow in converted amount for %s\n", __func__, curTransfer.ToUniValue().write(1,2).c_str());
@@ -6586,6 +6580,14 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
         {
             CCurrencyState dummyCurState;
             CValidationState state;
+
+            // the liquidity fees this import leaves in the basket: reserve currencies are added to the reserves below, and the
+            // basket currency's share is already burned out of scratchCurrencyState's supply (primaryLiquidityFees above)
+            std::vector<CAmount> liquidityAtClear = (isAfterSecondBridgeCleanupWindowStarts &&
+                                                     isLaunchComplete) ?
+                                                        liquidityFees.AsCurrencyVector(importCurrencyState.currencies) :
+                                                        std::vector<CAmount>();
+
             std::vector<int64_t> newPrices = isAfterSecondBridgeCleanupWindowStarts ?
                 scratchCurrencyState.ClearConversions(adjustedReserveConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                       fractionalConverted.AsCurrencyVector(importCurrencyState.currencies),
@@ -6593,7 +6595,11 @@ bool CReserveTransactionDescriptor::AddReserveTransferImportOutputs(const CCurre
                                                       height,
                                                       state,
                                                       &crossConversions,
-                                                      &newCurrencyState.viaConversionPrice) :
+                                                      &newCurrencyState.viaConversionPrice,
+                                                      isLaunchComplete ?
+                                                        &liquidityAtClear :
+                                                        nullptr,
+                                                      primaryLiquidityFees) :
                 scratchCurrencyState.ConvertAmounts(adjustedReserveConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     fractionalConverted.AsCurrencyVector(importCurrencyState.currencies),
                                                     dummyCurState,

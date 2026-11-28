@@ -401,6 +401,10 @@ namespace {
                 auto idxIt = mapBlockIndex.find(it->first);
                 bool historical = idxIt != mapBlockIndex.end() && idxIt->second && idxIt->second->pprev && pindexBestHeader &&
                                   idxIt->second->pprev->GetHeight() + DATALESS_POS_FRONTIER_DEPTH < pindexBestHeader->GetHeight();
+                if (historical)
+                {
+                    nDatalessPosHistoricalExtras++;
+                }
                 it->second = historical ? -1 : -2;
             }
         }
@@ -3325,9 +3329,6 @@ namespace Consensus {
         {
             fprintf(stderr,"overflow or spentheight.%d reservevaluein: %s\nis less than out: %s\n", nSpendHeight,
                     ReserveValueIn.ToUniValue().write(1, 2).c_str(), reserveValueOut.ToUniValue().write(1, 2).c_str());
-            UniValue jsonTx(UniValue::VOBJ);
-            TxToUniv(tx, uint256(), jsonTx);
-            fprintf(stderr,"%s\n", jsonTx.write(1,2).c_str());
             return state.DoS(100, error("CheckInputs(): reserve value in < reserve value out"), REJECT_INVALID, "bad-txns-reservein-belowout");
         }
 
@@ -5074,12 +5075,14 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
                     }
                 }
 
-                UniValue jsonTx(UniValue::VOBJ);
-                TxToUniv(tx, uint256(), jsonTx);
-                LogPrint("notarization", "%s: coinbase tx: %s\n", __func__, jsonTx.write(1,2).c_str());
-                LogPrint("notarization", "%s: coinbase rtxd: %s\n", __func__, rtxd.ToUniValue().write(1,2).c_str());
-                LogPrint("notarization", "%s: nativeFees: %ld, reserve fees: %s\nextra coinbase outputs: %s\n", __func__, nFees, totalReserveTxFees.ToUniValue().write(1,2).c_str(), validExtraCoinbaseOutputs.ToUniValue().write(1,2).c_str());
-                //*/
+                if (LogAcceptCategory("notarization"))
+                {
+                    UniValue jsonTx(UniValue::VOBJ);
+                    TxToUniv(tx, uint256(), jsonTx);
+                    LogPrintf("%s: coinbase tx: %s\n", __func__, jsonTx.write(1,2).c_str());
+                    LogPrintf("%s: coinbase rtxd: %s\n", __func__, rtxd.ToUniValue().write(1,2).c_str());
+                    LogPrintf("%s: nativeFees: %ld, reserve fees: %s\nextra coinbase outputs: %s\n", __func__, nFees, totalReserveTxFees.ToUniValue().write(1,2).c_str(), validExtraCoinbaseOutputs.ToUniValue().write(1,2).c_str());
+                }
             }
             else if (!isVerusActive)
             {

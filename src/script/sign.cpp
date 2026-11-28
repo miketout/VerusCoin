@@ -505,8 +505,23 @@ static bool SignStepCC(const BaseSignatureCreator& creator, const CScript& scrip
                         //printf("...using key from wallet\n");
                     }
                 }
-                // to save space, use default only if we don't have all other private keys for signing
-                if (!(privKeys.size() && (privKeys.size() + defaultKeys.size()) == destMap.size()))
+
+                // to save space, use default only if we don't have all other private keys for signing, or a condition
+                // cannot reach its m without it
+                bool useDefault = !(privKeys.size() && (privKeys.size() + defaultKeys.size()) == destMap.size());
+                for (int i = 0; !useDefault && i < conditions.size(); i++)
+                {
+                    int nonDefault = 0;
+                    for (auto &oneDest : conditions[i].dests)
+                    {
+                        if (!defaultKeys.count(CKeyID(GetDestinationID(oneDest))))
+                        {
+                            nonDefault++;
+                        }
+                    }
+                    useDefault = conditions[i].m > nonDefault;
+                }
+                if (useDefault)
                 {
                     for (auto &oneDefaultKey : defaultKeys)
                     {

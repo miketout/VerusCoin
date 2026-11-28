@@ -156,6 +156,10 @@ isminetype IsMine(const CKeyStore &keystore, const CScript& _scriptPubKey, uint3
         break;
     case TX_CRYPTOCONDITION:
         {
+            if (vSolutions.empty())
+            {
+                break;
+            }
             // for now, default is that the first value returned will be the target address, subsequent values will be
             // pubkeys. if we have the first in our wallet, we consider it spendable for now
             if (vSolutions[0].size() == 33)

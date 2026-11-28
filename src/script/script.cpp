@@ -1657,6 +1657,7 @@ bool COptCCParams::IsValid(bool strict, uint32_t nHeight) const
     uint32_t solutionVer = CConstVerusSolutionVector::GetVersionByHeight(nHeight);
     bool isPBaaS = solutionVer >= CActivationHeight::ACTIVATE_PBAAS;
     bool isVault = solutionVer >= CActivationHeight::ACTIVATE_VERUSVAULT;
+    bool isPBaaSHarden2 = solutionVer >= CActivationHeight::ACTIVATE_PBAAS_HARDEN2;
 
     bool versionInRange = (!isPBaaS && (version == VERSION_V1 || version == VERSION_V2 || version == VERSION_V3)) || (isPBaaS && version == VERSION_V3);
     if (!((isPBaaS || isVault) && strict) ||
@@ -1667,7 +1668,8 @@ bool COptCCParams::IsValid(bool strict, uint32_t nHeight) const
     else
     {
         if (m > n ||
-            n != vKeys.size())
+            n != vKeys.size() ||
+            (isPBaaSHarden2 && !vKeys.size()))
         {
             return false;
         }

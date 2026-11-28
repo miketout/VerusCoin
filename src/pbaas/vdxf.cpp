@@ -382,11 +382,8 @@ uint160 CVDXF::GetDataKey(const std::string &keyName, uint160 &nameSpaceID)
         {
             nameSpaceID = nsID;
         }
-        keyCopy.clear();
-        for (int i = 2; i < addressParts.size(); i++)
-        {
-            keyCopy = i == 2 ? addressParts[i] : keyCopy + ":" + addressParts[i];
-        }
+
+        keyCopy = keyName.substr(addressParts[0].size() + 2);
     }
 
     if (nameSpaceID.IsNull())
@@ -1227,7 +1224,7 @@ UniValue CSignatureData::ToUniValue() const
     ret.pushKV("version", (int64_t)version);
     ret.pushKV("systemid", EncodeDestination(CIdentityID(systemID)));
     ret.pushKV("hashtype", hashType);
-    if (hashType == CVDXF::EHashTypes::HASH_SHA256)
+    if (hashType == CVDXF::EHashTypes::HASH_SHA256 || signatureHash.size() != sizeof(uint256))
     {
         ret.pushKV("signaturehash", HexBytes(signatureHash.data(), signatureHash.size()));
     }

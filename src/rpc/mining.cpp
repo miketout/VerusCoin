@@ -1082,6 +1082,13 @@ protected:
     };
 };
 
+struct CScopedValidationInterface
+{
+    CValidationInterface *pIface;
+    CScopedValidationInterface(CValidationInterface *pIfaceIn) : pIface(pIfaceIn) { RegisterValidationInterface(pIface); }
+    ~CScopedValidationInterface() { UnregisterValidationInterface(pIface); }
+};
+
 UniValue submitblock(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)
@@ -1151,10 +1158,8 @@ UniValue submitblock(const UniValue& params, bool fHelp)
     CCriticalSection cs_blocksubmission;
     {
         LOCK(cs_blocksubmission);
-        RegisterValidationInterface(&sc);
-        //printf("submitblock, height=%d, coinbase sequence: %d, scriptSig: %s\n", chainActive.LastTip()->GetHeight()+1, block.vtx[0].vin[0].nSequence, block.vtx[0].vin[0].scriptSig.ToString().c_str());
+        CScopedValidationInterface registered(&sc);
         fAccepted = ProcessNewBlock(1,chainActive.LastTip()->GetHeight()+1, state, Params(), NULL, &block, true, NULL);
-        UnregisterValidationInterface(&sc);
     }
     if (fBlockPresent || !fAccepted || !sc.found)
     {

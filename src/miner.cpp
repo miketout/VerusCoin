@@ -1031,16 +1031,19 @@ bool AddOneCurrencyImport(const CCurrencyDefinition &newCurrency,
 
             newNotarization.SetBlockOneNotarization();
 
-            // display import outputs
-            CMutableTransaction debugTxOut;
-            debugTxOut.vout = outputs;
-            debugTxOut.vout.insert(debugTxOut.vout.end(), importOutputs.begin(), importOutputs.end());
-            UniValue jsonTxOut(UniValue::VOBJ);
-            TxToUniv(debugTxOut, uint256(), jsonTxOut);
-            LogPrint("notarization", "%s: launch outputs: %s\nlast notarization: %s\nnew notarization: %s\n", __func__,
-                                                                                            jsonTxOut.write(1,2).c_str(),
-                                                                                            lastNotarization.ToUniValue().write(1,2).c_str(),
-                                                                                            newNotarization.ToUniValue().write(1,2).c_str());
+            if (LogAcceptCategory("crosschainimports"))
+            {
+                // display import outputs
+                CMutableTransaction debugTxOut;
+                debugTxOut.vout = outputs;
+                debugTxOut.vout.insert(debugTxOut.vout.end(), importOutputs.begin(), importOutputs.end());
+                UniValue jsonTxOut(UniValue::VOBJ);
+                TxToUniv(debugTxOut, uint256(), jsonTxOut);
+                LogPrint("notarization", "%s: launch outputs: %s\nlast notarization: %s\nnew notarization: %s\n", __func__,
+                                                                                                jsonTxOut.write(1,2).c_str(),
+                                                                                                lastNotarization.ToUniValue().write(1,2).c_str(),
+                                                                                                newNotarization.ToUniValue().write(1,2).c_str());
+            }
 
             newNotarization.prevNotarization = CUTXORef();
             newNotarization.prevHeight = 0;
@@ -4360,7 +4363,7 @@ void static VerusStaker(CWallet *pwallet)
         LogPrintf("VerusStaker terminated\n");
         throw;
     }
-    catch (const std::runtime_error &e)
+    catch (const std::exception &e)
     {
         LogPrintf("VerusStaker runtime error: %s\n", e.what());
         return;
@@ -4880,7 +4883,7 @@ void static BitcoinMiner_noeq()
         LogPrintf("%s miner terminated\n", ASSETCHAINS_ALGORITHMS[ASSETCHAINS_ALGO]);
         throw;
     }
-    catch (const std::runtime_error &e)
+    catch (const std::exception &e)
     {
         miningTimer.stop();
         miningTimer.clear();

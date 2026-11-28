@@ -622,10 +622,13 @@ TransactionBuilderResult TransactionBuilder::Build(bool throwTxWithPartialSig)
             TransactionSignatureCreator(keystore, &txNewConst, nIn, tIn.value, tIn.scriptPubKey, nHeight), tIn.scriptPubKey, sigdata, consensusBranchId);
 
         if (!signSuccess) {
-            UniValue jsonTx(UniValue::VOBJ);
-            extern void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry);
-            TxToUniv(txNewConst, uint256(), jsonTx);
-            printf("Failed to sign for script, input %d:\n%s\n", nIn, jsonTx.write(1,2).c_str());
+            if (LogAcceptCategory("txbuilder"))
+            {
+                UniValue jsonTx(UniValue::VOBJ);
+                extern void TxToUniv(const CTransaction& tx, const uint256& hashBlock, UniValue& entry);
+                TxToUniv(txNewConst, uint256(), jsonTx);
+                printf("Failed to sign for script, input %d:\n%s\n", nIn, jsonTx.write(1,2).c_str());
+            }
             if (throwTxWithPartialSig)
             {
                 throwPartialSig = true;

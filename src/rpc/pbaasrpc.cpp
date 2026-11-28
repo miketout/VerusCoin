@@ -110,6 +110,13 @@ protected:
     };
 };
 
+struct CScopedValidationInterface
+{
+    CValidationInterface *pIface;
+    CScopedValidationInterface(CValidationInterface *pIfaceIn) : pIface(pIfaceIn) { RegisterValidationInterface(pIface); }
+    ~CScopedValidationInterface() { UnregisterValidationInterface(pIface); }
+};
+
 bool GetCurrencyDefinition(const uint160 &chainID, CCurrencyDefinition &chainDef, int32_t *pDefHeight, bool checkMempool, bool notarizationCheck, CUTXORef *pUTXO, std::vector<CNodeData> *pGoodNodes)
 {
     static bool isVerusActive = IsVerusActive();
@@ -7925,7 +7932,8 @@ bool GetMyOffers(std::map<std::pair<bool, uint256>, OfferInfo> &myOffers, uint32
         if (txPair.second.IsInMainChain() &&
             txPair.second.vout.size() > 0 &&
             !pwalletMain->IsSpent(txPair.second.GetHash(), 0) &&
-            GetOpRetChainOffer(txPair.second, oneOfferInfo.offerTx, oneOfferInfo.inputToOfferTx, height, getUnexpired, getExpired, oneOfferInfo.blockHash))
+            GetOpRetChainOffer(txPair.second, oneOfferInfo.offerTx, oneOfferInfo.inputToOfferTx, height, getUnexpired, getExpired, oneOfferInfo.blockHash) &&
+            oneOfferInfo.offerTx.vin[0].prevout == COutPoint(txPair.first, 0))
         {
             CSpentIndexKey spentKey = CSpentIndexKey(oneOfferInfo.inputToOfferTx.GetHash(), oneOfferInfo.offerTx.vin[0].prevout.n);
             CSpentIndexValue spentValue;
@@ -10442,9 +10450,13 @@ UniValue getoffers(const UniValue& params, bool fHelp)
 static CAmount FundOfferClose(TransactionBuilder &tb,
                               uint32_t height,
                               CAmount &value,
-                              const CTxDestination &changeDest,
+                              bool *pWalletFunded,
+                              bool allowWalletFunding,
                               const std::function<void(TransactionBuilder &)> &addOutputs)
 {
+    bool _walletFunded;
+    bool &walletFunded = pWalletFunded ? *pWalletFunded : _walletFunded;
+    walletFunded = false;
     CAmount closeFee = SimulateBuilderFee(height, DEFAULT_TRANSACTION_FEE, addOutputs);
     if (value >= closeFee)
     {
@@ -10452,6 +10464,11 @@ static CAmount FundOfferClose(TransactionBuilder &tb,
     }
     else
     {
+        if (!allowWalletFunding)
+        {
+            // the offered value cannot pay its own close fee; only an explicit closeoffers call adds wallet funds
+            return -1;
+        }
         std::vector<COutput> vCoins;
         std::set<std::pair<const CWalletTx *, unsigned int>> setCoinsRet;
         CAmount nativeValueOut;
@@ -10467,7 +10484,14 @@ static CAmount FundOfferClose(TransactionBuilder &tb,
                                    oneInput.first->vout[oneInput.second].scriptPubKey,
                                    oneInput.first->vout[oneInput.second].nValue);
         }
-        tb.SendChangeTo(changeDest);
+        CTxDestination walletChange;
+        if (!ExtractDestination(setCoinsRet.begin()->first->vout[setCoinsRet.begin()->second].scriptPubKey, walletChange))
+        {
+            LogPrintf("%s: cannot determine a change destination for the close fee input\n", __func__);
+            return -1;
+        }
+        tb.SendChangeTo(walletChange);
+        walletFunded = true;
         value = 0;
     }
     tb.SetFee(closeFee);
@@ -10475,8 +10499,8 @@ static CAmount FundOfferClose(TransactionBuilder &tb,
 }
 
 // close an offer by spending its source
-bool CloseOneOffer(const OfferInfo &oneOffer, TransactionBuilder &tb, const CTxDestination &_dest, uint32_t height, const libzcash::PaymentAddress &zdest=libzcash::PaymentAddress());
-bool CloseOneOffer(const OfferInfo &oneOffer, TransactionBuilder &tb, const CTxDestination &_dest, uint32_t height, const PaymentAddress &zdest)
+bool CloseOneOffer(const OfferInfo &oneOffer, TransactionBuilder &tb, const CTxDestination &_dest, uint32_t height, bool allowWalletFunding, const libzcash::PaymentAddress &zdest=libzcash::PaymentAddress());
+bool CloseOneOffer(const OfferInfo &oneOffer, TransactionBuilder &tb, const CTxDestination &_dest, uint32_t height, bool allowWalletFunding, const PaymentAddress &zdest)
 {
     CTxDestination dest = _dest;
     // we just need to be able to spend the output to another input/output
@@ -10493,6 +10517,7 @@ bool CloseOneOffer(const OfferInfo &oneOffer, TransactionBuilder &tb, const CTxD
         bool hasZDest = pSaplingAddress != nullptr;
         bool hasTDest = dest.which() != COptCCParams::ADDRTYPE_INVALID;
         bool hasTokens = false;
+        bool walletFunded = false;
 
         uint256 ovk;
         if (hasZDest)
@@ -10519,7 +10544,7 @@ bool CloseOneOffer(const OfferInfo &oneOffer, TransactionBuilder &tb, const CTxD
                 hasTDest = true;
             }
             offeredIdentity.UpgradeVersion(height);
-            if (FundOfferClose(tb, height, value, dest, [&](TransactionBuilder &skel) {
+            if (FundOfferClose(tb, height, value, &walletFunded, allowWalletFunding, [&](TransactionBuilder &skel) {
                     skel.AddTransparentOutput(offeredIdentity.IdentityUpdateOutputScript(height + 1), 0);
                 }) < 0)
             {
@@ -10531,7 +10556,7 @@ bool CloseOneOffer(const OfferInfo &oneOffer, TransactionBuilder &tb, const CTxD
         {
             if (!hasTDest)
             {
-                if (p.vKeys.size() > 1)
+                if (p.vKeys.size() != 1)
                 {
                     LogPrintf("%s: No transparent destination specified and cannot determine from commitment\n", __func__);
                     return false;
@@ -10541,7 +10566,7 @@ bool CloseOneOffer(const OfferInfo &oneOffer, TransactionBuilder &tb, const CTxD
             }
             CCommitmentHash ch(p.vData[0]);
 
-            if (FundOfferClose(tb, height, value, dest, [&](TransactionBuilder &skel) {
+            if (FundOfferClose(tb, height, value, &walletFunded, allowWalletFunding, [&](TransactionBuilder &skel) {
                     if (ch.IsValid() && ch.reserveValues.valueMap.size())
                     {
                         skel.AddTransparentOutput(MakeMofNCCScript(CConditionObj<CTokenOutput>(EVAL_RESERVE_OUTPUT, {dest}, 1, (CTokenOutput *)&ch)), 0);
@@ -10585,7 +10610,7 @@ bool CloseOneOffer(const OfferInfo &oneOffer, TransactionBuilder &tb, const CTxD
                 }
             }
         }
-        if (hasTokens || !hasZDest)
+        if (!walletFunded && (hasTokens || !hasZDest))
         {
             tb.SendChangeTo(dest);
         }
@@ -10593,7 +10618,7 @@ bool CloseOneOffer(const OfferInfo &oneOffer, TransactionBuilder &tb, const CTxD
     return true;
 }
 
-UniValue closeoffers(const UniValue& params, bool fHelp)
+UniValue CloseOffers(const UniValue& params, bool fHelp, bool allowWalletFunding)
 {
     if (fHelp || params.size() > 3)
     {
@@ -10677,43 +10702,65 @@ UniValue closeoffers(const UniValue& params, bool fHelp)
         GetMyOffers(myOffers, height, txIds.size() != 0, true);
     }
 
+    std::string failures;
     for (auto &oneOffer : myOffers)
     {
-        TransactionBuilder tb(Params().GetConsensus(), height + 1, pwalletMain);
-        CTransaction oneTx;
+        try
         {
-            LOCK2(cs_main, pwalletMain->cs_wallet);
-            // if this is true, it is unexpired
-            if (oneOffer.first.first && !txIds.count(oneOffer.first.second))
+            TransactionBuilder tb(Params().GetConsensus(), height + 1, pwalletMain);
+            CTransaction oneTx;
             {
-                continue;
+                LOCK2(cs_main, pwalletMain->cs_wallet);
+                // if this is true, it is unexpired
+                if (oneOffer.first.first && !txIds.count(oneOffer.first.second))
+                {
+                    continue;
+                }
+                if (!CloseOneOffer(oneOffer.second, tb, transparentDest, height, allowWalletFunding, zaddressDest))
+                {
+                    continue;
+                }
+                TransactionBuilderResult buildResult = tb.Build();
+                oneTx = buildResult.GetTxOrThrow();
             }
-            if (!CloseOneOffer(oneOffer.second, tb, transparentDest, height, zaddressDest))
+            LOCK(cs_main);
+
+            bool relayTx;
+            CValidationState state;
             {
-                continue;
+                LOCK2(smartTransactionCS, mempool.cs);
+                relayTx = myAddtomempool(oneTx, &state);
             }
-            TransactionBuilderResult buildResult = tb.Build();
-            oneTx = buildResult.GetTxOrThrow();
-        }
-        LOCK(cs_main);
 
-        bool relayTx;
-        CValidationState state;
-        {
-            LOCK2(smartTransactionCS, mempool.cs);
-            relayTx = myAddtomempool(oneTx, &state);
+            if (!relayTx)
+            {
+                throw JSONRPCError(RPC_TRANSACTION_REJECTED, "Close offer transaction rejected: " + state.GetRejectReason());
+            }
+            else
+            {
+                RelayTransaction(oneTx);
+            }
         }
-
-        if (!relayTx)
+        catch (const UniValue &objError)
         {
-            throw JSONRPCError(RPC_TRANSACTION_REJECTED, "Close offer transaction rejected: " + state.GetRejectReason());
+            failures += (failures.empty() ? "" : "; ") + oneOffer.first.second.GetHex() + ": " + uni_get_str(find_value(objError, "message"));
         }
-        else
+        catch (const std::exception &e)
         {
-            RelayTransaction(oneTx);
+            failures += (failures.empty() ? "" : "; ") + oneOffer.first.second.GetHex() + ": " + e.what();
         }
     }
+    if (!failures.empty())
+    {
+        LogPrintf("%s: %s\n", __func__, failures.c_str());
+        throw JSONRPCError(RPC_TRANSACTION_REJECTED, "Close offer failed for " + failures);
+    }
     return retVal;
+}
+
+UniValue closeoffers(const UniValue& params, bool fHelp)
+{
+    return CloseOffers(params, fHelp, true);
 }
 
 UniValue listopenoffers(const UniValue& params, bool fHelp)
@@ -16141,7 +16188,9 @@ UniValue updateidentity(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "identity, " + nameStr + ", transaction not found ");
     }
 
-    auto uniOldID = UniObjectToMap(oldID.ToUniValue());
+    CIdentity oldIDNoContent(oldID);
+    oldIDNoContent.contentMultiMap.clear();
+    auto uniOldID = UniObjectToMap(oldIDNoContent.ToUniValue());
 
     // always clear the contentmultimap
     uniOldID.erase("contentmultimap");
@@ -17654,6 +17703,17 @@ UniValue getidentitycontent(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Identity parameter must be valid friendly name or identity address: \"" + uni_get_str(params[0]) + "\"");
     }
 
+    uint160 vdxfKey;
+    if (params.size() > 5)
+    {
+        CTxDestination vdxfDest = DecodeDestination(uni_get_str(params[5]));
+        if (vdxfDest.which() != COptCCParams::ADDRTYPE_ID)
+        {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "vdxfkey parameter must be a valid i-address: \"" + uni_get_str(params[5]) + "\"");
+        }
+        vdxfKey = GetDestinationID(vdxfDest);
+    }
+
     LOCK(cs_main);
 
     uint32_t gteHeight = 0;
@@ -17687,17 +17747,6 @@ UniValue getidentitycontent(const UniValue& params, bool fHelp)
     if (txProofHeight < lteHeight)
     {
         txProofHeight = lteHeight;
-    }
-
-    uint160 vdxfKey;
-    if (params.size() > 5)
-    {
-        CTxDestination vdxfDest = DecodeDestination(uni_get_str(params[5]));
-        if (vdxfDest.which() != COptCCParams::ADDRTYPE_ID)
-        {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "vdxfkey parameter must be a valid i-address: \"" + uni_get_str(params[5]) + "\"");
-        }
-        vdxfKey = GetDestinationID(vdxfDest);
     }
 
     // If a vdxfKey is provided, automatically transform it to the proper search key
@@ -18339,9 +18388,6 @@ UniValue getidentitytrust(const UniValue& params, bool fHelp)
     UniValue retVal(UniValue::VOBJ);
     UniValue setRatings(UniValue::VOBJ);
 
-    LOCK(pwalletMain->cs_wallet);
-    auto identityTrustMap = pwalletMain->GetIdentityTrustMap();
-
     std::set<uint160> filter;
     if (params[0].isArray())
     {
@@ -18355,6 +18401,10 @@ UniValue getidentitytrust(const UniValue& params, bool fHelp)
             filter.insert(GetDestinationID(dest));
         }
     }
+
+    LOCK(pwalletMain->cs_wallet);
+    auto identityTrustMap = pwalletMain->GetIdentityTrustMap();
+
     for (auto &oneEntry : identityTrustMap)
     {
         if (filter.size() && !filter.count(oneEntry.first))
@@ -18502,9 +18552,6 @@ UniValue getcurrencytrust(const UniValue& params, bool fHelp)
     UniValue retVal(UniValue::VOBJ);
     UniValue setRatings(UniValue::VOBJ);
 
-    LOCK(pwalletMain->cs_wallet);
-    auto currencyTrustMap = pwalletMain->GetCurrencyTrustMap();
-
     std::set<uint160> filter;
     if (params[0].isArray())
     {
@@ -18518,6 +18565,10 @@ UniValue getcurrencytrust(const UniValue& params, bool fHelp)
             filter.insert(GetDestinationID(dest));
         }
     }
+
+    LOCK(pwalletMain->cs_wallet);
+    auto currencyTrustMap = pwalletMain->GetCurrencyTrustMap();
+
     for (auto &oneEntry : currencyTrustMap)
     {
         if (filter.size() && !filter.count(oneEntry.first))
@@ -18672,11 +18723,13 @@ UniValue submitmergedblock(const UniValue& params, bool fHelp)
     }
 
     CValidationState state;
+    bool fAccepted = false;
     submitblock_StateCatcher sc(block.GetHash());
-    RegisterValidationInterface(&sc);
-    //printf("submitmergedblock, height=%d, coinbase sequence: %d, scriptSig: %s\n", chainActive.LastTip()->GetHeight()+1, block.vtx[0].vin[0].nSequence, block.vtx[0].vin[0].scriptSig.ToString().c_str());
-    bool fAccepted = ProcessNewBlock(1, chainActive.LastTip()->GetHeight()+1, state, Params(), NULL, &block, true, NULL);
-    UnregisterValidationInterface(&sc);
+    {
+        CScopedValidationInterface registered(&sc);
+        fAccepted = ProcessNewBlock(1, chainActive.LastTip()->GetHeight()+1, state, Params(), NULL, &block, true, NULL);
+    }
+
     UniValue result(UniValue::VOBJ);
     if (fBlockPresent)
     {
