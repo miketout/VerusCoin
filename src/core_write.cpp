@@ -1157,6 +1157,7 @@ UniValue CCrossChainExport::ToUniValue() const
     else
     {
         obj.push_back(Pair("issupplemental", true));
+        obj.push_back(Pair("sourcesystemid", EncodeDestination(CIdentityID(sourceSystemID))));
     }
     UniValue transfers(UniValue::VARR);
     for (auto &oneTransfer : reserveTransfers)
@@ -1282,7 +1283,7 @@ UniValue CURLRef::ToUniValue() const
 {
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("version", (int64_t)version);
-    obj.pushKV("flags", (int64_t)version);
+    obj.pushKV("flags", (int64_t)flags);
     obj.pushKV("datahash", dataHash.GetHex());
     obj.pushKV("url", url);
     return obj;

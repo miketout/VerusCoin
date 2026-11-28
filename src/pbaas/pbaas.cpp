@@ -4041,11 +4041,11 @@ CCrossChainExport::CCrossChainExport(const UniValue &obj) :
 {
     nVersion = uni_get_int(find_value(obj, "version"));
     flags = uni_get_int(find_value(obj, "flags"));
+    sourceSystemID = GetDestinationID(DecodeDestination(uni_get_str(find_value(obj, "sourcesystemid"))));
     if (!this->IsSupplemental())
     {
         sourceHeightStart = uni_get_int64(find_value(obj, "sourceheightstart"));
         sourceHeightEnd = uni_get_int64(find_value(obj, "sourceheightend"));
-        sourceSystemID = GetDestinationID(DecodeDestination(uni_get_str(find_value(obj, "sourcesystemid"))));
         destSystemID = GetDestinationID(DecodeDestination(uni_get_str(find_value(obj, "destinationsystemid"))));
         destCurrencyID = GetDestinationID(DecodeDestination(uni_get_str(find_value(obj, "destinationcurrencyid"))));
         firstInput = uni_get_int(find_value(obj, "firstinput"));

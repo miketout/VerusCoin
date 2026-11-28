@@ -138,7 +138,7 @@ std::string TrimSpaces(const std::string &Name, bool removeDuals, const std::str
             utf8_int32_t outPoint;
             nextChar = utf8codepoint(nextChar, &outPoint);
 
-            if (toRemoveIdx < toRemove.size() && i++ == toRemove[toRemoveIdx])
+            if (toRemoveIdx < toRemove.size() && i == toRemove[toRemoveIdx])
             {
                 toRemoveIdx++;
                 continue;
