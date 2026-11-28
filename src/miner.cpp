@@ -4751,7 +4751,7 @@ void static BitcoinMiner_noeq()
                             }
 
                             arithHash = UintToArith256(hashResult);
-                            totalDone += hashesToGo + 1;
+                            totalDone += hashesToGo;
                             if (blockFound && IsVerusActive())
                             {
                                 ConnectedChains.QueueNewBlockHeader(*pblock);
